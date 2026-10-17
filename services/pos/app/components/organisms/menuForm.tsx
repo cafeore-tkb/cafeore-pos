@@ -3,12 +3,15 @@ import { useId, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { isSameMenuKey, menuKeyError, normalizeMenuKey } from "~/lib/menuKey";
 
 export type MenuFormValues = {
   name: string;
   abbr: string;
   price: number;
   key: string;
+  /** 大きいほどレジ・商品管理で先に並ぶ */
+  priority: number;
   items: { item: WithId<ItemEntity>; quantity: number }[];
 };
 
@@ -33,6 +36,7 @@ export function MenuForm({
     initialMenu ? String(initialMenu.price) : "",
   );
   const [key, setKey] = useState(initialMenu?.key ?? "");
+  const [priority, setPriority] = useState(String(initialMenu?.priority ?? 0));
   const [validationError, setValidationError] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>(
     Object.fromEntries(
@@ -40,7 +44,11 @@ export function MenuForm({
     ),
   );
 
-  const keyTaken = key !== "" && usedKeys.includes(key);
+  const normalizedKey = normalizeMenuKey(key);
+  const keyError = key === "" ? null : menuKeyError(normalizedKey);
+  // 同時押しは押す順に関わらず同じキー（「a+s」と「s+a」）
+  const keyTaken =
+    key !== "" && usedKeys.some((used) => isSameMenuKey(used, normalizedKey));
 
   const groups = useMemo(() => {
     const byType = new Map<string, WithId<ItemEntity>[]>();
@@ -73,8 +81,19 @@ export function MenuForm({
           setValidationError("価格は0以上で入力してください");
           return;
         }
+        const parsedPriority = Number(priority);
+        if (priority.trim() === "" || !Number.isInteger(parsedPriority)) {
+          setValidationError("優先度は整数で入力してください");
+          return;
+        }
+        if (keyError) {
+          setValidationError(keyError);
+          return;
+        }
         if (keyTaken) {
-          setValidationError(`キー「${key}」は他のメニューで使われています`);
+          setValidationError(
+            `キー「${normalizedKey}」は他のメニューで使われています`,
+          );
           return;
         }
 
@@ -89,7 +108,8 @@ export function MenuForm({
           name,
           abbr,
           price: parsedPrice,
-          key,
+          key: normalizedKey,
+          priority: parsedPriority,
           items: selectedItems,
         });
       }}
@@ -140,18 +160,35 @@ export function MenuForm({
             onChange={(e) => setKey(e.target.value)}
             placeholder="a"
             className="font-mono"
-            aria-invalid={keyTaken}
+            aria-invalid={keyError !== null || keyTaken}
             required
           />
-          {keyTaken ? (
+          {keyError ? (
+            <p className="text-destructive text-xs">{keyError}</p>
+          ) : keyTaken ? (
             <p className="text-destructive text-xs">
               他のメニューで使われています
             </p>
           ) : (
             <p className="text-muted-foreground text-xs">
-              レジでこのキーを押すと追加されます。取り込み・書き出しでメニューの見分けにも使います
+              レジでこのキーを押すと追加されます。「a+s」のように +
+              でつなぐと同時押しになります。取り込み・書き出しでメニューの見分けにも使います
             </p>
           )}
+        </div>
+        <div className="grid content-start gap-2">
+          <Label htmlFor={`${id}-priority`}>優先度</Label>
+          <Input
+            id={`${id}-priority`}
+            inputMode="numeric"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            placeholder="0"
+            required
+          />
+          <p className="text-muted-foreground text-xs">
+            大きいほどレジで先（左上）に並びます。同じなら名前の順。種別の並びは、その種別で一番大きい優先度の順です
+          </p>
         </div>
       </div>
 

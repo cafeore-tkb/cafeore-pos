@@ -1,0 +1,206 @@
+package handlers
+
+import (
+	"fmt"
+	"maps"
+	"os"
+	"testing"
+
+	"cafeore-pos/api/internal/models"
+	"github.com/goccy/go-yaml"
+	"github.com/google/uuid"
+)
+
+func TestDescribeChangesListsOnlyChangedFields(t *testing.T) {
+	got := describeChanges(
+		change{"名前", "ケニア", "ケニア"},
+		change{"価格", "¥400", "¥450"},
+		change{"キー", ";", ":"},
+	)
+	if got != "価格 ¥400 → ¥450、キー ; → :" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if describeChanges(change{"名前", "a", "a"}) != "" {
+		t.Fatal("expected empty when nothing changed")
+	}
+}
+
+func TestMenuUpdatedMessage(t *testing.T) {
+	kenya := models.Item{Name: "ケニア"}
+	tote := models.Item{Name: "トートバッグ"}
+	before := models.Menu{Name: "トートセット", Abbr: "セット", Price: 1000, Key: "@",
+		MenuItems: []models.MenuItem{{Item: kenya, Quantity: 1}}}
+	after := before
+	after.Price = 1200
+	after.MenuItems = []models.MenuItem{{Item: kenya, Quantity: 1}, {Item: tote, Quantity: 1}}
+
+	got := menuUpdatedMessage(&before, &after)
+	want := "✏️ メニューを変更: トートセット（価格 ¥1000 → ¥1200、構成 ケニア×1 → ケニア×1、トートバッグ×1） :e-change:"
+	if got != want {
+		t.Fatalf("got  %q\nwant %q", got, want)
+	}
+	// 保存し直しただけなら通知しない
+	if menuUpdatedMessage(&before, &before) != "" {
+		t.Fatal("expected no message for unchanged menu")
+	}
+}
+
+func TestItemTypeUpdatedMessageFlags(t *testing.T) {
+	yes, no := true, false
+	before := models.ItemType{Name: "special", DisplayName: "限定", MakesCup: &yes, NeedsBrew: &yes, SeniorOnly: true}
+
+	cases := []struct {
+		name   string
+		change func(*models.ItemType)
+		want   string
+	}{
+		{"makes_cup", func(it *models.ItemType) { it.MakesCup, it.NeedsBrew, it.SeniorOnly = &no, &no, false },
+			"✏️ タイプを変更: 限定（カップを作る あり → なし、抽出が要る あり → なし、上級生のみ あり → なし） :e-change:"},
+		{"needs_brew", func(it *models.ItemType) { it.NeedsBrew, it.SeniorOnly = &no, false },
+			"✏️ タイプを変更: 限定（抽出が要る あり → なし、上級生のみ あり → なし） :e-change:"},
+		{"senior_only", func(it *models.ItemType) { it.SeniorOnly = false },
+			"✏️ タイプを変更: 限定（上級生のみ あり → なし） :e-change:"},
+		{"iced_brew", func(it *models.ItemType) { it.IcedBrew = true },
+			"✏️ タイプを変更: 限定（アイスで淹れる なし → あり） :e-change:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			after := before
+			tc.change(&after)
+			if got := itemTypeUpdatedMessage(&before, &after); got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+
+	// 保存し直しただけなら通知しない（読み込み直して別のポインタになっても値で比べる）
+	yes2, yes3 := true, true
+	same := before
+	same.MakesCup, same.NeedsBrew = &yes2, &yes3
+	if got := itemTypeUpdatedMessage(&before, &same); got != "" {
+		t.Fatalf("expected no message, got %q", got)
+	}
+}
+
+func TestStockResourceMessages(t *testing.T) {
+	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g", PerServing: 15}
+	after := kenya
+	after.PerServing = 16
+	if got := stockResourceUpdatedMessage(&kenya, &after, "", ""); got != "✏️ 在庫対象を変更: ケニア（1回あたり 15 → 16） :e-change:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+
+	cup := models.StockResource{Kind: "cup", Name: "ホットカップ", Unit: "個", PerServing: 1}
+	if got := stockResourceCreatedMessage(&cup, "ブレンド・グルメ"); got != "🆕 在庫対象を追加: ホットカップ（カップ / 1回 1個 / 使うタイプ ブレンド・グルメ） :e-add:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if got := stockResourceUpdatedMessage(&cup, &cup, "ブレンド・グルメ", "ブレンド・グルメ・限定"); got != "✏️ 在庫対象を変更: ホットカップ（使うタイプ ブレンド・グルメ → ブレンド・グルメ・限定） :e-change:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if got := stockResourceUpdatedMessage(&cup, &cup, "ブレンド", "ブレンド"); got != "" {
+		t.Fatalf("expected no message, got %q", got)
+	}
+}
+
+func TestStockEventMessage(t *testing.T) {
+	kenya := models.StockResource{Kind: "item", Item: &models.Item{Name: "ケニア"}, Unit: "g"}
+	estimated, remaining := 1180.0, 2230.0
+
+	cases := []struct {
+		name  string
+		event models.StockEvent
+		want  string
+	}{
+		{
+			"receipt",
+			models.StockEvent{Kind: "receipt", Quantity: 1000, Note: "追加発注分"},
+			"📝 ケニア +1000g（残り約2230g）「追加発注分」 :e-restock:",
+		},
+		{
+			"count",
+			models.StockEvent{Kind: "count", Quantity: 1200},
+			"📝 ケニア 1200g（推定 1180g、差 +20g） :e-take-inventory:",
+		},
+		{
+			"adjust",
+			models.StockEvent{Kind: "adjust", Quantity: -50},
+			"📝 ケニア -50g（残り約2230g） :e-take-inventory:",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stockEventMessage(&kenya, &tc.event, &estimated, &remaining); got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+
+	// 残量が出せない（まだ棚卸しも入荷もない）ときは残りを付けない
+	event := models.StockEvent{Kind: "receipt", Quantity: 500}
+	if got := stockEventMessage(&kenya, &event, nil, nil); got != "📝 ケニア +500g :e-restock:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestMasterStateMessage(t *testing.T) {
+	if masterStateChangedMessage("stop") != "⛔ オーダーストップ :e-stop:" || masterStateChangedMessage("operational") != "✅ オーダー再開 :e-restart:" {
+		t.Fatal("unexpected master state message")
+	}
+}
+
+func TestColorSettingMessages(t *testing.T) {
+	after := models.ColorSetting{Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &models.ColorSetting{}, &after); got != "🆕 背景色を追加: マスターのライチ #7bf1a8 :e-add:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	before := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#bedbff"}
+	if got := colorSettingSavedMessage("ライチ", &before, &after); got != "✏️ 背景色を変更: マスターのライチ #bedbff → #7bf1a8 :e-change:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	same := models.ColorSetting{ID: uuid.New(), Screen: "master", Color: "#7bf1a8"}
+	if got := colorSettingSavedMessage("ライチ", &same, &after); got != "" {
+		t.Fatalf("expected no message, got %q", got)
+	}
+	deleted := models.ColorSetting{Screen: "serve", Color: "#fff085"}
+	if got := colorSettingDeletedMessage("ミルク", &deleted); got != "🗑️ 背景色を削除: 提供のミルク #fff085 :e-delete:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	cashier := models.ColorSetting{Screen: "cashier_order", Color: "#fff085"}
+	if got := colorSettingSavedMessage("ミルク", &models.ColorSetting{}, &cashier); got != "🆕 背景色を追加: レジ（過去の注文）のミルク #fff085 :e-add:" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+// 画面・在庫対象の種類の名前は openapi.yaml の x-enum-descriptions が正本。POS もそこから読むので、通知の名前もそろえる
+func TestEnumLabelsMatchOpenAPI(t *testing.T) {
+	raw, err := os.ReadFile("../../../openapi/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Enum         []any    `yaml:"enum"`
+				Descriptions []string `yaml:"x-enum-descriptions"`
+			} `yaml:"schemas"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	for name, labels := range map[string]map[string]string{
+		"ColorScreen":       colorScreenLabels,
+		"StockResourceKind": stockKindLabels,
+	} {
+		schema := spec.Components.Schemas[name]
+		want := make(map[string]string, len(schema.Enum))
+		for i, value := range schema.Enum {
+			if i < len(schema.Descriptions) {
+				want[fmt.Sprint(value)] = schema.Descriptions[i]
+			}
+		}
+		if len(schema.Enum) == 0 || len(schema.Descriptions) != len(schema.Enum) || !maps.Equal(labels, want) {
+			t.Errorf("%s: Go の名前 %v、openapi.yaml の x-enum-descriptions %v（enum %v）", name, labels, schema.Descriptions, schema.Enum)
+		}
+	}
+}

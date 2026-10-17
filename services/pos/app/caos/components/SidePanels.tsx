@@ -1,46 +1,65 @@
+import {
+  type CaosCard,
+  type CaosOrderInput,
+  type CaosPlace,
+  DRIPPER_NUMBERS,
+  canSplitCard,
+  caosBrewSec,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { ArrowRight, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
-import { useOutsidePress } from "../hooks/useOutsidePress";
-import type { Barista } from "../logic/board";
 import {
-  type DripCard,
-  type OrderTicket,
-  brewSec,
+  EmergencyForm,
+  type EmergencyFormProps,
+} from "~/components/molecules/EmergencyForm";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
+import {
+  type CardLook,
+  type CardLooks,
+  cardName,
+  orderCount,
   orderLabel,
 } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import { canPlaceOn, laneOrdinal, moveTargets } from "../logic/lanes";
+import {
+  type Lane,
+  frontTargets,
+  laneActive,
+  moveTargets,
+} from "../logic/lanes";
 import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
-import { OrderCard } from "./OrderCard";
+import type { ControlViewProps } from "./ControlWorkspace";
+import {
+  LaneAbility,
+  LaneChangeButton,
+  LaneChooseButton,
+  LaneName,
+} from "./LaneParts";
+import { OrderCard, SplitCupButtons } from "./OrderCard";
+import { CommentList } from "./OrderComments";
 
-// 右のパネル（割当・詳細・入れ直し・補助のタブ）。ヘッダーの下に右から出し、管制盤は隠さない（開いたまま操作できる）。
-// onOutsidePress を渡すと、パネルの外を押したときに呼ぶ。
+// 右のパネル（割当・詳細・補助のタブ・番号の検索・緊急・列の操作）。ヘッダーの下に右から出し、管制盤は隠さない。
+// パネルの外を押すと閉じる（その 1 回は閉じるだけで、下のカード・ボタンは動かさない。usePanelOutsidePress）
 export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
-  onOutsidePress?: () => void;
-  /** 見出しの色（入れ直しは赤） */
-  tone?: "plain" | "alert";
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, onOutsidePress, tone = "plain", footer, children }) => {
+}> = ({ title, onClose, footer, children }) => {
   const panelRef = useRef<HTMLElement>(null);
-  useOutsidePress(
-    onOutsidePress !== undefined,
-    (target) => Boolean(panelRef.current?.contains(target)),
-    () => onOutsidePress?.(),
-  );
+  usePanelOutsidePress(panelRef, onClose);
   return (
     <aside
       ref={panelRef}
-      className={`fade-in-75 slide-in-from-right fixed top-[56px] right-0 bottom-0 z-[150] flex w-[min(440px,44vw)] min-w-[360px] animate-in select-none flex-col border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${tone === "alert" ? "border-red-200" : "border-slate-300"}`}
+      className="fade-in-75 slide-in-from-right caos-side-panel fixed top-[56px] right-0 bottom-0 z-[150] flex w-(--caos-side-panel-width) animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
-      <header
-        className={`flex min-h-[52px] shrink-0 items-center gap-1 border-b px-4 ${tone === "alert" ? "border-red-200 bg-red-50" : "border-slate-200 bg-slate-50"}`}
-      >
+      <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
         <button
           type="button"
@@ -58,7 +77,7 @@ export const SidePanel: React.FC<{
 };
 
 /** パネルの下の「キャンセル」と確定のボタン */
-export const PanelFooter: React.FC<{
+const PanelFooter: React.FC<{
   onCancel: () => void;
   children: React.ReactNode;
 }> = ({ onCancel, children }) => (
@@ -78,31 +97,32 @@ export const PanelFooter: React.FC<{
 export const AssignPanel: React.FC<{
   /** 空きスロットを押したドリッパー */
   bayId: number;
-  baristas: Barista[];
-  unassignedOrders: DripCard[];
+  lanes: Lane[];
+  unassignedOrders: CaosCard[];
+  looks: CardLooks;
   onClose: () => void;
-  onAssign: (card: DripCard, targetBayId: number) => void;
-}> = ({ bayId, baristas, unassignedOrders, onClose, onAssign }) => {
+  onAssign: (card: CaosCard, targetBayId: number) => void;
+}> = ({ bayId, lanes, unassignedOrders, looks, onClose, onAssign }) => {
   const [selectedOrderUid, setSelectedOrderUid] = useState(
-    unassignedOrders[0]?.ticketUid ?? "",
+    unassignedOrders[0]?.key ?? "",
   );
   const [selectedBayId, setSelectedBayId] = useState(bayId);
   const selectedOrder = unassignedOrders.find(
-    (order) => order.ticketUid === selectedOrderUid,
+    (order) => order.key === selectedOrderUid,
   );
-  const canAssign = Boolean(
-    selectedOrder && canPlaceOn(selectedOrder, selectedBayId),
-  );
+  // 指名の番号のあるカードは、その番号のドリッパーだけ選べる
+  const allowed = (id: number) =>
+    !selectedOrder || caosDripperAllowed(selectedOrder, id);
 
   return (
     <SidePanel
-      title={`ドリッパー ${laneOrdinal(bayId)} にオーダー割当`}
+      title={`ドリッパー ${dripperLabel(bayId)} にオーダー割当`}
       onClose={onClose}
       footer={
         <PanelFooter onCancel={onClose}>
           <button
             type="button"
-            disabled={!canAssign}
+            disabled={!selectedOrder || !allowed(selectedBayId)}
             onClick={() => {
               if (selectedOrder) onAssign(selectedOrder, selectedBayId);
               onClose();
@@ -126,16 +146,13 @@ export const AssignPanel: React.FC<{
         <div className="grid max-h-[200px] gap-1.5 overflow-y-auto p-1">
           {unassignedOrders.map((order) => (
             <OrderCard
-              key={order.ticketUid}
+              key={order.key}
               card={order}
+              look={looks.get(order.key)}
               size="sm"
-              selected={selectedOrderUid === order.ticketUid}
-              note={`標準予測: ${clockLabel(brewSec(order.cupCount))}`}
-              onClick={() => {
-                setSelectedOrderUid(order.ticketUid);
-                if (order.preferredBaristaId)
-                  setSelectedBayId(order.preferredBaristaId);
-              }}
+              selected={selectedOrderUid === order.key}
+              note={`標準予測: ${clockLabel(caosBrewSec(order.cups.length))}`}
+              onClick={() => setSelectedOrderUid(order.key)}
               className="cursor-pointer"
             />
           ))}
@@ -146,23 +163,21 @@ export const AssignPanel: React.FC<{
         割当先のドリッパー（抽出担当者）:
       </h3>
       <div className="grid grid-cols-3 gap-2">
-        {baristas.map((barista) => (
+        {lanes.map((lane) => (
           <button
-            key={barista.id}
+            key={lane.id}
             type="button"
-            disabled={Boolean(
-              selectedOrder && !canPlaceOn(selectedOrder, barista.id),
-            )}
-            onClick={() => setSelectedBayId(barista.id)}
-            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left ${
-              selectedBayId === barista.id
+            disabled={!allowed(lane.id)}
+            onClick={() => setSelectedBayId(lane.id)}
+            className={`flex min-h-[72px] touch-manipulation flex-col justify-between rounded-lg border p-2 text-left disabled:opacity-30 ${
+              selectedBayId === lane.id
                 ? "border-emerald-600 bg-emerald-50 shadow-xs ring-1 ring-emerald-600"
-                : "border-slate-200 hover:bg-slate-50 disabled:bg-slate-100 disabled:opacity-25"
+                : "border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <LaneBadge bayId={barista.id} />
+            <LaneBadge bayId={lane.id} />
             <span className="text-[10px] text-slate-500">
-              待機 {barista.queue.length}件
+              待機 {orderCount(lane.queued)}件
             </span>
           </button>
         ))}
@@ -171,65 +186,230 @@ export const AssignPanel: React.FC<{
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・未割当に戻す。パネルの外を押すと閉じる
-export const TicketDetailPanel: React.FC<{
-  ticket: OrderTicket;
-  currentBayId: number | null;
-  onClose: () => void;
-  onMoveTicket: (ticket: OrderTicket, bayId: number) => void;
-  onReturnToUnassigned: (ticket: OrderTicket) => void;
-}> = ({
+/** カードを動かす操作（待機の詳細と、抽出中のカードの緊急のパネルで共通） */
+type MoveActions = Pick<
+  ControlViewProps,
+  "onMoveTicket" | "onReturnToUnassigned"
+>;
+
+// 待機・抽出中のカードを別のドリッパーへ（番号。今のドリッパーでも列の最後へ）・今のドリッパーの先頭へ（今から始める）・
+// 待機の先頭へ（抽出中の次。logic/lanes の frontTargets）・未割当に戻す。押したら onDone
+const MoveCardButtons: React.FC<
+  MoveActions & {
+    card: CaosCard;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
+    onDone: () => void;
+  }
+> = ({ card, lane, onMoveTicket, onReturnToUnassigned, onDone }) => {
+  const move = (bayId: number, place?: CaosPlace) => {
+    onMoveTicket(card, bayId, place);
+    onDone();
+  };
+  return (
+    <>
+      <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+        ドリッパーへ移す（列の最後へ）
+      </h3>
+      <div className="grid grid-cols-3 gap-2">
+        {moveTargets(card, lane?.id ?? null).map(
+          ({ bayId, current, disabled }) => (
+            <button
+              key={bayId}
+              type="button"
+              disabled={disabled}
+              onClick={() => move(bayId)}
+              className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
+            >
+              {current ? `${bayId} 最後へ` : bayId}
+            </button>
+          ),
+        )}
+      </div>
+      {lane && (
+        <>
+          <h3 className="mt-4 mb-2 font-black text-[14px] text-slate-700">
+            {dripperLabel(lane.id)} の中で動かす
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            {frontTargets(card, lane).map(
+              ({ bayId, place, label, hint, disabled }) => (
+                <button
+                  key={place}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => move(bayId, place)}
+                  className="flex h-16 touch-manipulation flex-col items-center justify-center rounded-xl border-2 border-amber-300 bg-amber-50 font-black text-[18px] text-amber-950 active:bg-amber-900 active:text-white disabled:opacity-30"
+                >
+                  {label}
+                  {hint && (
+                    <span className="font-bold text-[12px]">（{hint}）</span>
+                  )}
+                </button>
+              ),
+            )}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          onReturnToUnassigned(card);
+          onDone();
+        }}
+        className="mt-5 flex min-h-[60px] w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-4 font-black text-[16px] text-red-700 active:bg-red-100"
+      >
+        <Undo2 className="h-5 w-5" />
+        未割り当に戻す
+      </button>
+    </>
+  );
+};
+
+// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ・待機の先頭へ・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
+// 入れ直し（緊急）の取り消し。
+// パネルの外を押すと閉じる
+export const TicketDetailPanel: React.FC<
+  MoveActions & {
+    ticket: CaosCard;
+    look?: CardLook;
+    /** カードの今のドリッパーの列 */
+    lane?: Lane;
+    onClose: () => void;
+    onSplitCup: (card: CaosCard, cupId: string) => void;
+    /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+    onCancelEmergency?: (card: CaosCard) => void;
+  }
+> = ({
   ticket,
-  currentBayId,
+  look,
+  lane,
   onClose,
   onMoveTicket,
   onReturnToUnassigned,
+  onSplitCup,
+  onCancelEmergency,
 }) => (
-  <SidePanel
-    title="未開始オーダーの移動"
-    onClose={onClose}
-    onOutsidePress={onClose}
-  >
-    <OrderCard card={ticket} size="xl" />
-    <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
-      他のドリッパーへ移動
-    </h3>
-    <div className="grid grid-cols-3 gap-2">
-      {moveTargets(ticket, currentBayId).map(({ bayId, disabled }) => (
-        <button
-          key={bayId}
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            onMoveTicket(ticket, bayId);
+  <SidePanel title="未開始オーダーの移動" onClose={onClose}>
+    <OrderCard card={ticket} look={look} size="xl" />
+    <CommentList comments={look?.comments} className="mt-3" />
+    <MoveCardButtons
+      card={ticket}
+      lane={lane}
+      onMoveTicket={onMoveTicket}
+      onReturnToUnassigned={onReturnToUnassigned}
+      onDone={onClose}
+    />
+    {canSplitCard(ticket) && (
+      <>
+        <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+          統合を解除（外した 1 杯は未割当へ）
+        </h3>
+        <SplitCupButtons
+          card={ticket}
+          onSplit={(cupId) => {
+            onSplitCup(ticket, cupId);
             onClose();
           }}
-          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+          className="grid grid-cols-2"
+        />
+      </>
+    )}
+    {ticket.emergency && onCancelEmergency && (
+      <TwoStepButton
+        label="緊急を取り消す"
+        confirmLabel="もう一度押すと緊急を取り消す"
+        onConfirm={() => {
+          onCancelEmergency(ticket);
+          onClose();
+        }}
+        className="mt-3 h-12 font-black text-base"
+      />
+    )}
+    <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
+      <ArrowRight className="h-4 w-4" />
+      抽出中のカードは、長押しで開く緊急のパネルから移せます
+    </p>
+  </SidePanel>
+);
+
+// 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードのカップを全部選んでおく
+// （注文をまたいで統合したカードは、番号は先頭のカップの注文で、ほかの注文のカップも選べる。外せば一部だけ）。ヘッダーから開けば番号から入れる。
+// 確定すると、未割当のいちばん上に入れ直しのカードが出て（統合したカードの全部の杯なら、元のカードと同じ組み合わせの 1 枚）、そのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
+// 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す。パネルの外を押すと閉じる
+export const RebrewPanel: React.FC<
+  Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
+    card?: CaosCard;
+    look?: CardLook;
+    /** 抽出中のカードの今のドリッパーの列（移すボタンに使う） */
+    lane?: Lane;
+    onClose: () => void;
+    move: MoveActions;
+  }
+> = ({ card, look, lane, onClose, move, ...form }) => {
+  const first = card?.cups[0];
+  return (
+    <SidePanel title="緊急（入れ直し）" onClose={onClose}>
+      {card && (
+        <div className="mb-4">
+          <OrderCard card={card} look={look} size="xl" />
+          <CommentList comments={look?.comments} className="mt-3" />
+        </div>
+      )}
+      <EmergencyForm
+        {...form}
+        initial={
+          first && {
+            orderNo: first.orderNo,
+            cupIds: card.cups.map((cup) => cup.cupId),
+          }
+        }
+        onDone={onClose}
+      />
+      {card?.status === "brewing" && (
+        <MoveCardButtons card={card} lane={lane} {...move} onDone={onClose} />
+      )}
+    </SidePanel>
+  );
+};
+
+// 列の操作（管制盤 A・C・D のドリッパーの番号を押して開く）。担当者の交代と、この列の待機を全部別のドリッパーへ移す（並びのまま最後へ）。
+// パネルの外を押すと閉じる
+export const LanePanel: React.FC<{
+  lane: Lane;
+  onClose: () => void;
+  onMoveQueue: (from: number, to: number) => void;
+}> = ({ lane, onClose, onMoveQueue }) => (
+  <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
+    <div className="flex items-center gap-2">
+      <LaneName dripper={lane.id} className="font-black text-[18px]" />
+      <LaneAbility dripper={lane.id} />
+      <LaneChangeButton
+        dripper={lane.id}
+        layout="inline"
+        className="ml-auto h-11 px-3"
+      />
+    </div>
+    <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
+      この列の待機 {orderCount(lane.queued)}件を移す
+    </h3>
+    <div className="grid grid-cols-3 gap-2">
+      {DRIPPER_NUMBERS.map((to) => (
+        <button
+          key={to}
+          type="button"
+          disabled={to === lane.id || lane.queued.length === 0}
+          data-move-queue={`${lane.id}-${to}`}
+          onClick={() => {
+            onMoveQueue(lane.id, to);
+            onClose();
+          }}
+          className="h-16 touch-manipulation rounded-xl border-2 border-slate-300 bg-white font-black font-mono text-[24px] active:bg-slate-900 active:text-white disabled:opacity-30"
         >
-          {bayId}
+          {to}
         </button>
       ))}
     </div>
-    {ticket.preferredBaristaId && (
-      <p className="mt-2 font-bold text-[13px] text-violet-700">
-        指名オーダー：ドリッパー {laneOrdinal(ticket.preferredBaristaId)} のみ
-      </p>
-    )}
-    <button
-      type="button"
-      onClick={() => {
-        onReturnToUnassigned(ticket);
-        onClose();
-      }}
-      className="mt-5 flex min-h-[60px] w-full touch-manipulation items-center justify-center gap-2 rounded-xl border-2 border-red-200 bg-red-50 px-4 font-black text-[16px] text-red-700 active:bg-red-100"
-    >
-      <Undo2 className="h-5 w-5" />
-      未割り当に戻す
-    </button>
-    <p className="mt-5 flex items-center gap-2 rounded-lg bg-slate-100 p-3 font-bold text-[13px] text-slate-500">
-      <ArrowRight className="h-4 w-4" />
-      抽出開始後はここから変更できません
-    </p>
   </SidePanel>
 );
 
@@ -243,37 +423,48 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 };
 
 export const AuxiliaryContent: React.FC<
-  { tab: AuxiliaryTab } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, baristas, ...analytics }) => {
-  if (tab === "beans") return <BeanQueueView />;
+  {
+    tab: AuxiliaryTab;
+    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
+    beans: React.ComponentProps<typeof BeanQueueView>;
+  } & React.ComponentProps<typeof AnalyticsView>
+> = ({ tab, beans, lanes, ...analytics }) => {
+  if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
-    return <AnalyticsView baristas={baristas} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の今の抽出と待ちの件数
+    return <AnalyticsView lanes={lanes} {...analytics} />;
+  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
   return (
     <div className="grid grid-cols-2 gap-2">
-      {baristas.map((barista) => {
-        const current = barista.queue[0];
+      {lanes.map((lane) => {
+        const [current, ...waiting] = laneActive(lane);
         return (
           <article
-            key={barista.id}
+            key={lane.id}
             className="rounded-xl border border-slate-300 bg-white p-3 shadow-xs"
           >
-            <LaneBadge bayId={barista.id} />
+            <div className="flex items-center gap-2">
+              <LaneBadge bayId={lane.id} />
+              <LaneName
+                dripper={lane.id}
+                className="font-black text-[14px] text-slate-950"
+              />
+              <LaneChooseButton dripper={lane.id} className="ml-auto" />
+            </div>
             <div className="mt-2 border-slate-100 border-t pt-2 text-[12px]">
               {current ? (
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-bold text-slate-700">
-                    {current.beanName}
+                    {cardName(current)}
                   </span>
                   <span className="shrink-0 font-black font-mono text-[15px] text-slate-950">
                     {orderLabel(current)}
                   </span>
                 </div>
               ) : (
-                <span className="font-bold text-slate-400">待機中</span>
+                <span className="font-bold text-slate-400">空き</span>
               )}
               <div className="mt-1 font-bold text-[11px] text-slate-500">
-                待ち {Math.max(0, barista.queue.length - 1)}件
+                待ち {orderCount(waiting)}件
               </div>
             </div>
           </article>

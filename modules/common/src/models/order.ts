@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { WithId } from "../lib/typeguard";
+import type { components } from "../types/api";
 import { type Cup, type CupStatus, cupSchema, getCupStatus } from "./cup";
 import { MenuEntity, menuSchema } from "./menu";
 
@@ -7,14 +8,61 @@ const AUTHORS = ["cashier", "master", "serve", "others"] as const;
 
 export type Author = (typeof AUTHORS)[number];
 
+/** コメントの書き手を 1 文字で出す（POS の注文のカードと CaOS） */
+export const AUTHOR_MARKS: Record<Author, string> = {
+  cashier: "レ",
+  master: "マ",
+  serve: "提",
+  others: "他",
+};
+
+const PAYMENT_METHODS = ["cash", "square"] as const;
+
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+// openapi.yaml の SquareRefundStatus と同じ値
+const SQUARE_REFUND_STATUSES = [
+  "none",
+  "pending",
+  "refunded",
+  "failed",
+  "unknown",
+] as const satisfies readonly components["schemas"]["SquareRefundStatus"][];
+
 export const commentSchema = z.object({
   author: z.enum(AUTHORS),
   text: z.string(),
   createdAt: z.date(),
 });
 
+/**
+ * 個別会計の支払い 1 回分（openapi.yaml の OrderPaymentResponse・OrderPaymentCreate）
+ *
+ * 保存した注文ではサーバーが返したもの。一括で払った注文には無い（空）。
+ * レジで入力中の注文では、個別会計で払った分を入れ、注文を作るときに一緒に送る。
+ */
+export const splitPaymentSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  /** 払った額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+  amount: z.number(),
+  /** お預かり。Square なら amount と同じ */
+  received: z.number(),
+  /** この支払いで引いた割引 */
+  discount: z.number(),
+  /** この支払いで払った明細の、menus の中の位置 */
+  menuIndexes: z.array(z.number()),
+  /** Square の決済依頼の ID。Square で払ったときだけ */
+  squareCheckoutId: z.string().optional(),
+  /** Square の決済画面の種類（SquarePaymentType）。保存した注文の Square の支払いだけ */
+  squarePaymentType: z.string().optional(),
+  /** Square の決済の返金の状態。保存した注文の Square の支払いだけ */
+  squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+});
+
+export type SplitPayment = z.infer<typeof splitPaymentSchema>;
+
 export const orderSchema = z.object({
-  id: z.string().optional(), // Firestore のドキュメント ID
+  id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
   createdAt: z.date(),
   readyAt: z.date().nullable(),
@@ -31,6 +79,12 @@ export const orderSchema = z.object({
   estimateTime: z.number(), // seconds
   // サーバーが作った1杯ずつのカップ。保存前の注文には無い
   cups: z.array(cupSchema).optional(),
+  // サーバーに保存された支払い方法。保存前の注文には無い
+  paymentMethod: z.enum(PAYMENT_METHODS).optional(),
+  // Square で払った注文の、その決済の返金の状態。現金の注文と保存前の注文には無い
+  squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+  // 個別会計の支払い（払った順）。一括で払う注文には無い（空）
+  payments: z.array(splitPaymentSchema).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -40,6 +94,7 @@ export type Order = z.infer<typeof orderSchema>;
  *
  * Square は「決済が先・注文が後」なので、注文を送るときには決済依頼の ID が分かっている。
  * 注文そのもの（OrderEntity）には持たせず、作成のときだけ一緒に送る。
+ * 保存した注文の支払い方法は、サーバーが返したものを OrderEntity.paymentMethod で読める。
  */
 export const orderPaymentSchema = z.discriminatedUnion("method", [
   z.object({ method: z.literal("cash") }),
@@ -111,6 +166,9 @@ export class OrderEntity implements Order {
     private _discount: number,
     private _estimateTime: number,
     private readonly _cups: Cup[],
+    private readonly _paymentMethod: PaymentMethod | undefined,
+    private readonly _squareRefundStatus: Order["squareRefundStatus"],
+    private _payments: SplitPayment[],
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -130,6 +188,9 @@ export class OrderEntity implements Order {
       STATIC_DISCOUNT_PER_CUP,
       0,
       -1,
+      [],
+      undefined,
+      undefined,
       [],
     );
   }
@@ -156,6 +217,9 @@ export class OrderEntity implements Order {
       order.discount,
       order.estimateTime,
       order.cups ?? [],
+      order.paymentMethod,
+      order.squareRefundStatus,
+      order.payments ?? [],
     );
   }
 
@@ -247,19 +311,32 @@ export class OrderEntity implements Order {
     return this._cups;
   }
 
+  get paymentMethod() {
+    return this._paymentMethod;
+  }
+
+  get squareRefundStatus() {
+    return this._squareRefundStatus;
+  }
+
+  /** 個別会計の支払い（払った順）。一括で払う注文では空 */
+  get payments() {
+    return this._payments;
+  }
+  set payments(payments: SplitPayment[]) {
+    this._payments = payments;
+  }
+
   // --------------------------------------------------
   // methods
   // --------------------------------------------------
 
   /**
    * コーヒーの数を取得する
-   * @returns 割引の対象となるコーヒーの数
+   * @returns 割引の対象となるコーヒー（種類の「抽出が要る」が付いたもの）
    */
   getCoffeeCups() {
-    return this.getItems().filter(
-      (item) =>
-        item.item_type.name !== "milk" && item.item_type.name !== "others",
-    );
+    return this.getItems().filter((item) => item.item_type.needs_brew);
   }
 
   getItems() {
@@ -271,13 +348,15 @@ export class OrderEntity implements Order {
           abbr: item.abbr,
           item_type: item.item_type,
           assignee: menu.assignee,
+          dripper: menu.dripper,
         })),
       ),
     );
   }
 
+  /** 種類の「カップを作る」が付いたもの（サーバーがカップを作るものと同じ） */
   getDrinkCups() {
-    return this.getItems().filter((item) => item.item_type.name !== "others");
+    return this.getItems().filter((item) => item.item_type.makes_cup);
   }
 
   /**
@@ -302,12 +381,21 @@ export class OrderEntity implements Order {
       name: cup.item.name,
       abbr: cup.item.abbr,
       item_type: cup.item.item_type,
-      assignee:
-        this.menus.find((menu) => menu.orderMenuId === cup.orderMenuId)
-          ?.assignee ?? null,
+      ...this.cupAssignment(cup.orderMenuId),
       cupId: cup.id,
       status: getCupStatus(cup),
     }));
+  }
+
+  /**
+   * カップを含む注文明細の指名
+   */
+  private cupAssignment(orderMenuId: string) {
+    const menu = this.menus.find((menu) => menu.orderMenuId === orderMenuId);
+    return {
+      assignee: menu?.assignee ?? null,
+      dripper: menu?.dripper ?? null,
+    };
   }
 
   /**
@@ -437,6 +525,9 @@ export class OrderEntity implements Order {
       discount: this.discount,
       estimateTime: this.estimateTime,
       cups: this.cups,
+      paymentMethod: this.paymentMethod,
+      squareRefundStatus: this.squareRefundStatus,
+      payments: this.payments,
     };
   }
 

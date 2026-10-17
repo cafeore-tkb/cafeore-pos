@@ -8,6 +8,7 @@ import (
 
 	"cafeore-pos/api/internal/models"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -31,15 +32,15 @@ func TestBuildOrderMenusSnapshotsNewLines(t *testing.T) {
 
 func TestBuildOrderMenusPreservesExistingSnapshots(t *testing.T) {
 	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
-	assignee := "担当者"
+	assignee, dripper := "担当者", 3
 	old := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, MenuName: "注文時の名前", UnitPrice: 500}
-	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID, Assignee: &assignee}, {MenuId: menuID}}
+	requests := []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &lineID, Assignee: &assignee, Dripper: &dripper}, {MenuId: menuID}}
 	master := models.Menu{ID: menuID, Name: "変更後の名前", Price: 800}
 	lines, err := buildOrderMenus(orderID, requests, []models.OrderMenu{old}, []models.Menu{master})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee {
+	if lines[0].ID != lineID || lines[0].MenuName != old.MenuName || lines[0].UnitPrice != 500 || *lines[0].Assignee != assignee || *lines[0].Dripper != dripper {
 		t.Fatalf("existing snapshot changed: %+v", lines[0])
 	}
 	if lines[1].MenuName != master.Name || lines[1].UnitPrice != 800 {
@@ -49,6 +50,77 @@ func TestBuildOrderMenusPreservesExistingSnapshots(t *testing.T) {
 	lines, err = buildOrderMenus(orderID, requests[:1], []models.OrderMenu{old}, nil)
 	if err != nil || lines[0].UnitPrice != 500 {
 		t.Fatalf("deleted menu's historical line lost: %+v, %v", lines, err)
+	}
+}
+
+func TestBuildOrderMenusAssignsDripper(t *testing.T) {
+	orderID, menuID := uuid.New(), uuid.New()
+	master := []models.Menu{{ID: menuID, Name: "ブレンド", Price: 500}}
+	second, sixth := 2, 6
+	free, blank := " 山田 ", "  "
+	requests := []models.MenuInfoCreate{
+		{MenuId: menuID, Dripper: &second},
+		{MenuId: menuID, Dripper: &sixth, Assignee: &free},
+		{MenuId: menuID, Assignee: &blank},
+		{MenuId: menuID},
+	}
+	lines, err := buildOrderMenus(orderID, requests, nil, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *lines[0].Dripper != 2 || lines[0].Assignee != nil {
+		t.Fatalf("dripper only: %+v", lines[0])
+	}
+	if *lines[1].Dripper != 6 || *lines[1].Assignee != "山田" {
+		t.Fatalf("dripper with free text must be kept and trimmed: %+v", lines[1])
+	}
+	if lines[2].Dripper != nil || lines[2].Assignee != nil || lines[3].Dripper != nil || lines[3].Assignee != nil {
+		t.Fatalf("unassigned lines must have neither: %+v %+v", lines[2], lines[3])
+	}
+	response := toOrderResponse(&models.Order{OrderMenus: lines})
+	if *response.Menus[1].Dripper != 6 || *response.Menus[1].Assignee != "山田" || response.Menus[3].Dripper != nil {
+		t.Fatalf("response must carry dripper: %+v", response.Menus)
+	}
+}
+
+func TestBuildOrderMenusRejectsInvalidAssignment(t *testing.T) {
+	orderID, menuID, lineID := uuid.New(), uuid.New(), uuid.New()
+	master := []models.Menu{{ID: menuID, Name: "ブレンド", Price: 500}}
+	zero, seventh := 0, 7
+	free, changed := "1st", "2nd"
+	legacy := models.OrderMenu{ID: lineID, OrderID: orderID, MenuID: menuID, Assignee: &free, MenuName: "ブレンド", UnitPrice: 500}
+	cases := map[string][]models.MenuInfoCreate{
+		"dripper zero":             {{MenuId: menuID, Dripper: &zero}},
+		"dripper over 6th":         {{MenuId: menuID, Dripper: &seventh}},
+		"free text without number": {{MenuId: menuID, Assignee: &free}},
+		"legacy free text changed": {{MenuId: menuID, OrderMenuId: &lineID, Assignee: &changed}},
+	}
+	for name, requests := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := buildOrderMenus(orderID, requests, []models.OrderMenu{legacy}, master); !errors.Is(err, errInvalidOrderMenus) {
+				t.Fatalf("expected validation error, got %v", err)
+			}
+		})
+	}
+	// 番号より前の注文の自由記述だけの指名は、変えなければそのまま残せる。番号を付けてもよい
+	first := 1
+	for _, request := range []models.MenuInfoCreate{
+		{MenuId: menuID, OrderMenuId: &lineID, Assignee: &free},
+		{MenuId: menuID, OrderMenuId: &lineID, Assignee: &free, Dripper: &first},
+		{MenuId: menuID, OrderMenuId: &lineID},
+	} {
+		if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{request}, []models.OrderMenu{legacy}, master); err != nil {
+			t.Fatalf("legacy line must be editable: %+v, %v", request, err)
+		}
+	}
+	// 番号の付いた明細から番号だけを外して、自由記述を残すことはできない
+	numberedID, third, named := uuid.New(), 3, "山田"
+	numbered := models.OrderMenu{ID: numberedID, OrderID: orderID, MenuID: menuID, Dripper: &third, Assignee: &named, MenuName: "ブレンド", UnitPrice: 500}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID, Assignee: &named}}, []models.OrderMenu{numbered}, master); !errors.Is(err, errInvalidOrderMenus) {
+		t.Fatalf("free text must not stay without its number, got %v", err)
+	}
+	if _, err := buildOrderMenus(orderID, []models.MenuInfoCreate{{MenuId: menuID, OrderMenuId: &numberedID}}, []models.OrderMenu{numbered}, master); err != nil {
+		t.Fatalf("numbered line must be unassignable: %v", err)
 	}
 }
 
@@ -135,7 +207,7 @@ func TestOrderResponseIncludesCups(t *testing.T) {
 	if got.Id != cupID || got.OrderMenuId != lineID || got.Item.Abbr != "ブ" || got.Item.ItemType.Name != "hot" {
 		t.Fatalf("missing cup fields: %+v", got)
 	}
-	if !sameTime(got.ReadyAt, &served) || !sameTime(got.ServedAt, &served) {
+	if !timeEqual(got.ReadyAt, &served) || !timeEqual(got.ServedAt, &served) {
 		t.Fatalf("missing cup status: %+v", got)
 	}
 	if response.Cups[1].ReadyAt != nil || response.Cups[1].ServedAt != nil {
@@ -143,5 +215,77 @@ func TestOrderResponseIncludesCups(t *testing.T) {
 	}
 	if toOrderResponse(&models.Order{}).Cups == nil {
 		t.Fatal("empty cups must serialize as []")
+	}
+}
+
+func TestCreateOrderOnceReturnsExistingOrder(t *testing.T) {
+	saved := &models.Order{ID: uuid.New(), OrderId: 7}
+	errCreate := errors.New("duplicate key")
+	cases := []struct {
+		name         string
+		hasKey       bool
+		found        []*models.Order // findExisting が呼ばれるたびに返す注文
+		createErr    error
+		wantExisting *models.Order
+		wantErr      error
+		wantCreates  int
+	}{
+		{name: "キーなしは毎回作る", hasKey: false, wantCreates: 1},
+		{name: "キーなしの作成失敗はそのまま返す", hasKey: false, createErr: errCreate, wantErr: errCreate, wantCreates: 1},
+		{name: "新しいキーなら作る", hasKey: true, found: []*models.Order{nil}, wantCreates: 1},
+		{name: "保存済みのキーなら作らずに返す", hasKey: true, found: []*models.Order{saved}, wantExisting: saved},
+		{name: "同時に作られて重複したら先の注文を返す", hasKey: true, found: []*models.Order{nil, saved}, createErr: errCreate, wantExisting: saved, wantCreates: 1},
+		{name: "作れず既存も無ければ作成のエラーを返す", hasKey: true, found: []*models.Order{nil, nil}, createErr: errInvalidOrderMenus, wantErr: errInvalidOrderMenus, wantCreates: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			finds, creates := 0, 0
+			find := func() (*models.Order, error) {
+				if finds >= len(tc.found) {
+					t.Fatal("findExisting called too many times")
+				}
+				finds++
+				return tc.found[finds-1], nil
+			}
+			create := func() error {
+				creates++
+				return tc.createErr
+			}
+			existing, err := createOrderOnce(tc.hasKey, find, create)
+			if existing != tc.wantExisting || !errors.Is(err, tc.wantErr) || (tc.wantErr == nil && err != nil) {
+				t.Fatalf("got (%v, %v), want (%v, %v)", existing, err, tc.wantExisting, tc.wantErr)
+			}
+			if creates != tc.wantCreates {
+				t.Fatalf("create called %d times, want %d", creates, tc.wantCreates)
+			}
+		})
+	}
+}
+
+func TestOrderIDFromIdempotencyKey(t *testing.T) {
+	key := uuid.New()
+	nilKey := uuid.Nil
+	cases := []struct {
+		name    string
+		key     *openapi_types.UUID
+		wantKey bool
+	}{
+		{name: "キーなしは新しい ID", key: nil, wantKey: false},
+		{name: "全部 0 のキーはキーなしと同じ", key: &nilKey, wantKey: false},
+		{name: "キーはそのまま ID にする", key: &key, wantKey: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, hasKey := orderIDFromIdempotencyKey(tc.key)
+			if hasKey != tc.wantKey {
+				t.Fatalf("hasKey = %v, want %v", hasKey, tc.wantKey)
+			}
+			if id == uuid.Nil {
+				t.Fatal("order ID must not be the zero UUID")
+			}
+			if tc.wantKey && id != *tc.key {
+				t.Fatalf("id = %v, want %v", id, *tc.key)
+			}
+		})
 	}
 }

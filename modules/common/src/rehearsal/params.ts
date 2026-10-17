@@ -5,26 +5,26 @@
 //
 // * 到着：日ごとに、その日の初回注文を起点とする 10 分ビンに載せ、ビンのレート（件/分）の
 //   四分位で注文を 4 層に分ける。層ごとに「直前の注文からの間隔」を集める
-// * 中身：注文 1 件を役割カテゴリの組にして、同じ組をまとめて回数を数える
+// * 中身：注文 1 件を商品の種類（過去の注文に入っている type。hot・iceOre・others など）の組にして、
+//   同じ組をまとめて回数を数える。種類の名前は POS の DB の種類（item_types.name）と同じもので、
+//   今年のメニューへの置き換え（./menuPlan.ts）はこの名前で DB の種類とつなぐ
 //
 // **観測されているのは需要ではなく、その日の体制でさばけた注文**（スループット）。
 
-import { GOODS_ROLE, roleOf } from "./roles";
+import { jstClock, jstDate } from "../lib/jst";
 
 /** 過去の注文 JSON（`{ orders: [...] }`）の 1 件。使う項目だけ */
 export type RawOrder = {
   orderId: number;
   createdAt: string;
   readyAt?: string | null;
-  items: { id: string; name?: string }[];
+  items: { id: string; name?: string; type: string }[];
 };
 
 /** 注文の組。`weight` は過去にその組が出た回数 */
 export type Basket = {
-  /** 役割ごとの杯数（物販は入らない） */
-  roles: Record<string, number>;
-  /** 物販の個数 */
-  goods: number;
+  /** 種類の名前 → 個数（物販の種類も入る） */
+  types: Record<string, number>;
   weight: number;
 };
 
@@ -40,18 +40,19 @@ export type DayProfile = {
   binRates: number[];
 };
 
-/** 過去の商品 1 つぶんの、年ごとの数。メニューの割り当て画面で「去年の割合」を出すのに使う */
+/** 過去の商品 1 つぶんの、年ごとの数。メニューの割り当て画面で「去年の割合」と内訳を出すのに使う */
 export type PastItem = {
   id: string;
   /** その商品のいちばん新しい名前 */
   name: string;
-  role: string;
+  /** 種類の名前（いちばん新しい注文のもの） */
+  type: string;
   /** 年（"2025" など）→ 出た数（杯または個） */
   counts: Record<string, number>;
 };
 
 export type GeneratorParams = {
-  version: 2;
+  version: 3;
   /** 対象にした開催日と注文の件数 */
   source: { dates: string[]; orders: number };
   binMinutes: number;
@@ -70,13 +71,6 @@ export const BIN_MINUTES = 10;
 export const RATE_STRATA = 4;
 /** これを超える間隔は営業の中断とみなして捨てる（R/metrics.R の add_duration） */
 export const GAP_THRESHOLD_SEC = 5000;
-
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-export const jstDate = (ms: number) =>
-  new Date(ms + JST_OFFSET_MS).toISOString().slice(0, 10);
-const jstClock = (ms: number) =>
-  new Date(ms + JST_OFFSET_MS).toISOString().slice(11, 19);
 
 /** pandas の `Series.quantile()`（既定の線形補間）と同じ値を返す */
 export const quantile = (sorted: number[], q: number): number => {
@@ -144,28 +138,30 @@ export const tagDay = (day: RawOrder[], binMs: number) => {
   return { tagged, profile };
 };
 
-const basketOf = (order: RawOrder) => {
-  const roles: Record<string, number> = {};
-  let goods = 0;
-  for (const item of order.items) {
-    const role = roleOf(item.id);
-    if (role === GOODS_ROLE) {
-      goods += 1;
-    } else {
-      roles[role] = (roles[role] ?? 0) + 1;
-    }
+// 種類の無い品目は止める。黙って捨てると構成比がずれる
+const typeOf = (item: RawOrder["items"][number]) => {
+  if (!item.type) {
+    throw new Error(`種類（type）が入っていない品目があります: ${item.id}`);
   }
-  return { roles, goods };
+  return item.type;
 };
 
-/** 役割を辞書順に並べた組のキー。同じ組をまとめるのに使う */
-export const basketKey = (roles: Record<string, number>, goods: number) =>
-  JSON.stringify([
-    Object.keys(roles)
+const basketOf = (order: RawOrder) => {
+  const types: Record<string, number> = {};
+  for (const item of order.items) {
+    const type = typeOf(item);
+    types[type] = (types[type] ?? 0) + 1;
+  }
+  return types;
+};
+
+/** 種類を辞書順に並べた組のキー。同じ組をまとめるのに使う */
+export const basketKey = (types: Record<string, number>) =>
+  JSON.stringify(
+    Object.keys(types)
       .sort()
-      .map((role) => [role, roles[role]]),
-    goods,
-  ]);
+      .map((type) => [type, types[type]]),
+  );
 
 /**
  * 過去の注文からパラメータを作る。
@@ -228,17 +224,17 @@ export const fitParams = (
   const baskets = new Map<string, Basket>();
   for (const t of tagged) {
     if (t.order.items.length === 0) continue;
-    const { roles, goods } = basketOf(t.order);
-    const key = basketKey(roles, goods);
+    const types = basketOf(t.order);
+    const key = basketKey(types);
     const found = baskets.get(key);
     if (found) {
       found.weight += 1;
     } else {
-      baskets.set(key, { roles, goods, weight: 1 });
+      baskets.set(key, { types, weight: 1 });
     }
   }
 
-  // 商品ごとの数を年ごとに数える。受付順に見るので、名前はその商品のいちばん新しいものが残る
+  // 商品ごとの数を年ごとに数える。受付順に見るので、名前と種類はその商品のいちばん新しいものが残る
   const items = new Map<string, PastItem>();
   for (const t of tagged) {
     const year = jstDate(t.ms).slice(0, 4);
@@ -246,10 +242,11 @@ export const fitParams = (
       const found = items.get(item.id) ?? {
         id: item.id,
         name: item.id,
-        role: roleOf(item.id),
+        type: typeOf(item),
         counts: {},
       };
       if (item.name) found.name = item.name;
+      found.type = typeOf(item);
       found.counts[year] = (found.counts[year] ?? 0) + 1;
       items.set(item.id, found);
     }
@@ -263,7 +260,7 @@ export const fitParams = (
   }
 
   return {
-    version: 2,
+    version: 3,
     source: { dates: [...dates].sort(), orders: tagged.length },
     binMinutes: BIN_MINUTES,
     edges,

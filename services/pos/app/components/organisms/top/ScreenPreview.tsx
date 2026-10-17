@@ -1,11 +1,11 @@
-import { FaCheck, FaCoffee } from "react-icons/fa";
+import { FaCheck } from "react-icons/fa";
 import { HiBell } from "react-icons/hi2";
 import logoSVG from "~/assets/cafeore.svg";
 import { cn } from "~/lib/utils";
 
 /**
  * トップページのカードに出す各画面の見本。
- * 実画面を iframe で埋め込むとレジが Firestore に書き込んだり音が鳴ったりするので、
+ * 実画面を iframe で埋め込むとレジが API に書き込んだり音が鳴ったりするので、
  * レイアウトだけを真似た静的な縮小版を描く。
  * 文字サイズはカード幅に追従させたいので、ルートを cqw で決めて中は em で書く。
  */
@@ -13,12 +13,15 @@ export type ScreenKind =
   | "cashier"
   | "master"
   | "master-sheet"
+  | "master-sheet-view"
+  | "master-sheet-libero"
   | "serve"
   | "cashier-mini"
   | "callscreen"
   | "dashboard"
   | "inventory"
-  | "rehearsal";
+  | "rehearsal"
+  | "products";
 
 export function ScreenPreview({ kind }: { kind: ScreenKind }) {
   const Preview = previews[kind];
@@ -34,13 +37,16 @@ export function ScreenPreview({ kind }: { kind: ScreenKind }) {
 const previews: Record<ScreenKind, () => JSX.Element> = {
   cashier: CashierPreview,
   master: () => <OrderBoardPreview user="master" />,
-  "master-sheet": CaosPreview,
+  "master-sheet": () => <CaosPreview />,
+  "master-sheet-view": () => <CaosPreview readOnly />,
+  "master-sheet-libero": LiberoPreview,
   serve: () => <OrderBoardPreview user="serve" />,
   "cashier-mini": CashierMiniPreview,
   callscreen: CallscreenPreview,
   dashboard: DashboardPreview,
   inventory: InventoryPreview,
   rehearsal: RehearsalPreview,
+  products: ProductsPreview,
 };
 
 function StatusBar() {
@@ -252,49 +258,62 @@ function CashierMiniPreview() {
 }
 
 function CallscreenPreview() {
+  // 呼び出しがある間の画面（お呼び出し中・ドリップ中・準備中の 3 段）。呼び出しが無い間は CM を流す
+  const heading = (ja: string, en: string) => (
+    <div className="flex items-center gap-[0.4em]">
+      <span className="font-zen text-[0.8em] tracking-[0.2em]">{ja}</span>
+      <span className="font-zen text-[0.4em] text-theme-gold uppercase tracking-[0.3em]">
+        {en}
+      </span>
+      <div className="h-px flex-1 bg-linear-to-r from-theme-gold/60 to-transparent" />
+    </div>
+  );
   return (
-    <div className="flex h-full flex-col p-[0.3em]">
-      <div className="flex h-[66%]">
-        <div className="flex w-[40%] items-center justify-center border-r">
-          <div className="rounded-xl px-[1em] py-[0.4em] shadow-[0.3em_0.3em_0.6em_rgba(0,0,0,0.25)]">
-            <span className="font-extrabold text-[3em] text-theme-primary">
-              38
-            </span>
-          </div>
-        </div>
-        <div className="w-[60%] p-[0.5em]">
-          <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
-            <HiBell />
-            お呼び出し中
-            <HiBell />
-          </div>
-          <div className="mt-[0.5em] grid grid-cols-3 gap-[0.4em]">
-            {[35, 36, 38].map((n) => (
-              <div
-                key={n}
-                className="rounded-md border py-[0.2em] text-center font-bold text-[1.4em] text-theme-primary shadow-sm"
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="border-t p-[0.5em]">
-        <div className="flex items-center justify-center gap-[0.3em] rounded-full bg-linear-to-r/oklch from-theme-primary to-theme-sub-deep py-[0.25em] font-bold text-[0.8em] text-white">
-          <FaCoffee />
-          ドリップ中
-        </div>
-        <div className="mt-[0.4em] grid grid-cols-8 gap-[0.3em]">
-          {[39, 40, 41, 42, 43].map((n) => (
+    <div className="flex h-full flex-col gap-[0.4em] bg-[radial-gradient(120%_100%_at_18%_0%,var(--color-theme-primary),var(--color-theme-deep)_50%,color-mix(in_oklch,var(--color-theme-deep)_55%,black))] p-[0.6em] text-white">
+      <div className="flex h-[52%] flex-col gap-[0.3em]">
+        {heading("お呼び出し中", "Now Calling")}
+        <div className="grid flex-1 grid-cols-3 gap-[0.4em]">
+          {[38, 36, 35].map((n) => (
             <div
               key={n}
-              className="rounded border py-[0.1em] text-center font-bold text-[0.8em] text-theme-primary"
+              className="flex items-center justify-center rounded-md border border-theme-gold/50 bg-white/10 font-semibold font-zen text-[2.4em]"
             >
               {n}
             </div>
           ))}
         </div>
+      </div>
+      <div className="flex flex-1 flex-col gap-[0.3em]">
+        {heading("ドリップ中", "Brewing")}
+        <div className="grid flex-1 grid-cols-2 gap-[0.4em]">
+          {[
+            { n: 39, dripper: "1st" },
+            { n: 40, dripper: "3rd" },
+          ].map(({ n, dripper }) => (
+            <div
+              key={n}
+              className="flex flex-col items-center justify-center rounded-md border border-white/15 bg-white/[0.07]"
+            >
+              <span className="font-semibold font-zen text-[1.5em] leading-none">
+                {n}
+              </span>
+              <span className="text-[0.45em] text-theme-gold">
+                {dripper} ドリッパー
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-[0.4em] rounded-md border border-white/10 bg-white/[0.03] px-[0.5em] py-[0.3em]">
+        <span className="font-zen text-[0.7em]">準備中</span>
+        {[41, 42, 43].map((n) => (
+          <span
+            key={n}
+            className="rounded border border-white/15 px-[0.4em] font-zen text-[0.7em] text-white/80"
+          >
+            {n}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -352,19 +371,23 @@ function DashboardPreview() {
 
 function InventoryPreview() {
   const resources = [
-    { kind: "豆", name: "ブラジル", value: "64 杯", level: "ok" },
-    { kind: "豆", name: "エチオピア", value: "18 杯", level: "warning" },
-    { kind: "カップ", name: "ホット用", value: "120 個", level: "ok" },
-    { kind: "カップ", name: "アイス用", value: "9 個", level: "critical" },
+    { kind: "アイテム", name: "ブラジル", value: "64 回分", level: "ok" },
+    {
+      kind: "アイテム",
+      name: "エチオピア",
+      value: "18 回分",
+      level: "warning",
+    },
+    { kind: "カップ", name: "ホット用", value: "120 回分", level: "ok" },
+    { kind: "カップ", name: "アイス用", value: "9 回分", level: "critical" },
   ] as const;
   return (
     <div className="flex h-full flex-col px-[1em] py-[0.8em]">
-      <span className="font-semibold text-[1.2em]">在庫</span>
-      <div className="mt-[0.3em] flex gap-[0.3em] text-[0.6em]">
-        <span className="rounded bg-stone-900 px-[0.6em] py-[0.2em] text-white">
-          残量
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-[1.2em]">在庫</span>
+        <span className="text-[0.6em] text-stone-500 underline">
+          在庫の設定 →
         </span>
-        <span className="rounded border px-[0.6em] py-[0.2em]">設定</span>
       </div>
       <div className="mt-[0.6em] grid flex-1 grid-cols-2 gap-[0.5em]">
         {resources.map((r) => (
@@ -423,8 +446,83 @@ function RehearsalPreview() {
   );
 }
 
+function ProductsPreview() {
+  const menus = [
+    { name: "優勝ブレンド", key: "-", price: "¥500" },
+    { name: "珈琲・俺ブレンド", key: "^", price: "¥300" },
+    { name: "ケニア", key: ";", price: "¥400" },
+    { name: "アイスコーヒー", key: "\\", price: "¥400" },
+    { name: "トートセット", key: "@", price: "¥1000" },
+  ];
+  return (
+    <div className="flex h-full">
+      <div className="flex flex-1 flex-col px-[1em] py-[0.8em]">
+        <span className="font-semibold text-[1.2em]">商品管理</span>
+        <div className="mt-[0.3em] flex w-fit gap-[0.2em] rounded-md bg-muted p-[0.2em] text-[0.55em]">
+          {["メニュー", "アイテム", "タイプ", "背景色", "在庫"].map(
+            (tab, i) => (
+              <span
+                key={tab}
+                className={cn(
+                  "rounded px-[0.5em] py-[0.15em]",
+                  i === 0 ? "bg-white shadow-sm" : "text-stone-500",
+                )}
+              >
+                {tab}
+              </span>
+            ),
+          )}
+        </div>
+        <div className="mt-[0.5em] divide-y rounded-md border text-[0.7em]">
+          {menus.map((menu, i) => (
+            <div
+              key={menu.name}
+              className={cn(
+                "flex items-center gap-[0.6em] px-[0.6em] py-[0.35em]",
+                i === 2 && "bg-muted",
+              )}
+            >
+              <span className="flex-1 font-semibold">{menu.name}</span>
+              <span className="rounded border px-[0.4em] font-mono">
+                {menu.key}
+              </span>
+              <span className="w-[3.5em] text-right tabular-nums">
+                {menu.price}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex w-[34%] flex-col gap-[0.4em] border-l bg-stone-50 p-[0.7em] text-[0.6em] shadow-[-0.3em_0_0.6em_rgba(0,0,0,0.06)]">
+        <span className="font-semibold text-[1.4em]">アイテムの編集</span>
+        <div>
+          <div className="text-stone-500">名前</div>
+          <div className="rounded border bg-white px-[0.4em] py-[0.2em]">
+            ケニア
+          </div>
+        </div>
+        <div className="rounded border bg-white p-[0.4em]">
+          <div className="font-semibold">在庫</div>
+          <div className="mt-[0.2em] flex justify-between">
+            <span>単位</span>
+            <span>g</span>
+          </div>
+          <div className="flex justify-between">
+            <span>1回の量</span>
+            <span>15</span>
+          </div>
+        </div>
+        <span className="mt-auto self-end rounded bg-stone-900 px-[0.8em] py-[0.2em] text-white">
+          保存
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // CaOS（ドリップ管制）の管制盤：ドリッパー1〜6の行に抽出カードがタイムラインで並び、下に未割当の注文。
-function CaosPreview() {
+// readOnly は閲覧だけの画面（/master-sheet/view）。管制盤の切り替えの代わりに「閲覧のみ」を出す。
+function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
   const lanes: {
     state: string;
     cards: { left: number; width: number; tone: string }[];
@@ -455,17 +553,23 @@ function CaosPreview() {
         <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
           CaOS
         </span>
-        {["A", "B", "C", "D"].map((v, i) => (
-          <span
-            key={v}
-            className={cn(
-              "flex h-[1.4em] w-[1.4em] items-center justify-center rounded font-bold text-[0.7em]",
-              i === 0 ? "bg-blue-700 text-white" : "bg-white text-slate-500",
-            )}
-          >
-            {v}
+        {readOnly ? (
+          <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
+            閲覧のみ
           </span>
-        ))}
+        ) : (
+          ["A", "B", "C", "D"].map((v, i) => (
+            <span
+              key={v}
+              className={cn(
+                "flex h-[1.4em] w-[1.4em] items-center justify-center rounded font-bold text-[0.7em]",
+                i === 0 ? "bg-blue-700 text-white" : "bg-white text-slate-500",
+              )}
+            >
+              {v}
+            </span>
+          ))
+        )}
         <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
       </div>
       <div className="relative flex-1 overflow-hidden rounded-md border bg-white">
@@ -504,6 +608,92 @@ function CaosPreview() {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+// CaOS のリベロビュー（/master-sheet/libero）：ドリッパー1〜6の行に、入れ始めてからの時間の長い順の順位と経過を大きく。
+// 長いほど濃く、予定の抽出時間を過ぎたら赤。抽出していないドリッパーは薄く
+function LiberoPreview() {
+  const rows = [
+    {
+      rank: 1,
+      time: "5:44",
+      fill: 100,
+      row: "border-red-500 bg-red-100",
+      mark: "bg-red-500 text-white",
+    },
+    {
+      rank: 3,
+      time: "2:34",
+      fill: 43,
+      row: "border-violet-400 bg-violet-50",
+      mark: "bg-violet-400",
+    },
+    {
+      rank: 4,
+      time: "0:49",
+      fill: 16,
+      row: "border-violet-200 bg-white",
+      mark: "bg-violet-200",
+    },
+    null,
+    {
+      rank: 2,
+      time: "4:54",
+      fill: 82,
+      row: "border-violet-800 bg-violet-100",
+      mark: "bg-violet-800 text-white",
+    },
+    null,
+  ];
+  return (
+    <div className="flex h-full flex-col gap-[0.3em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
+      <div className="flex items-center gap-[0.4em]">
+        <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
+          CaOS
+        </span>
+        <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
+          リベロ
+        </span>
+        <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
+      </div>
+      {rows.map((row, i) => (
+        <div
+          key={`lane-${i + 1}`}
+          className={cn(
+            "flex flex-1 items-center gap-[0.4em] rounded border-2 px-[0.3em]",
+            row ? row.row : "border-transparent bg-slate-200/60 text-slate-400",
+          )}
+        >
+          <span
+            className={cn(
+              "flex h-[1.5em] w-[1.5em] items-center justify-center rounded font-black font-mono",
+              row?.mark,
+            )}
+          >
+            {row?.rank}
+          </span>
+          <span className="w-[2.4em] font-black font-mono text-[0.8em]">
+            {i + 1}
+          </span>
+          {row ? (
+            <>
+              <span className="h-[0.4em] flex-1 overflow-hidden rounded-full bg-slate-900/10">
+                <span
+                  className={cn("block h-full rounded-full", row.mark)}
+                  style={{ width: `${row.fill}%` }}
+                />
+              </span>
+              <span className="font-black font-mono text-[1.2em]">
+                {row.time}
+              </span>
+            </>
+          ) : (
+            <span className="font-bold text-[0.6em]">空き</span>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

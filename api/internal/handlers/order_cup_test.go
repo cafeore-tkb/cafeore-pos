@@ -13,6 +13,13 @@ func testItem(typeName string) models.Item {
 	return models.Item{ID: uuid.New(), Name: typeName, Abbr: typeName, ItemType: models.ItemType{ID: uuid.New(), Name: typeName}}
 }
 
+// カップを作らない種類（商品管理で「カップを作る」を外したもの）の item。名前は判定に使わない
+func testGoodsItem() models.Item {
+	item := testItem("goods")
+	item.ItemType.MakesCup, item.ItemType.NeedsBrew = boolPtr(false), boolPtr(false)
+	return item
+}
+
 func testMenu(items ...models.MenuItem) models.Menu {
 	menu := models.Menu{ID: uuid.New(), Name: "セット"}
 	for _, item := range items {
@@ -38,7 +45,7 @@ func newOrderCups(t *testing.T, orderID uuid.UUID, menus ...models.Menu) ([]mode
 
 func TestBuildOrderCupsExpandsQuantityAndSkipsGoods(t *testing.T) {
 	orderID := uuid.New()
-	hot, ice, goods := testItem("hot"), testItem("ice"), testItem("others")
+	hot, ice, goods := testItem("hot"), testItem("ice"), testGoodsItem()
 	set := testMenu(models.MenuItem{Item: hot, Quantity: 2}, models.MenuItem{Item: goods, Quantity: 1}, models.MenuItem{Item: ice, Quantity: 1})
 	goodsOnly := testMenu(models.MenuItem{Item: goods, Quantity: 3})
 	lines, cups := newOrderCups(t, orderID, set, goodsOnly, set)
@@ -75,7 +82,7 @@ func TestTwoCupSetTogglesEachCup(t *testing.T) {
 		t.Fatalf("serving one cup of a set must not serve the other: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[1], t2)
-	if cupStates(order) != "ss" || !sameTime(order.ServedAt, &t2) {
+	if cupStates(order) != "ss" || !timeEqual(order.ServedAt, &t2) {
 		t.Fatalf("the order must be served with both cups: %s %+v", cupStates(order), order)
 	}
 	toggleCupServed(order, &order.OrderCups[1], t2)
@@ -85,8 +92,8 @@ func TestTwoCupSetTogglesEachCup(t *testing.T) {
 }
 
 func TestSetWithGoodsIsServedWhenAllVisibleCupsAreServed(t *testing.T) {
-	set := testMenu(models.MenuItem{Item: testItem("hot"), Quantity: 1}, models.MenuItem{Item: testItem("others"), Quantity: 1})
-	goods := testMenu(models.MenuItem{Item: testItem("others"), Quantity: 1})
+	set := testMenu(models.MenuItem{Item: testItem("hot"), Quantity: 1}, models.MenuItem{Item: testGoodsItem(), Quantity: 1})
+	goods := testMenu(models.MenuItem{Item: testGoodsItem(), Quantity: 1})
 	_, cups := newOrderCups(t, uuid.New(), set, goods)
 	order := &models.Order{OrderCups: cups}
 	now := time.Now()
@@ -94,17 +101,17 @@ func TestSetWithGoodsIsServedWhenAllVisibleCupsAreServed(t *testing.T) {
 		t.Fatalf("goods must not be cups: %+v", cups)
 	}
 	toggleCupReady(order, &order.OrderCups[0], now)
-	if !sameTime(order.ReadyAt, &now) {
+	if !timeEqual(order.ReadyAt, &now) {
 		t.Fatalf("the order must be ready once its only cup is ready: %+v", order)
 	}
 	toggleCupServed(order, &order.OrderCups[0], now)
-	if !sameTime(order.ServedAt, &now) {
+	if !timeEqual(order.ServedAt, &now) {
 		t.Fatalf("the order must be served once its only cup is served: %+v", order)
 	}
 }
 
 func TestGoodsOnlyOrderHasNoCups(t *testing.T) {
-	goods := testMenu(models.MenuItem{Item: testItem("others"), Quantity: 2})
+	goods := testMenu(models.MenuItem{Item: testGoodsItem(), Quantity: 2})
 	_, cups := newOrderCups(t, uuid.New(), goods)
 	if len(cups) != 0 {
 		t.Fatalf("goods-only order must have no cups: %+v", cups)
@@ -115,7 +122,7 @@ func TestGoodsOnlyOrderHasNoCups(t *testing.T) {
 	}
 	now := time.Now()
 	toggleOrderServed(order, now)
-	if !sameTime(order.ServedAt, &now) {
+	if !timeEqual(order.ServedAt, &now) {
 		t.Fatalf("goods-only order is served by the order-level operation: %+v", order)
 	}
 }
@@ -154,7 +161,7 @@ func TestBuildOrderCupsKeepsCupsOfExistingLines(t *testing.T) {
 			t.Fatalf("kept cup %d must not carry the loaded item: %+v", i, got[i])
 		}
 	}
-	if got[0].ReadyAt != nil || !sameTime(got[1].ServedAt, &t1) || !sameTime(got[1].ReadyAt, &t1) {
+	if got[0].ReadyAt != nil || !timeEqual(got[1].ServedAt, &t1) || !timeEqual(got[1].ReadyAt, &t1) {
 		t.Fatalf("kept cups must keep their status: %+v", got[:2])
 	}
 	// 削除した明細のカップは消え、追加した明細のカップは準備中で作られる
@@ -208,7 +215,7 @@ func TestBuildOrderCupsExpandsLinesWithoutCups(t *testing.T) {
 		if got[i].OrderMenuID != lines[0].ID || got[i].ItemID != hot.ID || got[i].Position != i {
 			t.Fatalf("existing line cup %d: %+v", i, got[i])
 		}
-		if !sameTime(got[i].ServedAt, &served) || !sameTime(got[i].ReadyAt, &served) {
+		if !timeEqual(got[i].ServedAt, &served) || !timeEqual(got[i].ReadyAt, &served) {
 			t.Fatalf("existing line cup %d must copy the order status: %+v", i, got[i])
 		}
 	}
@@ -225,18 +232,26 @@ func TestBuildOrderCupsExpandsLinesWithoutCups(t *testing.T) {
 func TestIsCupItem(t *testing.T) {
 	deleted := testItem("hot")
 	deleted.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
-	deletedGoodsType := testItem("others")
+	deletedGoodsType := testGoodsItem()
 	deletedGoodsType.ItemType.DeletedAt = gorm.DeletedAt{Time: time.Now(), Valid: true}
+	// 削除済みの種類は Preload で読み込まれず、ゼロ値になる
+	typeNotLoaded := testItem("hot")
+	typeNotLoaded.ItemType = models.ItemType{}
+	namedOthers := testItem("others")
+	namedOthers.ItemType.MakesCup = boolPtr(true)
 	for _, tc := range []struct {
 		name string
 		item models.Item
 		want bool
 	}{
 		{"drink", testItem("hot"), true},
-		{"goods", testItem("others"), false},
+		{"goods", testGoodsItem(), false},
 		{"not loaded", models.Item{}, false},
 		{"deleted item", deleted, false},
-		{"deleted goods type", deletedGoodsType, true},
+		{"deleted goods type", deletedGoodsType, false},
+		{"type not loaded", typeNotLoaded, true},
+		// 種類の名前では決めない
+		{"named others but makes cup", namedOthers, true},
 	} {
 		if got := isCupItem(tc.item); got != tc.want {
 			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)

@@ -1,28 +1,38 @@
 import {
-  MasterStateEntity,
   type OrderEntity,
   type OrderStatType,
   type WithId,
-  masterRepository,
+  cupNeedsBrew,
   orderRepository,
   orderStatTypes,
   updateMasterStatus,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
   useSubmit,
 } from "react-router";
+import { toast } from "sonner";
 import { z } from "zod";
+import {
+  type EmergencyInitial,
+  useCupEmergency,
+} from "~/components/functional/useCupEmergency";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import {
+  EmergencyIcon,
+  EmergencySheet,
+} from "~/components/molecules/EmergencyForm";
 import { InputComment } from "~/components/molecules/InputComment";
 import {
   OrderInfoCard,
   WaitingLabel,
 } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
+import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -35,6 +45,9 @@ export default function FielsOfMaster() {
   const { orders } = useOrdersWSContext();
   const submit = useSubmit();
   const isOperational = useOrderStat();
+  const { printer, addEmergency, cancelEmergency } = useCupEmergency();
+  // 開いている緊急の入力（ヘッダーから開けば番号から入れる）
+  const [emergency, setEmergency] = useState<EmergencyInitial | "byNumber">();
 
   const submitOrderStatChange = useCallback(
     (status: OrderStatType) => {
@@ -60,7 +73,7 @@ export default function FielsOfMaster() {
     <div className="p-4 font-sans">
       <div className="flex justify-between pb-4">
         <h1 className="w-1/3 text-3xl">マスター</h1>
-        <div className="flex w-1/3 justify-center">
+        <div className="flex w-1/3 justify-center gap-3">
           <Button
             type="button"
             className={cn(isOperational ? "bg-red-700" : "bg-sky-700")}
@@ -70,8 +83,18 @@ export default function FielsOfMaster() {
           >
             {isOperational ? "オーダーストップする" : "オーダー再開する"}
           </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            className="gap-1.5"
+            onClick={() => setEmergency("byNumber")}
+          >
+            <EmergencyIcon className="h-4 w-4" />
+            番号で緊急
+          </Button>
         </div>
         <div className="flex w-1/3 items-center justify-end gap-3">
+          <PendingPrints count={printer.pendingCount} onRetry={printer.retry} />
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
             orders={orders?.filter((order) => order.servedAt !== null)}
@@ -85,28 +108,69 @@ export default function FielsOfMaster() {
         {orders?.map((order) => {
           return (
             order.servedAt === null && (
-              <MasterOrderCard key={order.id} order={order} />
+              <MasterOrderCard
+                key={order.id}
+                order={order}
+                onEmergency={setEmergency}
+                onCancelEmergency={(id) => cancelEmergency([id])}
+              />
             )
           );
         })}
       </div>
+      {emergency && (
+        <EmergencySheet
+          orders={orders ?? []}
+          initial={emergency === "byNumber" ? undefined : emergency}
+          onAdd={addEmergency}
+          onClose={() => setEmergency(undefined)}
+        />
+      )}
     </div>
   );
 }
 
-// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）
-const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
+// マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）。
+// 抽出が要るカップには緊急（入れ直し）のボタンと、まだ抽出を始めていない入れ直しがあればその取り消し（最後に足したもの）を付ける
+const MasterOrderCard = ({
+  order,
+  onEmergency,
+  onCancelEmergency,
+}: {
+  order: WithId<OrderEntity>;
+  onEmergency: (initial: EmergencyInitial) => void;
+  onCancelEmergency: (emergencyId: string) => void;
+}) => {
   const calling = order.status === "calling";
+  const brewCups = new Map(
+    order.cups.filter(cupNeedsBrew).map((cup) => [cup.id, cup]),
+  );
   return (
     <OrderInfoCard
       order={order}
       timing="present"
       colorScreen="master"
       grayed={calling}
-      cups={order.getCups().map((cup) => ({
+      cups={order.getCups().map(({ cupId, ...cup }) => ({
         ...cup,
+        cupId,
         // 呼び出し中の注文のカップと、準備完了・提供済みのカップは灰色にする
         gray: calling || cup.status !== "preparing",
+        action: cupId && brewCups.has(cupId) && (
+          <EmergencyActions
+            cancelableId={
+              brewCups
+                .get(cupId)
+                ?.emergencies.findLast(
+                  (emergency) => emergency.brewStartedAt === null,
+                )?.id
+            }
+            onEmergency={() =>
+              onEmergency({ orderNo: order.orderId, cupIds: [cupId] })
+            }
+            onCancel={onCancelEmergency}
+          />
+        ),
       }))}
     >
       <InputComment
@@ -119,6 +183,40 @@ const MasterOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
     </OrderInfoCard>
   );
 };
+
+// カップの下の緊急（入力を開く）と、まだ抽出を始めていない入れ直しの取り消し（2 回押しで決める。1 行に並べてカップの高さをそろえる）
+const EmergencyActions = ({
+  cancelableId,
+  onEmergency,
+  onCancel,
+}: {
+  cancelableId: string | undefined;
+  onEmergency: () => void;
+  onCancel: (emergencyId: string) => void;
+}) => (
+  <div className="mt-1 flex gap-1">
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="flex-1 gap-1 border-red-600 font-bold text-red-700 hover:bg-red-50 hover:text-red-800"
+      onClick={onEmergency}
+    >
+      <EmergencyIcon className="h-4 w-4" />
+      緊急
+    </Button>
+    {cancelableId && (
+      <TwoStepButton
+        // 取り消す入れ直しが替わったら、1 回目からにする
+        key={cancelableId}
+        label="取消"
+        confirmLabel="緊急を取り消す"
+        onConfirm={() => onCancel(cancelableId)}
+        className="w-auto px-2"
+      />
+    )}
+  </div>
+);
 
 export const clientAction: ClientActionFunction = async ({ request }) => {
   const formData = await request.formData();
@@ -139,13 +237,18 @@ export const clientAction: ClientActionFunction = async ({ request }) => {
 
     const { status } = submission.value;
 
-    const masterStats =
-      (await masterRepository.get()) ?? MasterStateEntity.createNew();
-
-    masterStats.addOrderStat(status);
-    await masterRepository.set(masterStats);
-
-    await updateMasterStatus(status);
+    try {
+      await updateMasterStatus(status);
+    } catch (e) {
+      console.error(e);
+      toast.error(
+        status === "stop"
+          ? "オーダーストップできませんでした"
+          : "オーダーを再開できませんでした",
+      );
+      // エラーの Response を返すとエラー画面に切り替わってしまうので、通知だけにする
+      return null;
+    }
 
     return new Response("ok");
   }

@@ -5,6 +5,8 @@ import {
   ExclamationTriangleIcon,
   UpdateIcon,
 } from "@radix-ui/react-icons";
+import { cn } from "~/lib/utils";
+import { formatYen } from "~/lib/yen";
 import type {
   SquarePaymentPhase,
   SquarePaymentState,
@@ -17,7 +19,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
-import { Button } from "../ui/button";
+import { dialogButton } from "./cashier/CashierDialog";
 
 export const squarePaymentTypeLabel: Record<SquarePaymentType, string> = {
   CARD_PRESENT: "カード",
@@ -42,12 +44,18 @@ const phaseTitle: Record<SquarePaymentPhase, string> = {
 
 type Props = {
   state: SquarePaymentState | null;
+  /** 決済画面を出している端末の名前 */
+  deviceName?: string;
   canSubmitOrder: boolean;
+  /** 小計分割の 1 回分なら、このあと残る小計の額。でなければ undefined */
+  remainingAfter?: number;
   onCancel: () => void;
   onRetry: () => void;
   onCancelConflicting: () => void;
   onSubmitPaid: () => void;
   onClose: () => void;
+  /** 決済できなかったときの「一部金額を先払い」（残高不足など）。出さなければ undefined */
+  onSplit?: () => void;
 };
 
 /**
@@ -57,17 +65,20 @@ type Props = {
  */
 export const SquarePaymentDialog = ({
   state,
+  deviceName,
   canSubmitOrder,
+  remainingAfter,
   onCancel,
   onRetry,
   onCancelConflicting,
   onSubmitPaid,
   onClose,
+  onSplit,
 }: Props) => {
   if (state === null) {
     return null;
   }
-  const { phase, order, paymentType, checkout, message } = state;
+  const { phase, order, amount, paymentType, checkout, message } = state;
   // 結果がいつまでも決まらない（受取額を確かめられないなど）ときの逃げ道。
   // 閉じた後に支払いが確定したら「未登録の Square 決済」に出る。
   const stuck =
@@ -90,80 +101,104 @@ export const SquarePaymentDialog = ({
         onEscapeKeyDown={(event) => event.preventDefault()}
         // 開いた瞬間に「取り消す」へフォーカスを移さない（Enter の押し過ぎで取り消さないように）
         onOpenAutoFocus={(event) => event.preventDefault()}
-        className="max-w-md"
+        overlayClassName="bg-stone-900/50"
+        className="w-[460px] max-w-[calc(100vw-32px)] gap-0 overflow-hidden rounded-xl border-0 p-0 font-noto text-stone-900 shadow-[0_0_0_1px_rgba(0,0,0,.08),0_24px_64px_-12px_rgba(0,0,0,.45)] sm:rounded-xl"
       >
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2 text-2xl">
+        <div className="flex h-12 items-center gap-2.5 border-stone-200 border-b bg-stone-100 px-4">
+          <span className="font-bold text-[13px] text-sky-800">
+            Square 端末
+          </span>
+          {deviceName && (
+            <span className="text-[13px] text-stone-500">{deviceName}</span>
+          )}
+        </div>
+        <AlertDialogHeader className="gap-3 space-y-0 px-5 pt-4.5 pb-2 text-left sm:text-left">
+          <AlertDialogTitle className="flex items-center gap-2.5 font-extrabold text-[22px]">
             {(phase === "creating" ||
               phase === "waiting" ||
               phase === "canceling" ||
               phase === "submitting") && (
-              <UpdateIcon className="h-6 w-6 animate-spin" />
+              <UpdateIcon className="h-6 w-6 flex-none animate-spin" />
             )}
             {phase === "paid" && (
-              <CheckCircledIcon className="h-6 w-6 text-green-700" />
+              <CheckCircledIcon className="h-6 w-6 flex-none text-green-700" />
             )}
             {phase === "failed" && (
-              <CrossCircledIcon className="h-6 w-6 text-red-700" />
+              <CrossCircledIcon className="h-6 w-6 flex-none text-red-700" />
             )}
             {(phase === "attention" || phase === "conflict") && (
-              <ExclamationTriangleIcon className="h-6 w-6 text-orange-600" />
+              <ExclamationTriangleIcon className="h-6 w-6 flex-none text-orange-600" />
             )}
             {phaseTitle[phase]}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="space-y-2 text-base text-stone-700">
-              <div className="flex justify-between">
+            <div className="flex flex-col gap-3 text-[13px] text-stone-500 leading-relaxed">
+              <div className="flex justify-between text-base text-stone-700">
                 <span>No.{order.orderId}</span>
                 <span>{squarePaymentTypeLabel[paymentType]}</span>
               </div>
-              <div className="flex justify-between font-bold text-2xl text-black">
-                <span>請求額</span>
-                <span>&yen;{order.billingAmount}</span>
+              <div className="flex items-baseline justify-between font-extrabold text-stone-900 tabular-nums">
+                <span className="text-[22px]">請求額</span>
+                <span className="text-3xl">{formatYen(amount)}</span>
               </div>
+              {remainingAfter !== undefined && remainingAfter > 0 && (
+                <div className="flex justify-between font-bold text-[13px] text-prepay">
+                  <span>分割の 1 回分（このあと残り）</span>
+                  <span className="tabular-nums">
+                    {formatYen(remainingAfter)}
+                  </span>
+                </div>
+              )}
               {phase === "waiting" && (
-                <p className="text-sm text-stone-500">
+                <p>
                   端末の画面でお客さんに操作してもらってください。5
                   分で自動的に取り消されます。
                 </p>
               )}
               {phase === "waiting" && paymentType === "FELICA_ALL" && (
-                <p className="text-sm text-stone-500">
+                <p>
                   電子マネーで端末にエラーが出たときは、レジからは取り消せません。端末の画面で取り消してください。
                 </p>
               )}
               {phase === "canceling" && checkout?.cancel_reason == null && (
-                <p className="text-sm text-stone-500">
+                <p>
                   お客さんが操作中のときは、端末で取り消されるまで待ちます。
                 </p>
               )}
               {phase === "paid" && !canSubmitOrder && (
-                <p className="font-bold text-red-700 text-sm">
+                <p className="font-bold text-red-700">
                   お金は受け取っています。通信が戻ったら「注文を送信」を押してください。現金で取り直さないでください。
                 </p>
               )}
               {submitFailed && canSubmitOrder && (
-                <p className="font-bold text-red-700 text-sm">
+                <p className="font-bold text-red-700">
                   お金は受け取っています。現金で取り直さず、「注文を送信」で送り直してください。送り直しても登録できないときは、閉じて注文の一覧を確かめてください。登録されていなければ、右上の「未登録の
                   Square 決済」から登録できます。
                 </p>
               )}
               {phase === "failed" && (
-                <p className="text-sm">
+                <p className="text-stone-700">
                   お金は受け取っていません。もう一度端末で決済するか、現金で受け取ってください。
                 </p>
               )}
-              {message && <p className="text-red-700 text-sm">{message}</p>}
+              {phase === "failed" && onSplit && (
+                <p className="rounded-lg bg-prepay-soft px-3.5 py-3 font-medium text-prepay-ink">
+                  残高が足りないときは、使える分だけ
+                  {squarePaymentTypeLabel[paymentType]}
+                  で先に払ってもらい、残りを別の方法で受け取れます。
+                </p>
+              )}
+              {message && <p className="text-red-700">{message}</p>}
               {stuck && (
-                <p className="font-bold text-red-700 text-sm">
+                <p className="font-bold text-red-700">
                   結果を確かめられません。端末と Square
                   の管理画面を確認してください。閉じた後に支払いが確定したら、右上の「未登録の
                   Square 決済」に出ます。
                 </p>
               )}
               {phase === "conflict" && state.conflicting && (
-                <p className="text-sm text-stone-500">
-                  進行中: &yen;{state.conflicting.amount}
+                <p>
+                  進行中: {formatYen(state.conflicting.amount)}
                   {state.conflicting.order_number != null &&
                     `（No.${state.conflicting.order_number}）`}
                 </p>
@@ -171,29 +206,61 @@ export const SquarePaymentDialog = ({
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="gap-2">
+        <AlertDialogFooter className="min-h-12 gap-2 px-5 pt-3 pb-4.5 sm:space-x-0">
           {phase === "waiting" && (
-            <Button variant="destructive" onClick={onCancel}>
+            <button
+              type="button"
+              onClick={onCancel}
+              className={dialogButton.destructive}
+            >
               取り消す
-            </Button>
+            </button>
           )}
-          {phase === "failed" && checkout === null && (
-            <Button onClick={onRetry}>もう一度送る</Button>
+          {phase === "failed" && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className={dialogButton.cancel}
+            >
+              もう一度送る
+            </button>
+          )}
+          {phase === "failed" && onSplit && (
+            <button
+              type="button"
+              onClick={onSplit}
+              className="h-12 rounded-[10px] bg-prepay px-5 font-bold text-[15px] text-white"
+            >
+              一部金額を先払い
+            </button>
           )}
           {phase === "conflict" && (
-            <Button variant="destructive" onClick={onCancelConflicting}>
+            <button
+              type="button"
+              onClick={onCancelConflicting}
+              className={dialogButton.destructive}
+            >
               進行中の決済を取り消す
-            </Button>
+            </button>
           )}
           {phase === "paid" && (
-            <Button onClick={onSubmitPaid} disabled={!canSubmitOrder}>
+            <button
+              type="button"
+              onClick={onSubmitPaid}
+              disabled={!canSubmitOrder}
+              className={cn(dialogButton.primary, "disabled:opacity-40")}
+            >
               注文を送信
-            </Button>
+            </button>
           )}
           {closable && (
-            <Button variant="outline" onClick={onClose}>
+            <button
+              type="button"
+              onClick={onClose}
+              className={dialogButton.cancel}
+            >
               閉じる
-            </Button>
+            </button>
           )}
         </AlertDialogFooter>
       </AlertDialogContent>

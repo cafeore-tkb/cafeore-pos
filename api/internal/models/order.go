@@ -19,11 +19,19 @@ type Order struct {
 	DiscountOrderId   int
 	DiscountOrderCups int
 	// "cash" か "square"。Square の決済は square_checkouts.order_id から引く。
+	// 個別会計（Payments）では、Square の支払いを含めば "square"。
 	PaymentMethod string `gorm:"not null;default:'cash'"`
 
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
 	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`
 	Comments   []Comment   `gorm:"foreignKey:OrderID;references:ID"`
+	// 個別会計の支払い（払った順）。一括で払った注文では空
+	Payments []OrderPayment `gorm:"foreignKey:OrderID;references:ID"`
+
+	// この注文に使った Square の決済（返金の状態を応答に載せるのに使う）。個別会計では複数ある。
+	// DB の列でも関連でもなく、読んだあとに handlers の attachSquareCheckouts で埋める。関連にすると
+	// AutoMigrate が square_checkouts.order_id に外部キーを張ってしまう。
+	SquareCheckouts []SquareCheckout `gorm:"-"`
 }
 
 func (o *Order) BeforeCreate(tx *gorm.DB) error {

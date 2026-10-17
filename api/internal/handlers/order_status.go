@@ -20,13 +20,9 @@ import (
 //     先に個別で提供したカップは残るので、提供の取消で一部提供の状態に戻る。
 //   - カップ単位の操作では、全カップがそろったら注文にも付け、そろわなくなったら外す。
 //
-// カップが無い注文（グッズだけの注文）は、注文単位の状態だけを持つ。
+// カップが無い注文（グッズだけの注文）は、注文単位の状態だけを持つ。作成・編集のときは提供済みにする（serveCuplessOrder）。
 
 var errOrderCupNotFound = errors.New("order cup not found")
-
-func sameTime(a, b *time.Time) bool {
-	return a != nil && b != nil && a.Equal(*b)
-}
 
 // 全カップに時刻が付いていれば一番遅い時刻を、1つでも欠けていれば nil を返す
 func allCupsAt(cups []models.OrderCup, at func(*models.OrderCup) *time.Time) *time.Time {
@@ -59,6 +55,21 @@ func syncOrderWithCups(order *models.Order) {
 	order.ServedAt = allCupsAt(order.OrderCups, cupServedAt)
 }
 
+// カップが1つもできない注文（構成品の種類の「カップを作る」（makes_cup）が全部 false＝グッズだけの注文）は、
+// マスター・提供画面で作るものが無いので、準備完了・提供済みにする。付いている時刻は残し、無ければ now を付ける。
+// カップのある注文はそのままにする（状態はカップから決まる）。注文の作成・編集のときに呼ぶ。
+func serveCuplessOrder(order *models.Order, now time.Time) {
+	if len(order.OrderCups) > 0 {
+		return
+	}
+	if order.ServedAt == nil {
+		order.ServedAt = &now
+	}
+	if order.ReadyAt == nil {
+		order.ReadyAt = order.ServedAt
+	}
+}
+
 // PATCH /api/orders/:id/ready の切り替え
 func toggleOrderReady(order *models.Order, now time.Time) {
 	cups := order.OrderCups
@@ -73,7 +84,7 @@ func toggleOrderReady(order *models.Order, now time.Time) {
 	}
 	prev := order.ReadyAt
 	for i := range cups {
-		if cups[i].ServedAt == nil && sameTime(cups[i].ReadyAt, prev) {
+		if cups[i].ServedAt == nil && timeEqual(cups[i].ReadyAt, prev) {
 			cups[i].ReadyAt = nil
 		}
 	}
@@ -108,13 +119,13 @@ func toggleOrderServed(order *models.Order, now time.Time) {
 	prev := order.ServedAt
 	unserve := func(cup *models.OrderCup) {
 		// 提供と同時に付いた ready_at だけ外す
-		if sameTime(cup.ReadyAt, cup.ServedAt) {
+		if timeEqual(cup.ReadyAt, cup.ServedAt) {
 			cup.ReadyAt = nil
 		}
 		cup.ServedAt = nil
 	}
 	for i := range cups {
-		if sameTime(cups[i].ServedAt, prev) {
+		if timeEqual(cups[i].ServedAt, prev) {
 			unserve(&cups[i])
 		}
 	}
@@ -156,16 +167,12 @@ func toggleCupServed(order *models.Order, cup *models.OrderCup, now time.Time) {
 			cup.ReadyAt = &now
 		}
 	} else {
-		if sameTime(cup.ReadyAt, cup.ServedAt) {
+		if timeEqual(cup.ReadyAt, cup.ServedAt) {
 			cup.ReadyAt = nil
 		}
 		cup.ServedAt = nil
 	}
 	syncOrderWithCups(order)
-}
-
-func timeEqual(a, b *time.Time) bool {
-	return (a == nil && b == nil) || sameTime(a, b)
 }
 
 // 変更前（before）から変わった注文・カップだけを保存する。
@@ -197,7 +204,7 @@ func saveOrderStatus(tx *gorm.DB, before, order *models.Order) error {
 // 注文の行をロックしてから、明細とカップを読む。
 // 同じ注文への操作（状態の変更や編集）が重なっても、片方の変更が消えないようにする。
 func lockOrder(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
-	return lockOrderWith(tx.Preload("OrderMenus"), orderID)
+	return lockOrderWith(tx.Preload("OrderMenus.StockUsages"), orderID)
 }
 
 // 状態の変更ではカップしか使わないので、明細は読まない
@@ -209,7 +216,7 @@ func lockOrderWith(tx *gorm.DB, orderID uuid.UUID) (models.Order, error) {
 	return order, err
 }
 
-// 注文とカップの状態を1トランザクションで変更し、変更後の注文を返して配信する。
+// 注文とカップの状態を1トランザクションで変更し、変更後の注文を返して配信する。CaOS の盤面（抽出の時刻）は書かない。
 func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *models.Order, now time.Time) error) {
 	orderID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -217,12 +224,14 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 
+	var before, order models.Order
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		order, err := lockOrderWith(tx, orderID)
+		var err error
+		order, err = lockOrderWith(tx, orderID)
 		if err != nil {
 			return err
 		}
-		before := order
+		before = order
 		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
 		// DB に保存される精度にそろえておくと、保存前後で時刻を比べられる
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
@@ -248,6 +257,8 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	}
 	c.JSON(http.StatusOK, resp)
+	// 抽出が要るカップの在庫は、提供可能（無ければ提供済み）にした時刻で使う（Inventory.consumption）
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(orderID)) }()
 }
 
 // カップ単位の操作。対象のカップがこの注文のものでなければ 404 にする。

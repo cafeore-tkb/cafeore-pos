@@ -21,10 +21,9 @@ import (
 )
 
 const (
-	// 棚卸しの時点で受けていてまだ作っていない注文は、実数に含まれているのに
-	// 後から作られる。ready_at で後から消費したものとして数えるが、
-	// 作られないまま放置された古い注文まで拾わないよう遡る範囲を絞る。
-	pendingOrderWindow = 3 * time.Hour
+	// 残量を数えるとき、棚卸し（か 1 時間前）よりこの時間より前に受けた注文は読まない
+	// （提供可能・提供済みにするのは受けた日のうち。それより後に提供しても、棚卸しの後に使った分に数えない）
+	usageLookback = 24 * time.Hour
 	// リマインドを送るのは、この時間内に注文がある（営業している）ときだけ。
 	remindActiveWindow = 3 * time.Hour
 	// この時間内に棚卸ししたものはリマインドに載せない。
@@ -37,6 +36,8 @@ type Inventory struct {
 	slack      *notify.Slack
 	remindAuth RemindAuth
 	posURL     string
+	// 在庫対象の変更と、棚卸し・入荷・調整の記録を流す
+	activity *notify.Activity
 }
 
 // POST /api/inventory/remind を叩いてよい相手。どちらか一方を満たせば通す。
@@ -48,8 +49,8 @@ type RemindAuth struct {
 	CronSecret string
 }
 
-func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string) *Inventory {
-	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL}
+func NewInventory(db *gorm.DB, slack *notify.Slack, remindAuth RemindAuth, posURL string, activity *notify.Activity) *Inventory {
+	return &Inventory{db: db, slack: slack, remindAuth: remindAuth, posURL: posURL, activity: activity}
 }
 
 // ids が nil なら削除されていない在庫対象すべて。
@@ -57,12 +58,15 @@ func (inv *Inventory) snapshots(ctx context.Context, ids []uuid.UUID) ([]stockSn
 	db := inv.db.WithContext(ctx)
 
 	var resources []models.StockResource
-	q := db.Order("kind DESC, name")
+	// カップを先に、それぞれ名前の順に並べる
+	q := db.Preload("Item").Preload("ItemTypes").
+		Joins("LEFT JOIN items ON items.id = stock_resources.item_id").
+		Order("stock_resources.kind, COALESCE(items.name, stock_resources.name)")
 	if ids != nil {
 		if len(ids) == 0 {
 			return nil, nil
 		}
-		q = q.Where("id IN ?", ids)
+		q = q.Where("stock_resources.id IN ?", ids)
 	}
 	if err := q.Find(&resources).Error; err != nil {
 		return nil, err
@@ -90,40 +94,27 @@ func (inv *Inventory) snapshots(ctx context.Context, ids []uuid.UUID) ([]stockSn
 	return result, nil
 }
 
+// since より後に使った分を数える。棚卸しの実数には、そのときまでに使った分がもう引かれているので、
+// 残りは実数から since より後に使った分を引けばよい（まだ使っていない分は棚に残っているので引かない）。
 func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time.Time) error {
 	var row struct {
 		Consumed         float64
 		Servings         int
 		ServingsLastHour int
 	}
-
-	pendingFrom := since.Add(-pendingOrderWindow)
 	hourAgo := now.Add(-time.Hour)
 	// SQL の LEAST() に渡すと simple protocol では text 同士の比較になるので、ここで決める。
-	scanFrom := pendingFrom
+	scanFrom := since
 	if hourAgo.Before(scanFrom) {
 		scanFrom = hourAgo
 	}
-
-	// since 以降に受けた注文と、since より前に受けて since 以降に作った（まだ作っていない）注文。
-	err := db.Raw(`
-		SELECT
-			COALESCE(SUM(mi.quantity * u.amount) FILTER (WHERE `+consumedAfter+`), 0) AS consumed,
-			COALESCE(SUM(mi.quantity) FILTER (WHERE `+consumedAfter+`), 0) AS servings,
-			COALESCE(SUM(mi.quantity) FILTER (WHERE o.created_at > @hour_ago), 0) AS servings_last_hour
-		FROM orders o
-		JOIN order_menus om ON om.order_id = o.id
-		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
-		WHERE u.resource_id = @resource_id
-			AND o.created_at > @scan_from`,
-		map[string]any{
-			"resource_id":  s.Resource.ID,
-			"since":        since,
-			"pending_from": pendingFrom,
-			"hour_ago":     hourAgo,
-			"scan_from":    scanFrom,
-		}).Scan(&row).Error
+	err := db.Raw(stockUsedQuery, map[string]any{
+		"resource_id": s.Resource.ID,
+		"item_id":     s.Resource.ItemID,
+		"since":       since,
+		"hour_ago":    hourAgo,
+		"scan_from":   scanFrom.Add(-usageLookback),
+	}).Scan(&row).Error
 	if err != nil {
 		return err
 	}
@@ -132,7 +123,50 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 	return nil
 }
 
-const consumedAfter = `o.created_at > @since OR (o.created_at > @pending_from AND (o.ready_at IS NULL OR o.ready_at > @since))`
+// 在庫対象 @resource_id（アイテムの在庫なら、そのアイテムが @item_id）を使った分を、使った時刻（used_at）ごとに分けて足す。量は受けたとき・足したときに残したもの
+// （order_stock_usages・cup_emergency_stock_usages）で数え、使った時刻はその物を実際に使った時刻にする：
+//   - 注文の明細のうち、抽出が要るカップの分（brewed）：カップ 1 杯ずつ、提供の画面でそのカップを提供可能にした時刻
+//     （order_cups.ready_at。無ければ提供済みにした時刻 served_at）。どちらも無ければ used_at が NULL で、まだ使っていない。
+//     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
+//     明細の回数まで（並びの順）。あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
+//   - 明細の残り（抽出の要らない物：グッズ・ミルク・コースターなど。カップの無い前の注文も）：注文を受けた時刻（orders.created_at）
+//   - 緊急（入れ直し）：入れ直しを足した時刻（cup_emergencies.created_at。取り消すと行ごと消える）
+//
+// 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。
+const stockUsedQuery = `
+WITH lines AS (
+	SELECT u.order_menu_id, u.servings, u.amount, o.created_at
+	FROM order_stock_usages u JOIN orders o ON o.id = u.order_id
+	WHERE u.resource_id = @resource_id AND u.servings > 0 AND o.created_at > @scan_from
+),
+brewed AS (
+	SELECT * FROM (
+		SELECT l.order_menu_id, l.servings, l.amount, COALESCE(c.ready_at, c.served_at) AS used_at,
+			ROW_NUMBER() OVER (PARTITION BY l.order_menu_id ORDER BY c.position) AS n
+		FROM lines l
+		JOIN order_cups c ON c.order_menu_id = l.order_menu_id
+		JOIN items i ON i.id = c.item_id
+		JOIN item_types t ON t.id = i.item_type_id
+		WHERE t.makes_cup AND t.needs_brew AND (c.item_id = @item_id OR i.item_type_id IN (
+			SELECT item_type_id FROM stock_resource_item_types WHERE resource_id = @resource_id))
+	) b WHERE n <= servings
+),
+used AS (
+	SELECT 1 AS servings, amount / servings AS amount, used_at FROM brewed
+	UNION ALL
+	SELECT l.servings - COALESCE(b.cups, 0), l.amount * (l.servings - COALESCE(b.cups, 0)) / l.servings, l.created_at
+	FROM lines l
+	LEFT JOIN (SELECT order_menu_id, COUNT(*) AS cups FROM brewed GROUP BY order_menu_id) b ON b.order_menu_id = l.order_menu_id
+	UNION ALL
+	SELECT u.servings, u.amount, e.created_at
+	FROM cup_emergency_stock_usages u JOIN cup_emergencies e ON e.id = u.cup_emergency_id
+	WHERE u.resource_id = @resource_id AND e.created_at > @scan_from
+)
+SELECT
+	COALESCE(SUM(amount) FILTER (WHERE used_at > @since), 0) AS consumed,
+	COALESCE(SUM(servings) FILTER (WHERE used_at > @since), 0) AS servings,
+	COALESCE(SUM(servings) FILTER (WHERE used_at > @hour_ago), 0) AS servings_last_hour
+FROM used`
 
 // 通知の閾値を切ったものを Slack に流す。ids が nil ならすべて。
 // Slack への送信で応答を待たせないよう goroutine で呼ぶので、失敗してもログに残すだけにする。
@@ -228,19 +262,23 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 	return errors.Join(sendErr, loopErr)
 }
 
-// 注文に含まれるアイテムが使う在庫対象。
-func (inv *Inventory) ResourceIDsForOrder(orderID uuid.UUID) []uuid.UUID {
+// 注文で減る在庫対象（明細と、その注文のカップの緊急（入れ直し）の分）。
+func (inv *Inventory) ResourceIDsForOrders(orderIDs ...uuid.UUID) []uuid.UUID {
 	if inv == nil {
 		return nil
 	}
 	ids := []uuid.UUID{}
+	if len(orderIDs) == 0 {
+		return ids
+	}
 	if err := inv.db.Raw(`
-		SELECT DISTINCT u.resource_id
-		FROM order_menus om
-		JOIN menu_items mi ON mi.menu_id = om.menu_id
-		JOIN item_stock_usages u ON u.item_id = mi.item_id
-		WHERE om.order_id = ?`, orderID).Scan(&ids).Error; err != nil {
-		log.Printf("inventory: failed to load resources for order %s: %v", orderID, err)
+		SELECT resource_id FROM order_stock_usages WHERE order_id IN @orders
+		UNION
+		SELECT u.resource_id FROM cup_emergency_stock_usages u
+		JOIN cup_emergencies e ON e.id = u.cup_emergency_id
+		JOIN order_cups c ON c.id = e.order_cup_id
+		WHERE c.order_id IN @orders`, map[string]any{"orders": orderIDs}).Scan(&ids).Error; err != nil {
+		log.Printf("inventory: failed to load resources for orders %v: %v", orderIDs, err)
 		return nil
 	}
 	return ids
@@ -276,15 +314,21 @@ func NewInventoryHandler(inv *Inventory) *InventoryHandler {
 }
 
 func toStockResourceResponse(r *models.StockResource) models.StockResourceResponse {
+	itemTypeIDs := make([]openapi_types.UUID, len(r.ItemTypes))
+	for i, t := range r.ItemTypes {
+		itemTypeIDs[i] = t.ItemTypeID
+	}
 	return models.StockResourceResponse{
-		Id:         openapi_types.UUID(r.ID),
-		Kind:       models.StockResourceKind(r.Kind),
-		Name:       r.Name,
-		Unit:       r.Unit,
-		PerServing: r.PerServing,
-		NotifyFrom: r.NotifyFrom,
-		NotifyStep: r.NotifyStep,
-		Buffer:     r.Buffer,
+		Id:          openapi_types.UUID(r.ID),
+		Kind:        models.StockResourceKind(r.Kind),
+		ItemId:      r.ItemID,
+		Name:        r.DisplayName(),
+		ItemTypeIds: itemTypeIDs,
+		Unit:        r.Unit,
+		PerServing:  r.PerServing,
+		NotifyFrom:  r.NotifyFrom,
+		NotifyStep:  r.NotifyStep,
+		Buffer:      r.Buffer,
 	}
 }
 
@@ -315,12 +359,13 @@ func toStockEventResponse(e *models.StockEvent) models.StockEventResponse {
 	}
 }
 
-func validateStockResource(req *models.StockResourceRequest) error {
+// cup ならカップの名前も見る。アイテムの在庫は名前も使う種類も持たない（名前はアイテムの名前）。
+func validateStockResource(req *models.StockResourceRequest, cup bool) error {
 	switch {
-	case req.Kind != models.StockResourceKindCup && req.Kind != models.StockResourceKindBean:
-		return errors.New("kind must be cup or bean")
-	case strings.TrimSpace(req.Name) == "":
-		return errors.New("name is required")
+	case cup && (req.Name == nil || strings.TrimSpace(*req.Name) == ""):
+		return errors.New("name is required for cups")
+	case !cup && (req.Name != nil || req.ItemTypeIds != nil):
+		return errors.New("name and item_type_ids are only for cups; item stock is named after its item, so rename the item instead")
 	case req.PerServing <= 0:
 		return errors.New("per_serving must be positive")
 	case req.NotifyFrom < 0 || req.NotifyStep < 0 || req.Buffer < 0:
@@ -352,32 +397,39 @@ func (h *InventoryHandler) GetInventory(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
-// POST /api/inventory/resources - 在庫対象の作成
+// POST /api/inventory/resources - カップの作成（アイテムの在庫はアイテムと一緒に作る）
 func (h *InventoryHandler) CreateStockResource(c *gin.Context) {
 	var req models.CreateStockResourceJSONRequestBody
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateStockResource(&req); err != nil {
+	if err := validateStockResource(&req, true); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	resource := models.StockResource{
-		Kind:       string(req.Kind),
-		Name:       strings.TrimSpace(req.Name),
+		Kind:       string(models.StockResourceKindCup),
+		Name:       strings.TrimSpace(*req.Name),
 		Unit:       req.Unit,
 		PerServing: req.PerServing,
 		NotifyFrom: req.NotifyFrom,
 		NotifyStep: req.NotifyStep,
 		Buffer:     req.Buffer,
 	}
-	if err := h.inv.db.Create(&resource).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&resource).Error; err != nil {
+			return err
+		}
+		return replaceCupItemTypes(tx, &resource, req.ItemTypeIds)
+	})
+	if err != nil {
+		c.JSON(stockResourceErrorStatus(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, toStockResourceResponse(&resource))
+	h.inv.activity.Post(stockResourceCreatedMessage(&resource, h.inv.itemTypeNames(resource.ItemTypes)))
 }
 
 // PUT /api/inventory/resources/:id - 在庫対象の更新
@@ -391,8 +443,118 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := validateStockResource(&req); err != nil {
+
+	var resource models.StockResource
+	if err := h.inv.db.Preload("Item").Preload("ItemTypes").First(&resource, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Resource not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	isCup := resource.Kind == string(models.StockResourceKindCup)
+	if err := validateStockResource(&req, isCup); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
+	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
+	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
+	before := resource
+	columns := []string{"unit", "per_serving", "notify_from", "notify_step", "buffer"}
+	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
+		resource.LastAlertThreshold = nil
+		columns = append(columns, "last_alert_threshold")
+	}
+	if isCup {
+		resource.Name = strings.TrimSpace(*req.Name)
+		columns = append(columns, "name")
+	}
+	resource.Unit = req.Unit
+	resource.PerServing = req.PerServing
+	resource.NotifyFrom = req.NotifyFrom
+	resource.NotifyStep = req.NotifyStep
+	resource.Buffer = req.Buffer
+	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
+			return err
+		}
+		return replaceCupItemTypes(tx, &resource, req.ItemTypeIds)
+	})
+	if err != nil {
+		c.JSON(stockResourceErrorStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
+	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
+	// 使う種類は送られたときだけ比べる（省略したときは今のまま）
+	var typesBefore, typesAfter string
+	if req.ItemTypeIds != nil {
+		typesBefore, typesAfter = h.inv.itemTypeNames(before.ItemTypes), h.inv.itemTypeNames(resource.ItemTypes)
+	}
+	h.inv.activity.Post(stockResourceUpdatedMessage(&before, &resource, typesBefore, typesAfter))
+}
+
+// 通知に出す、カップを使う種類の名前を「ブレンド・グルメ」と並べる。消えた種類も名前で出したいので論理削除も含めて探す
+func (inv *Inventory) itemTypeNames(types []models.StockResourceItemType) string {
+	ids := make([]uuid.UUID, len(types))
+	for i, t := range types {
+		ids[i] = t.ItemTypeID
+	}
+	var names []string
+	if len(ids) > 0 {
+		if err := inv.db.Unscoped().Model(&models.ItemType{}).Where("id IN ?", ids).Order("name").Pluck("display_name", &names).Error; err != nil {
+			log.Printf("activity: failed to load item types: %v", err)
+		}
+	}
+	if len(names) == 0 {
+		return "なし"
+	}
+	return strings.Join(names, "・")
+}
+
+var errInvalidCupItemTypes = errors.New("item_type_ids must be existing and unique item types")
+
+func stockResourceErrorStatus(err error) int {
+	if errors.Is(err, errInvalidCupItemTypes) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+// カップを使うアイテムの種類を、本文のとおりに置き換える。省略（nil）なら今のまま（アイテムの在庫では送れない）。
+// 無い種類や重複があれば errInvalidCupItemTypes。
+func replaceCupItemTypes(tx *gorm.DB, resource *models.StockResource, ids *[]openapi_types.UUID) error {
+	if ids == nil {
+		return nil
+	}
+	resource.ItemTypes = make([]models.StockResourceItemType, len(*ids))
+	for i, id := range *ids {
+		resource.ItemTypes[i] = models.StockResourceItemType{ResourceID: resource.ID, ItemTypeID: id}
+	}
+	if err := tx.Where("resource_id = ?", resource.ID).Delete(&models.StockResourceItemType{}).Error; err != nil {
+		return err
+	}
+	if len(resource.ItemTypes) == 0 {
+		return nil
+	}
+	var found int64
+	if err := tx.Model(&models.ItemType{}).Where("id IN ?", *ids).Count(&found).Error; err != nil {
+		return err
+	}
+	if found != int64(len(resource.ItemTypes)) {
+		return errInvalidCupItemTypes
+	}
+	return tx.Create(&resource.ItemTypes).Error
+}
+
+// DELETE /api/inventory/resources/:id - カップの削除（アイテムの在庫はアイテムを消すと消える）
+func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
+	id, ok := parseUUIDParam(c)
+	if !ok {
 		return
 	}
 
@@ -405,56 +567,28 @@ func (h *InventoryHandler) UpdateStockResource(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	// 閾値の区切りが変わると以前の通知記録は意味を失うので、今の残量から数え直す。
-	// 名前や Buffer だけの編集では記録を残し、通知済みの警告を再送しない。
-	// 読んだ後に注文の判定が通知の記録を進めていることがあるので、編集したカラムだけ書く。
-	columns := []string{"kind", "name", "unit", "per_serving", "notify_from", "notify_step", "buffer"}
-	if resource.NotifyFrom != req.NotifyFrom || resource.NotifyStep != req.NotifyStep {
-		resource.LastAlertThreshold = nil
-		columns = append(columns, "last_alert_threshold")
-	}
-	resource.Kind = string(req.Kind)
-	resource.Name = strings.TrimSpace(req.Name)
-	resource.Unit = req.Unit
-	resource.PerServing = req.PerServing
-	resource.NotifyFrom = req.NotifyFrom
-	resource.NotifyStep = req.NotifyStep
-	resource.Buffer = req.Buffer
-	if err := h.inv.db.Model(&resource).Select(columns).Updates(&resource).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if resource.Kind != string(models.StockResourceKindCup) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "item stock is deleted with its item"})
 		return
 	}
-
-	c.JSON(http.StatusOK, toStockResourceResponse(&resource))
-	go h.inv.CheckAlerts([]uuid.UUID{resource.ID})
-}
-
-// DELETE /api/inventory/resources/:id - 在庫対象の削除
-func (h *InventoryHandler) DeleteStockResource(c *gin.Context) {
-	id, ok := parseUUIDParam(c)
-	if !ok {
-		return
-	}
-
-	var affected int64
+	// 同時に消したときに二重に通知しないよう、消せたときだけ通知する
+	var deleted bool
 	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("resource_id = ?", id).Delete(&models.ItemStockUsage{}).Error; err != nil {
+		if err := tx.Where("resource_id = ?", id).Delete(&models.StockResourceItemType{}).Error; err != nil {
 			return err
 		}
-		res := tx.Delete(&models.StockResource{}, "id = ?", id)
-		affected = res.RowsAffected
+		res := tx.Delete(&resource)
+		deleted = res.RowsAffected > 0
 		return res.Error
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if affected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Resource not found"})
-		return
-	}
 	c.Status(http.StatusNoContent)
+	if deleted {
+		h.inv.activity.Post(stockResourceDeletedMessage(&resource))
+	}
 }
 
 // POST /api/inventory/resources/:id/events - 棚卸し・入荷・調整の記録
@@ -473,7 +607,7 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		return
 	}
 
-	// 記録する直前の推定。棚卸しなら推定とのずれと、実測の1杯あたり使用量を返す。
+	// 記録する直前の推定。棚卸しなら推定とのずれと、実測の1回あたり使用量を返す。
 	before, err := h.inv.snapshots(c.Request.Context(), []uuid.UUID{id})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -508,8 +642,22 @@ func (h *InventoryHandler) CreateStockEvent(c *gin.Context) {
 		}
 	}
 
+	// 記録した直後の残量で通知する。応答の後に裏で数えると、その間の注文の分だけずれ、
+	// 終了時（activity.Close）より後に Post して欠けることもあるので、ハンドラーの中で送る
+	h.inv.postStockEvent(before[0].Resource, event, resp.Estimated)
 	c.JSON(http.StatusCreated, resp)
 	go h.inv.CheckAlerts([]uuid.UUID{id})
+}
+
+func (inv *Inventory) postStockEvent(resource models.StockResource, event models.StockEvent, estimated *float64) {
+	var remaining *float64
+	after, err := inv.snapshots(context.Background(), []uuid.UUID{resource.ID})
+	if err != nil {
+		log.Printf("activity: failed to calculate remaining of %s: %v", resource.DisplayName(), err)
+	} else if len(after) > 0 {
+		remaining = after[0].Remaining()
+	}
+	inv.activity.Post(stockEventMessage(&resource, &event, estimated, remaining))
 }
 
 // 記録の種類と数量の組み合わせを検証し、不正なら 400 で返す文言を返す。
@@ -533,67 +681,6 @@ func validateStockEvent(kind models.StockEventKind, quantity float64) string {
 		return "kind must be count, receipt or adjust"
 	}
 	return ""
-}
-
-// GET /api/inventory/usages - アイテムごとの使用量
-func (h *InventoryHandler) GetStockUsages(c *gin.Context) {
-	var usages []models.ItemStockUsage
-	if err := h.inv.db.Find(&usages).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, toStockUsageResponses(usages))
-}
-
-func toStockUsageResponses(usages []models.ItemStockUsage) []models.StockUsage {
-	responses := make([]models.StockUsage, len(usages))
-	for i, u := range usages {
-		responses[i] = models.StockUsage{
-			ItemId:     openapi_types.UUID(u.ItemID),
-			ResourceId: openapi_types.UUID(u.ResourceID),
-			Amount:     u.Amount,
-		}
-	}
-	return responses
-}
-
-// PUT /api/inventory/usages - 使用量をまとめて置き換える
-func (h *InventoryHandler) ReplaceStockUsages(c *gin.Context) {
-	var req models.ReplaceStockUsagesJSONRequestBody
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	type key struct{ item, resource uuid.UUID }
-	seen := make(map[key]bool, len(req))
-	usages := make([]models.ItemStockUsage, 0, len(req))
-	for _, u := range req {
-		k := key{uuid.UUID(u.ItemId), uuid.UUID(u.ResourceId)}
-		if u.Amount <= 0 || seen[k] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "amount must be positive and each item/resource pair must be unique"})
-			return
-		}
-		seen[k] = true
-		usages = append(usages, models.ItemStockUsage{ItemID: k.item, ResourceID: k.resource, Amount: u.Amount})
-	}
-
-	err := h.inv.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("1 = 1").Delete(&models.ItemStockUsage{}).Error; err != nil {
-			return err
-		}
-		if len(usages) == 0 {
-			return nil
-		}
-		return tx.Create(&usages).Error
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, toStockUsageResponses(usages))
-	go h.inv.CheckAlerts(nil)
 }
 
 // POST /api/inventory/remind - 残量確認のリマインド（スケジューラから呼ぶ）

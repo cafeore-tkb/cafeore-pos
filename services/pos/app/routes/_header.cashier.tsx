@@ -1,5 +1,6 @@
 import {
   OrderEntity,
+  type WithId,
   cashierRepository,
   orderRepository,
   orderSchema,
@@ -8,15 +9,26 @@ import {
   useMenuMaster,
 } from "@cafeore/common";
 import { parseWithZod } from "@conform-to/zod";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
+  useOutletContext,
   useSubmit,
 } from "react-router";
 import useSWR from "swr";
 import { z } from "zod";
+import type {
+  HeaderOutletContext,
+  StatusBarHandle,
+} from "~/components/functional/connectionIssues";
+import {
+  notifyOfflineOrders,
+  saveOrderInBackground,
+  sendUnsentOrders,
+} from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import { usePrinterAddresses } from "~/components/functional/usePrinterAddresses";
 import { useSquareDevice } from "~/components/functional/useSquareDevice";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -25,18 +37,37 @@ export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
 };
 
+// つながっていないものはレジのヘッダーに出すので、上のバーは色だけにする
+export const handle: StatusBarHandle = { compactStatusBar: true };
+
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const { items } = useMenuMaster();
   const { orders, status } = useOrdersWSContext();
+  const { connectionIssues } = useOutletContext<HeaderOutletContext>();
   const { isDeviceOnline } = useDeviceOnlineStatus();
   const submit = useSubmit();
-  // 会計可否は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
-  const canSubmitOrder = useMemo(
-    () => isDeviceOnline && status === "open",
-    [isDeviceOnline, status],
-  );
+  // 今すぐ保存できるか（つながっているか）は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
+  // つながっていなくても、番号を手で付ければ確定でき、注文はこの端末に溜まる（CashierV2）
+  const canSaveNow = isDeviceOnline && status === "open";
+  const connecting = isDeviceOnline && status === "connecting";
 
+  // つながったら（開いたときも）溜めた注文をまとめて送る。つながっていなければ溜めている数を出す
+  useEffect(() => {
+    if (canSaveNow) {
+      void sendUnsentOrders();
+    } else if (!connecting) {
+      notifyOfflineOrders();
+    }
+  }, [canSaveNow, connecting]);
+
+  const submitPayload = useCallback(
+    (
+      newOrder: OrderEntity,
+      onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+    ) => saveOrderInBackground(newOrder, canSaveNow, onSaved),
+    [canSaveNow],
+  );
   // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
   const { data: squareStatus } = useSWR(
     "square-status",
@@ -45,19 +76,12 @@ export default function Cashier() {
   const squareEnabled = squareStatus?.enabled ?? false;
   // 決済画面を出す端末はレジごとに固定する（このブラウザに覚える）
   const squareDevice = useSquareDevice(squareEnabled);
-
-  const submitPayload = useCallback(
-    (newOrder: OrderEntity) => {
-      submit(
-        { newOrder: JSON.stringify(newOrder.toOrder()) },
-        { method: "POST" },
-      );
-    },
-    [submit],
-  );
+  // プリンターは全レジ共通で、管理画面（/printer-settings）で設定する
+  const printerAddresses = usePrinterAddresses();
 
   // Square で支払い済みの注文は、登録できたかをレジが待つ。clientAction を通すと
   // 結果を受け取れないので、ここで直に送る。失敗はそのまま reject する。
+  // 登録した注文を返す（「常に返金」のとき、レジがその注文を返金する）。
   const submitSquarePayload = useCallback(
     async (newOrder: OrderEntity, squareCheckoutId: string) => {
       const savedOrder = await orderRepository.save(newOrder, {
@@ -69,6 +93,7 @@ export default function Cashier() {
       await cashierRepository.setSubmittedOrder(savedOrder).catch((err) => {
         console.error("レジ状態の同期に失敗しました", err);
       });
+      return savedOrder;
     },
     [],
   );
@@ -85,9 +110,11 @@ export default function Cashier() {
       items={items}
       orders={orders}
       wsStatus={status}
-      canSubmitOrder={canSubmitOrder}
+      connectionIssues={connectionIssues}
+      canSaveNow={canSaveNow}
       squareEnabled={squareEnabled}
       squareDevice={squareDevice}
+      printerAddresses={printerAddresses}
       submitPayload={submitPayload}
       submitSquarePayload={submitSquarePayload}
       syncOrder={syncOrder}
@@ -99,38 +126,11 @@ export default function Cashier() {
 export const clientAction: ClientActionFunction = async (args) => {
   const method = args.request.method;
   switch (method) {
-    case "POST":
-      return submitOrderAction(args);
     case "PUT":
       return syncOrderAction(args);
     default:
       return new Response("Method not allowed", { status: 405 });
   }
-};
-
-export const submitOrderAction: ClientActionFunction = async ({ request }) => {
-  const formData = await request.formData();
-
-  const schema = z.object({
-    newOrder: stringToJSONSchema.pipe(orderSchema),
-  });
-  const submission = parseWithZod(formData, {
-    schema,
-  });
-  if (submission.status !== "success") {
-    console.error(submission.error);
-    return submission.reply();
-  }
-
-  const { newOrder } = submission.value;
-  const order = OrderEntity.fromOrder(newOrder);
-
-  const savedOrder = await orderRepository.save(order);
-
-  // API から読み直さず、このタブが最後に送った編集中注文に確定 ID を載せて送る
-  await cashierRepository.setSubmittedOrder(savedOrder);
-
-  return new Response("ok");
 };
 
 export const syncOrderAction: ClientActionFunction = async ({ request }) => {

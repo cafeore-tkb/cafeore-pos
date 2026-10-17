@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"cafeore-pos/api/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +22,10 @@ const (
 	WSMessageTypeMasterState  WSMessageType = "master_state"
 	// レジが編集中の注文と直前に確定した注文の ID
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
+	// CaOS の今日のドリッパーの担当者（6 つ全部。caos_lanes.go）
+	WSMessageTypeCaosLanes WSMessageType = "caos_lanes"
+	// 取り消された緊急（入れ直し）の ID（cup_emergency.go）。画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す
+	WSMessageTypeCupEmergencyCancelled WSMessageType = "cup_emergency_cancelled"
 )
 
 type WSMessage struct {
@@ -29,8 +35,10 @@ type WSMessage struct {
 	OrderID *uuid.UUID             `json:"order_id,omitempty"`
 	// REST（GET /api/master-status）と同じ形で送る。models.MasterState は json タグが無く、
 	// そのまま送ると "Type" のように大文字のキーになってフロントで読めない
-	MasterState  *models.MasterStateResponse  `json:"master_state,omitempty"`
-	CashierState *models.CashierStateResponse `json:"cashier_state,omitempty"`
+	MasterState    *models.MasterStateResponse  `json:"master_state,omitempty"`
+	CashierState   *models.CashierStateResponse `json:"cashier_state,omitempty"`
+	CaosLanes      *models.CaosLanes            `json:"caos_lanes,omitempty"`
+	CupEmergencyID *uuid.UUID                   `json:"cup_emergency_id,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {
@@ -51,6 +59,9 @@ func (h *OrderHandler) WSHandler(c *gin.Context) {
 		initial = append(initial, msg)
 	}
 	if msg, ok := cashierStateMessage(h.db); ok {
+		initial = append(initial, msg)
+	}
+	if msg, ok := caosLanesMessage(h.db, time.Now()); ok {
 		initial = append(initial, msg)
 	}
 	client.SendInitial(initial...)
@@ -77,20 +88,40 @@ func masterStateMessage(db *gorm.DB) (WSMessage, bool) {
 }
 
 // 注文を読み直して、その1件を配信する。読み直した注文のレスポンスを返す。
+// ほかのインスタンスにも DB の通知で知らせる（order_listener.go）。
+// 通知は自分の配信の成否に関わらず送る。DB にはもう書けていて、受けた側は注文 ID から読み直すだけなので、
+// ここでの読み直しが一時的に失敗しても、ほかのインスタンスの画面は新しい状態になる。
 func publishOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
+	resp, err := broadcastOrder(db, hub, orderID)
+	notifyOrderChanged(db, orderID)
+	return resp, err
+}
+
+// 注文の削除を配信し、ほかのインスタンスにも知らせる。
+func publishOrderDeleted(db *gorm.DB, hub *Hub, orderID uuid.UUID) {
+	broadcastOrderDeleted(hub, orderID)
+	notifyOrderChanged(db, orderID)
+}
+
+// 注文を読み直して、このインスタンスにつないでいる画面へだけ配る。
+func broadcastOrder(db *gorm.DB, hub *Hub, orderID uuid.UUID) (models.OrderResponse, error) {
 	var resp models.OrderResponse
 	err := hub.Publish(func() (WSMessage, error) {
 		var order models.Order
 		if err := preloadOrder(db).First(&order, "id = ?", orderID).Error; err != nil {
 			return WSMessage{}, err
 		}
-		resp = toOrderResponse(&order)
+		orders := []models.Order{order}
+		if err := attachSquareCheckouts(db, orders); err != nil {
+			return WSMessage{}, err
+		}
+		resp = toOrderResponse(&orders[0])
 		return WSMessage{Type: WSMessageTypeOrder, Order: &resp}, nil
 	})
 	return resp, err
 }
 
-func publishOrderDeleted(hub *Hub, orderID uuid.UUID) {
+func broadcastOrderDeleted(hub *Hub, orderID uuid.UUID) {
 	_ = hub.Publish(func() (WSMessage, error) {
 		return WSMessage{Type: WSMessageTypeOrderDeleted, OrderID: &orderID}, nil
 	})

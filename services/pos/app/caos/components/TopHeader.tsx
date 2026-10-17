@@ -1,24 +1,40 @@
 import {
   BarChart3,
   CalendarClock,
-  ChevronLeft,
-  ChevronRight,
   Coffee,
   Database,
+  History,
   LayoutGrid,
-  Pause,
-  Play,
-  RotateCcw,
-  Undo2,
+  type LucideIcon,
+  Printer,
+  Search,
   Volume2,
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
+import { PendingPrints } from "~/components/molecules/PendingPrints";
+import { PrinterStatus } from "~/components/molecules/PrinterStatus";
+import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
+import lateIcon from "../icons/late.svg";
+import type { orderBacklog } from "../logic/alerts";
+import { type orderAndCupCounts, orderNoLabel } from "../logic/cards";
+import { clockLabel } from "../logic/format";
+import type { UnfinishedOrder } from "../logic/unfinished";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
+import { UnsentOps } from "./UnsentOps";
 
 export type NavTab = "control" | AuxiliaryTab;
+
+type Counts = ReturnType<typeof orderAndCupCounts>;
+
+// 「15分超」の分
+
+/** シールのプリンターがつながっているか（usePrinter の status） */
+type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
 
 // 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
 const NAV_ITEMS = [
@@ -34,49 +50,115 @@ interface TopHeaderProps {
   onSelectTab: (tab: NavTab) => void;
   onSelectControlViewMode: (mode: ControlViewMode) => void;
   timeStr: string;
-  unassignedCups: number;
-  totalWaitingCups: number;
+  /** 未割当と、全ドリッパーの待ち（待機。まだ抽出を始めていない）の注文の数と杯数 */
+  counts: { unassigned: Counts; waiting: Counts };
+  /** 未割当の最長待ち時間と最小注文番号 */
+  backlog: ReturnType<typeof orderBacklog>;
+  unserved: readonly UnfinishedOrder[];
+  /** 注文番号でその注文を選ぶ（番号の検索と同じ） */
+  onFindOrder: (orderNo: number) => void;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  isRunning: boolean;
-  onTogglePlay: () => void;
-  simSpeed: number;
-  onCycleSpeed: () => void;
-  onResetData: () => void;
-  showTimelineControls: boolean;
-  onTimelineNavigate: (direction: "back" | "now" | "forward") => void;
+  /** 実データテストの盤面を出している（「テスト」の色を変える。時計の操作は盤面の上の帯 TestBoardBanner） */
+  simulating: boolean;
+  /** 「現在」（管制盤 A のタイムラインを NOW へ戻す）を出すか */
+  showTimelineNow: boolean;
+  onTimelineNow: () => void;
+  /** タイムラインが NOW を追っている（「現在」を押した形にする。手でスクロールしたら押していない形にして、押すと戻ることを見せる） */
+  followingNow: boolean;
   testPlaying: boolean;
   testProgressLabel: string | null;
   onOpenTestPlay: () => void;
   onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
+  /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し） */
+  labelPrinter: {
+    status: LabelPrinterStatus;
+    certificateUrl: string;
+    pendingCount: number;
+    retry: () => void;
+  };
+  /** この端末のまだ送れていない盤面の操作と、送り直し・消す */
+  unsent: ReturnType<typeof useCaosOutboxSender>;
+  /** 注文番号の検索を開く */
+  onOpenSearch: () => void;
+  /** 注文番号の検索を開いている */
+  searchOpen: boolean;
+  /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
+  onOpenEmergency?: () => void;
+  /** この画面が直前にした操作の名前（しばらくたつと null） */
+  lastAction: string | null;
 }
 
-// 注文の接続の札（文字・枠・点の色）
-const POS_STATUS: Record<
-  PosConnectionStatus,
-  { label: string; box: string; dot: string }
-> = {
+// 接続の札の色（枠・点）。注文の接続とシールのプリンターで共通
+const TONES = {
   off: {
-    label: "実データテスト中は停止",
     box: "border-slate-200 bg-slate-100 text-slate-400",
     dot: "bg-slate-300",
   },
-  connecting: {
-    label: "接続中",
+  waiting: {
     box: "border-amber-300 bg-amber-50 text-amber-800",
     dot: "bg-amber-400",
   },
-  open: {
-    label: "接続済み",
+  ok: {
     box: "border-emerald-300 bg-emerald-50 text-emerald-800",
     dot: "bg-emerald-500",
   },
-  reconnecting: {
-    label: "再接続中",
-    box: "border-amber-300 bg-amber-50 text-amber-800",
-    dot: "bg-amber-400",
-  },
+  ng: { box: "border-red-200 bg-red-50 text-red-500", dot: "bg-red-500" },
+};
+type Tone = keyof typeof TONES;
+
+/** 接続の札（印と、色の点）。何がどうかは label（読み上げと、押し続けたときの title） */
+const StatusBadge: React.FC<{
+  icon: LucideIcon;
+  label: string;
+  tone: Tone;
+}> = ({ icon: Icon, label, tone }) => (
+  <output
+    aria-label={label}
+    title={label}
+    className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${TONES[tone].box}`}
+  >
+    <Icon className="h-4 w-4" />
+    <span className={`h-2 w-2 rounded-full ${TONES[tone].dot}`} />
+  </output>
+);
+
+const POS_STATUS: Record<PosConnectionStatus, { label: string; tone: Tone }> = {
+  off: { label: "実データテスト中は停止", tone: "off" },
+  connecting: { label: "接続中", tone: "waiting" },
+  open: { label: "接続済み", tone: "ok" },
+  reconnecting: { label: "再接続中", tone: "waiting" },
+};
+
+/** 注文の接続の札（閲覧だけの画面（ReadOnlyBoard）でも使う） */
+export const PosStatusBadge: React.FC<{ status: PosConnectionStatus }> = ({
+  status,
+}) => (
+  <StatusBadge
+    icon={Database}
+    label={`cafeore-posの注文: ${POS_STATUS[status].label}`}
+    tone={POS_STATUS[status].tone}
+  />
+);
+
+// シールのプリンターの札（つなぐ前はつないでいるところとして出す）
+const PRINTER_STATUS: Record<
+  LabelPrinterStatus,
+  { label: string; tone: Tone }
+> = {
+  init: { label: "接続中", tone: "waiting" },
+  connecting: { label: "接続中", tone: "waiting" },
+  connected: { label: "接続完了", tone: "ok" },
+  disconnected: { label: "未接続", tone: "ng" },
+};
+
+// 「テスト」の色。テスト中は濃い青、テストを終えてもテストの盤面のあいだは本番と見分けられる色
+const testButtonTone = (testPlaying: boolean, testBoard: boolean) => {
+  if (testPlaying) return "border-blue-700 bg-blue-700 text-white";
+  if (testBoard)
+    return "border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200";
+  return "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100";
 };
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
@@ -85,25 +167,58 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSelectTab,
   onSelectControlViewMode,
   timeStr,
-  unassignedCups,
-  totalWaitingCups,
+  counts,
+  backlog,
+  unserved,
+  onFindOrder,
   soundEnabled,
   onToggleSound,
-  isRunning,
-  onTogglePlay,
-  simSpeed,
-  onCycleSpeed,
-  onResetData,
-  showTimelineControls,
-  onTimelineNavigate,
+  simulating,
+  showTimelineNow,
+  onTimelineNow,
+  followingNow,
   testPlaying,
   testProgressLabel,
   onOpenTestPlay,
   onEndTestPlay,
   posStatus,
+  labelPrinter,
+  unsent,
+  onOpenSearch,
+  searchOpen,
+  onOpenEmergency,
+  lastAction,
 }) => {
+  const oldest = backlog.oldestUnassigned;
+  const smallest = backlog.smallestUnassigned;
+  const longestUnserved = unserved.reduce<UnfinishedOrder | null>(
+    (longest, row) =>
+      !longest || row.waitSec > longest.waitSec ? row : longest,
+    null,
+  );
   return (
-    <header className="flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
+    <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
+      {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
+          ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
+      <div className="absolute top-full right-2 z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+        {labelPrinter.status === "disconnected" && (
+          <PrinterStatus
+            name="ラベル"
+            status={labelPrinter.status}
+            certificateUrl={labelPrinter.certificateUrl}
+          />
+        )}
+        <UnsentOps
+          entries={unsent.entries}
+          sending={unsent.sending}
+          onRetry={unsent.retry}
+          onDiscard={unsent.discard}
+        />
+        <PendingPrints
+          count={labelPrinter.pendingCount}
+          onRetry={labelPrinter.retry}
+        />
+      </div>
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
@@ -153,144 +268,123 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </nav>
 
         <div className="flex items-center gap-2">
-          <div className="font-bold font-mono text-[#0f172a] text-[28px] leading-none tracking-tight">
-            {timeStr}
+          {/* 時刻と、その下に直前の操作（この画面が最後にした操作。間違えたら逆の操作で直す）。並びが動かないよう幅を決めておく */}
+          <div className="flex w-[118px] shrink-0 flex-col leading-none">
+            <div className="font-bold font-mono text-[#0f172a] text-[24px] tracking-tight">
+              {timeStr}
+            </div>
+            <output
+              aria-label="直前の操作"
+              title={lastAction ? `直前の操作：${lastAction}` : undefined}
+              className={`mt-1 flex min-w-0 items-center gap-0.5 font-black text-[11px] ${lastAction ? "text-slate-950" : "text-slate-400"}`}
+            >
+              <History className="h-3 w-3 shrink-0" />
+              <span className="truncate">{lastAction ?? "直前の操作なし"}</span>
+            </output>
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-[#e2e8f0] bg-[#f1f5f9] p-1">
+          {showTimelineNow && (
             <button
               type="button"
-              onClick={onTogglePlay}
-              title={isRunning ? "一時停止" : "タイマー再開"}
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-700 text-xs transition-colors hover:bg-white"
+              onClick={onTimelineNow}
+              aria-pressed={followingNow}
+              title={
+                followingNow ? "現在時刻を追っています" : "現在時刻へ戻って追う"
+              }
+              className="group flex h-10 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-500 bg-white font-black text-[11px] text-red-600 leading-none aria-pressed:bg-red-500 aria-pressed:text-white"
             >
-              {isRunning ? (
-                <Pause className="h-3.5 w-3.5" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
-              )}
+              <span className="h-2 w-2 rounded-full bg-red-500 group-aria-pressed:bg-white" />
+              現在
             </button>
-            <button
-              type="button"
-              onClick={onCycleSpeed}
-              title="シミュレーション速度切替"
-              className="h-10 min-w-10 touch-manipulation rounded-lg px-1.5 font-bold font-mono text-[11px] text-slate-700 transition-colors hover:bg-white"
-            >
-              {simSpeed}x
-            </button>
-            <button
-              type="button"
-              onClick={onResetData}
-              title="初期状態にリセット"
-              className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-white"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-            </button>
-            {showTimelineControls && (
-              <div className="ml-1 flex items-center gap-1 border-slate-300 border-l pl-1">
-                <button
-                  type="button"
-                  onClick={() => onTimelineNavigate("back")}
-                  title="5分前を表示"
-                  className="flex h-10 touch-manipulation items-center gap-0.5 rounded-lg border border-slate-300 bg-white px-2 font-black text-[12px] text-slate-700"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  −5分
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onTimelineNavigate("now")}
-                  title="現在時刻へ戻る"
-                  className="flex h-10 touch-manipulation items-center gap-1 rounded-lg bg-red-500 px-3 font-black text-[12px] text-white"
-                >
-                  <span className="h-2 w-2 rounded-full bg-white" />
-                  現在
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onTimelineNavigate("forward")}
-                  title="5分先を表示"
-                  className="flex h-10 touch-manipulation items-center gap-0.5 rounded-lg border border-slate-300 bg-white px-2 font-black text-[12px] text-slate-700"
-                >
-                  ＋5分
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
+          )}
         </div>
 
-        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
-          <span className="font-semibold text-[#475569] text-[12px]">
-            未割当オーダー
-          </span>
-          <div className="flex items-baseline font-mono">
-            <span className="font-extrabold text-[#ef4444] text-[19px] leading-none">
-              {unassignedCups}
-            </span>
-            <span className="ml-1 font-bold text-[#475569] text-[12px]">
-              杯
-            </span>
-          </div>
-        </div>
-
-        <div className="hidden items-baseline gap-1.5 rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-3 py-1.5 xl:flex">
-          <span className="font-semibold text-[#475569] text-[12px]">
-            全ドリッパー待機杯数
-          </span>
-          <div className="flex items-baseline font-mono">
-            <span className="font-extrabold text-[#0f172a] text-[19px] leading-none">
-              {totalWaitingCups}
-            </span>
-            <span className="ml-1 font-bold text-[#475569] text-[12px]">
-              杯
-            </span>
-          </div>
-        </div>
+        {/* 注文の数（杯数は小さく添える。統合したカードは中の注文をみな、分けた注文は 1 つと数える）と、入れ忘れ・飛ばしに気づく待ち。
+            押すと、未割当は最小番号・未提供は最長待ち時間の注文を選ぶ */}
+        <BacklogButton
+          label="未割当"
+          counts={counts.unassigned}
+          detail={
+            oldest
+              ? `最小 #${orderNoLabel(smallest ?? oldest.orderNo)} 最長 ${clockLabel(oldest.waitSec)}`
+              : "最小 — 最長 —"
+          }
+          late={oldest?.late ?? false}
+          title={
+            oldest
+              ? `未割当の最小番号 #${orderNoLabel(smallest ?? oldest.orderNo)}を選ぶ。最長待ち時間 ${clockLabel(oldest.waitSec)}（#${orderNoLabel(oldest.orderNo)}）`
+              : "未割当の注文はありません"
+          }
+          onClick={smallest !== null ? () => onFindOrder(smallest) : undefined}
+        />
+        <BacklogButton
+          label="未提供"
+          counts={{
+            orders: unserved.length,
+            cups: unserved.reduce((sum, row) => sum + row.cups, 0),
+          }}
+          detail={
+            longestUnserved
+              ? `最長 ${clockLabel(longestUnserved.waitSec)}`
+              : "最長 —"
+          }
+          late={longestUnserved?.late ?? false}
+          lateIconVisible={longestUnserved?.late ?? false}
+          title={
+            longestUnserved
+              ? `提供画面と同じ受付からの最長時間 ${clockLabel(longestUnserved.waitSec)}（#${orderNoLabel(longestUnserved.orderNo)}）を選ぶ`
+              : "未提供の注文はありません"
+          }
+          onClick={
+            longestUnserved
+              ? () => onFindOrder(longestUnserved.orderNo)
+              : undefined
+          }
+        />
       </div>
 
-      <div className="flex items-center gap-2">
-        <output
-          aria-label={`cafeore-pos ${POS_STATUS[posStatus].label}`}
-          title={`cafeore-posの注文: ${POS_STATUS[posStatus].label}`}
-          className={`flex min-h-[44px] items-center gap-1 rounded-lg border px-2 font-black text-xs ${POS_STATUS[posStatus].box}`}
+      <div className="flex shrink-0 items-center gap-1">
+        {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          aria-pressed={searchOpen}
+          title="注文番号で探す"
+          className="flex h-11 w-11 shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border border-[#cbd5e1] bg-[#f1f5f9] font-black text-[11px] text-slate-700 leading-none aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
         >
-          <Database className="h-4 w-4" />
-          <span
-            className={`h-2 w-2 rounded-full ${POS_STATUS[posStatus].dot}`}
+          <Search className="mb-0.5 h-4 w-4" />
+          番号
+        </button>
+        {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
+        <LaneHeaderStatus />
+        {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
+        <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
+          <PosStatusBadge status={posStatus} />
+          <StatusBadge
+            icon={Printer}
+            label={`ラベルプリンター: ${PRINTER_STATUS[labelPrinter.status].label}`}
+            tone={PRINTER_STATUS[labelPrinter.status].tone}
           />
-        </output>
+        </div>
         <button
           type="button"
           onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
-          className={`flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border px-3 font-black text-xs shadow-xs ${testPlaying ? "border-blue-700 bg-blue-700 text-white" : "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100"}`}
+          className={`flex h-11 min-w-11 touch-manipulation flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 font-black text-[11px] leading-none shadow-xs ${testButtonTone(testPlaying, simulating)}`}
           title={
             testPlaying
               ? "テストプレイを終了して実績を表示"
               : "過去の実データでテストプレイ"
           }
         >
+          {/* ヘッダーの並びを詰めないよう、印の下に小さく */}
           {testPlaying ? (
-            <BarChart3 className="h-4 w-4" />
+            <BarChart3 className="mb-0.5 h-4 w-4" />
           ) : (
-            <CalendarClock className="h-4 w-4" />
+            <CalendarClock className="mb-0.5 h-4 w-4" />
           )}
           <span>
-            {testPlaying
-              ? `終了・実績 ${testProgressLabel || ""}`
-              : "実データテスト"}
+            {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
           </span>
         </button>
-        {/* 1つ戻す。いまは準備中で押せない（API の盤面の上に足し直す） */}
-        <button
-          type="button"
-          disabled
-          title="1つ戻すは準備中です"
-          className="flex min-h-[44px] touch-manipulation items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 font-black text-slate-800 text-xs shadow-xs transition-colors hover:bg-slate-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          <Undo2 className="h-4 w-4" />
-          <span>1つ戻す</span>
-        </button>
-
         <button
           type="button"
           onClick={onToggleSound}
@@ -307,7 +401,60 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <VolumeX className="h-4 w-4" />
           )}
         </button>
+        {/* 緊急（入れ直し）。右端に置き、右手で押しても盤面を隠さない */}
+        {onOpenEmergency && (
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="flex h-11 shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-800 bg-red-600 px-3 font-black text-[15px] text-white shadow-xs hover:bg-red-700"
+          >
+            <EmergencyIcon className="h-5 w-5" />
+            緊急
+          </button>
+        )}
       </div>
     </header>
   );
 };
+
+/**
+ * ヘッダーの注文の数（「未割当 8件 10杯」）と、その下の待ち（detail）。late なら赤くする。
+ * 押すと待ちの注文を選ぶ（押せる注文が無ければ押せない）
+ */
+const BacklogButton: React.FC<{
+  label: string;
+  lateIconVisible?: boolean;
+  counts: Counts;
+  detail: string;
+  late: boolean;
+  title: string;
+  onClick?: () => void;
+}> = ({ label, counts, detail, late, title, onClick, lateIconVisible }) => (
+  <button
+    type="button"
+    disabled={!onClick}
+    onClick={onClick}
+    title={title}
+    className="flex h-11 w-[148px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 text-[#475569] leading-tight"
+  >
+    <span className="flex items-baseline gap-1 font-semibold text-[11px]">
+      {lateIconVisible && (
+        <img
+          src={lateIcon}
+          alt="提供待ち15分以上"
+          className="h-4 w-4 rounded-full bg-white"
+        />
+      )}
+      {label}
+      <span className="font-extrabold font-mono text-[#0f172a] text-[16px]">
+        {counts.orders}
+      </span>
+      件<span className="font-mono text-[10px]">{counts.cups}杯</span>
+    </span>
+    <span
+      className={`font-black font-mono text-[11px] ${late ? "rounded bg-red-600 px-1 text-white" : ""}`}
+    >
+      {detail}
+    </span>
+  </button>
+);

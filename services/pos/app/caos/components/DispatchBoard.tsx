@@ -1,33 +1,59 @@
+import {
+  type CaosCard,
+  caosDripperAllowed,
+  dripperLabel,
+} from "@cafeore/common";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import type React from "react";
-import { bayTargetAt, useCardDrag } from "../hooks/useCardDrag";
-import { useOutsidePress } from "../hooks/useOutsidePress";
+import {
+  type DropTarget,
+  dropSideOn,
+  dropTargetAt,
+  dropTargetLabel,
+  useCardDrag,
+  useCardHold,
+} from "../hooks/useCardDrag";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
-import { ticketsWhere } from "../logic/board";
-import { type OrderTicket, orderLabel } from "../logic/cards";
-import { clockLabel } from "../logic/format";
-import { laneOrdinal } from "../logic/lanes";
+import type { UnassignedPick } from "../hooks/useUnassignedPick";
+import { cardName, orderLabel, sharesOrder } from "../logic/cards";
+import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
-import { EmptySlotButton, LaneBadge, NextButton } from "./BoardParts";
+import { DripperIndicator, EmptySlotButton } from "./BoardParts";
+import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
-import { BayPad, OrderCard } from "./OrderCard";
+import { LaneChangeButton, LaneName } from "./LaneParts";
+import { OrderCard } from "./OrderCard";
+import { ScrollArea } from "./ScrollArea";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
-// 待機のカードはタップで 1〜6 のボタン（もう一度タップで未割当に戻す）、列へのドラッグで移す。
-// 抽出中・終わったカードはタップで緊急の入れ直し。
+// 左端はドリッパーの番号（列の状態のインジケーター）と担当者。
+// カードを押すと、その段階の操作のアイコンをカードの上に出す（cardMenu。CardOverlay）。長押しで待機は詳細、抽出中・終わりは緊急のパネル（onHoldCard）。
+// 未割当のカードを開いているあいだは、統合できる待機・抽出中のカードに「統合する」が出て、押すとそのカードに統合する（pick。下の横帯と共有）。
+// 待機・抽出中のカードはなぞると掴んで移す（列に落とすとその列の最後。待機・抽出中のカードの上に落とすと、左の端はそのカードの前・
+// 右の端は後ろ・真ん中は統合（統合できる相手のときだけ。useCardDrag の dropTargetAt）。抽出中のカードの前は列の先頭で今から始まり、
+// 後ろは待機の先頭。同じ列の中の入れ替えにも使う。抽出中のカードを落として統合したら相手を抽出中のカードに入れる）。
+// 指の下のカードには、入れる所の線か統合の枠を出す（DropMark）。
+// タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
+// （左の固定の列はなぞってもスクロールしない。担当者の交代を押して指が滑っても、NOW の追従が外れない）。
+// 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
+// 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 
 const PIXELS_PER_SEC = 1.2; // 1 min = 72px
-const STICKY_LEFT_WIDTH = 290; // 195px barista + 95px action
-// 90 seconds of past context remains visible to the left of NOW.
-const NOW_VIEWPORT_OFFSET = 90 * PIXELS_PER_SEC;
+// 左端の列（ドリッパーの番号・担当者）の幅
+const STICKY_LEFT_WIDTH = 240;
+// NOW の左に見せる過去（2 分半）。抽出中のカードの始めてから今までと、寄せて残した商品・注文番号が NOW の線の左に収まる幅
+const NOW_VIEWPORT_OFFSET = 150 * PIXELS_PER_SEC;
+// 左へ隠れたカードで、商品・注文番号・杯数を寄せて残す幅（px。これより狭くは寄せず、カードと一緒に流れる）
+const MIN_LABEL_WIDTH = 120;
 
-// 列の残り時間（カードが無ければ「--:--」、予定を過ぎたら「継続中」）
-const remainingText = (lane: ReturnType<typeof laneStatus>) => {
-  if (!lane.current) return "--:--";
-  if (lane.overtime) return "継続中";
-  return clockLabel(lane.remainingSec);
-};
+/**
+ * カードの左の余白。左の固定の列の下に隠れた分（タイムラインのスクロールの位置 --timeline-left からカードの左の位置を引いた分）だけ
+ * 中身を右に寄せる（隠れても商品・注文番号が左の固定の列のすぐ右に見える）。寄せるのは中身の幅が MIN_LABEL_WIDTH になるまで。
+ * スクロールのたびに盤面を描き直さないよう、位置は CSS の変数（useTimelineScroll が書く）で受ける。0.5rem はカード（OrderCard の md）の左の余白
+ */
+const cardInset = (left: number, width: number) =>
+  `calc(0.5rem + clamp(0px, var(--timeline-left, 0px) - ${left}px, ${Math.max(0, width - MIN_LABEL_WIDTH)}px))`;
 
 const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
   if (marker.isHour) return "h-[12px] w-[2px] bg-slate-700";
@@ -36,80 +62,96 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<
-    ControlViewProps,
-    "unassignedOrders" | "nextAvailable" | "onAssignToBay" | "onMergeOrders"
-  >
+  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay"> & {
+    /** 未割当のカードの操作（下の横帯と共有。開いた未割当のカードを、押した抽出中のカードに統合する） */
+    pick?: UnassignedPick;
+  }
 > = ({
-  baristas,
+  lanes,
+  unassignedOrders,
+  looks,
   selectedOrderId,
   onSelectOrder,
-  onAdvanceBay,
-  onOpenTicketPad,
-  actionTicketKey,
+  cardMenu,
+  onHoldCard,
   onMoveTicket,
-  onReturnToUnassigned,
-  onCloseTicketAction,
-  onRequestRebrew,
   onOpenEmptySlot,
-  currentTimeSec,
+  onOpenLane,
+  onMergeOrders,
+  nowMs,
   timelineCommand,
+  readOnly = false,
+  pick,
+  flashKeys,
+  onFollowNowChange,
 }) => {
-  const range = timelineRange(currentTimeSec);
-  const timelineWidthPx = (range.endSec - range.startSec) * PIXELS_PER_SEC;
+  const range = timelineRange(nowMs);
+  // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
+  const toX = (ms: number) => ((ms - range.startMs) / 1000) * PIXELS_PER_SEC;
+  const timelineWidthPx = toX(range.endMs);
   // Position of current NOW cursor along timeline
-  const nowX = (currentTimeSec - range.startSec) * PIXELS_PER_SEC;
+  const nowX = toX(nowMs);
   const scroll = useTimelineScroll({
     nowX,
     followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
-    originPx: range.startSec * PIXELS_PER_SEC,
-    pagePx: 300 * PIXELS_PER_SEC,
+    originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
+    // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
+    cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
+    onFollowingChange: onFollowNowChange,
   });
-  const markers = timeMarkers(range.startSec, range.endSec);
-  const toX = (sec: number) => (sec - range.startSec) * PIXELS_PER_SEC;
+  const markers = timeMarkers(range.startMs, range.endMs);
 
-  // 待機のカードを別の列へ（今の列と、指名以外の列には置けない）
-  const drag = useCardDrag<{ ticket: OrderTicket; bayId: number }, number>({
-    targetAt: ({ ticket, bayId }, x, y) => bayTargetAt(x, y, ticket, bayId),
-    onDrop: ({ ticket }, bayId) => {
-      onMoveTicket(ticket, bayId);
-      onCloseTicketAction();
+  // 待機・抽出中のカードを別の列へ・カードの前後へ・統合（今の列のカードの無い所はその列の最後へ。指名以外の列には置けない）
+  const drag = useCardDrag<{ card: CaosCard; bayId: number }, DropTarget>({
+    targetAt: ({ card, bayId }, x, y) =>
+      dropTargetAt(x, y, {
+        from: bayId,
+        card,
+        cards: lanes.flatMap(laneActive),
+      }),
+    onDrop: ({ card }, target) => {
+      if (target.mergeKey) onMergeOrders(card.key, target.mergeKey);
+      else onMoveTicket(card, target.bayId, target.place);
+    },
+    onHold: ({ card }) => {
+      onHoldCard?.(card);
+      return Boolean(onHoldCard);
     },
   });
+  // 終わったカードは動かさないので、長押しだけ
+  const hold = useCardHold<CaosCard>(onHoldCard);
 
-  // 1〜6 のボタンを開いたカードの外を押すと閉じる
-  useOutsidePress(
-    actionTicketKey !== null,
-    (target) =>
-      target.closest<HTMLElement>("[data-ticket-uid]")?.dataset.ticketUid ===
-      actionTicketKey,
-    onCloseTicketAction,
-  );
+  // ドラッグ（タイムラインのカードか、下の横帯の未割当のカード）で指の下の落とす先
+  const dropTarget = drag.target ?? pick?.drag.target ?? null;
 
   // 選んだ注文のカード（列ごと）
-  const matchingTickets = ticketsWhere(
-    baristas,
-    (ticket) => orderLabel(ticket) === selectedOrderId,
-  ).map(
-    ({ ticket, bayId }) =>
-      `ドリッパー ${laneOrdinal(bayId)}: ${ticket.beanName} ${ticket.cupCount}杯`,
+  const matchingTickets = lanes.flatMap((lane) =>
+    laneCards(lane)
+      .filter((card) => sharesOrder(card, selectedOrderId))
+      .map(
+        (card) =>
+          `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
+      ),
   );
 
   return (
     <div className="relative flex shrink-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       {scroll.isPastView && (
-        <div className="flex h-[28px] items-center gap-1 border-amber-200 border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900">
+        <div
+          style={{ left: STICKY_LEFT_WIDTH }}
+          className="absolute top-0 z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900"
+        >
           <RotateCcw className="h-3 w-3" />
           <span>過去の抽出履歴を表示中</span>
         </div>
       )}
 
-      {/* 選んだ注文（同じ注文のカードがどの列にあるか） */}
+      {/* 選んだ注文（同じ注文のカードがどの列にあるか）。目盛りの上に重ね、下の列をずらさない */}
       {selectedOrderId && (
-        <div className="flex h-[42px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 py-0.5 font-black font-mono text-[20px]">
+        <div className="absolute inset-x-0 top-0 z-[70] flex h-[30px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap">
+            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 font-black font-mono text-[17px]">
               <Sparkles className="h-3.5 w-3.5" />
               <span>{selectedOrderId}</span>
             </span>
@@ -122,7 +164,7 @@ export const DispatchBoard: React.FC<
           <button
             type="button"
             onClick={() => onSelectOrder(null)}
-            className="flex min-h-[34px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
+            className="flex h-[26px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
           >
             <X className="h-3.5 w-3.5" />
             <span>解除</span>
@@ -130,23 +172,33 @@ export const DispatchBoard: React.FC<
         </div>
       )}
 
-      <div
-        ref={scroll.containerRef}
+      <ScrollArea
+        axis="x"
+        trackInset={{ start: STICKY_LEFT_WIDTH, end: 0 }}
+        scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
-        className="touch-auto select-none overflow-x-auto overflow-y-hidden overscroll-x-contain"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        scrollerClassName="touch-auto select-none overscroll-x-contain"
       >
-        <div
-          className="relative"
-          style={{ width: `${STICKY_LEFT_WIDTH + timelineWidthPx}px` }}
-        >
+        <div className="relative w-max">
           {/* 時刻の目盛り */}
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
-            <div className="sticky left-0 isolate z-[60] flex h-full w-[290px] shrink-0 items-center border-slate-300 border-r bg-slate-50 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-              <span className="w-[95px] px-3 text-center">操作</span>
-              <span className="w-[195px] border-slate-200 border-l px-3">
-                ドリッパー / 抽出担当
-              </span>
+            <div
+              style={{ width: STICKY_LEFT_WIDTH }}
+              className="sticky left-0 isolate z-[60] flex h-full shrink-0 touch-none items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+            >
+              {scroll.isFollowingNow ? (
+                "ドリッパー / 抽出担当"
+              ) : (
+                // 手でスクロールして NOW の追従をやめているあいだ（閲覧だけの画面にはヘッダーの「現在」が無いので、ここで戻す）
+                <button
+                  type="button"
+                  onClick={scroll.toNow}
+                  className="-mx-2 flex h-[26px] flex-1 items-center justify-center gap-1 rounded-md bg-red-500 font-black text-[12px] text-white shadow-sm active:bg-red-600"
+                >
+                  <span className="h-2 w-2 rounded-full bg-white" />
+                  現在に戻る
+                </button>
+              )}
             </div>
             <div
               className="relative h-full"
@@ -154,9 +206,9 @@ export const DispatchBoard: React.FC<
             >
               {markers.map((marker) => (
                 <div
-                  key={marker.sec}
+                  key={marker.ms}
                   className="absolute top-0 bottom-0 flex flex-col justify-between"
-                  style={{ left: `${toX(marker.sec)}px` }}
+                  style={{ left: `${toX(marker.ms)}px` }}
                 >
                   <div className={tickClass(marker)} />
                   {marker.isMajor ? (
@@ -176,156 +228,140 @@ export const DispatchBoard: React.FC<
 
           {/* 6 列 */}
           <div className="relative divide-y divide-slate-200">
-            {baristas.map((barista) => {
-              const lane = laneStatus(barista);
-              const { positioned, freeFromSec } = positionTickets(
-                barista,
-                currentTimeSec,
-              );
+            {lanes.map((bay) => {
+              const lane = laneStatus(bay, nowMs);
+              const { positioned, freeFromMs } = positionTickets(bay, nowMs);
 
               return (
                 <div
-                  key={barista.id}
-                  data-bay-target={barista.id}
-                  className="relative flex h-[72px] touch-manipulation items-center bg-white"
+                  key={bay.id}
+                  data-bay-target={bay.id}
+                  className="relative flex h-[80px] touch-manipulation items-center bg-white"
                 >
-                  {/* 列の番号と、抽出中のカード・残り */}
-                  <div className="sticky left-0 isolate z-[51] flex w-[195px] shrink-0 items-center gap-2 self-stretch border-slate-200 border-r bg-white px-2 py-1.5">
-                    <LaneBadge bayId={barista.id} />
-                    <div className="flex h-full min-w-0 flex-1 flex-col justify-center leading-none">
-                      {lane.current && (
-                        <span className="ml-auto font-black font-mono text-[16px] text-slate-950">
-                          {orderLabel(lane.current)}
-                        </span>
+                  {/* ドリッパーの番号（列の状態）と担当者・交代 */}
+                  <div
+                    style={{ width: STICKY_LEFT_WIDTH }}
+                    className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
+                  >
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
                       )}
-                      <div className="mt-1 flex min-w-0 items-center gap-1">
-                        <span
-                          className="truncate font-bold text-[13px] text-slate-800"
-                          title={lane.current?.beanName}
-                        >
-                          {lane.current?.beanName || "待機中"}
-                        </span>
-                        {lane.current && (
-                          <span className="shrink-0 rounded bg-slate-950 px-1.5 py-0.5 font-black font-mono text-[12px] text-white">
-                            {lane.current.cupCount}杯
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        className={`mt-1 flex items-baseline gap-1 font-black font-mono ${lane.soon ? "text-red-600" : "text-slate-950"}`}
-                      >
-                        {lane.current && !lane.overtime && (
-                          <span className="font-sans text-[9px] tracking-wide">
-                            残り
-                          </span>
-                        )}
-                        <span
-                          className={
-                            lane.overtime ? "text-[17px]" : "text-[21px]"
-                          }
-                        >
-                          {remainingText(lane)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 次へ */}
-                  <div className="sticky left-[195px] isolate z-50 flex w-[95px] shrink-0 items-center justify-center self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]">
-                    <NextButton
-                      bayId={barista.id}
-                      active={Boolean(lane.current)}
-                      soon={lane.soon}
-                      onAdvance={onAdvanceBay}
-                      className="min-h-[48px] w-full text-[15px]"
+                      onOpenLane={onOpenLane}
+                      className="h-[66px] w-[44px]"
                     />
+                    <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                      <LaneName
+                        dripper={bay.id}
+                        wrap
+                        className="max-w-full font-black text-[16px] text-slate-950 leading-tight"
+                      />
+                      <LaneChangeButton dripper={bay.id} />
+                    </div>
                   </div>
 
                   {/* カードを時刻の位置に（幅は抽出時間） */}
                   <div
-                    className="relative h-[72px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
+                    className="relative h-[80px] [&>*]:absolute [&>*]:top-1.5 [&>*]:bottom-1.5"
                     style={{ width: `${timelineWidthPx}px` }}
                   >
-                    {positioned.map(({ ticket, startSec, endSec }) => {
+                    {positioned.map(({ card: ticket, startMs, endMs }) => {
                       // Drips that ended before the track starts would otherwise pile up at its left edge.
-                      if (endSec <= range.startSec) return null;
-                      const isScheduled = ticket.status === "scheduled";
-                      const isActionOpen =
-                        isScheduled && actionTicketKey === ticket.ticketUid;
+                      if (endMs <= range.startMs) return null;
+                      // 動かせるのは待機・抽出中のカード（閲覧だけの画面では押しても動かさない）
+                      const isMovable = !readOnly && ticket.status !== "done";
+                      // 開いた未割当のカードを、押して統合できる待機・抽出中のカード
+                      const isMergeTap =
+                        isMovable && Boolean(pick?.canMergeWith(ticket));
+                      const left = Math.max(10, toX(startMs));
+                      const width = Math.max(
+                        130,
+                        ((endMs - startMs) / 1000) * PIXELS_PER_SEC,
+                      );
                       return (
                         <div
-                          key={ticket.ticketUid}
-                          className={isActionOpen ? "z-[80]" : undefined}
-                          style={{
-                            left: Math.max(10, toX(startSec)),
-                            width: Math.max(
-                              130,
-                              (endSec - startSec) * PIXELS_PER_SEC,
-                            ),
-                          }}
+                          key={ticket.key}
+                          className={
+                            flashKeys?.has(ticket.key)
+                              ? "caos-arrival rounded-lg"
+                              : ""
+                          }
+                          style={{ left, width }}
                         >
                           <OrderCard
+                            newCommentsOnly
                             card={ticket}
-                            done={ticket.status === "completed"}
-                            interrupted={ticket.isInterrupted}
-                            brewing={ticket.status === "brewing"}
-                            selected={selectedOrderId === orderLabel(ticket)}
-                            data-ticket-uid={ticket.ticketUid}
-                            onPointerDown={
-                              isScheduled
-                                ? (event) =>
-                                    drag.press(
-                                      { ticket, bayId: barista.id },
-                                      event,
-                                    )
-                                : undefined
+                            look={looks.get(ticket.key)}
+                            selected={sharesOrder(ticket, selectedOrderId)}
+                            data-search-key={ticket.key}
+                            // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
+                            data-queued-ticket={
+                              isMovable ? ticket.key : undefined
                             }
-                            onClickCapture={drag.suppressClick}
-                            onClick={() => {
-                              if (!isScheduled) onRequestRebrew(ticket);
-                              else if (!isActionOpen) onOpenTicketPad(ticket);
-                              else {
-                                onReturnToUnassigned(ticket);
-                                onCloseTicketAction();
-                              }
+                            data-ticket-label={orderLabel(ticket)}
+                            mergeTap={isMergeTap}
+                            dropSide={dropSideOn(dropTarget, ticket.key)}
+                            style={{ paddingLeft: cardInset(left, width) }}
+                            onPointerDown={(event) => {
+                              if (readOnly) return;
+                              if (isMovable)
+                                drag.press(
+                                  { card: ticket, bayId: bay.id },
+                                  event,
+                                );
+                              else hold.press(ticket, event);
                             }}
-                            className={`h-full border-l-[5px] border-l-slate-400 hover:shadow-md ${isScheduled ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
-                            dragging={
-                              drag.source?.ticket.ticketUid === ticket.ticketUid
+                            onClickCapture={
+                              isMovable
+                                ? drag.suppressClick
+                                : hold.suppressClick
                             }
+                            onClick={() => {
+                              if (isMergeTap) pick?.tap(ticket);
+                              else cardMenu?.toggle(ticket);
+                            }}
+                            // 影は統合したカードの重ねた枠に使うので、指を乗せた印は輪にする
+                            className={`h-full hover:ring-2 hover:ring-slate-400 ${isMovable ? "cursor-grab touch-none active:cursor-grabbing" : "touch-manipulation"}`}
+                            dragging={drag.source?.card.key === ticket.key}
                           >
-                            {isActionOpen && (
-                              <>
-                                <BayPad
-                                  card={ticket}
-                                  currentBayId={barista.id}
-                                  hoveredBay={drag.target}
-                                  onPick={(bayId) => {
-                                    onMoveTicket(ticket, bayId);
-                                    onCloseTicketAction();
-                                  }}
-                                />
-                                <div className="pointer-events-none absolute inset-0 z-[70] flex items-center justify-center rounded-md bg-red-500/10">
-                                  <X className="h-10 w-10 stroke-[3] text-red-600/35" />
-                                </div>
-                              </>
-                            )}
+                            <CardOverlay
+                              card={ticket}
+                              lane={bay}
+                              look={looks.get(ticket.key)}
+                              nowMs={nowMs}
+                              menu={cardMenu}
+                              inset={cardInset(left, width)}
+                            />
                           </OrderCard>
                         </div>
                       );
                     })}
 
                     {/* 空きスロット（最後のカードの後ろ。NOW より前には置かない） */}
-                    <div
-                      style={{
-                        left: toX(freeFromSec) + 16,
-                      }}
-                    >
-                      <EmptySlotButton
-                        onClick={() => onOpenEmptySlot(barista.id)}
-                        className="h-full min-w-[130px]"
-                      />
-                    </div>
+                    {!readOnly && (
+                      <div
+                        style={{
+                          left: toX(freeFromMs) + 16,
+                        }}
+                      >
+                        <EmptySlotButton
+                          assigning={Boolean(pick?.openCard)}
+                          disabled={Boolean(
+                            pick?.openCard &&
+                              !caosDripperAllowed(pick.openCard, bay.id),
+                          )}
+                          onClick={() => {
+                            if (pick?.openCard)
+                              pick.assign(pick.openCard, bay.id);
+                            else onOpenEmptySlot(bay.id);
+                          }}
+                          className="h-full min-w-[130px]"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -335,15 +371,15 @@ export const DispatchBoard: React.FC<
             .filter((marker) => marker.isHour)
             .map((marker) => (
               <div
-                key={`hour-line-${marker.sec}`}
+                key={`hour-line-${marker.ms}`}
                 className="pointer-events-none absolute top-[30px] bottom-0 z-20 w-[2px] bg-slate-500/70"
-                style={{ left: `${STICKY_LEFT_WIDTH + toX(marker.sec)}px` }}
+                style={{ left: `${STICKY_LEFT_WIDTH + toX(marker.ms)}px` }}
                 aria-hidden="true"
               />
             ))}
           {/* Drawn on the track so it marks the real time even while browsing away from NOW. */}
           <div
-            className="pointer-events-none absolute top-[44px] bottom-0 z-40 w-[2px] bg-red-500"
+            className="pointer-events-none absolute top-0 bottom-0 z-40 w-[2px] bg-red-500"
             style={{ left: `${STICKY_LEFT_WIDTH + nowX}px` }}
             aria-hidden="true"
           >
@@ -352,14 +388,15 @@ export const DispatchBoard: React.FC<
             </div>
           </div>
         </div>
-      </div>
+      </ScrollArea>
       {drag.source &&
         drag.ghost(
           <OrderCard
-            card={drag.source.ticket}
-            className="border-l-[5px] border-l-slate-400"
+            newCommentsOnly
+            card={drag.source.card}
+            look={looks.get(drag.source.card.key)}
           />,
-          drag.target ? `→ ${drag.target}` : null,
+          dropTargetLabel(drag.target),
         )}
     </div>
   );

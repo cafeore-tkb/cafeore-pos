@@ -1,0 +1,194 @@
+package handlers
+
+import (
+	"context"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
+	"gorm.io/gorm"
+
+	"cafeore-pos/api/internal/models"
+)
+
+// アイテムの在庫とカップが、注文を受けたときの設定で減ることを本物の Postgres で確かめる。
+func TestItemStockAndCupsCountOrdersWithSettingsAtOrderTime(t *testing.T) {
+	api := newTestAPI(t)
+	db, inv := api.db, api.inv
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	call := func(method, path string, body any, want int, out any) {
+		t.Helper()
+		res := api.do(method, "/api"+path, body).expect(want)
+		if out != nil {
+			res.decode(out)
+		}
+	}
+
+	hot := models.ItemType{Name: "hot", DisplayName: "ホット"}
+	goods := models.ItemType{Name: "others", DisplayName: "グッズ", MakesCup: boolPtr(false), NeedsBrew: boolPtr(false)}
+	api.create(&hot, &goods)
+
+	// アイテムを作ると、そのアイテムの在庫ができる
+	newItem := func(name string, itemType models.ItemType) (models.ItemResponse, models.StockResource) {
+		t.Helper()
+		var item models.ItemResponse
+		call(http.MethodPost, "/items", models.ItemCreateRequest{Name: name, Abbr: name, ItemTypeId: itemType.ID}, http.StatusCreated, &item)
+		var stock models.StockResource
+		must(db.Preload("Item").First(&stock, "item_id = ?", item.Id).Error)
+		if stock.Kind != string(models.StockResourceKindItem) || stock.DisplayName() != name || stock.PerServing != 1 {
+			t.Fatalf("アイテムの在庫 = %+v", stock)
+		}
+		return item, stock
+	}
+	blend, blendStock := newItem("ブレンド", hot)
+	coaster, coasterStock := newItem("コースター", goods)
+
+	stockRequest := func(name *string, perServing float64, itemTypes ...uuid.UUID) models.StockResourceRequest {
+		// 種類が無いときも空の配列で送る（省略すると今のまま）
+		itemTypes = append([]uuid.UUID{}, itemTypes...)
+		return models.StockResourceRequest{Name: name, ItemTypeIds: &itemTypes, Unit: "g", PerServing: perServing, NotifyFrom: 10, NotifyStep: 2, Buffer: 3}
+	}
+	// アイテムの在庫は名前と使う種類を送らない
+	itemStockRequest := func(perServing float64) models.StockResourceRequest {
+		req := stockRequest(nil, perServing)
+		req.ItemTypeIds = nil
+		return req
+	}
+	cupName := "ホットカップ"
+	var cup models.StockResourceResponse
+	// グッズの種類を選んでも、グッズはカップを作らないので減らない
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, hot.ID, goods.ID), http.StatusCreated, &cup)
+	if cup.Kind != models.StockResourceKindCup || cup.ItemId != nil || len(cup.ItemTypeIds) != 2 {
+		t.Fatalf("カップ = %+v", cup)
+	}
+	call(http.MethodPost, "/inventory/resources", stockRequest(nil, 1), http.StatusBadRequest, nil)
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, hot.ID, hot.ID), http.StatusBadRequest, nil)
+	call(http.MethodPost, "/inventory/resources", stockRequest(&cupName, 1, uuid.New()), http.StatusBadRequest, nil)
+	// アイテムの在庫は量と通知の段階だけ変える。名前・種類を送ると 400、消すのはアイテムを消すとき
+	rename := "別の名前"
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), stockRequest(&rename, 15), http.StatusBadRequest, nil)
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), stockRequest(nil, 15, hot.ID), http.StatusBadRequest, nil)
+	var updated models.StockResourceResponse
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), itemStockRequest(15), http.StatusOK, &updated)
+	if updated.Name != "ブレンド" || len(updated.ItemTypeIds) != 0 || updated.PerServing != 15 || uuid.UUID(*updated.ItemId) != uuid.UUID(blend.Id) {
+		t.Fatalf("アイテムの在庫の更新 = %+v", updated)
+	}
+	call(http.MethodDelete, "/inventory/resources/"+blendStock.ID.String(), nil, http.StatusBadRequest, nil)
+
+	// 3 つの在庫それぞれ 1000 から数える
+	cupID := uuid.UUID(cup.Id)
+	cupStock := models.StockResource{ID: cupID}
+	for _, r := range []models.StockResource{blendStock, coasterStock, cupStock} {
+		api.seedStockEvent(r, models.StockEventKindCount, 1000, time.Now().Add(-time.Hour))
+	}
+	// ブレンド 2 杯とコースター 1 個のセット
+	set := api.seedMenu("セット", "s", 1000,
+		models.MenuItem{ItemID: uuid.UUID(blend.Id), Quantity: 2}, models.MenuItem{ItemID: uuid.UUID(coaster.Id), Quantity: 1})
+	newLine := menuLine(set)
+	expect := func(label string, want map[uuid.UUID][2]float64) {
+		t.Helper()
+		snapshots, err := inv.snapshots(context.Background(), nil)
+		must(err)
+		if len(snapshots) != len(want) {
+			t.Fatalf("%s: 在庫対象 %d 個, want %d", label, len(snapshots), len(want))
+		}
+		for _, s := range snapshots {
+			if w := want[s.Resource.ID]; s.Consumed != w[0] || float64(s.Servings) != w[1] {
+				t.Errorf("%s: %s consumed=%v servings=%d, want %v", label, s.Resource.DisplayName(), s.Consumed, s.Servings, w)
+			}
+		}
+	}
+
+	// 抽出が要るブレンドとそのカップは、提供の画面で提供可能にしたときに使う。抽出の要らないコースターは注文を受けたときに使う
+	markReady := func(orderID openapi_types.UUID) {
+		t.Helper()
+		must(db.Model(&models.OrderCup{}).Where("order_id = ? AND ready_at IS NULL", orderID).Update("ready_at", time.Now()).Error)
+	}
+	first := api.createOrder(1, set)
+	expect("提供可能にする前", map[uuid.UUID][2]float64{blendStock.ID: {0, 0}, coasterStock.ID: {1, 1}, cupID: {0, 0}})
+	// 注文で、アイテムの在庫は per_serving × 数、カップはカップを作るアイテムの数だけ減る
+	markReady(first.Id)
+	expect("1 つめ", map[uuid.UUID][2]float64{blendStock.ID: {30, 2}, coasterStock.ID: {1, 1}, cupID: {2, 2}})
+	if got := inv.ResourceIDsForOrders(uuid.UUID(first.Id)); len(got) != 3 {
+		t.Errorf("1 つめの注文の在庫対象 = %v, want 3 つ", got)
+	}
+
+	// あとで per_serving とカップの種類を変えても、前の注文の消費は変わらない
+	call(http.MethodPut, "/inventory/resources/"+blendStock.ID.String(), itemStockRequest(20), http.StatusOK, nil)
+	// 使う種類を省略した PUT では種類は今のまま
+	omitted := stockRequest(&cupName, 1)
+	omitted.ItemTypeIds = nil
+	var unchanged models.StockResourceResponse
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
+	if len(unchanged.ItemTypeIds) != 2 {
+		t.Fatalf("種類を省略した PUT の後の種類 = %v, want 2 つ", unchanged.ItemTypeIds)
+	}
+	// 種類を消すと、カップの使う種類からも外れる（送り返しても 400 にならない）
+	call(http.MethodDelete, "/item-types/"+goods.ID.String(), nil, http.StatusOK, nil)
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), omitted, http.StatusOK, &unchanged)
+	if len(unchanged.ItemTypeIds) != 1 || unchanged.ItemTypeIds[0] != hot.ID {
+		t.Fatalf("種類を消した後の種類 = %v, want ホットだけ", unchanged.ItemTypeIds)
+	}
+	call(http.MethodPut, "/inventory/resources/"+cupID.String(), stockRequest(&cupName, 1), http.StatusOK, nil)
+	markReady(api.createOrder(1, set).Id)
+	expect("変えた後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40, 4}, coasterStock.ID: {2, 2}, cupID: {2, 2}})
+
+	// 前の注文を編集しても、残した明細はその時点の量のまま。足した明細は今の設定で減る
+	kept := openapi_types.UUID(first.Menus[0].Id)
+	call(http.MethodPut, "/orders/"+first.Id.String(), models.OrderUpdateRequest{
+		Id: first.Id, OrderId: 1, BillingAmount: 2000, Received: 2000,
+		MenuIds: []models.MenuInfoCreate{{MenuId: set.ID, OrderMenuId: &kept}, newLine},
+	}, http.StatusOK, nil)
+	markReady(first.Id)
+	expect("編集した後", map[uuid.UUID][2]float64{blendStock.ID: {30 + 40 + 40, 6}, coasterStock.ID: {3, 3}, cupID: {2, 2}})
+
+	// 棚卸し・入荷・残り何回・通知の段階は今までどおり。注文の後の通知の判定を待ってから、下で直接呼ぶ
+	api.waitBackground()
+	api.seedStockEvent(cupStock, models.StockEventKindReceipt, 5, time.Now())
+	must(db.Model(&models.StockResource{}).Where("id = ?", blendStock.ID).Update("notify_from", 50).Error)
+	snapshots, err := inv.snapshots(context.Background(), nil)
+	must(err)
+	for _, s := range snapshots {
+		switch s.Resource.ID {
+		case cupID:
+			if *s.Remaining() != 1000+5-2 || *s.CountedQuantity != 1000 || s.Received != 5 {
+				t.Errorf("カップの残り = %v（数えた %v・入荷 %v）", *s.Remaining(), *s.CountedQuantity, s.Received)
+			}
+		case blendStock.ID:
+			// 残り 890g ÷ 20g = 44.5 回。通知を始める 50 回を切ったので warning
+			if *s.RemainingServings() != 44.5 || s.Level() != models.InventoryLevelWarning {
+				t.Errorf("ブレンドの残り = %v 回（%v）", *s.RemainingServings(), s.Level())
+			}
+		}
+	}
+	must(inv.checkAlerts(context.Background(), []uuid.UUID{blendStock.ID}))
+	if got := api.lastAlertThreshold(blendStock); got == nil || *got != 46 {
+		t.Errorf("通知した段階 = %v, want 46", got)
+	}
+
+	// アイテムを消すと在庫も消える。消す前の注文の消費は注文の側に残る
+	call(http.MethodDelete, "/items/"+blend.Id.String(), nil, http.StatusOK, nil)
+	expect("消した後", map[uuid.UUID][2]float64{coasterStock.ID: {3, 3}, cupID: {2, 2}})
+	var deleted models.StockResource
+	must(db.Unscoped().First(&deleted, "id = ?", blendStock.ID).Error)
+	if !deleted.DeletedAt.Valid {
+		t.Error("アイテムを消しても在庫が残っている")
+	}
+	if usages := api.count(&models.OrderStockUsage{}, "resource_id = ?", blendStock.ID); usages != 3 {
+		t.Errorf("消したアイテムの在庫の注文の行 = %d, want 3", usages)
+	}
+
+	// カップは消せる。使う種類の行も消す
+	call(http.MethodDelete, "/inventory/resources/"+cupID.String(), nil, http.StatusNoContent, nil)
+	links := api.count(&models.StockResourceItemType{}, "resource_id = ?", cupID)
+	if err := db.First(&models.StockResource{}, "id = ?", cupID).Error; err != gorm.ErrRecordNotFound || links != 0 {
+		t.Errorf("消したカップ: err=%v 種類の行=%d", err, links)
+	}
+}

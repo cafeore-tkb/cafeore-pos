@@ -2,12 +2,17 @@ name: pos / deploy (Workers)
 
 # POS フロントをビルドして Cloudflare Workers へデプロイする。
 #
-# ssr: false の SPA なので、Worker のスクリプトは持たず build/client を
-# 静的アセットとして配信するだけ（設定は services/pos/wrangler.jsonc）。
+# ssr: false の SPA なので、画面は build/client を静的アセットとして配信する
+# （設定は services/pos/wrangler.jsonc）。Worker のスクリプトは /api などを
+# Cloud Run の API へ中継するだけ（services/pos/worker/index.ts）。
 #
 # main への push と手動実行では本番へ deploy する。
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
 # プレビュー URL 付きのバージョンだけ作る。
+#
+# PR のバージョンには pr-<番号> のエイリアス（--preview-alias）も付ける。
+# pr-<番号>-<Worker 名>.<subdomain>.workers.dev という push しても変わらない URL が、
+# その PR で最後に上げたバージョンを指す（上げるたびに付け替わる）。
 #
 # ただし versions upload は Worker が既にあることが前提なので、まだ無いと
 # 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
@@ -98,7 +103,6 @@ jobs:
 
     env:
       # PR コメントを service ごとに1件へまとめるための目印。
-      # pos と mobile で別のコメントになるので、互いに上書きし合わない。
       # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
       COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
@@ -184,12 +188,24 @@ jobs:
             *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
           esac
 
+      # どの PR・コミットのビルドかを画面に焼き、トップページに出す（API の分は /status から）。
+      # 本番は main のマージコミットから PR を引く（.github/scripts/build-info.sh）。
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
       - name: ビルドする
         working-directory: services/pos
         run: pnpm run build
         env:
           # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める。
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          VITE_BUILD_PR: ${{ steps.build_info.outputs.pr }}
+          VITE_BUILD_COMMIT: ${{ steps.build_info.outputs.commit }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
           # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
           # 順にフォールバックする。
@@ -216,6 +232,16 @@ jobs:
           # Worker がまだ存在しないときに限り、PR でも wrangler deploy に
           # フォールバックする。詳しくは下のスクリプト内のコメントを参照。
           AUTO_DEPLOY_IF_NOT_EXIST: ${{ vars.WORKERS_AUTO_DEPLOY_IF_NOT_EXIST }}
+          # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
+          # README の「API の認証」を参照。
+          API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
+          # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
+          # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
+          LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
+          # 呼び出し画面の音声を作る ElevenLabs の鍵（worker/call-voice.ts）。
+          # Worker の secret の ELEVENLABS_API_KEY として、本番にもプレビューにも入れる。
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           set -uo pipefail
 
@@ -261,27 +287,97 @@ jobs:
             mode="versions-upload"
           fi
 
+          # 本番の Worker にだけ中継先を渡す。PR のプレビューでは渡さない
+          # （プレビューの画面は、焼き込んだプレビュー用 backend の URL を直接呼ぶ）。
+          #
+          # 画面が API を Worker 経由で呼ぶ設定（VITE_API_BASE_URL が workers.dev）なのに
+          # 中継先が無いと、本番の POS が API に届かなくなる。その組み合わせでは出さない。
+          var_args=()
+          if [ "$mode" = "deploy" ]; then
+            if [ -n "$API_ORIGIN" ]; then
+              var_args=(--var "API_ORIGIN:$API_ORIGIN")
+            else
+              case "$VITE_API_BASE_URL" in
+                *.workers.dev*)
+                  echo "::error::VITE_API_BASE_URL が Worker を向いているのに WORKERS_API_ORIGIN が無い。このままだと POS が API に届かない"
+                  exit 1
+                  ;;
+              esac
+              echo "::warning::WORKERS_API_ORIGIN が無いので、Worker は /api を中継しない"
+            fi
+          fi
+
+          # 中継するときは、トークンも deploy のたびに --secrets-file で入れ直す。
+          #
+          # wrangler secret put で Worker に置いておくだけだと、PR のプレビューの
+          # versions upload の直後の deploy で PROXY_TOKEN が消えたことがある。
+          # 消えると中継が LB で 403 になり、POS が API に届かなくなる。
+          # --secrets-file に書いていない secret は消えない（wrangler の挙動）。
+          #
+          # ElevenLabs の鍵は本番の deploy でもプレビューの versions upload でも毎回入れる。
+          # 書かなかった secret は前のバージョンから引き継がれるので、片方だけで入れると
+          # もう片方に古い値が残る。どちらも同じ GitHub の secret から入れて揃える。
+          # 無ければ入れない（呼び出し画面は音声を流さず、チャイムだけになる）。
+          #
+          # 値はコマンドラインに載せず、RUNNER_TEMP のファイル経由で渡して最後に消す。
+          proxy_token=""
+          if [ "$mode" = "deploy" ] && [ -n "$API_ORIGIN" ]; then
+            if [ -z "$LB_PROXY_TOKEN" ]; then
+              echo "::error::WORKERS_API_ORIGIN があるのに secret の LB_PROXY_TOKEN が無い。このままだと中継が LB で 403 になる"
+              exit 1
+            fi
+            proxy_token="$LB_PROXY_TOKEN"
+          fi
+          if [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::warning::secret の ELEVENLABS_API_KEY が無いので、呼び出し画面の音声は作れない（チャイムだけになる）"
+          fi
+          secret_args=()
+          if [ -n "$proxy_token" ] || [ -n "$ELEVENLABS_API_KEY" ]; then
+            secrets_file="$RUNNER_TEMP/worker-secrets.json"
+            trap 'rm -f "$secrets_file"' EXIT
+            (umask 077 && jq -n \
+              --arg proxy "$proxy_token" \
+              --arg eleven "$ELEVENLABS_API_KEY" \
+              '(if $proxy == "" then {} else {PROXY_TOKEN: $proxy} end)
+               + (if $eleven == "" then {} else {ELEVENLABS_API_KEY: $eleven} end)' \
+              > "$secrets_file")
+            secret_args=(--secrets-file "$secrets_file")
+          fi
+
           status=0
           if [ "$mode" = "deploy" ]; then
-            out=$(pnpm exec wrangler deploy 2>&1) || status=$?
+            out=$(pnpm exec wrangler deploy "${var_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
           else
+            # エイリアスは英字で始まり、Worker 名と - でつないで 63 文字以内であること
+            # （DNS のラベルになるため）。pr-<番号> なら収まる。
             out=$(pnpm exec wrangler versions upload \
               --tag "pr-$PR_NUMBER" \
-              --message "PR #$PR_NUMBER ($GITHUB_SHA)" 2>&1) || status=$?
+              --preview-alias "pr-$PR_NUMBER" \
+              --message "PR #$PR_NUMBER ($GITHUB_SHA)" \
+              "${secret_args[@]}" 2>&1) || status=$?
           fi
 
           echo "$out"
 
           # wrangler の出力から workers.dev の URL を拾う。
-          # versions upload ならプレビュー URL、deploy なら本番の URL。
+          # versions upload ならプレビュー URL（そのバージョンのもの）、deploy なら本番の URL。
+          # versions upload ではエイリアスの URL も別の行（Version Preview Alias URL: ...）に
+          # 出るので、そちらは行の見出しで拾い、プレビュー URL からはその行を除いておく
+          # （wrangler の出力の順が変わっても、エイリアスの URL を取り違えない）。
           # 取れなくてもここでは失敗させない（コメントを省くだけ）。
           preview_url=$(printf '%s\n' "$out" \
+            | grep -vF 'Preview Alias URL' \
+            | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
+            | head -1) || true
+          alias_url=$(printf '%s\n' "$out" \
+            | grep -F 'Preview Alias URL' \
             | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
             | head -1) || true
 
           {
             echo "mode=$mode"
             echo "preview_url=$preview_url"
+            echo "alias_url=$alias_url"
           } >> "$GITHUB_OUTPUT"
 
           {
@@ -300,10 +396,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.number }}
           PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+          ALIAS_URL: ${{ steps.deploy.outputs.alias_url }}
           MODE: ${{ steps.deploy.outputs.mode }}
           API_OWNER: ${{ steps.api_url.outputs.owner }}
         run: |
           set -uo pipefail
+
+          # エイリアスの URL は push しても変わらないので、そちらを URL として出し、
+          # バージョンの URL は「この commit」として添える。エイリアスが取れなかったとき
+          # （deploy に倒したときなど）はバージョンの URL だけを出す。
+          url_rows="| URL | $PREVIEW_URL |"
+          if [ -n "$ALIAS_URL" ]; then
+            url_rows=$(printf '%s\n' \
+              "| URL | $ALIAS_URL |" \
+              "| この commit の URL | $PREVIEW_URL |")
+          fi
 
           body=$(printf '%s\n' \
             "$COMMENT_MARKER" \
@@ -311,7 +418,7 @@ jobs:
             "" \
             "| | |" \
             "| --- | --- |" \
-            "| URL | $PREVIEW_URL |" \
+            "$url_rows" \
             "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
             "| commit | \`$GITHUB_SHA\` |" \
             "| mode | \`$MODE\` |" \

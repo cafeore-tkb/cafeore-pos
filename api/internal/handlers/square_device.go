@@ -112,6 +112,12 @@ func validateSquareDeviceName(name string) (string, error) {
 	return name, nil
 }
 
+// hasPendingCode は、端末での入力を待っているコードがあるかを返す。ペアリング待ちの行と、
+// ペアリング済みの端末にコードを発行し直した行が当たる。コードは入力されるか期限が切れたら消す。
+func hasPendingCode(device *models.SquareDevice) bool {
+	return device.CodeID != nil && device.Code != nil
+}
+
 func toSquareDeviceResponse(device *models.SquareDevice) models.SquareDeviceResponse {
 	response := models.SquareDeviceResponse{
 		Id:        openapi_types.UUID(device.ID),
@@ -123,7 +129,7 @@ func toSquareDeviceResponse(device *models.SquareDevice) models.SquareDeviceResp
 		UpdatedAt: device.UpdatedAt,
 	}
 	// コードはペアリングに使う間だけ見せる。
-	if device.Status == squareDeviceUnpaired {
+	if hasPendingCode(device) {
 		response.Code = device.Code
 	}
 	return response
@@ -207,10 +213,10 @@ func importSquareDevice(tx *gorm.DB, code square.DeviceCode) (*models.SquareDevi
 	return &device, nil
 }
 
-// refreshPairing はペアリング待ちの行を Square に問い合わせ、済んでいれば device_id を記録する。
+// refreshPairing は入力待ちのコードを Square に問い合わせ、済んでいれば device_id を記録する。
 // 問い合わせに失敗しても何もしない（管理画面は数秒おきに一覧を取り直すので、そこで再試行する）。
 func (h *SquareHandler) refreshPairing(ctx context.Context, device *models.SquareDevice) {
-	if !h.enabled() || device.Status != squareDeviceUnpaired || device.CodeID == nil {
+	if !h.enabled() || !hasPendingCode(device) {
 		return
 	}
 	code, err := h.client.GetDeviceCode(ctx, *device.CodeID)
@@ -227,7 +233,10 @@ func (h *SquareHandler) refreshPairing(ctx context.Context, device *models.Squar
 			log.Printf("square: failed to save paired device %s: %v", device.ID, err)
 		}
 	case squareDeviceExpired:
-		device.Status = squareDeviceExpired
+		// ペアリング済みの端末に発行し直したコードは消すだけで、端末は今の device_id のまま使う。
+		if device.Status == squareDeviceUnpaired {
+			device.Status = squareDeviceExpired
+		}
 		device.Code = nil
 		if err := h.db.WithContext(ctx).Model(device).Select("Status", "Code", "UpdatedAt").Updates(device).Error; err != nil {
 			log.Printf("square: failed to save expired device code %s: %v", device.ID, err)
@@ -243,7 +252,7 @@ func (h *SquareHandler) refreshPairing(ctx context.Context, device *models.Squar
 func (h *SquareHandler) GetDevices(c *gin.Context) {
 	ctx := c.Request.Context()
 	var pending []models.SquareDevice
-	if err := h.db.WithContext(ctx).Where("status = ?", squareDeviceUnpaired).Find(&pending).Error; err != nil {
+	if err := h.db.WithContext(ctx).Where("code_id IS NOT NULL AND code IS NOT NULL").Find(&pending).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -276,20 +285,8 @@ func (h *SquareHandler) PairDevice(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	ctx := c.Request.Context()
-
-	code, err := h.client.CreateDeviceCode(ctx, uuid.NewString(), square.DeviceCode{
-		Name:        name,
-		LocationID:  h.locationID,
-		ProductType: squareDeviceProductType,
-	})
-	if err != nil {
-		log.Printf("square: failed to create device code: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "コードを発行できませんでした: " + err.Error()})
-		return
-	}
-	if code.ID == "" || code.Code == "" {
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Square の応答にコードがありません"})
+	code := h.createDeviceCode(c, name)
+	if code == nil {
 		return
 	}
 
@@ -301,11 +298,84 @@ func (h *SquareHandler) PairDevice(c *gin.Context) {
 		Code:   &code.Code,
 		PairBy: parseSquareTime(code.PairBy),
 	}
-	if err := h.db.WithContext(ctx).Create(&device).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Create(&device).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusCreated, toSquareDeviceResponse(&device))
+}
+
+// POST /api/square/devices/:id/code
+//
+// ペアリング済みの端末にコードを発行し直す。端末がサインアウトしたときに、レジで選び直さずに
+// サインインし直すため（同じ端末なら device_id は変わらない）。発行しても行は PAIRED のままで、
+// 端末でコードが入力されるまで今の device_id で決済に使える。入力されたら refreshPairing が
+// device_id を記録し直し、期限が切れたらコードだけを消す。
+func (h *SquareHandler) IssueDeviceCode(c *gin.Context) {
+	if !h.enabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Square 連携が設定されていません"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+	ctx := c.Request.Context()
+
+	var device models.SquareDevice
+	if err := h.db.WithContext(ctx).First(&device, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if device.Status != squareDevicePaired {
+		c.JSON(http.StatusConflict, gin.H{"error": "ペアリング済みの端末にだけ発行し直せます"})
+		return
+	}
+
+	code := h.createDeviceCode(c, device.Name)
+	if code == nil {
+		return
+	}
+	// 入力待ちのコードがあれば置き換える。前のコードを入力されても、この行では追わない。
+	device.CodeID = &code.ID
+	device.Code = &code.Code
+	device.PairBy = parseSquareTime(code.PairBy)
+	result := h.db.WithContext(ctx).Model(&device).Select("CodeID", "Code", "PairBy", "UpdatedAt").Updates(&device)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		// 発行している間に一覧から外された。
+		c.JSON(http.StatusNotFound, gin.H{"error": "Device not found"})
+		return
+	}
+	c.JSON(http.StatusOK, toSquareDeviceResponse(&device))
+}
+
+// createDeviceCode は端末に入力するコードを Square に発行してもらう。
+// 発行できなければ 502 を返し、nil を返す。
+func (h *SquareHandler) createDeviceCode(c *gin.Context, name string) *square.DeviceCode {
+	code, err := h.client.CreateDeviceCode(c.Request.Context(), uuid.NewString(), square.DeviceCode{
+		Name:        name,
+		LocationID:  h.locationID,
+		ProductType: squareDeviceProductType,
+	})
+	if err != nil {
+		log.Printf("square: failed to create device code: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "コードを発行できませんでした: " + err.Error()})
+		return nil
+	}
+	if code.ID == "" || code.Code == "" {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Square の応答にコードがありません"})
+		return nil
+	}
+	return code
 }
 
 // POST /api/square/devices

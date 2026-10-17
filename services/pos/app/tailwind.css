@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource/zen-old-mincho";
+@import "@fontsource/zen-old-mincho/600.css";
 @import "@fontsource-variable/noto-sans-jp";
 
 @plugin "tailwindcss-animate";
@@ -40,6 +41,19 @@
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
+  /* お客さん向けの画面（cashier-mini・呼び出し画面）の差し色 */
+  --color-theme-gold: #b09860;
+  /* レジの先払い（個別小計・小計分割）。撫子色を沈めた色で、先会計・小計分割の地と文字に使う */
+  --color-prepay: #9b5c73;
+  --color-prepay-ink: #6e3b4f;
+  --color-prepay-line: #d9a9ba;
+  --color-prepay-soft: #f8eef2;
+  --color-prepay-tint: #fbf4f6;
+  /* レジの決済手段の色。現金は橙、Square は theme-primary。内訳の帯・印にも使う */
+  --color-cash: #c24e1f;
+  --color-cash-tint: #fff4ee;
+  --color-square-tint: #eef3f7;
+  --color-emoney: #6a9cc4;
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
@@ -80,6 +94,47 @@
   20%,
   50% {
     opacity: 0;
+  }
+}
+
+/* 呼び出し画面で新しく入った番号に敷く光の地（callscreen.components の GlowBase）。浮かび上がり、終わりに消える */
+@keyframes call-glow-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes call-glow-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* プリズムの光の帯（callscreen.components の PrismLight）。斜めに傾けたまま、プレートの左の外から右の外まで抜ける */
+@keyframes prism-sweep {
+  from {
+    transform: translateX(-130%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(210%) skewX(-20deg);
+  }
+}
+
+/* 呼び出し画面に入ってきたプレート（callscreen.components の PlateBoard）。ほかが滑り終わってから、その場所に浮かぶ */
+@keyframes plate-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 

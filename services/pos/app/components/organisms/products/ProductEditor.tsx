@@ -2,6 +2,7 @@ import {
   ItemEntity,
   type ItemType,
   MenuEntity,
+  type StockResource,
   type WithId,
   itemRepository,
   itemTypeRepository,
@@ -25,6 +26,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "~/components/ui/sheet";
+import {
+  type StockAmounts,
+  saveItemStock,
+  stockAmounts,
+  stockChanges,
+} from "~/lib/stock";
 import { copyName } from "~/lib/utils";
 
 export type ProductKind = "menu" | "item" | "itemType";
@@ -55,6 +62,7 @@ type Props = {
   menus: WithId<MenuEntity>[];
   items: WithId<ItemEntity>[];
   itemTypes: ItemType[];
+  resources: StockResource[];
 };
 
 export function ProductEditor({
@@ -64,6 +72,7 @@ export function ProductEditor({
   menus,
   items,
   itemTypes,
+  resources,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
   // 同名のメニューだけ保存に失敗したとき、そのメニューの追加を入力済みで出し直す
@@ -109,6 +118,29 @@ export function ProductEditor({
     }
   };
 
+  // アイテムを保存してから、savedStock（編集のときの、開いたときの在庫）から変えた値を送る。
+  // 新規・複製は入れた値をすべて、アイテムと一緒に API が作った在庫に送る。
+  // 在庫だけ失敗したとき、編集はそのまま失敗にして入力を残す（やり直してもアイテムは増えない）。
+  // 新規・複製はやり直すとアイテムが重複するので、保存は済んだ扱いにして知らせる
+  const saveItem = async (
+    values: ItemFormValues,
+    id: string | undefined,
+    savedStock?: StockAmounts,
+  ) => {
+    const item = await itemRepository.save(toItemEntity(values, itemTypes, id));
+    try {
+      await saveItemStock(item.id, stockChanges(values.stock, savedStock));
+    } catch (e) {
+      if (id) throw e;
+      toast.error(
+        `アイテムは保存しましたが、在庫の保存に失敗しました: ${
+          e instanceof Error ? e.message : "不明なエラー"
+        }。編集から直してください`,
+      );
+    }
+    return item;
+  };
+
   const saveItemWithMenu = async (
     values: ItemFormValues,
     menu: SameNameMenu,
@@ -117,9 +149,7 @@ export function ProductEditor({
     try {
       let item: WithId<ItemEntity>;
       try {
-        item = await itemRepository.save(
-          toItemEntity(values, itemTypes, undefined),
-        );
+        item = await saveItem(values, undefined);
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "保存に失敗しました");
         return;
@@ -127,6 +157,7 @@ export function ProductEditor({
       const menuValues: MenuFormValues = {
         name: item.name,
         abbr: item.abbr,
+        priority: 0,
         ...menu,
         items: [{ item, quantity: 1 }],
       };
@@ -171,6 +202,8 @@ export function ProductEditor({
               price: source.price,
               // キーは重複できないので入れ直してもらう
               key: "",
+              // 複製は元のメニューの隣に並べる
+              priority: source.priority,
               items: source.items,
             }
         : (menuRetry ?? undefined);
@@ -199,6 +232,8 @@ export function ProductEditor({
     if (kind === "item") {
       const source = items.find((item) => item.id === id);
       if (mode !== "new" && !source) return null;
+      const sourceStock =
+        source && resources.find((r) => r.item_id === source.id);
       const initialItem =
         source &&
         (isEdit
@@ -213,6 +248,8 @@ export function ProductEditor({
           key={formKey}
           initialItem={initialItem}
           itemTypes={itemTypes}
+          // 編集・複製は元の在庫の値を入れる
+          initialStock={sourceStock && stockAmounts(sourceStock)}
           submitting={submitting}
           onCreateItemType={createItemType}
           menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
@@ -220,9 +257,9 @@ export function ProductEditor({
             menu
               ? saveItemWithMenu(values, menu)
               : save(() =>
-                  itemRepository.save(
-                    toItemEntity(values, itemTypes, isEdit ? id : undefined),
-                  ),
+                  isEdit
+                    ? saveItem(values, id, values.savedStock)
+                    : saveItem(values, undefined),
                 )
           }
         />
@@ -236,7 +273,7 @@ export function ProductEditor({
       (isEdit
         ? source
         : {
-            name: source.name,
+            ...source,
             display_name: copyName(source.display_name),
           });
     return (

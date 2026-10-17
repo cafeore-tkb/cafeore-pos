@@ -70,6 +70,7 @@ const (
 	kindEnum
 	kindObject
 	kindArray
+	kindBool
 )
 
 type valueSpec struct {
@@ -79,6 +80,7 @@ type valueSpec struct {
 	fields   []fieldSpec // kindObject
 	elem     *valueSpec  // kindArray
 	minLen   int         // kindArray
+	max      int         // kindPositiveInt。0 なら上限なし
 }
 
 type fieldSpec struct {
@@ -121,6 +123,8 @@ var menuSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 	{name: "key", spec: valueSpec{kind: kindString}},
 	{name: "items", spec: valueSpec{kind: kindArray, elem: &menuItemSpec, minLen: 1}},
 	{name: "assignee", spec: valueSpec{kind: kindString, nullable: true}},
+	// 番号より前の画面が送る状態には無い（zod は無ければ null にする）
+	{name: "dripper", optional: true, spec: valueSpec{kind: kindPositiveInt, nullable: true, max: caosDrippers}},
 }}
 
 // menuItemSchema。item は itemSchema.required() なので id も必須
@@ -133,6 +137,11 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "id", optional: true, spec: valueSpec{kind: kindString}},
 			{name: "name", spec: valueSpec{kind: kindString}},
 			{name: "display_name", spec: valueSpec{kind: kindString}},
+			// 古いレジ状態には無いので受け付ける（フロントは項目の無いレジ状態を読み込みで弾く）
+			{name: "makes_cup", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "iced_brew", optional: true, spec: valueSpec{kind: kindBool}},
 		}}},
 	}}},
 	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},
@@ -164,6 +173,9 @@ func validateValue(path string, v interface{}, spec valueSpec) error {
 		}
 		if spec.kind == kindPositiveInt && n <= 0 {
 			return fmt.Errorf("%s must be positive", path)
+		}
+		if spec.max > 0 && n > float64(spec.max) {
+			return fmt.Errorf("%s must be at most %d", path, spec.max)
 		}
 	case kindString, kindUUID, kindDate, kindEnum:
 		str, ok := v.(string)
@@ -200,6 +212,10 @@ func validateValue(path string, v interface{}, spec valueSpec) error {
 			if err := validateValue(path+"."+f.name, fv, f.spec); err != nil {
 				return err
 			}
+		}
+	case kindBool:
+		if _, ok := v.(bool); !ok {
+			return fmt.Errorf("%s must be a boolean", path)
 		}
 	case kindArray:
 		arr, ok := v.([]interface{})
@@ -285,7 +301,9 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		ID:               models.CashierStateID,
 		EdittingOrder:    models.JSONB(raw),
 		SubmittedOrderID: (*uuid.UUID)(req.SubmittedOrderId),
-		UpdatedAt:        time.Now(),
+		// DB に保存される精度（マイクロ秒）にそろえる。保存した内容を読み直さずに返す・配信するので、
+		// そろえないと GET や再接続時の初期データと updated_at が食い違う
+		UpdatedAt: time.Now().Truncate(time.Microsecond),
 	}
 
 	resp, err := h.saveAndBroadcast(&state)
@@ -293,6 +311,10 @@ func (h *CashierStateHandler) UpdateCashierState(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// ほかのインスタンスにつないでいる画面（お客さん向けの表示など）にも届くよう、
+	// DB の通知で知らせる（order_listener.go）。受けた側は DB から読み直すので、
+	// cashierStateMu の外で送ってよい
+	notifyCashierStateChanged(h.db)
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -322,6 +344,20 @@ func (h *CashierStateHandler) saveAndBroadcast(state *models.CashierState) (mode
 		CashierState: &resp,
 	})
 	return resp, nil
+}
+
+// レジ状態を DB から読み直して、このインスタンスにつないでいる画面へだけ配る。
+// ほかのインスタンスでの PUT の通知を受けたときに使う。
+//
+// このインスタンスでの PUT（saveAndBroadcast）と入れ違って、読み直した古い状態が
+// 後から届かないよう、読み込みから配信までを cashierStateMu で囲む。
+func broadcastCashierState(db *gorm.DB, hub *Hub) {
+	cashierStateMu.Lock()
+	defer cashierStateMu.Unlock()
+
+	if msg, ok := cashierStateMessage(db); ok {
+		hub.Broadcast(msg)
+	}
 }
 
 // 現在のレジ状態を、接続直後の初期データとして WSMessage にする。まだ無ければ ok = false。

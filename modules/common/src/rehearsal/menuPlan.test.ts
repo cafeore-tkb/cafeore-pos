@@ -2,30 +2,31 @@ import { describe, expect, test } from "vitest";
 import { xoshiro128ss } from "./generator";
 import {
   type MenuPlan,
-  evenPlan,
+  type PlanMenu,
+  goodsInMenu,
   initialPlan,
-  lastYearPlan,
-  matchPastItem,
+  menuType,
   pastItemShares,
-  pastRoleShares,
+  pastTypeShares,
+  pastTypes,
   planOrder,
   reweightBaskets,
-  roleSharesOf,
-  unassignedRoles,
+  typeSharesOf,
+  unassignedTypes,
 } from "./menuPlan";
 import type { Basket, GeneratorParams } from "./params";
 
 const baskets: Basket[] = [
-  { roles: { house_blend: 1 }, goods: 0, weight: 50 },
-  { roles: { house_blend: 2 }, goods: 0, weight: 10 },
-  { roles: { single_origin: 1 }, goods: 0, weight: 20 },
-  { roles: { single_origin: 1, ice_ore: 1 }, goods: 0, weight: 10 },
-  { roles: { ice_ore: 1 }, goods: 1, weight: 10 },
-  { roles: {}, goods: 1, weight: 5 },
+  { types: { hot: 1 }, weight: 50 },
+  { types: { hot: 2 }, weight: 10 },
+  { types: { ice: 1 }, weight: 20 },
+  { types: { ice: 1, iceOre: 1 }, weight: 10 },
+  { types: { iceOre: 1, others: 1 }, weight: 10 },
+  { types: { others: 1 }, weight: 5 },
 ];
 
 const params: GeneratorParams = {
-  version: 2,
+  version: 3,
   source: { dates: [], orders: 0 },
   binMinutes: 10,
   edges: [0.8, 1, 1.2],
@@ -36,304 +37,190 @@ const params: GeneratorParams = {
     {
       id: "02_cafeore_brend",
       name: "珈琲・俺ブレンド",
-      role: "house_blend",
-      counts: { "2024": 10, "2025": 60 },
+      type: "hot",
+      counts: { "2024": 10, "2025": 45 },
     },
     {
       id: "05_pink_bourbon",
       name: "ピンクブルボン",
-      role: "single_origin",
+      type: "hot",
       counts: { "2025": 15 },
-    },
-    {
-      id: "06_toraja",
-      name: "トラジャ",
-      role: "single_origin",
-      counts: { "2025": 5 },
-    },
-    {
-      id: "04_mandheling",
-      name: "マンデリン",
-      role: "single_origin",
-      counts: { "2024": 30 },
     },
     {
       id: "30_ice_ore",
       name: "アイスオレ",
-      role: "ice_ore",
-      counts: { "2025": 20 },
+      type: "iceOre",
+      counts: { "2024": 30, "2025": 30 },
     },
     {
       id: "52_tote",
       name: "トートバッグ",
-      role: "goods",
-      counts: { "2025": 4 },
+      type: "others",
+      counts: { "2025": 10 },
     },
   ],
 };
 
-const menus = [
-  { id: "m-house", name: "珈琲・俺ブレンド" },
-  { id: "m-pink", name: "ピンクブルボン" },
-  { id: "m-new", name: "エチオピア" },
-  { id: "m-ore", name: "アイスオレ" },
-  { id: "m-set", name: "ブレンドとトートのセット" },
-  { id: "m-tote", name: "トートバッグ" },
-];
+const itemOf = (name: string, makes_cup = true) => ({
+  item_type: { name, makes_cup },
+});
+
+const menu = (
+  id: string,
+  ...items: [string, number, boolean?][]
+): PlanMenu => ({
+  id,
+  name: id,
+  items: items.map(([type, quantity, cup]) => ({
+    quantity,
+    item: itemOf(type, cup ?? true),
+  })),
+});
+
+const house = menu("house", ["hot", 1]);
+const pink = menu("pink", ["hot", 1]);
+const ore = menu("ore", ["iceOre", 1]);
+const tote = menu("tote", ["others", 1, false]);
+const set = menu("set", ["hot", 1], ["others", 1, false]);
+const double = menu("double", ["hot", 2]);
+const menus = [house, pink, ore, tote, set, double];
+
+const plan = (weights: Record<string, number> = {}): MenuPlan => ({
+  version: 2,
+  typeShares: {},
+  weights,
+});
 
 describe("[unit] rehearsal menu plan", () => {
-  test("last year's role shares count only that year's cups", () => {
-    const shares = pastRoleShares(params, "2025");
-    expect(shares.house_blend).toBeCloseTo(60);
-    expect(shares.single_origin).toBeCloseTo(20);
-    expect(shares.ice_ore).toBeCloseTo(20);
-    expect(shares.premium).toBe(0);
+  test("the type of a menu comes from the item types in the DB", () => {
+    expect(menuType(house)).toBe("hot");
+    expect(menuType(tote)).toBe("others");
+    // 物販の付いたセットはドリンクの種類で 1 個ぶん
+    expect(menuType(set)).toBe("hot");
+    expect(goodsInMenu(set)).toEqual({ others: 1 });
+    expect(goodsInMenu(tote)).toEqual({});
+    // 2 杯以上のセット・物販 2 個は出さない
+    expect(menuType(double)).toBeNull();
+    expect(menuType(menu("two-goods", ["others", 2, false]))).toBeNull();
   });
 
-  test("menus are matched to past items by name", () => {
-    expect(matchPastItem(params, "ピンクブルボン")?.id).toBe("05_pink_bourbon");
-    expect(matchPastItem(params, " アイスオレ ")?.id).toBe("30_ice_ore");
-    expect(matchPastItem(params, "エチオピア")).toBeNull();
+  test("last year's type shares count only that year", () => {
+    const shares = pastTypeShares(params, "2025");
+    expect(shares.hot).toBeCloseTo(60);
+    expect(shares.iceOre).toBeCloseTo(30);
+    expect(shares.others).toBeCloseTo(10);
+    expect(pastTypes(params)).toEqual(["hot", "iceOre", "others"]);
   });
 
-  test("the initial plan puts only name-matched menus into a role", () => {
-    const plan = initialPlan(params, menus);
-    expect(plan.menus["m-house"].role).toBe("house_blend");
-    expect(plan.menus["m-pink"].role).toBe("single_origin");
-    expect(plan.menus["m-tote"].role).toBe("goods");
-    expect(plan.menus["m-new"].role).toBeNull();
-    expect(plan.menus["m-set"].role).toBeNull();
+  test("the breakdown of a type lists last year's items", () => {
+    const rows = pastItemShares(params, "2025", "hot");
+    expect(rows.map((r) => [r.name, r.count])).toEqual([
+      ["珈琲・俺ブレンド", 45],
+      ["ピンクブルボン", 15],
+    ]);
+    expect(rows[0].share).toBeCloseTo(75);
   });
 
-  test("same as last year: matched menus take last year's share, new ones split the rest", () => {
-    const current: MenuPlan = {
-      ...initialPlan(params, menus),
-    };
-    current.menus["m-new"] = { role: "single_origin", weight: 0 };
-    const plan = lastYearPlan(params, menus, current);
-    // 2025 のシングルは ピンクブルボン 75% / トラジャ 25%。トラジャは今年無いので新メニューへ
-    expect(plan.menus["m-pink"].weight).toBeCloseTo(75);
-    expect(plan.menus["m-new"].weight).toBeCloseTo(25);
-    expect(plan.roleShares.house_blend).toBeCloseTo(60);
+  test("the initial plan keeps last year's type shares and splits each type evenly", () => {
+    const initial = initialPlan(params);
+    expect(initial.typeShares.hot).toBeCloseTo(60);
+    expect(initial.weights).toEqual({});
   });
 
-  test("a role whose menus match nothing is split evenly", () => {
-    const current = initialPlan(params, menus);
-    current.menus["m-house"] = { role: null, weight: 0 };
-    current.menus["m-set"] = { role: "house_blend", weight: 0 };
-    const plan = lastYearPlan(params, menus, current);
-    expect(plan.menus["m-set"].weight).toBeCloseTo(100);
-  });
-
-  test("evenPlan splits each role evenly", () => {
-    const plan = evenPlan({
-      version: 1,
-      roleShares: {},
-      menus: {
-        a: { role: "single_origin", weight: 90 },
-        b: { role: "single_origin", weight: 10 },
-        c: { role: null, weight: 5 },
-      },
-    });
-    expect(plan.menus.a.weight).toBeCloseTo(50);
-    expect(plan.menus.b.weight).toBeCloseTo(50);
-    expect(plan.menus.c.weight).toBe(0);
-  });
-
-  test("unassignedRoles lists roles with a share but no menu", () => {
+  test("unassignedTypes lists types with a share but no menu to draw", () => {
     expect(
-      unassignedRoles({
-        version: 1,
-        roleShares: { house_blend: 50, ice_ore: 50, premium: 0 },
-        menus: { a: { role: "house_blend", weight: 100 } },
-      }),
-    ).toEqual(["ice_ore"]);
+      unassignedTypes(
+        {
+          version: 2,
+          typeShares: { hot: 50, iceOre: 40, ice: 10, milk: 0 },
+          weights: { ore: 0 },
+        },
+        menus,
+      ),
+    ).toEqual(["ice", "iceOre"]);
   });
 
-  test("reweightBaskets hits the target role shares and keeps goods-only orders", () => {
-    const target = { house_blend: 30, single_origin: 50, ice_ore: 20 };
+  test.each([
+    { baskets: [] },
+    { baskets: [{ types: { hot: 1 }, weight: 0 }] },
+    { baskets: [{ types: { hot: 0 }, weight: 1 }] },
+    { baskets: [{ types: { hot: 1 }, weight: -1 }] },
+  ])(
+    "typeSharesOf returns no shares for a non-positive total: %j",
+    ({ baskets }) => {
+      expect(typeSharesOf(baskets)).toEqual({});
+    },
+  );
+
+  test("reweightBaskets hits the target type shares", () => {
+    const target = { hot: 30, ice: 40, iceOre: 20, others: 10 };
     const reweighted = reweightBaskets(baskets, target);
-    const shares = roleSharesOf(reweighted);
-    expect(shares.house_blend).toBeCloseTo(0.3, 2);
-    expect(shares.single_origin).toBeCloseTo(0.5, 2);
-    expect(shares.ice_ore).toBeCloseTo(0.2, 2);
-    expect(reweighted[5].weight).toBe(5);
+    const shares = typeSharesOf(reweighted);
+    expect(shares.hot).toBeCloseTo(0.3, 2);
+    expect(shares.ice).toBeCloseTo(0.4, 2);
+    expect(shares.iceOre).toBeCloseTo(0.2, 2);
+    expect(shares.others).toBeCloseTo(0.1, 2);
     // 2 杯の組は 2 杯のまま（組は壊さない）
-    expect(reweighted[1].roles).toEqual({ house_blend: 2 });
+    expect(reweighted[1].types).toEqual({ hot: 2 });
   });
 
-  test("a role with 0% drops every basket that contains it", () => {
+  test("a type with 0% drops every basket that contains it", () => {
     const reweighted = reweightBaskets(baskets, {
-      house_blend: 50,
-      single_origin: 50,
-      ice_ore: 0,
+      hot: 50,
+      ice: 50,
+      iceOre: 0,
+      others: 0,
     });
     expect(reweighted[3].weight).toBeCloseTo(0, 6);
     expect(reweighted[4].weight).toBeCloseTo(0, 6);
-    expect(roleSharesOf(reweighted).single_origin).toBeCloseTo(0.5, 2);
+    expect(typeSharesOf(reweighted).ice).toBeCloseTo(0.5, 2);
   });
 
-  test("planOrder replaces cups and goods with menus and groups the same menu", () => {
-    const plan: MenuPlan = {
-      version: 1,
-      roleShares: {},
-      menus: {
-        "m-house": { role: "house_blend", weight: 100 },
-        "m-tote": { role: "goods", weight: 100 },
-      },
-    };
+  test("planOrder replaces each unit with a menu and groups the same menu", () => {
     const lines = planOrder(
-      {
-        offsetSec: 0,
-        roles: { house_blend: 2, ice_ore: 1 },
-        drinkCups: 3,
-        goods: 1,
-      },
-      plan,
+      { offsetSec: 0, types: { hot: 2, milk: 1, others: 1 } },
+      plan({ pink: 0, set: 0 }),
+      menus,
       xoshiro128ss(1),
     );
     expect(lines).toEqual([
-      { menuId: "m-house", role: "house_blend", count: 2 },
-      { menuId: null, role: "ice_ore", count: 1 },
-      { menuId: "m-tote", role: "goods", count: 1 },
+      { menuId: "house", type: "hot", count: 2 },
+      { menuId: null, type: "milk", count: 1 },
+      { menuId: "tote", type: "others", count: 1 },
     ]);
   });
 
-  test("planOrder draws menus within a role by weight", () => {
-    const plan: MenuPlan = {
-      version: 1,
-      roleShares: {},
-      menus: {
-        a: { role: "single_origin", weight: 80 },
-        b: { role: "single_origin", weight: 20 },
-      },
+  test("planOrder draws menus within a type by weight, evenly by default", () => {
+    const share = (weights: Record<string, number>) => {
+      const rng = xoshiro128ss(5);
+      let n = 0;
+      for (let i = 0; i < 5000; i++) {
+        const [line] = planOrder(
+          { offsetSec: 0, types: { iceOre: 1 } },
+          plan(weights),
+          [ore, menu("ore2", ["iceOre", 1])],
+          rng,
+        );
+        if (line.menuId === "ore") n++;
+      }
+      return n / 5000;
     };
-    const rng = xoshiro128ss(5);
-    let a = 0;
-    for (let i = 0; i < 5000; i++) {
-      const [line] = planOrder(
-        { offsetSec: 0, roles: { single_origin: 1 }, drinkCups: 1, goods: 0 },
-        plan,
-        rng,
-      );
-      if (line.menuId === "a") a++;
-    }
-    expect(a / 5000).toBeGreaterThan(0.77);
-    expect(a / 5000).toBeLessThan(0.83);
-  });
-
-  describe("2025: 縁ブレンドとも花も香ブレンド、トートセット", () => {
-    // 2025 年祭の実数。縁ブレンドの 46 杯はトートセットの中の ¥0 のドリンク
-    const festival: GeneratorParams = {
-      ...params,
-      items: [
-        {
-          id: "01_yukari_brend",
-          name: "縁ブレンド",
-          role: "signature_blend",
-          counts: { "2025": 317 },
-        },
-        {
-          id: "08_special_mocha_blend",
-          name: "も花も香ブレンド",
-          role: "signature_blend",
-          counts: { "2025": 85 },
-        },
-        {
-          id: "51_tote_yukari",
-          name: "トートセット",
-          role: "goods",
-          counts: { "2025": 46 },
-        },
-        {
-          id: "50_coaster",
-          name: "コースター",
-          role: "goods",
-          counts: { "2025": 62 },
-        },
-      ],
-    };
-
-    test("the two blends count as one 看板ブレンド and the set is shown in that role", () => {
-      const rows = pastItemShares(festival, "2025", "signature_blend");
-      expect(rows.map((r) => [r.name, r.count])).toEqual([
-        ["縁ブレンド・も花も香ブレンド", 356],
-        ["トートセット", 46],
-      ]);
-      expect(rows[1].share).toBeCloseTo((100 * 46) / 402);
-      // 物販の内訳にはセットを出さない
-      expect(
-        pastItemShares(festival, "2025", "goods").map((r) => r.name),
-      ).toEqual(["コースター"]);
-    });
-
-    test("either blend name matches the merged entry, and the set matches by name", () => {
-      expect(matchPastItem(festival, "縁ブレンド")?.id).toBe("signature_2025");
-      expect(matchPastItem(festival, "も花も香ブレンド")?.id).toBe(
-        "signature_2025",
-      );
-      expect(matchPastItem(festival, "トートセット")?.role).toBe(
-        "signature_blend",
-      );
-    });
-
-    test("same as last year gives a new blend and a new set last year's split", () => {
-      const plan = lastYearPlan(
-        festival,
-        [
-          { id: "blend", name: "新しい看板ブレンド" },
-          { id: "set", name: "新しいトートのセット" },
-        ],
-        {
-          version: 1,
-          roleShares: {},
-          menus: {
-            blend: { role: "signature_blend", weight: 0 },
-            set: { role: "signature_blend", weight: 0 },
-          },
-        },
-      );
-      // 名前が当たらないので等分になる。名前を去年にそろえれば去年の割合が入る
-      expect(plan.menus.blend.weight).toBeCloseTo(50);
-
-      const named = lastYearPlan(
-        festival,
-        [
-          { id: "blend", name: "縁ブレンド" },
-          { id: "set", name: "トートセット" },
-        ],
-        {
-          version: 1,
-          roleShares: {},
-          menus: {
-            blend: { role: "signature_blend", weight: 0 },
-            set: { role: "signature_blend", weight: 0 },
-          },
-        },
-      );
-      expect(named.menus.blend.weight).toBeCloseTo((100 * 356) / 402);
-      expect(named.menus.set.weight).toBeCloseTo((100 * 46) / 402);
-    });
+    expect(share({})).toBeGreaterThan(0.47);
+    expect(share({})).toBeLessThan(0.53);
+    expect(share({ ore: 4 })).toBeGreaterThan(0.77);
+    expect(share({ ore: 4 })).toBeLessThan(0.83);
   });
 
   test("a set that already holds goods takes them out of the order's goods", () => {
-    const plan: MenuPlan = {
-      version: 1,
-      roleShares: {},
-      menus: {
-        set: { role: "signature_blend", weight: 100 },
-        coaster: { role: "goods", weight: 100 },
-      },
-    };
     const lines = planOrder(
-      { offsetSec: 0, roles: { signature_blend: 1 }, drinkCups: 1, goods: 2 },
-      plan,
+      { offsetSec: 0, types: { hot: 1, others: 2 } },
+      plan({ house: 0, pink: 0 }),
+      menus,
       xoshiro128ss(1),
-      { set: 1 },
     );
     expect(lines).toEqual([
-      { menuId: "set", role: "signature_blend", count: 1 },
-      { menuId: "coaster", role: "goods", count: 1 },
+      { menuId: "set", type: "hot", count: 1 },
+      { menuId: "tote", type: "others", count: 1 },
     ]);
   });
 });

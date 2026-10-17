@@ -18,6 +18,25 @@
       "database": {
         "type": "string",
         "example": "connected"
+      },
+      "build": {
+        "$ref": "#/components/schemas/BuildInfo"
+      }
+    }
+  },
+  "BuildInfo": {
+    "type": "object",
+    "description": "このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。\nPOS のトップページに、画面のビルドと並べて出す。\nローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。\n",
+    "properties": {
+      "pr": {
+        "type": "integer",
+        "description": "PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く",
+        "example": 889
+      },
+      "commit": {
+        "type": "string",
+        "description": "コミットの SHA。プレビューは PR の head のコミット。分からなければ省く",
+        "example": "90b89b2a1c3e4f5061728394a5b6c7d8e9f01234"
       }
     }
   },
@@ -105,7 +124,7 @@
   },
   "MenuResponse": {
     "type": "object",
-    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "required": ["id", "name", "abbr", "price", "key", "priority", "items"],
     "properties": {
       "id": {
         "type": "string",
@@ -122,6 +141,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ"
       },
       "items": {
         "type": "array",
@@ -147,6 +170,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま"
       },
       "items": {
         "type": "array",
@@ -176,7 +203,15 @@
   },
   "ItemTypeResponse": {
     "type": "object",
-    "required": ["id", "name", "display_name"],
+    "required": [
+      "id",
+      "name",
+      "display_name",
+      "makes_cup",
+      "needs_brew",
+      "senior_only",
+      "iced_brew"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -187,6 +222,22 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "description": "この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false"
       }
     }
   },
@@ -199,6 +250,25 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "default": true,
+        "description": "省略したら true"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら makes_cup と同じ。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
       }
     }
   },
@@ -215,12 +285,35 @@
       },
       "display_name": {
         "type": "string"
+      },
+      "makes_cup": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま"
+      },
+      "needs_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400"
+      },
+      "senior_only": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
+      },
+      "iced_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       }
     }
   },
   "MenuInfo": {
     "type": "object",
-    "required": ["id", "menu_name", "unit_price", "menu", "assignee"],
+    "required": [
+      "id",
+      "menu_name",
+      "unit_price",
+      "menu",
+      "assignee",
+      "dripper"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -240,13 +333,33 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null"
       }
     }
   },
   "OrderCupResponse": {
     "type": "object",
-    "required": ["id", "order_menu_id", "item", "ready_at", "served_at"],
+    "required": [
+      "id",
+      "order_menu_id",
+      "item",
+      "ready_at",
+      "served_at",
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at",
+      "emergencies"
+    ],
     "properties": {
       "id": {
         "type": "string",
@@ -264,19 +377,109 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了になった時刻。未準備なら null"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",
         "format": "date-time",
         "nullable": true,
         "description": "このカップを提供した時刻。未提供なら null"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6,
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）"
+      },
+      "dripper_position": {
+        "type": "integer",
+        "nullable": true,
+        "description": "CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）"
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる"
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を始めた時刻"
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
+      },
+      "emergencies": {
+        "type": "array",
+        "description": "このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない",
+        "items": {
+          "$ref": "#/components/schemas/CupEmergencyResponse"
+        }
+      }
+    }
+  },
+  "CupEmergencyResponse": {
+    "type": "object",
+    "description": "緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）",
+    "required": [
+      "id",
+      "created_at",
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at",
+      "reason"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "reason": {
+        "type": "string",
+        "description": "入れ直す理由（足したときに書いたもの。無ければ空）"
+      },
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "integer",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
       }
     }
   },
   "MenuInfoCreate": {
     "type": "object",
-    "required": ["menu_id", "assignee"],
+    "required": ["menu_id", "assignee", "dripper"],
     "properties": {
       "order_menu_id": {
         "type": "string",
@@ -289,7 +492,15 @@
       },
       "assignee": {
         "type": "string",
-        "nullable": true
+        "nullable": true,
+        "description": "指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う"
+      },
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6,
+        "nullable": true,
+        "description": "指名したドリッパーの番号（1〜6）。指名しない明細は null"
       }
     }
   },
@@ -302,6 +513,7 @@
       "billing_amount",
       "received",
       "payment_method",
+      "payments",
       "menus",
       "cups"
     ],
@@ -342,6 +554,16 @@
       },
       "payment_method": {
         "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。一括で払った注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentResponse"
+        }
       },
       "menus": {
         "type": "array",
@@ -398,6 +620,13 @@
         "nullable": true,
         "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
       },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は\nSquare の支払いを含めば square、含まなければ cash になる。\n",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentCreate"
+        }
+      },
       "menu_ids": {
         "type": "array",
         "items": {
@@ -409,6 +638,16 @@
         "items": {
           "$ref": "#/components/schemas/CommentCreateRequest"
         }
+      },
+      "idempotency_key": {
+        "type": "string",
+        "format": "uuid",
+        "description": "送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る"
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）"
       }
     }
   },
@@ -553,13 +792,21 @@
   },
   "ColorScreen": {
     "type": "string",
-    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ\n",
-    "enum": ["cashier", "cashier_order", "master", "serve"],
+    "description": "背景色を適用する画面。\ncashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、\nmaster・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）\n",
+    "enum": ["cashier", "cashier_order", "master", "serve", "nominated"],
     "x-enum-varnames": [
       "ColorScreenCashier",
       "ColorScreenCashierOrder",
       "ColorScreenMaster",
-      "ColorScreenServe"
+      "ColorScreenServe",
+      "ColorScreenNominated"
+    ],
+    "x-enum-descriptions": [
+      "レジ（ボタン）",
+      "レジ（過去の注文）",
+      "マスター",
+      "提供",
+      "CaOS（指名）"
     ]
   },
   "ColorSettingResponse": {
@@ -610,6 +857,59 @@
       }
     }
   },
+  "ReceiptPrinterModel": {
+    "type": "string",
+    "description": "レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。\ntm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）\n",
+    "enum": ["tm_l90", "tm_m30"],
+    "x-enum-varnames": ["ReceiptPrinterModelTmL90", "ReceiptPrinterModelTmM30"],
+    "x-enum-descriptions": ["TM-L90", "TM-m30"]
+  },
+  "PrinterSettingsResponse": {
+    "type": "object",
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model"
+    ],
+    "properties": {
+      "label_printer_ip": {
+        "type": "string",
+        "description": "ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.2"
+      },
+      "receipt_printer_ip": {
+        "type": "string",
+        "description": "レシート・領収書用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
+      }
+    }
+  },
+  "PrinterSettingsUpdateRequest": {
+    "type": "object",
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model"
+    ],
+    "properties": {
+      "label_printer_ip": {
+        "type": "string",
+        "description": "ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.2"
+      },
+      "receipt_printer_ip": {
+        "type": "string",
+        "description": "レシート・領収書用のプリンターの IPv4 アドレス",
+        "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
+      }
+    }
+  },
   "CashierStateResponse": {
     "type": "object",
     "required": ["editting_order", "submitted_order_id", "updated_at"],
@@ -646,6 +946,378 @@
       }
     }
   },
+  "CaosLogEntry": {
+    "type": "object",
+    "required": ["at", "tabId", "sequence", "event", "details"],
+    "properties": {
+      "at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "tabId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+      },
+      "event": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "details": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "CaosStoredLogEntry": {
+    "allOf": [
+      {
+        "$ref": "#/components/schemas/CaosLogEntry"
+      },
+      {
+        "type": "object",
+        "required": ["receivedAt"],
+        "properties": {
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    ]
+  },
+  "CaosLogPage": {
+    "type": "object",
+    "required": ["entries", "limit", "offset", "hasMore"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosStoredLogEntry"
+        }
+      },
+      "limit": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "hasMore": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CaosLogBatch": {
+    "type": "object",
+    "required": ["entries"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 100,
+        "items": {
+          "$ref": "#/components/schemas/CaosLogEntry"
+        }
+      }
+    }
+  },
+  "CaosCupState": {
+    "type": "object",
+    "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当",
+    "required": [
+      "dripper",
+      "dripper_position",
+      "drip_id",
+      "brew_started_at",
+      "brew_finished_at"
+    ],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "dripper_position": {
+        "type": "integer",
+        "nullable": true
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "brew_started_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
+  "CaosCupAfter": {
+    "type": "object",
+    "description": "CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。\nstart_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。\ndripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）\n",
+    "required": ["dripper", "drip_id", "insert_before", "start_brew"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "nullable": true,
+        "minimum": 1,
+        "maximum": 6
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "insert_before": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。待機の先頭に入れるときは待機の先頭のカードの drip_id（抽出中のカードの前、つまり列の先頭は start_brew）。\ndripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null\n"
+      },
+      "start_brew": {
+        "type": "boolean",
+        "description": "列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress）"
+      }
+    }
+  },
+  "CaosCupsWrite": {
+    "type": "object",
+    "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く\n",
+    "required": ["cup_ids", "before", "after"],
+    "properties": {
+      "merge_into": {
+        "type": "string",
+        "format": "uuid",
+        "description": "統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。"
+      },
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "before": {
+        "$ref": "#/components/schemas/CaosCupState"
+      },
+      "after": {
+        "$ref": "#/components/schemas/CaosCupAfter"
+      }
+    }
+  },
+  "CaosPress": {
+    "type": "object",
+    "description": "操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。\n端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：\n- 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。\n  そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）\n- サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今\n- 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻\n省略すると（押した時刻を送らない古い画面）、サーバーの今\n",
+    "required": ["at", "sent_at"],
+    "properties": {
+      "at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "押した時刻（端末の時計、エポックのミリ秒）"
+      },
+      "sent_at": {
+        "type": "integer",
+        "format": "int64",
+        "description": "送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻"
+      }
+    }
+  },
+  "CaosCupsWriteRequest": {
+    "type": "object",
+    "required": ["writes"],
+    "properties": {
+      "writes": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/components/schemas/CaosCupsWrite"
+        }
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
+      }
+    }
+  },
+  "CupEmergencyCreateRequest": {
+    "type": "object",
+    "required": ["order_cup_ids"],
+    "properties": {
+      "order_cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "description": "入れ直すカップ（1 杯につき入れ直しを 1 つ足す）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 100,
+        "description": "入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける"
+      }
+    }
+  },
+  "CupEmergencyCreateResponse": {
+    "type": "object",
+    "required": ["ids"],
+    "properties": {
+      "ids": {
+        "type": "array",
+        "description": "足した入れ直しの id（order_cup_ids と同じ順）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  },
+  "CaosNextRequest": {
+    "type": "object",
+    "required": ["drip_id"],
+    "properties": {
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null"
+      },
+      "start_next": {
+        "type": "boolean",
+        "default": true,
+        "description": "待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true"
+      },
+      "start_drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない"
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
+      }
+    }
+  },
+  "CaosLane": {
+    "type": "object",
+    "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",
+    "required": ["dripper", "name", "senior", "updated_at"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "担当者の名前（前後の空白を落としたもの）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値（名簿を読み直したら POST /api/caos/lanes/seniors で直す）"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "最後に替えた（上級生かを直したのも含む）時刻。今日まだ替えていなければ null"
+      }
+    }
+  },
+  "CaosLanes": {
+    "type": "object",
+    "description": "今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ",
+    "required": ["day", "lanes"],
+    "properties": {
+      "day": {
+        "type": "string",
+        "description": "日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う",
+        "example": "2026-11-03"
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosLane"
+        }
+      }
+    }
+  },
+  "CaosLaneUpdateRequest": {
+    "type": "object",
+    "required": ["name", "senior"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "担当者の名前（前後の空白は落とす）。空なら担当者なし"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false"
+      }
+    }
+  },
+  "CaosLaneSeniorsRequest": {
+    "type": "object",
+    "required": ["lanes"],
+    "properties": {
+      "lanes": {
+        "type": "array",
+        "minItems": 1,
+        "description": "直すドリッパー。name はその画面が見ている今の担当者の名前、senior は名簿で判定し直した値",
+        "items": {
+          "$ref": "#/components/schemas/CaosLaneSenior"
+        }
+      }
+    }
+  },
+  "CaosLaneSenior": {
+    "type": "object",
+    "required": ["dripper", "name", "senior"],
+    "properties": {
+      "dripper": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "name": {
+        "type": "string",
+        "description": "今の担当者の名前。今日の担当者がこの名前のときだけ直す"
+      },
+      "senior": {
+        "type": "boolean",
+        "description": "上級生か。画面が sohosai-shift の名簿（seniors）で判定し直した値"
+      }
+    }
+  },
+  "CaosLaneSwapRequest": {
+    "type": "object",
+    "required": ["first", "second"],
+    "properties": {
+      "first": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      },
+      "second": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],
@@ -658,27 +1330,28 @@
   },
   "StockResourceKind": {
     "type": "string",
-    "enum": ["cup", "bean"],
-    "x-enum-varnames": ["StockResourceKindCup", "StockResourceKindBean"]
+    "description": "item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ",
+    "enum": ["item", "cup"],
+    "x-enum-varnames": ["StockResourceKindItem", "StockResourceKindCup"],
+    "x-enum-descriptions": ["アイテム", "カップ"]
   },
   "StockResourceRequest": {
     "type": "object",
-    "required": [
-      "kind",
-      "name",
-      "unit",
-      "per_serving",
-      "notify_from",
-      "notify_step",
-      "buffer"
-    ],
+    "description": "name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400",
+    "required": ["unit", "per_serving", "notify_from", "notify_step", "buffer"],
     "properties": {
-      "kind": {
-        "$ref": "#/components/schemas/StockResourceKind"
-      },
       "name": {
         "type": "string",
+        "description": "カップの名前（カップでは必須）",
         "example": "ホットカップ"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "unit": {
         "type": "string",
@@ -688,42 +1361,90 @@
       "per_serving": {
         "type": "number",
         "format": "double",
-        "description": "1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）",
+        "description": "1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）",
+        "minimum": 0,
+        "not": {
+          "enum": [0]
+        },
         "example": 1
       },
       "notify_from": {
         "type": "integer",
-        "description": "残りがこの杯数を切ったら通知を始める",
+        "description": "残りがこの回数を切ったら通知を始める",
+        "minimum": 0,
         "example": 500
       },
       "notify_step": {
         "type": "integer",
-        "description": "notify_from から何杯減るごとに通知するか",
+        "description": "notify_from から何回減るごとに通知するか",
+        "minimum": 0,
         "example": 100
       },
       "buffer": {
         "type": "integer",
-        "description": "最低限残したい杯数。これを切ると危険扱い",
+        "description": "最低限残したい回数。これを切ると危険扱い",
+        "minimum": 0,
         "example": 100
       }
     }
   },
   "StockResourceResponse": {
-    "allOf": [
-      {
-        "$ref": "#/components/schemas/StockResourceRequest"
+    "type": "object",
+    "required": [
+      "id",
+      "kind",
+      "item_id",
+      "name",
+      "item_type_ids",
+      "unit",
+      "per_serving",
+      "notify_from",
+      "notify_step",
+      "buffer"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
       },
-      {
-        "type": "object",
-        "required": ["id"],
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          }
+      "kind": {
+        "$ref": "#/components/schemas/StockResourceKind"
+      },
+      "item_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "アイテムの在庫ならそのアイテム。カップは null"
+      },
+      "name": {
+        "type": "string",
+        "description": "アイテムの在庫ならアイテムの名前、カップならカップの名前"
+      },
+      "item_type_ids": {
+        "type": "array",
+        "description": "このカップを使うアイテムの種類（アイテムの在庫は空）",
+        "items": {
+          "type": "string",
+          "format": "uuid"
         }
+      },
+      "unit": {
+        "type": "string"
+      },
+      "per_serving": {
+        "type": "number",
+        "format": "double"
+      },
+      "notify_from": {
+        "type": "integer"
+      },
+      "notify_step": {
+        "type": "integer"
+      },
+      "buffer": {
+        "type": "integer"
       }
-    ]
+    }
   },
   "InventoryLevel": {
     "type": "string",
@@ -772,11 +1493,11 @@
       "consumed": {
         "type": "number",
         "format": "double",
-        "description": "counted_at 以降の注文での消費量"
+        "description": "counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）"
       },
       "servings": {
         "type": "integer",
-        "description": "counted_at 以降に売れた杯数"
+        "description": "counted_at より後に使った回数"
       },
       "remaining": {
         "type": "number",
@@ -790,7 +1511,7 @@
       },
       "servings_last_hour": {
         "type": "integer",
-        "description": "直近1時間に売れた杯数"
+        "description": "直近1時間に使った回数（consumed と同じく、使った時刻で数える）"
       }
     }
   },
@@ -864,26 +1585,7 @@
         "type": "number",
         "format": "double",
         "nullable": true,
-        "description": "前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）"
-      }
-    }
-  },
-  "StockUsage": {
-    "type": "object",
-    "required": ["item_id", "resource_id", "amount"],
-    "properties": {
-      "item_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "resource_id": {
-        "type": "string",
-        "format": "uuid"
-      },
-      "amount": {
-        "type": "number",
-        "format": "double",
-        "description": "アイテム1杯で使う量（カップ 1、豆 15 など）"
+        "description": "前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）"
       }
     }
   },
@@ -905,6 +1607,83 @@
     "default": "cash",
     "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
   },
+  "OrderPaymentCreate": {
+    "type": "object",
+    "required": ["method", "amount", "received"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）"
+      },
+      "received": {
+        "type": "integer",
+        "description": "お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）"
+      },
+      "discount": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "この支払いで引いた割引（円）"
+      },
+      "menu_indexes": {
+        "type": "array",
+        "description": "この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      }
+    }
+  },
+  "OrderPaymentResponse": {
+    "type": "object",
+    "required": ["method", "amount", "received", "discount", "order_menu_ids"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount": {
+        "type": "integer"
+      },
+      "order_menu_ids": {
+        "type": "array",
+        "description": "この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "square_payment_type": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square で払ったときの決済画面の種類（SquarePaymentType の値）"
+      },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      }
+    }
+  },
   "SquarePaymentType": {
     "type": "string",
     "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
@@ -914,6 +1693,18 @@
     "type": "string",
     "enum": ["pending", "paid", "failed", "attention"],
     "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: まだ決まっていない。待つ\n  - paid: 支払い済みで、受取額も依頼額と一致した。注文を送ってよい\n  - failed: 取り消された・失敗した。お金は受け取っていない\n  - attention: 完了したが受取額が依頼額と合わないなど、人が Square の管理画面で確かめる必要がある\n"
+  },
+  "SquareRefundStatus": {
+    "type": "string",
+    "enum": ["none", "pending", "refunded", "failed", "unknown"],
+    "x-enum-varnames": [
+      "RefundNone",
+      "RefundPending",
+      "RefundRefunded",
+      "RefundFailed",
+      "RefundUnknown"
+    ],
+    "description": "返金（全額）の状態。\n  - none: 返金を頼んでいない\n  - pending: Square に頼んだ。結果を待っている\n  - refunded: 返金が終わった\n  - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える\n  - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない\n"
   },
   "SquareStatusResponse": {
     "type": "object",
@@ -934,7 +1725,7 @@
   "SquareDeviceStatus": {
     "type": "string",
     "enum": ["UNPAIRED", "PAIRED", "EXPIRED"],
-    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
+    "description": "端末のペアリングの状態（Square の Device Code の status）。\n  - UNPAIRED: コードを発行した。端末でまだ入力されていない\n  - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）\n  - EXPIRED: 入力されないまま期限が切れた。外して発行し直す\n"
   },
   "SquareDeviceResponse": {
     "type": "object",
@@ -959,13 +1750,13 @@
       "code": {
         "type": "string",
         "nullable": true,
-        "description": "端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る"
+        "description": "端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る\n（UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）\n"
       },
       "pair_by": {
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "コードの期限。これを過ぎると EXPIRED になる"
+        "description": "最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。\nペアリング済みの行は code が消えるだけで PAIRED のまま\n"
       },
       "created_at": {
         "type": "string",
@@ -1045,6 +1836,7 @@
       "amount",
       "payment_type",
       "payment_ids",
+      "refund_status",
       "created_at",
       "updated_at"
     ],
@@ -1103,6 +1895,14 @@
         "format": "uuid",
         "nullable": true,
         "description": "この決済で作った注文。まだ無ければ null"
+      },
+      "refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "refund_error": {
+        "type": "string",
+        "nullable": true,
+        "description": "返金を断られた・確かめられなかったときの Square のエラー"
       },
       "created_at": {
         "type": "string",

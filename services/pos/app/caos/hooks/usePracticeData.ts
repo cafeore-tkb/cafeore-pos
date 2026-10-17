@@ -1,8 +1,10 @@
 import { type PracticeDataset, readPracticeTexts } from "@cafeore/common";
 import { useCallback, useRef, useState } from "react";
 
+import { caosLog } from "../utils/log";
+
 // 実データテストのデータ。利用者が画面で選んだ手元の JSON（sohosai-analysis の day*.json など）を、
-// この端末のブラウザの中で読み、名前とコメントを落としてから使う（readPracticeTexts）。
+// この端末のブラウザの中で読み、練習に使う項目（指名を含む）だけを写してから使う（readPracticeTexts。担当者名・コメントは落とす）。
 // サーバー・API にも配信にも出さず、この画面を開いている間だけ覚えておく（開き直したら選び直す）。
 export const usePracticeData = () => {
   const [dataset, setDataset] = useState<PracticeDataset | null>(null);
@@ -15,6 +17,9 @@ export const usePracticeData = () => {
   const readFiles = useCallback(async (list: FileList | null) => {
     const files = Array.from(list ?? []);
     if (files.length === 0) return;
+    caosLog("practice.import.requested", {
+      files: files.map((f) => ({ name: f.name, size: f.size })),
+    });
     const run = ++latest.current;
     setLoading(true);
     try {
@@ -26,16 +31,25 @@ export const usePracticeData = () => {
       );
       if (run !== latest.current) return;
       const result = readPracticeTexts(texts);
+      caosLog("practice.import.completed", {
+        loaded: Boolean(result.data),
+        problems: result.problems,
+        orderCount: result.data?.orders.length ?? 0,
+      });
       setProblems(result.problems);
       if (result.data) setDataset(result.data);
     } catch {
-      if (run === latest.current) setProblems(["読み込めませんでした"]);
+      if (run === latest.current) {
+        caosLog("practice.import.failed");
+        setProblems(["読み込めませんでした"]);
+      }
     } finally {
       if (run === latest.current) setLoading(false);
     }
   }, []);
 
   const clear = useCallback(() => {
+    caosLog("practice.import.cleared");
     latest.current++;
     setLoading(false);
     setDataset(null);

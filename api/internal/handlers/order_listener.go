@@ -1,0 +1,346 @@
+// api/internal/handlers/order_listener.go
+package handlers
+
+import (
+	"context"
+	"errors"
+	"log"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"gorm.io/gorm"
+)
+
+// 変わったことをインスタンス同士で知らせる DB の通知チャンネル。
+const (
+	// 注文。通知の中身は "<送ったインスタンスの ID> <注文 ID>"
+	ordersChangedChannel = "orders_changed"
+	// オーダーストップ（master_states）。通知の中身は "<送ったインスタンスの ID>"
+	masterStateChangedChannel = "master_state_changed"
+	// レジの状態（cashier_states）。通知の中身は "<送ったインスタンスの ID>"
+	cashierStateChangedChannel = "cashier_state_changed"
+	// 取り消された緊急（入れ直し）。通知の中身は "<送ったインスタンスの ID> <入れ直しの ID>"
+	cupEmergencyCancelledChannel = "cup_emergency_cancelled"
+)
+
+// 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
+// CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel}
+
+// このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
+var instanceID = uuid.NewString()
+
+// 待ち受けを始めたときに自分宛てに送る、通知が届くかの確認の接頭辞。
+// 注文の通知とは別物なので、受けても配信はしない。
+const listenProbePrefix = "probe "
+
+// 確認の通知がこの時間内に届かなければ、通知が届かない設定だとみなして警告する。
+const listenProbeTimeout = 10 * time.Second
+
+// 通知がこの時間来なければ、待ち受けの接続が生きているかを確かめる。
+// Cloud Run は画面がつないでいないインスタンスの CPU を絞るので、その間に接続が
+// 黙って切れていることがある。画面がつないで CPU が戻ったら、この確認で気づいて張り直す。
+const listenPingInterval = 30 * time.Second
+
+// 注文の読み直しに失敗したら、この時間をおいて積み直す（DB が一時的に落ちても、ほかのインスタンスの画面を古いままにしない）。
+const publishRetryDelay = time.Second
+
+// notifyChanged は、channel のものが変わったことをほかのインスタンスへ知らせる。
+//
+// Cloud Run のインスタンスはそれぞれ自分につないでいる画面にしか配れないので、
+// 書き換えたインスタンスが DB の通知を送り、ほかのインスタンスが
+// ListenChanges で受けて DB から読み直し、自分の画面へ配る。DB のトリガーは使わない
+// （スキーマは Go のモデルだけで決める。README の「DB のスキーマ」を参照）。
+//
+// 通知に失敗しても、このインスタンスの画面にはもう配ってあるので、ログに残すだけにする。
+// ほかのインスタンスの画面は、つなぎ直したときに全部を受け取って追いつく。
+func notifyChanged(db *gorm.DB, channel, payload string) {
+	if err := db.Exec("SELECT pg_notify(?, ?)", channel, payload).Error; err != nil {
+		log.Printf("failed to notify %s (%s): %v", channel, payload, err)
+	}
+}
+
+// 注文が変わったことをほかのインスタンスへ知らせる。
+func notifyOrderChanged(db *gorm.DB, orderID uuid.UUID) {
+	notifyChanged(db, ordersChangedChannel, instanceID+" "+orderID.String())
+}
+
+// オーダーストップの状態が変わったことをほかのインスタンスへ知らせる。
+func notifyMasterStateChanged(db *gorm.DB) {
+	notifyChanged(db, masterStateChangedChannel, instanceID)
+}
+
+// レジの状態が変わったことをほかのインスタンスへ知らせる。
+func notifyCashierStateChanged(db *gorm.DB) {
+	notifyChanged(db, cashierStateChangedChannel, instanceID)
+}
+
+// ListenChanges は、ほかのインスタンスで注文・オーダーストップ・レジの状態・CaOS の担当者が変わるたびに、
+// DB から読み直して配信する。
+//
+// 自分が送った通知は無視する（書き換えたときに配信済み）。ほかのインスタンスから届いたものは
+// このインスタンスの画面へだけ配り、通知を送り返さない。
+//
+// 通知の受信と配信は別の goroutine で行う。DB の読み直しが遅くても受信は止めず、
+// 配り終わるまでに同じものの通知が重なったら 1 回の読み直しにまとめる。
+//
+// LISTEN はセッションを保ったまま待つので、Supabase のトランザクションプーラー
+// （ポート 6543）経由では通知が届かない。直接接続かセッションプーラーの接続文字列を渡すこと。
+// 切れたら間隔を空けてつなぎ直す。ctx が終わると戻る。
+func (h *OrderHandler) ListenChanges(ctx context.Context, dsn string) {
+	changes := newPendingChanges()
+	go h.publishChanges(ctx, changes)
+
+	retryDelay := time.Second
+	for {
+		err := h.listenChangesOnce(ctx, dsn, changes, func() { retryDelay = time.Second })
+		if ctx.Err() != nil {
+			return
+		}
+		log.Printf("change listener stopped, retrying in %s: %v", retryDelay, err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retryDelay):
+		}
+		retryDelay = min(retryDelay*2, 30*time.Second)
+	}
+}
+
+func (h *OrderHandler) listenChangesOnce(ctx context.Context, dsn string, changes *pendingChanges, onListening func()) error {
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = conn.Close(closeCtx)
+	}()
+
+	for _, channel := range listenChannels {
+		if _, err := conn.Exec(ctx, "LISTEN "+channel); err != nil {
+			return err
+		}
+	}
+	onListening()
+	log.Printf("listening for %s", strings.Join(listenChannels, ", "))
+
+	// トランザクションプーラー（Supabase の 6543 や Neon の -pooler）経由だと、LISTEN は
+	// エラーにならないのに通知だけが届かない。変更の通知と同じ経路（h.db）で自分宛てに
+	// 確認の通知を送り、届かなければ警告して設定ミスに気づけるようにする。
+	// どのチャンネルも同じ接続で待ち受けているので、確認は orders_changed の1つで足りる。
+	probe := listenProbePrefix + uuid.NewString()
+	probeTimeout := time.AfterFunc(listenProbeTimeout, func() {
+		log.Printf("WARNING: %s の確認の通知が %s 待っても届かない。ほかのインスタンスでの注文・オーダーストップ・レジの状態の変更が配られない。"+
+			"DATABASE_LISTEN_URL（無ければ DATABASE_URL）がトランザクションプーラーを指していないか確かめること",
+			ordersChangedChannel, listenProbeTimeout)
+	})
+	defer probeTimeout.Stop()
+	notifyChanged(h.db, ordersChangedChannel, probe)
+
+	// 待ち受けていなかった間の変更を取りこぼさないよう、つないだ時点で全部を配り直す
+	changes.addAll()
+	for {
+		waitCtx, cancelWait := context.WithTimeout(ctx, listenPingInterval)
+		n, err := conn.WaitForNotification(waitCtx)
+		cancelWait()
+		if err != nil {
+			if ctx.Err() != nil || !errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			// しばらく通知が無い。接続が生きているかを確かめ、切れていれば張り直す
+			pingCtx, cancelPing := context.WithTimeout(ctx, 5*time.Second)
+			err = conn.Ping(pingCtx)
+			cancelPing()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		switch {
+		case n.Channel == ordersChangedChannel && n.Payload == probe:
+			probeTimeout.Stop()
+			log.Printf("%s: notifications are delivered", ordersChangedChannel)
+		case n.Channel == ordersChangedChannel && strings.HasPrefix(n.Payload, listenProbePrefix):
+			// ほかのインスタンスの確認の通知
+		default:
+			changes.add(n.Channel, n.Payload)
+		}
+	}
+}
+
+// 受けたけれどまだ配っていない変更。同じものの通知が重なれば 1 つにまとめる。
+type pendingChanges struct {
+	mu   sync.Mutex
+	set  changeSet
+	wake chan struct{}
+}
+
+// 配り直すもの。
+type changeSet struct {
+	orderIDs     map[uuid.UUID]struct{}
+	allOrders    bool // true なら orderIDs は見ずに全注文を配り直す
+	masterState  bool
+	cashierState bool
+	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
+	// 取り消された緊急（入れ直し）。DB から読み直すものは無く、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
+	cancelledEmergencies map[uuid.UUID]struct{}
+}
+
+func newChangeSet() changeSet {
+	return changeSet{orderIDs: map[uuid.UUID]struct{}{}, cancelledEmergencies: map[uuid.UUID]struct{}{}}
+}
+
+func newPendingChanges() *pendingChanges {
+	return &pendingChanges{set: newChangeSet(), wake: make(chan struct{}, 1)}
+}
+
+// channel に届いた通知を積む。自分が送ったものは積まない。
+func (q *pendingChanges) add(channel, payload string) {
+	// どのチャンネルも、通知の中身は送ったインスタンスの ID から始まる
+	sender, rest, _ := strings.Cut(payload, " ")
+	if sender == instanceID {
+		return
+	}
+	switch channel {
+	case ordersChangedChannel:
+		q.addOrder(rest)
+	case masterStateChangedChannel:
+		q.update(func(s *changeSet) { s.masterState = true })
+	case cashierStateChangedChannel:
+		q.update(func(s *changeSet) { s.cashierState = true })
+	case dripperAssigneesChangedChannel:
+		q.update(func(s *changeSet) { s.caosLanes = true })
+	case cupEmergencyCancelledChannel:
+		// 形の分からない通知は、どの入れ直しか分からないので配らない（その端末は余分に刷るだけ）
+		if id, err := uuid.Parse(rest); err == nil {
+			q.update(func(s *changeSet) { s.cancelledEmergencies[id] = struct{}{} })
+		}
+	}
+}
+
+// 変わった注文を積む。形の分からない通知は、何が変わったか分からないので全注文を配り直す。
+func (q *pendingChanges) addOrder(rawOrderID string) {
+	orderID, err := uuid.Parse(rawOrderID)
+	if err != nil {
+		q.update(func(s *changeSet) { s.allOrders = true })
+		return
+	}
+	q.update(func(s *changeSet) { s.orderIDs[orderID] = struct{}{} })
+}
+
+// 全部を配り直すよう積む（待ち受けを始めたとき）。
+func (q *pendingChanges) addAll() {
+	q.update(func(s *changeSet) {
+		s.allOrders = true
+		s.masterState = true
+		s.cashierState = true
+		s.caosLanes = true
+	})
+}
+
+func (q *pendingChanges) update(f func(*changeSet)) {
+	q.mu.Lock()
+	f(&q.set)
+	q.mu.Unlock()
+	select {
+	case q.wake <- struct{}{}:
+	default:
+	}
+}
+
+// 積まれた変更を取り出して空にする。allOrders なら orderIDs は空で返す。
+func (q *pendingChanges) take() changeSet {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	s := q.set
+	if s.allOrders {
+		s.orderIDs = nil
+	}
+	q.set = newChangeSet()
+	return s
+}
+
+// 失敗した変更を積み直す。
+func (q *pendingChanges) requeue(failed changeSet) {
+	q.update(func(s *changeSet) {
+		s.allOrders = s.allOrders || failed.allOrders
+		for id := range failed.orderIDs {
+			s.orderIDs[id] = struct{}{}
+		}
+	})
+}
+
+// 積まれた変更を、DB から読み直して配信する。注文の読み直しに失敗したら、少しおいて積み直す。ctx が終わると戻る。
+func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChanges) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes.wake:
+		}
+		s := changes.take()
+		failed := newChangeSet()
+		if s.allOrders && !h.publishAllOrders() {
+			failed.allOrders = true
+		}
+		for id := range s.orderIDs {
+			if !h.publishChangedOrder(id) {
+				failed.orderIDs[id] = struct{}{}
+			}
+		}
+		// オーダーストップ・レジの状態は、まだ記録が無いときも読めない（ok = false）ので積み直さない
+		if s.masterState {
+			broadcastMasterState(h.db, h.hub)
+		}
+		if s.cashierState {
+			broadcastCashierState(h.db, h.hub)
+		}
+		if s.caosLanes {
+			broadcastCaosLanes(h.db, h.hub, time.Now())
+		}
+		for id := range s.cancelledEmergencies {
+			broadcastCupEmergencyCancelled(h.hub, id)
+		}
+		if failed.allOrders || len(failed.orderIDs) > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(publishRetryDelay):
+			}
+			changes.requeue(failed)
+		}
+	}
+}
+
+// ほかのインスタンスで変わった注文を読み直して配信する。消えていれば削除を配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishChangedOrder(orderID uuid.UUID) bool {
+	_, err := broadcastOrder(h.db, h.hub, orderID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		broadcastOrderDeleted(h.hub, orderID)
+	case err != nil:
+		log.Printf("failed to publish order %s: %v", orderID, err)
+		return false
+	}
+	return true
+}
+
+// 全注文を読み直して配信する。読み直しに失敗したら false。
+func (h *OrderHandler) publishAllOrders() bool {
+	err := h.hub.Publish(func() (WSMessage, error) {
+		msg, ok := ordersMessage(h.db)
+		if !ok {
+			return WSMessage{}, errors.New("failed to load orders")
+		}
+		return msg, nil
+	})
+	if err != nil {
+		log.Printf("failed to publish all orders: %v", err)
+	}
+	return err == nil
+}

@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -103,7 +104,24 @@ func (h *CommentHandler) CreateComment(c *gin.Context) {
 		CreatedAt: time.Now(),
 	}
 
-	if err := h.db.Create(&comment).Error; err != nil {
+	// コメントと監査ログを同じトランザクションで保存する。
+	// ブラウザのイベント送信が途切れても、成功した返信を失わない。
+	if err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&comment).Error; err != nil {
+			return err
+		}
+		details, err := json.Marshal(map[string]any{
+			"orderId": orderUUID, "orderNo": order.OrderId,
+			"author": comment.Author, "text": comment.Text,
+		})
+		if err != nil {
+			return err
+		}
+		return tx.Create(&models.CaosOperation{
+			ID: uuid.New(), Kind: "comment.created", Details: details,
+			OccurredAt: comment.CreatedAt, RecordedAt: comment.CreatedAt, ContextAt: comment.CreatedAt,
+		}).Error
+	}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

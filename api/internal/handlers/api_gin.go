@@ -14,6 +14,30 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CaOS が決めたことを注文のカップに書く
+	// (PUT /api/caos/cups)
+	WriteCaosCups(c *gin.Context)
+	// CaOS の「次へ」
+	// (POST /api/caos/drippers/{dripper}/next)
+	AdvanceCaosDripper(c *gin.Context, dripper int)
+	// CaOS の今の担当者の上級生かだけを直す
+	// (POST /api/caos/lanes/seniors)
+	UpdateCaosLaneSeniors(c *gin.Context)
+	// CaOS の 2 つのドリッパーの担当者を入れ替える
+	// (POST /api/caos/lanes/swap)
+	SwapCaosLanes(c *gin.Context)
+	// CaOS のドリッパーの担当者を替える（交代）
+	// (PUT /api/caos/lanes/{dripper})
+	PutCaosLane(c *gin.Context, dripper int)
+	// master-sheet の保存済みクライアント操作ログを取得する
+	// (GET /api/caos/logs)
+	GetCaosLogs(c *gin.Context, params GetCaosLogsParams)
+	// master-sheet のクライアント操作ログをまとめて保存する
+	// (POST /api/caos/logs)
+	CreateCaosLogs(c *gin.Context)
+	// CaOSのDBログをJSONファイルとして書き出す
+	// (GET /api/caos/logs/export)
+	ExportCaosLogs(c *gin.Context)
 	// レジ状態取得
 	// (GET /api/cashier-state)
 	GetCashierState(c *gin.Context)
@@ -29,16 +53,25 @@ type ServerInterface interface {
 	// 背景色設定削除
 	// (DELETE /api/color-settings/{id})
 	DeleteColorSetting(c *gin.Context, id openapi_types.UUID)
+	// カップを緊急（入れ直し）にする
+	// (POST /api/cup-emergencies)
+	CreateCupEmergencies(c *gin.Context)
+	// よく使う緊急（入れ直し）の理由
+	// (GET /api/cup-emergencies/reasons)
+	GetCupEmergencyReasons(c *gin.Context)
+	// 緊急（入れ直し）を取り消す
+	// (DELETE /api/cup-emergencies/{id})
+	DeleteCupEmergency(c *gin.Context, id openapi_types.UUID)
 	// 在庫の残量一覧
 	// (GET /api/inventory)
 	GetInventory(c *gin.Context)
 	// 残量確認のリマインドを Slack に送る
 	// (POST /api/inventory/remind)
 	RemindInventory(c *gin.Context)
-	// 在庫対象の作成
+	// カップの作成
 	// (POST /api/inventory/resources)
 	CreateStockResource(c *gin.Context)
-	// 在庫対象の削除
+	// カップの削除
 	// (DELETE /api/inventory/resources/{id})
 	DeleteStockResource(c *gin.Context, id openapi_types.UUID)
 	// 在庫対象の更新
@@ -47,12 +80,6 @@ type ServerInterface interface {
 	// 棚卸し・入荷・調整の記録
 	// (POST /api/inventory/resources/{id}/events)
 	CreateStockEvent(c *gin.Context, id openapi_types.UUID)
-	// アイテム1杯あたりの使用量一覧
-	// (GET /api/inventory/usages)
-	GetStockUsages(c *gin.Context)
-	// アイテム1杯あたりの使用量をまとめて置き換える
-	// (PUT /api/inventory/usages)
-	ReplaceStockUsages(c *gin.Context)
 	// アイテムタイプ一覧取得
 	// (GET /api/item-types)
 	GetItemTypes(c *gin.Context)
@@ -137,6 +164,18 @@ type ServerInterface interface {
 	// オーダーを提供完了にする
 	// (PATCH /api/orders/{id}/served)
 	MarkOrderServe(c *gin.Context, id openapi_types.UUID)
+	// 注文に使った Square の決済を全額返金し、注文を消す
+	// (POST /api/orders/{id}/square-refund)
+	RefundOrderSquarePayment(c *gin.Context, id openapi_types.UUID)
+	// 注文に使った Square の決済を全額返金し、注文は残す
+	// (POST /api/orders/{id}/square-refund-keep-order)
+	RefundOrderSquarePaymentKeepingOrder(c *gin.Context, id openapi_types.UUID)
+	// プリンター設定取得
+	// (GET /api/printer-settings)
+	GetPrinterSettings(c *gin.Context)
+	// プリンター設定の更新
+	// (PUT /api/printer-settings)
+	UpdatePrinterSettings(c *gin.Context)
 	// Square Terminal に決済画面を出す
 	// (POST /api/square/checkouts)
 	CreateSquareCheckout(c *gin.Context)
@@ -149,6 +188,9 @@ type ServerInterface interface {
 	// 決済依頼を取り消す
 	// (POST /api/square/checkouts/{id}/cancel)
 	CancelSquareCheckout(c *gin.Context, id openapi_types.UUID)
+	// 支払い済みの決済を全額返金する
+	// (POST /api/square/checkouts/{id}/refund)
+	RefundSquareCheckout(c *gin.Context, id openapi_types.UUID)
 	// Square 端末の一覧
 	// (GET /api/square/devices)
 	GetSquareDevices(c *gin.Context)
@@ -164,6 +206,9 @@ type ServerInterface interface {
 	// 端末を一覧から外す
 	// (DELETE /api/square/devices/{id})
 	DeleteSquareDevice(c *gin.Context, id openapi_types.UUID)
+	// ペアリング済みの端末にコード（Device Code）を発行し直す
+	// (POST /api/square/devices/{id}/code)
+	IssueSquareDeviceCode(c *gin.Context, id openapi_types.UUID)
 	// Square 連携が使えるか
 	// (GET /api/square/status)
 	GetSquareStatus(c *gin.Context)
@@ -183,6 +228,169 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// WriteCaosCups operation middleware
+func (siw *ServerInterfaceWrapper) WriteCaosCups(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.WriteCaosCups(c)
+}
+
+// AdvanceCaosDripper operation middleware
+func (siw *ServerInterfaceWrapper) AdvanceCaosDripper(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdvanceCaosDripper(c, dripper)
+}
+
+// UpdateCaosLaneSeniors operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCaosLaneSeniors(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCaosLaneSeniors(c)
+}
+
+// SwapCaosLanes operation middleware
+func (siw *ServerInterfaceWrapper) SwapCaosLanes(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SwapCaosLanes(c)
+}
+
+// PutCaosLane operation middleware
+func (siw *ServerInterfaceWrapper) PutCaosLane(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCaosLane(c, dripper)
+}
+
+// GetCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) GetCaosLogs(c *gin.Context) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCaosLogsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "offset", c.Request.URL.Query(), &params.Offset)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offset: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "tab_id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tab_id", c.Request.URL.Query(), &params.TabId)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter tab_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "event" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "event", c.Request.URL.Query(), &params.Event)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter event: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCaosLogs(c, params)
+}
+
+// CreateCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) CreateCaosLogs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCaosLogs(c)
+}
+
+// ExportCaosLogs operation middleware
+func (siw *ServerInterfaceWrapper) ExportCaosLogs(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportCaosLogs(c)
+}
 
 // GetCashierState operation middleware
 func (siw *ServerInterfaceWrapper) GetCashierState(c *gin.Context) {
@@ -258,6 +466,56 @@ func (siw *ServerInterfaceWrapper) DeleteColorSetting(c *gin.Context) {
 	}
 
 	siw.Handler.DeleteColorSetting(c, id)
+}
+
+// CreateCupEmergencies operation middleware
+func (siw *ServerInterfaceWrapper) CreateCupEmergencies(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCupEmergencies(c)
+}
+
+// GetCupEmergencyReasons operation middleware
+func (siw *ServerInterfaceWrapper) GetCupEmergencyReasons(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCupEmergencyReasons(c)
+}
+
+// DeleteCupEmergency operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCupEmergency(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCupEmergency(c, id)
 }
 
 // GetInventory operation middleware
@@ -369,32 +627,6 @@ func (siw *ServerInterfaceWrapper) CreateStockEvent(c *gin.Context) {
 	}
 
 	siw.Handler.CreateStockEvent(c, id)
-}
-
-// GetStockUsages operation middleware
-func (siw *ServerInterfaceWrapper) GetStockUsages(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetStockUsages(c)
-}
-
-// ReplaceStockUsages operation middleware
-func (siw *ServerInterfaceWrapper) ReplaceStockUsages(c *gin.Context) {
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.ReplaceStockUsages(c)
 }
 
 // GetItemTypes operation middleware
@@ -977,6 +1209,80 @@ func (siw *ServerInterfaceWrapper) MarkOrderServe(c *gin.Context) {
 	siw.Handler.MarkOrderServe(c, id)
 }
 
+// RefundOrderSquarePayment operation middleware
+func (siw *ServerInterfaceWrapper) RefundOrderSquarePayment(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundOrderSquarePayment(c, id)
+}
+
+// RefundOrderSquarePaymentKeepingOrder operation middleware
+func (siw *ServerInterfaceWrapper) RefundOrderSquarePaymentKeepingOrder(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundOrderSquarePaymentKeepingOrder(c, id)
+}
+
+// GetPrinterSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetPrinterSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetPrinterSettings(c)
+}
+
+// UpdatePrinterSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePrinterSettings(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdatePrinterSettings(c)
+}
+
 // CreateSquareCheckout operation middleware
 func (siw *ServerInterfaceWrapper) CreateSquareCheckout(c *gin.Context) {
 
@@ -1049,6 +1355,30 @@ func (siw *ServerInterfaceWrapper) CancelSquareCheckout(c *gin.Context) {
 	}
 
 	siw.Handler.CancelSquareCheckout(c, id)
+}
+
+// RefundSquareCheckout operation middleware
+func (siw *ServerInterfaceWrapper) RefundSquareCheckout(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RefundSquareCheckout(c, id)
 }
 
 // GetSquareDevices operation middleware
@@ -1127,6 +1457,30 @@ func (siw *ServerInterfaceWrapper) DeleteSquareDevice(c *gin.Context) {
 	siw.Handler.DeleteSquareDevice(c, id)
 }
 
+// IssueSquareDeviceCode operation middleware
+func (siw *ServerInterfaceWrapper) IssueSquareDeviceCode(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.IssueSquareDeviceCode(c, id)
+}
+
 // GetSquareStatus operation middleware
 func (siw *ServerInterfaceWrapper) GetSquareStatus(c *gin.Context) {
 
@@ -1193,19 +1547,28 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
+	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
+	router.POST(options.BaseURL+"/api/caos/lanes/seniors", wrapper.UpdateCaosLaneSeniors)
+	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)
+	router.PUT(options.BaseURL+"/api/caos/lanes/:dripper", wrapper.PutCaosLane)
+	router.GET(options.BaseURL+"/api/caos/logs", wrapper.GetCaosLogs)
+	router.POST(options.BaseURL+"/api/caos/logs", wrapper.CreateCaosLogs)
+	router.GET(options.BaseURL+"/api/caos/logs/export", wrapper.ExportCaosLogs)
 	router.GET(options.BaseURL+"/api/cashier-state", wrapper.GetCashierState)
 	router.PUT(options.BaseURL+"/api/cashier-state", wrapper.UpdateCashierState)
 	router.GET(options.BaseURL+"/api/color-settings", wrapper.GetColorSettings)
 	router.PUT(options.BaseURL+"/api/color-settings", wrapper.UpsertColorSetting)
 	router.DELETE(options.BaseURL+"/api/color-settings/:id", wrapper.DeleteColorSetting)
+	router.POST(options.BaseURL+"/api/cup-emergencies", wrapper.CreateCupEmergencies)
+	router.GET(options.BaseURL+"/api/cup-emergencies/reasons", wrapper.GetCupEmergencyReasons)
+	router.DELETE(options.BaseURL+"/api/cup-emergencies/:id", wrapper.DeleteCupEmergency)
 	router.GET(options.BaseURL+"/api/inventory", wrapper.GetInventory)
 	router.POST(options.BaseURL+"/api/inventory/remind", wrapper.RemindInventory)
 	router.POST(options.BaseURL+"/api/inventory/resources", wrapper.CreateStockResource)
 	router.DELETE(options.BaseURL+"/api/inventory/resources/:id", wrapper.DeleteStockResource)
 	router.PUT(options.BaseURL+"/api/inventory/resources/:id", wrapper.UpdateStockResource)
 	router.POST(options.BaseURL+"/api/inventory/resources/:id/events", wrapper.CreateStockEvent)
-	router.GET(options.BaseURL+"/api/inventory/usages", wrapper.GetStockUsages)
-	router.PUT(options.BaseURL+"/api/inventory/usages", wrapper.ReplaceStockUsages)
 	router.GET(options.BaseURL+"/api/item-types", wrapper.GetItemTypes)
 	router.POST(options.BaseURL+"/api/item-types", wrapper.CreateItemType)
 	router.DELETE(options.BaseURL+"/api/item-types/:id", wrapper.DeleteItemType)
@@ -1234,15 +1597,21 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/api/orders/:id/cups/:cupId/served", wrapper.MarkOrderCupServe)
 	router.PATCH(options.BaseURL+"/api/orders/:id/ready", wrapper.MarkOrderReady)
 	router.PATCH(options.BaseURL+"/api/orders/:id/served", wrapper.MarkOrderServe)
+	router.POST(options.BaseURL+"/api/orders/:id/square-refund", wrapper.RefundOrderSquarePayment)
+	router.POST(options.BaseURL+"/api/orders/:id/square-refund-keep-order", wrapper.RefundOrderSquarePaymentKeepingOrder)
+	router.GET(options.BaseURL+"/api/printer-settings", wrapper.GetPrinterSettings)
+	router.PUT(options.BaseURL+"/api/printer-settings", wrapper.UpdatePrinterSettings)
 	router.POST(options.BaseURL+"/api/square/checkouts", wrapper.CreateSquareCheckout)
 	router.GET(options.BaseURL+"/api/square/checkouts/unlinked", wrapper.GetUnlinkedSquareCheckouts)
 	router.GET(options.BaseURL+"/api/square/checkouts/:id", wrapper.GetSquareCheckout)
 	router.POST(options.BaseURL+"/api/square/checkouts/:id/cancel", wrapper.CancelSquareCheckout)
+	router.POST(options.BaseURL+"/api/square/checkouts/:id/refund", wrapper.RefundSquareCheckout)
 	router.GET(options.BaseURL+"/api/square/devices", wrapper.GetSquareDevices)
 	router.POST(options.BaseURL+"/api/square/devices", wrapper.CreateSquareDevice)
 	router.POST(options.BaseURL+"/api/square/devices/import", wrapper.ImportSquareDevices)
 	router.POST(options.BaseURL+"/api/square/devices/pair", wrapper.PairSquareDevice)
 	router.DELETE(options.BaseURL+"/api/square/devices/:id", wrapper.DeleteSquareDevice)
+	router.POST(options.BaseURL+"/api/square/devices/:id/code", wrapper.IssueSquareDeviceCode)
 	router.GET(options.BaseURL+"/api/square/status", wrapper.GetSquareStatus)
 	router.POST(options.BaseURL+"/api/square/webhook", wrapper.ReceiveSquareWebhook)
 	router.GET(options.BaseURL+"/status", wrapper.GetStatus)

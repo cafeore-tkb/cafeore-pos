@@ -2,10 +2,11 @@ import type { PracticeDataset } from "@cafeore/common";
 import { CalendarClock, FileJson, Play, Trash2, X } from "lucide-react";
 import type React from "react";
 import { useMemo, useRef, useState } from "react";
+import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import { ordersInPeriod, testPlaySlots } from "../logic/historical";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
-// 表示だけ。ファイルの読み込みと、名前・コメントを落とす変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
+// 表示だけ。ファイルの読み込みと、練習に使う項目だけを写す変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
 // 始められる時刻は logic/historical の testPlaySlots。
 
 interface TestPlaySetupProps {
@@ -21,8 +22,10 @@ interface TestPlaySetupProps {
   onStart: (startMs: number, durationMinutes: 30 | 60) => void;
 }
 
+// 開始の時刻（日本時間の「10/12(日) 11:00」）
 const formatSlot = (timestamp: number) =>
   new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
     month: "numeric",
     day: "numeric",
     weekday: "short",
@@ -42,6 +45,9 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
 }) => {
   const orders = dataset?.orders ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
+  // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ）
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  usePanelOutsidePress(dialogRef, onClose);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
   const slots = useMemo(
@@ -65,11 +71,15 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      data-caos-backdrop
     >
-      <section className="w-[min(560px,92vw)] rounded-2xl border border-slate-300 bg-white p-5 shadow-2xl">
+      <dialog
+        ref={dialogRef}
+        open
+        aria-modal="true"
+        aria-label="実績でテストプレイ"
+        className="static w-[min(560px,92vw)] rounded-2xl border border-slate-300 bg-white p-5 text-slate-950 shadow-2xl"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2 font-black text-[20px] text-slate-950">
@@ -77,7 +87,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
               実績でテストプレイ
             </h2>
             <p className="mt-1 font-medium text-[12px] text-slate-500">
-              過去の祭の実際の注文を、選択した速度で再生します（1xは実時間と同じ）。本番の盤面・注文・在庫には混ざりません
+              過去の祭の実際の注文を10倍速で再生します（注文が届く時刻・抽出・タイムラインが全部同じ速さで進みます。速さと一時停止はヘッダーで変えられます）。本番の盤面・注文・在庫には混ざりません
             </p>
           </div>
           <button
@@ -106,7 +116,6 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <input
             ref={fileInput}
             type="file"
-            accept=".json,application/json"
             multiple
             className="hidden"
             aria-label="実績の JSON ファイル"
@@ -145,7 +154,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
             </p>
           )}
           <p className="mt-1 font-medium text-[11px] text-slate-500">
-            担当者名・指名・コメントは読み込むときに落とします。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
+            担当者名・コメントは読み込むときに落とします（指名は練習の盤面に出します）。読み込んだデータはこの端末のブラウザの中だけで使い、サーバーには送りません（画面を開き直したら選び直しです）。
           </p>
           {problems.length > 0 && (
             <p role="alert" className="mt-2 font-bold text-[12px] text-red-700">
@@ -251,7 +260,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           <Play className="h-5 w-5 fill-current" />
           テストプレイ開始
         </button>
-      </section>
+      </dialog>
     </div>
   );
 };

@@ -32,7 +32,7 @@ import (
 	"cafeore-pos/api/internal/square"
 )
 
-// fakeSquare は Terminal API・Payments API・Devices API のうち使う部分だけを真似る。
+// fakeSquare は Terminal API・Payments API・Refunds API・Devices API のうち使う部分だけを真似る。
 type fakeSquare struct {
 	mu        sync.Mutex
 	checkouts map[string]*square.TerminalCheckout
@@ -40,6 +40,12 @@ type fakeSquare struct {
 	created   []map[string]any
 	codes     map[string]*square.DeviceCode
 	codeOrder []string // ListDeviceCodes で返す順
+
+	refunds         map[string]*square.PaymentRefund
+	refundKeys      map[string]string // idempotency_key → 返金の ID
+	refundRequests  []map[string]any  // POST /v2/refunds に届いた本文
+	declinePayments map[string]bool   // 返金を断る決済（交通系 IC など）
+	loseRefunds     int               // この回数だけ、返金を作ってから応答を 500 にする（応答が失われた）
 }
 
 func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
@@ -47,6 +53,10 @@ func newFakeSquare(t *testing.T) (*fakeSquare, *httptest.Server) {
 		checkouts: map[string]*square.TerminalCheckout{},
 		payments:  map[string]*square.Payment{},
 		codes:     map[string]*square.DeviceCode{},
+
+		refunds:         map[string]*square.PaymentRefund{},
+		refundKeys:      map[string]string{},
+		declinePayments: map[string]bool{},
 	}
 	server := httptest.NewServer(http.HandlerFunc(fake.serve))
 	t.Cleanup(server.Close)
@@ -131,6 +141,51 @@ func (f *fakeSquare) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(http.StatusOK, map[string]any{"payment": payment})
+	case r.Method == http.MethodPost && path == "/v2/refunds":
+		var body struct {
+			IdempotencyKey string       `json:"idempotency_key"`
+			PaymentID      string       `json:"payment_id"`
+			AmountMoney    square.Money `json:"amount_money"`
+			Reason         string       `json:"reason"`
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &body)
+		var generic map[string]any
+		_ = json.Unmarshal(raw, &generic)
+		f.refundRequests = append(f.refundRequests, generic)
+		if id, ok := f.refundKeys[body.IdempotencyKey]; ok {
+			writeJSON(http.StatusOK, map[string]any{"refund": f.refunds[id]})
+			return
+		}
+		payment, ok := f.payments[body.PaymentID]
+		if !ok {
+			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
+			return
+		}
+		if f.declinePayments[body.PaymentID] {
+			writeJSON(http.StatusBadRequest, map[string]any{"errors": []square.Error{{Code: "REFUND_DECLINED", Detail: "cannot refund"}}})
+			return
+		}
+		refund := &square.PaymentRefund{
+			ID: fmt.Sprintf("rf_%d", len(f.refunds)+1), Status: "PENDING",
+			AmountMoney: body.AmountMoney, PaymentID: body.PaymentID, Reason: body.Reason,
+		}
+		f.refunds[refund.ID] = refund
+		f.refundKeys[body.IdempotencyKey] = refund.ID
+		payment.RefundIDs = append(payment.RefundIDs, refund.ID)
+		if f.loseRefunds > 0 {
+			f.loseRefunds--
+			writeJSON(http.StatusInternalServerError, map[string]any{"errors": []square.Error{{Code: "INTERNAL_SERVER_ERROR"}}})
+			return
+		}
+		writeJSON(http.StatusOK, map[string]any{"refund": refund})
+	case r.Method == http.MethodGet && strings.HasPrefix(path, "/v2/refunds/"):
+		refund, ok := f.refunds[strings.TrimPrefix(path, "/v2/refunds/")]
+		if !ok {
+			writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
+			return
+		}
+		writeJSON(http.StatusOK, map[string]any{"refund": refund})
 	default:
 		writeJSON(http.StatusNotFound, map[string]any{"errors": []square.Error{{Code: "NOT_FOUND"}}})
 	}
@@ -145,6 +200,19 @@ func (f *fakeSquare) complete(checkoutID string, paid int64) {
 	checkout := f.checkouts[checkoutID]
 	checkout.Status = squareStatusCompleted
 	checkout.PaymentIDs = []string{paymentID}
+}
+
+// completeRefund は Square で返金が終わった状態にする。
+func (f *fakeSquare) completeRefund(refundID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	refund := f.refunds[refundID]
+	refund.Status = "COMPLETED"
+	payment := f.payments[refund.PaymentID]
+	if payment.RefundedMoney == nil {
+		payment.RefundedMoney = &square.Money{Currency: "JPY"}
+	}
+	payment.RefundedMoney.Amount += refund.AmountMoney.Amount
 }
 
 func (f *fakeSquare) addCode(code *square.DeviceCode) {
@@ -181,6 +249,7 @@ type integrationEnv struct {
 	db     *gorm.DB
 	router *gin.Engine
 	fake   *fakeSquare
+	square *SquareHandler
 	menuID uuid.UUID
 }
 
@@ -225,8 +294,13 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 		t.Fatal(err)
 	}
 
+	hub := NewHub()
+	go hub.Run()
+	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "", nil)
+	orderHandler := NewOrderHandler(db, hub, inventory)
+
 	fake, server := newFakeSquare(t)
-	squareHandler, err := NewSquareHandler(db, SquareConfig{
+	squareHandler, err := NewSquareHandler(db, orderHandler, SquareConfig{
 		AccessToken: "token", Environment: "sandbox",
 		WebhookSignatureKey: integrationWebhookKey, WebhookURL: integrationWebhookURL,
 	})
@@ -235,15 +309,11 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	}
 	squareHandler.client = square.NewClient(server.URL, "token")
 
-	hub := NewHub()
-	go hub.Run()
-	inventory := NewInventory(db, notify.NewSlack(""), RemindAuth{}, "")
-	orderHandler := NewOrderHandler(db, hub, inventory)
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := router.Group("/api")
 	api.POST("/orders", orderHandler.CreateOrder)
+	api.GET("/orders/:id", orderHandler.GetOrder)
 	api.DELETE("/orders/:id", orderHandler.DeleteOrder)
 	api.GET("/square/status", squareHandler.GetStatus)
 	api.GET("/square/devices", squareHandler.GetDevices)
@@ -251,13 +321,17 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	api.POST("/square/devices/pair", squareHandler.PairDevice)
 	api.POST("/square/devices/import", squareHandler.ImportDevices)
 	api.DELETE("/square/devices/:id", squareHandler.DeleteDevice)
+	api.POST("/square/devices/:id/code", squareHandler.IssueDeviceCode)
 	api.POST("/square/checkouts", squareHandler.CreateCheckout)
 	api.GET("/square/checkouts/unlinked", squareHandler.GetUnlinkedCheckouts)
 	api.GET("/square/checkouts/:id", squareHandler.GetCheckout)
 	api.POST("/square/checkouts/:id/cancel", squareHandler.CancelCheckout)
+	api.POST("/square/checkouts/:id/refund", squareHandler.RefundCheckout)
+	api.POST("/orders/:id/square-refund", squareHandler.RefundOrder)
+	api.POST("/orders/:id/square-refund-keep-order", squareHandler.RefundOrderKeepingOrder)
 	api.POST("/square/webhook", squareHandler.ReceiveWebhook)
 
-	return &integrationEnv{t: t, db: db, router: router, fake: fake, menuID: menu.ID}
+	return &integrationEnv{t: t, db: db, router: router, fake: fake, square: squareHandler, menuID: menu.ID}
 }
 
 func (e *integrationEnv) call(method, path string, body any, headers map[string]string, out any) int {
@@ -634,6 +708,89 @@ func TestSquareIntegrationPairing(t *testing.T) {
 	// 名前が無ければ断る。
 	if code := env.call(http.MethodPost, "/api/square/devices/pair", map[string]any{"name": "  "}, nil, nil); code != http.StatusBadRequest {
 		t.Fatalf("empty name: %d", code)
+	}
+}
+
+// ペアリング済みの端末にコードを発行し直す。入力を待つ間も今の device_id で決済に使え、
+// 入力されたら device_id を記録し直す。期限が切れてもペアリング済みのまま。
+func TestSquareIntegrationIssueCodeToPairedDevice(t *testing.T) {
+	env := newIntegrationEnv(t)
+	device := findDevice(env.devices(), "レジ1")
+	if device == nil || device.Status != models.PAIRED || device.Code != nil {
+		t.Fatalf("registered device: %+v", device)
+	}
+	path := "/api/square/devices/" + device.Id.String() + "/code"
+
+	var issued models.SquareDeviceResponse
+	if code := env.call(http.MethodPost, path, nil, nil, &issued); code != http.StatusOK {
+		t.Fatalf("issue: %d %+v", code, issued)
+	}
+	if issued.Id != device.Id || issued.Status != models.PAIRED || issued.DeviceId == nil || *issued.DeviceId != "device-1" ||
+		issued.Code == nil || *issued.Code != "CODE01" || issued.PairBy == nil {
+		t.Fatalf("unexpected issued device: %+v", issued)
+	}
+	if sent := env.fake.codes["code_1"]; sent.Name != "レジ1" || sent.ProductType != "TERMINAL_API" {
+		t.Fatalf("unexpected device code request: %+v", sent)
+	}
+
+	// 入力されるまでもペアリング済みのまま、今の device_id で決済に使える。
+	if pending := findDevice(env.devices(), "レジ1"); pending == nil || pending.Status != models.PAIRED || pending.Code == nil {
+		t.Fatalf("pending: %+v", pending)
+	}
+	if code, _, _ := env.createCheckoutOn("device-1", uuid.NewString(), 600); code != http.StatusCreated {
+		t.Fatalf("checkout while waiting for the code: %d", code)
+	}
+
+	// 同じ端末で入力したら、行も device_id もそのままでコードが消える。
+	env.fake.pair("code_1", "device-1", "2026-11-07T12:01:00Z")
+	devices := env.devices()
+	if repaired := findDevice(devices, "レジ1"); len(devices) != 1 || repaired == nil || repaired.Id != device.Id || repaired.Status != models.PAIRED ||
+		repaired.DeviceId == nil || *repaired.DeviceId != "device-1" || repaired.Code != nil {
+		t.Fatalf("re-paired: %+v", devices)
+	}
+
+	// 入力されないまま期限が切れても、ペアリング済みのまま。
+	env.call(http.MethodPost, path, nil, nil, &issued)
+	env.fake.expire("code_2")
+	if expired := findDevice(env.devices(), "レジ1"); expired == nil || expired.Status != models.PAIRED || expired.Code != nil ||
+		expired.DeviceId == nil || *expired.DeviceId != "device-1" {
+		t.Fatalf("expired: %+v", expired)
+	}
+
+	// 入力待ちのときにもう一度発行すると、新しいコードに置き換わる。
+	env.call(http.MethodPost, path, nil, nil, &issued)
+	var replaced models.SquareDeviceResponse
+	env.call(http.MethodPost, path, nil, nil, &replaced)
+	if replaced.Code == nil || *replaced.Code != "CODE04" {
+		t.Fatalf("replaced: %+v", replaced)
+	}
+	// 別の端末で入力したら、その端末の device_id に置き換わる。前の端末には決済画面を出さない。
+	env.fake.pair("code_4", "device-9", "2026-11-07T12:03:00Z")
+	if swapped := findDevice(env.devices(), "レジ1"); swapped == nil || swapped.Id != device.Id || swapped.Status != models.PAIRED ||
+		swapped.DeviceId == nil || *swapped.DeviceId != "device-9" || swapped.Code != nil {
+		t.Fatalf("swapped: %+v", swapped)
+	}
+	if code, _, _ := env.createCheckoutOn("device-1", uuid.NewString(), 600); code != http.StatusBadRequest {
+		t.Fatalf("checkout on the replaced device: %d", code)
+	}
+	if code, _, _ := env.createCheckoutOn("device-9", uuid.NewString(), 600); code != http.StatusCreated {
+		t.Fatalf("checkout on the new device: %d", code)
+	}
+
+	// ペアリング待ちの行・見つからない・ID が不正は断り、Square にはコードを発行させない。
+	var unpaired models.SquareDeviceResponse
+	env.call(http.MethodPost, "/api/square/devices/pair", map[string]any{"name": "レジ2"}, nil, &unpaired)
+	if code := env.call(http.MethodPost, "/api/square/devices/"+unpaired.Id.String()+"/code", nil, nil, nil); code != http.StatusConflict {
+		t.Fatalf("unpaired device: %d", code)
+	}
+	if code := env.call(http.MethodPost, "/api/square/devices/"+uuid.NewString()+"/code", nil, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("unknown device: %d", code)
+	}
+	if code := env.call(http.MethodPost, "/api/square/devices/not-a-uuid/code", nil, nil, nil); code != http.StatusBadRequest {
+		t.Fatalf("invalid id: %d", code)
+	}
+	if len(env.fake.codeOrder) != 5 {
+		t.Fatalf("expected five codes issued on Square, got %d", len(env.fake.codeOrder))
 	}
 }
 

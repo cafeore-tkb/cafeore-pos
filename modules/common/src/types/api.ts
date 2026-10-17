@@ -11,7 +11,10 @@ export interface paths {
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
-    /** アイテム作成 */
+    /**
+     * アイテム作成
+     * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+     */
     post: operations["createItem"];
   };
   "/api/items/{id}": {
@@ -19,11 +22,17 @@ export interface paths {
     get: operations["getItem"];
     /** アイテム情報更新 */
     put: operations["updateItem"];
-    /** アイテム削除 */
+    /**
+     * アイテム削除
+     * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+     */
     delete: operations["deleteItem"];
   };
   "/api/menus": {
-    /** メニュー一覧取得 */
+    /**
+     * メニュー一覧取得
+     * @description priority の大きい順に返す（同じなら name・id の順）
+     */
     get: operations["getMenus"];
     /** メニュー作成 */
     post: operations["createMenu"];
@@ -63,6 +72,18 @@ export interface paths {
     /** 背景色設定削除 */
     delete: operations["deleteColorSetting"];
   };
+  "/api/printer-settings": {
+    /**
+     * プリンター設定取得
+     * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     */
+    get: operations["getPrinterSettings"];
+    /**
+     * プリンター設定の更新
+     * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
+     */
+    put: operations["updatePrinterSettings"];
+  };
   "/api/orders": {
     /** オーダー一覧取得 */
     get: operations["getOrders"];
@@ -78,24 +99,30 @@ export interface paths {
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
-    /** オーダーを準備完了にする */
+    /**
+     * オーダーを準備完了にする
+     * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+     */
     patch: operations["markOrderReady"];
   };
   "/api/orders/{id}/served": {
-    /** オーダーを提供完了にする */
+    /**
+     * オーダーを提供完了にする
+     * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+     */
     patch: operations["markOrderServe"];
   };
   "/api/orders/{id}/cups/{cupId}/ready": {
     /**
      * カップを準備完了にする
-     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+     * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
      */
     patch: operations["markOrderCupReady"];
   };
   "/api/orders/{id}/cups/{cupId}/served": {
     /**
      * カップを提供完了にする
-     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+     * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
      */
     patch: operations["markOrderCupServe"];
   };
@@ -104,6 +131,132 @@ export interface paths {
     get: operations["getOrderComments"];
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
+  };
+  "/api/caos/logs/export": {
+    /**
+     * CaOSのDBログをJSONファイルとして書き出す
+     * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+     */
+    get: operations["exportCaosLogs"];
+  };
+  "/api/caos/logs": {
+    /**
+     * master-sheet の保存済みクライアント操作ログを取得する
+     * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+     */
+    get: operations["getCaosLogs"];
+    /**
+     * master-sheet のクライアント操作ログをまとめて保存する
+     * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+     */
+    post: operations["createCaosLogs"];
+  };
+  "/api/caos/cups": {
+    /**
+     * CaOS が決めたことを注文のカップに書く
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+     * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
+     * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+     * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+     *
+     * 順番（dripper_position。整数）はサーバーが決める。画面は after の insert_before（どのカードの前に入れるか）だけを送る：
+     * - insert_before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+     * - insert_before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+     * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
+     * - 列から抜けたカードの番号は空いたまま（詰めない）
+     *
+     * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+     * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
+     * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
+     * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
+     *
+     * 確かめること：
+     * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+     * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
+     * - 終わったカード（brew_finished_at がある）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
+     * - 今日（日本時間）の注文のカップだけ書ける
+     * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+     * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+     * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
+     * - 上級生のみのカップ（item_types.senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
+     * - 抽出を始められる（start_brew）のは、書く前のそのドリッパーに抽出中のカードがあるか、書くカップのほかに待機のカードが無いときだけ（抽出中が無く待機があれば、始めるのは「次へ」で待機の先頭）。
+     *   書いたあと、そのドリッパーで抽出中は 1 枚だけ（全部書いてから確かめるので、writes の順によらない）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+     */
+    put: operations["writeCaosCups"];
+  };
+  "/api/caos/drippers/{dripper}/next": {
+    /**
+     * CaOS の「次へ」
+     * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
+     * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
+     * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+     * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+     * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
+     * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
+     * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+     */
+    post: operations["advanceCaosDripper"];
+  };
+  "/api/cup-emergencies": {
+    /**
+     * カップを緊急（入れ直し）にする
+     * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+     * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+     * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+     * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+     * 今日（日本時間）の注文の、抽出が要るカップだけ。
+     * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+     * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
+     */
+    post: operations["createCupEmergencies"];
+  };
+  "/api/cup-emergencies/reasons": {
+    /**
+     * よく使う緊急（入れ直し）の理由
+     * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+     */
+    get: operations["getCupEmergencyReasons"];
+  };
+  "/api/cup-emergencies/{id}": {
+    /**
+     * 緊急（入れ直し）を取り消す
+     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
+     * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
+     * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
+     */
+    delete: operations["deleteCupEmergency"];
+  };
+  "/api/caos/lanes/{dripper}": {
+    /**
+     * CaOS のドリッパーの担当者を替える（交代）
+     * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
+     * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
+     * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
+     * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
+     * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+     */
+    put: operations["putCaosLane"];
+  };
+  "/api/caos/lanes/swap": {
+    /**
+     * CaOS の 2 つのドリッパーの担当者を入れ替える
+     * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
+     * 配信は PUT /api/caos/lanes/{dripper} と同じ。交代の記録はドリッパーごとに 1 行ずつ（2 行）足す。
+     */
+    post: operations["swapCaosLanes"];
+  };
+  "/api/caos/lanes/seniors": {
+    /**
+     * CaOS の今の担当者の上級生かだけを直す
+     * @description 画面が sohosai-shift の上級生の名簿（seniors）を読み直したとき、今の担当者の上級生かを新しい名簿の判定に合わせる。名前は変えない。
+     * 今日の担当者の名前が lanes の name と同じ（ほかの画面が替えていない）で、上級生かが senior と違うドリッパーだけ senior を書く
+     * （名前の無いドリッパー・名前の違うドリッパーは何もしない。同じ値を何度送っても同じ結果）。
+     * 交代ではないので、交代の記録（dripper_assignee_changes）は足さない。
+     * 書いたドリッパーがあれば、配信は PUT /api/caos/lanes/{dripper} と同じ（無ければ配らない）。
+     */
+    post: operations["updateCaosLaneSeniors"];
   };
   "/api/master-status": {
     /**
@@ -122,18 +275,34 @@ export interface paths {
   "/api/inventory": {
     /**
      * 在庫の残量一覧
-     * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+     * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+     * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+     *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+     *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+     *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+     *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+     * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
      */
     get: operations["getInventory"];
   };
   "/api/inventory/resources": {
-    /** 在庫対象の作成 */
+    /**
+     * カップの作成
+     * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+     */
     post: operations["createStockResource"];
   };
   "/api/inventory/resources/{id}": {
-    /** 在庫対象の更新 */
+    /**
+     * 在庫対象の更新
+     * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+     */
     put: operations["updateStockResource"];
-    /** 在庫対象の削除 */
+    /**
+     * カップの削除
+     * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+     */
     delete: operations["deleteStockResource"];
   };
   "/api/inventory/resources/{id}/events": {
@@ -142,12 +311,6 @@ export interface paths {
      * @description count は実数で残量を置き換える（0 以上）。receipt は入荷として正の数を足す。adjust は差分として足す（減らすときは負の値、0 は不可）。
      */
     post: operations["createStockEvent"];
-  };
-  "/api/inventory/usages": {
-    /** アイテム1杯あたりの使用量一覧 */
-    get: operations["getStockUsages"];
-    /** アイテム1杯あたりの使用量をまとめて置き換える */
-    put: operations["replaceStockUsages"];
   };
   "/api/inventory/remind": {
     /**
@@ -184,7 +347,8 @@ export interface paths {
     /**
      * Square 端末の一覧
      * @description 登録した端末と、ペアリング待ちのコード。古い順。
-     * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+     * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+     * Square に問い合わせて最新にしてから返す。
      * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
      */
     get: operations["getSquareDevices"];
@@ -222,6 +386,19 @@ export interface paths {
      */
     delete: operations["deleteSquareDevice"];
   };
+  "/api/square/devices/{id}/code": {
+    /**
+     * ペアリング済みの端末にコード（Device Code）を発行し直す
+     * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+     * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+     * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+     * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+     * 別の端末で入力したら、その端末の device_id に置き換わる。
+     * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+     * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+     */
+    post: operations["issueSquareDeviceCode"];
+  };
   "/api/square/checkouts": {
     /**
      * Square Terminal に決済画面を出す
@@ -236,6 +413,8 @@ export interface paths {
     /**
      * 支払い済みなのに注文と結び付いていない決済依頼
      * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+     * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+     * 注文を残して返金した決済（一覧には出さない）も、返金の結果待ちなら Square に問い合わせ、変わったらその注文を配り直す。
      */
     get: operations["getUnlinkedSquareCheckouts"];
   };
@@ -252,6 +431,43 @@ export interface paths {
      * @description PENDING / IN_PROGRESS のときだけ取り消せる。電子マネーで端末にエラーが出ているときは API から取り消せないので、端末側で取り消す。
      */
     post: operations["cancelSquareCheckout"];
+  };
+  "/api/square/checkouts/{id}/refund": {
+    /**
+     * 支払い済みの決済を全額返金する
+     * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+     * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+     * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+     * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+     * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+     * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+     * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+     * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+     */
+    post: operations["refundSquareCheckout"];
+  };
+  "/api/orders/{id}/square-refund": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文を消す
+     * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+     * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+     * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+     * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
+     */
+    post: operations["refundOrderSquarePayment"];
+  };
+  "/api/orders/{id}/square-refund-keep-order": {
+    /**
+     * 注文に使った Square の決済を全額返金し、注文は残す
+     * @description その注文に結び付いた決済依頼を POST /api/square/checkouts/{id}/refund と同じように返金するが、注文は消さない
+     * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
+     * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
+     * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+     * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+     * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
+     */
+    post: operations["refundOrderSquarePaymentKeepingOrder"];
   };
   "/api/square/webhook": {
     /**
@@ -276,6 +492,24 @@ export interface components {
       version: string;
       /** @example connected */
       database: string;
+      build?: components["schemas"]["BuildInfo"];
+    };
+    /**
+     * @description このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
+     * POS のトップページに、画面のビルドと並べて出す。
+     * ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
+     */
+    BuildInfo: {
+      /**
+       * @description PR の番号。プレビューはその PR、本番はマージした PR。分からなければ省く
+       * @example 889
+       */
+      pr?: number;
+      /**
+       * @description コミットの SHA。プレビューは PR の head のコミット。分からなければ省く
+       * @example 90b89b2a1c3e4f5061728394a5b6c7d8e9f01234
+       */
+      commit?: string;
     };
     ItemResponse: {
       /** Format: uuid */
@@ -314,6 +548,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ */
+      priority: number;
       items: components["schemas"]["MenuItemResponse"][];
     };
     MenuCreateRequest: {
@@ -321,6 +557,8 @@ export interface components {
       abbr: string;
       price: number;
       key: string;
+      /** @description レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま */
+      priority?: number;
       items: components["schemas"]["MenuItemRequest"][];
     };
     MenuUpdateRequest: components["schemas"]["MenuCreateRequest"] & {
@@ -332,16 +570,49 @@ export interface components {
       id: string;
       name: string;
       display_name: string;
+      /** @description この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false */
+      makes_cup: boolean;
+      /** @description この種類のアイテムは抽出が要る（割引の対象の杯数・ドリッパーの割り振りに数える）。makes_cup が false なら必ず false */
+      needs_brew: boolean;
+      /** @description この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false */
+      senior_only: boolean;
+      /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
+      iced_brew: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
       display_name: string;
+      /**
+       * @description 省略したら true
+       * @default true
+       */
+      makes_cup?: boolean;
+      /** @description 省略したら makes_cup と同じ。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      senior_only?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      iced_brew?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
       id: string;
       name: string;
       display_name: string;
+      /** @description 省略したら今の値のまま */
+      makes_cup?: boolean;
+      /** @description 省略したら今の値のまま（makes_cup を false にしたときは false）。makes_cup が false のときに true は 400 */
+      needs_brew?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      senior_only?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      iced_brew?: boolean;
     };
     MenuInfo: {
       /**
@@ -354,7 +625,10 @@ export interface components {
       /** @description 注文時点のメニュー価格 */
       unit_price: number;
       menu: components["schemas"]["MenuResponse"];
+      /** @description 指名の自由記述（ラベルに印刷する文）。dripper が無い明細では null。番号より前の注文は自由記述だけのことがある */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1st〜6th は 1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderCupResponse: {
       /** Format: uuid */
@@ -367,7 +641,7 @@ export interface components {
       item: components["schemas"]["ItemResponse"];
       /**
        * Format: date-time
-       * @description このカップが準備完了になった時刻。未準備なら null
+       * @description このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
        */
       ready_at: string | null;
       /**
@@ -375,6 +649,44 @@ export interface components {
        * @description このカップを提供した時刻。未提供なら null
        */
       served_at: string | null;
+      /** @description CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む） */
+      dripper: number | null;
+      /** @description CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない） */
+      dripper_position: number | null;
+      /**
+       * Format: uuid
+       * @description CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
+       */
+      drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を始めた時刻
+       */
+      brew_started_at: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
+       */
+      brew_finished_at: string | null;
+      /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
+      emergencies: components["schemas"]["CupEmergencyResponse"][];
+    };
+    /** @description 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ） */
+    CupEmergencyResponse: {
+      /** Format: uuid */
+      id: string;
+      /** Format: date-time */
+      created_at: string;
+      /** @description 入れ直す理由（足したときに書いたもの。無ければ空） */
+      reason: string;
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -384,7 +696,10 @@ export interface components {
       order_menu_id?: string;
       /** Format: uuid */
       menu_id: string;
+      /** @description 指名の自由記述。新しい明細では dripper が無いと付けられない。空白だけなら null として扱う */
       assignee: string | null;
+      /** @description 指名したドリッパーの番号（1〜6）。指名しない明細は null */
+      dripper: number | null;
     };
     OrderResponse: {
       /** Format: uuid */
@@ -401,6 +716,9 @@ export interface components {
       discount_order_id?: number | null;
       discount_order_cups?: number;
       payment_method: components["schemas"]["PaymentMethod"];
+      square_refund_status?: components["schemas"]["SquareRefundStatus"];
+      /** @description 個別会計の支払い（払った順）。一括で払った注文では空 */
+      payments: components["schemas"]["OrderPaymentResponse"][];
       menus: components["schemas"]["MenuInfo"][];
       /** @description 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空 */
       cups: components["schemas"]["OrderCupResponse"][];
@@ -425,8 +743,24 @@ export interface components {
        * @description payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
        */
       square_checkout_id?: string | null;
+      /**
+       * @description 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
+       * amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+       * Square の支払いを含めば square、含まなければ cash になる。
+       */
+      payments?: components["schemas"]["OrderPaymentCreate"][];
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
+      /**
+       * Format: uuid
+       * @description 送り直しで同じ注文を二重に作らないためのキー。作る注文の ID にそのまま使い、この ID の注文がすでにあれば新しく作らずにその注文を 200 で返す。送り直しでは同じキーを送る。省略すると毎回新しい注文を作る
+       */
+      idempotency_key?: string;
+      /**
+       * Format: date-time
+       * @description レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
+       */
+      created_at?: string;
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -485,11 +819,11 @@ export interface components {
     /**
      * @description 背景色を適用する画面。
      * cashier はレジのメニューのボタン、cashier_order はレジの過去の注文のカード、
-     * master・serve はマスター・提供画面のカップ
+     * master・serve はマスター・提供画面のカップ、nominated は CaOS の指名のカード（無ければ master の色）
      *
      * @enum {string}
      */
-    ColorScreen: "cashier" | "cashier_order" | "master" | "serve";
+    ColorScreen: "cashier" | "cashier_order" | "master" | "serve" | "nominated";
     ColorSettingResponse: {
       /** Format: uuid */
       id: string;
@@ -514,6 +848,39 @@ export interface components {
       /** @example #bfdbfe */
       color: string;
     };
+    /**
+     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+     * tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+     *
+     * @enum {string}
+     */
+    ReceiptPrinterModel: "tm_l90" | "tm_m30";
+    PrinterSettingsResponse: {
+      /**
+       * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+       * @example 192.168.77.2
+       */
+      label_printer_ip: string;
+      /**
+       * @description レシート・領収書用のプリンターの IPv4 アドレス
+       * @example 192.168.77.3
+       */
+      receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+    };
+    PrinterSettingsUpdateRequest: {
+      /**
+       * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
+       * @example 192.168.77.2
+       */
+      label_printer_ip: string;
+      /**
+       * @description レシート・領収書用のプリンターの IPv4 アドレス
+       * @example 192.168.77.3
+       */
+      receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+    };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
       editting_order: {
@@ -534,16 +901,188 @@ export interface components {
       /** Format: uuid */
       submitted_order_id: string | null;
     };
+    CaosLogEntry: {
+      /** Format: date-time */
+      at: string;
+      /** Format: uuid */
+      tabId: string;
+      /** Format: int64 */
+      sequence: number;
+      event: string;
+      details: {
+        [key: string]: unknown;
+      };
+    };
+    CaosStoredLogEntry: components["schemas"]["CaosLogEntry"] & {
+      /** Format: date-time */
+      receivedAt: string;
+    };
+    CaosLogPage: {
+      entries: components["schemas"]["CaosStoredLogEntry"][];
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    CaosLogBatch: {
+      entries: components["schemas"]["CaosLogEntry"][];
+    };
+    /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
+    CaosCupState: {
+      dripper: number | null;
+      dripper_position: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /** Format: date-time */
+      brew_started_at: string | null;
+      /** Format: date-time */
+      brew_finished_at: string | null;
+    };
+    /**
+     * @description CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。
+     * start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
+     * dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
+     */
+    CaosCupAfter: {
+      dripper: number | null;
+      /** Format: uuid */
+      drip_id: string | null;
+      /**
+       * Format: uuid
+       * @description dripper の待機の、どのカード（drip_id）の前に入れるか。null なら最後。待機の先頭に入れるときは待機の先頭のカードの drip_id（抽出中のカードの前、つまり列の先頭は start_brew）。
+       * dripper が null（未割当）のときと、ほかのカップのカードに入る（統合）ときは null
+       */
+      insert_before: string | null;
+      /** @description 列の先頭に入れて抽出を始める（空いているドリッパーに置いてそのまま始める・抽出中のカードを待機に下げて先頭に入れる）。時刻は押した時刻（CaosPress） */
+      start_brew: boolean;
+    };
+    /**
+     * @description カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。
+     * 終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く
+     */
+    CaosCupsWrite: {
+      /**
+       * Format: uuid
+       * @description 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+       */
+      merge_into?: string;
+      cup_ids: string[];
+      before: components["schemas"]["CaosCupState"];
+      after: components["schemas"]["CaosCupAfter"];
+    };
+    /**
+     * @description 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+     * 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+     * - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+     *   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+     * - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+     * - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+     * 省略すると（押した時刻を送らない古い画面）、サーバーの今
+     */
+    CaosPress: {
+      /**
+       * Format: int64
+       * @description 押した時刻（端末の時計、エポックのミリ秒）
+       */
+      at: number;
+      /**
+       * Format: int64
+       * @description 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
+       */
+      sent_at: number;
+    };
+    CaosCupsWriteRequest: {
+      writes: components["schemas"]["CaosCupsWrite"][];
+      press?: components["schemas"]["CaosPress"];
+    };
+    CupEmergencyCreateRequest: {
+      /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
+      order_cup_ids: string[];
+      /** @description 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける */
+      reason?: string;
+    };
+    CupEmergencyCreateResponse: {
+      /** @description 足した入れ直しの id（order_cup_ids と同じ順） */
+      ids: string[];
+    };
+    CaosNextRequest: {
+      /**
+       * Format: uuid
+       * @description 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
+       */
+      drip_id: string | null;
+      /**
+       * @description 待機の先頭を始めるか。false なら抽出中のカードを終えるだけ（CaOS で抽出中のカードを押したとき）。省略すると true
+       * @default true
+       */
+      start_next?: boolean;
+      /**
+       * Format: uuid
+       * @description 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
+       */
+      start_drip_id?: string;
+      press?: components["schemas"]["CaosPress"];
+    };
+    /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
+    CaosLane: {
+      dripper: number;
+      /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
+      name: string;
+      /** @description 上級生か。交代した時点で画面が sohosai-shift の名簿で判定した値（名簿を読み直したら POST /api/caos/lanes/seniors で直す） */
+      senior: boolean;
+      /**
+       * Format: date-time
+       * @description 最後に替えた（上級生かを直したのも含む）時刻。今日まだ替えていなければ null
+       */
+      updated_at: string | null;
+    };
+    /** @description 今日（日本時間）のドリッパー 1〜6 の担当者。lanes は 6 つ全部を番号の順に持つ */
+    CaosLanes: {
+      /**
+       * @description 日本時間の日付（YYYY-MM-DD）。画面はこの日が今日のときだけ使う
+       * @example 2026-11-03
+       */
+      day: string;
+      lanes: components["schemas"]["CaosLane"][];
+    };
+    CaosLaneUpdateRequest: {
+      /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
+      name: string;
+      /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */
+      senior: boolean;
+    };
+    CaosLaneSeniorsRequest: {
+      /** @description 直すドリッパー。name はその画面が見ている今の担当者の名前、senior は名簿で判定し直した値 */
+      lanes: components["schemas"]["CaosLaneSenior"][];
+    };
+    CaosLaneSenior: {
+      dripper: number;
+      /** @description 今の担当者の名前。今日の担当者がこの名前のときだけ直す */
+      name: string;
+      /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定し直した値 */
+      senior: boolean;
+    };
+    CaosLaneSwapRequest: {
+      first: number;
+      second: number;
+    };
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
     };
-    /** @enum {string} */
-    StockResourceKind: "cup" | "bean";
+    /**
+     * @description item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
+     * @enum {string}
+     */
+    StockResourceKind: "item" | "cup";
+    /** @description name と item_type_ids はカップだけに使う。アイテムの在庫ではアイテムの名前を使い、この 2 つを送ると 400 */
     StockResourceRequest: {
-      kind: components["schemas"]["StockResourceKind"];
-      /** @example ホットカップ */
-      name: string;
+      /**
+       * @description カップの名前（カップでは必須）
+       * @example ホットカップ
+       */
+      name?: string;
+      /** @description このカップを使うアイテムの種類。この種類のアイテムが 1 つ売れるごとに per_serving 減る。省略すると今のまま（作るときは空） */
+      item_type_ids?: string[];
       /**
        * @description 数える単位（個 / g）
        * @example 個
@@ -551,29 +1090,45 @@ export interface components {
       unit: string;
       /**
        * Format: double
-       * @description 1杯あたりの量。残量を杯数に換算するのに使う（カップ 1、豆 15）
+       * @description 1 回で減る量。残量を回数に換算するのにも使う（豆 15、コースター 1、カップ 1）
        * @example 1
        */
       per_serving: number;
       /**
-       * @description 残りがこの杯数を切ったら通知を始める
+       * @description 残りがこの回数を切ったら通知を始める
        * @example 500
        */
       notify_from: number;
       /**
-       * @description notify_from から何杯減るごとに通知するか
+       * @description notify_from から何回減るごとに通知するか
        * @example 100
        */
       notify_step: number;
       /**
-       * @description 最低限残したい杯数。これを切ると危険扱い
+       * @description 最低限残したい回数。これを切ると危険扱い
        * @example 100
        */
       buffer: number;
     };
-    StockResourceResponse: components["schemas"]["StockResourceRequest"] & {
+    StockResourceResponse: {
       /** Format: uuid */
       id: string;
+      kind: components["schemas"]["StockResourceKind"];
+      /**
+       * Format: uuid
+       * @description アイテムの在庫ならそのアイテム。カップは null
+       */
+      item_id: string | null;
+      /** @description アイテムの在庫ならアイテムの名前、カップならカップの名前 */
+      name: string;
+      /** @description このカップを使うアイテムの種類（アイテムの在庫は空） */
+      item_type_ids: string[];
+      unit: string;
+      /** Format: double */
+      per_serving: number;
+      notify_from: number;
+      notify_step: number;
+      buffer: number;
     };
     /**
      * @description untracked は棚卸し・入荷がまだ一度も無い
@@ -597,16 +1152,16 @@ export interface components {
       received: number;
       /**
        * Format: double
-       * @description counted_at 以降の注文での消費量
+       * @description counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
        */
       consumed: number;
-      /** @description counted_at 以降に売れた杯数 */
+      /** @description counted_at より後に使った回数 */
       servings: number;
       /** Format: double */
       remaining?: number | null;
       /** Format: double */
       remaining_servings?: number | null;
-      /** @description 直近1時間に売れた杯数 */
+      /** @description 直近1時間に使った回数（consumed と同じく、使った時刻で数える） */
       servings_last_hour: number;
     };
     /** @enum {string} */
@@ -638,20 +1193,9 @@ export interface components {
       estimated?: number | null;
       /**
        * Format: double
-       * @description 前回の棚卸しから今回までの実測の1杯あたり使用量（count のときだけ）
+       * @description 前回の棚卸しから今回までの実測の1回あたり使用量（count のときだけ）
        */
       actual_per_serving?: number | null;
-    };
-    StockUsage: {
-      /** Format: uuid */
-      item_id: string;
-      /** Format: uuid */
-      resource_id: string;
-      /**
-       * Format: double
-       * @description アイテム1杯で使う量（カップ 1、豆 15 など）
-       */
-      amount: number;
     };
     InventoryRemindResponse: {
       sent: boolean;
@@ -663,6 +1207,38 @@ export interface components {
      * @enum {string}
      */
     PaymentMethod: "cash" | "square";
+    OrderPaymentCreate: {
+      method: components["schemas"]["PaymentMethod"];
+      /** @description この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+      amount: number;
+      /** @description お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する） */
+      received: number;
+      /**
+       * @description この支払いで引いた割引（円）
+       * @default 0
+       */
+      discount?: number;
+      /** @description この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない） */
+      menu_indexes?: number[];
+      /**
+       * Format: uuid
+       * @description method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。
+       */
+      square_checkout_id?: string | null;
+    };
+    OrderPaymentResponse: {
+      method: components["schemas"]["PaymentMethod"];
+      amount: number;
+      received: number;
+      discount: number;
+      /** @description この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない */
+      order_menu_ids: string[];
+      /** Format: uuid */
+      square_checkout_id?: string | null;
+      /** @description Square で払ったときの決済画面の種類（SquarePaymentType の値） */
+      square_payment_type?: string | null;
+      square_refund_status?: components["schemas"]["SquareRefundStatus"];
+    };
     /**
      * @description Square Terminal に出す決済画面の種類（Square の payment_type をそのまま使う）
      * @enum {string}
@@ -678,6 +1254,17 @@ export interface components {
      * @enum {string}
      */
     SquareCheckoutOutcome: "pending" | "paid" | "failed" | "attention";
+    /**
+     * @description 返金（全額）の状態。
+     *   - none: 返金を頼んでいない
+     *   - pending: Square に頼んだ。結果を待っている
+     *   - refunded: 返金が終わった
+     *   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+     *   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+     *
+     * @enum {string}
+     */
+    SquareRefundStatus: "none" | "pending" | "refunded" | "failed" | "unknown";
     SquareStatusResponse: {
       enabled: boolean;
       /** @description production か sandbox */
@@ -687,7 +1274,7 @@ export interface components {
     /**
      * @description 端末のペアリングの状態（Square の Device Code の status）。
      *   - UNPAIRED: コードを発行した。端末でまだ入力されていない
-     *   - PAIRED: ペアリング済み。決済に使える
+     *   - PAIRED: ペアリング済み。決済に使える（コードを発行し直して入力を待っている間も）
      *   - EXPIRED: 入力されないまま期限が切れた。外して発行し直す
      *
      * @enum {string}
@@ -701,11 +1288,15 @@ export interface components {
       status: components["schemas"]["SquareDeviceStatus"];
       /** @description 端末の ID。決済の依頼に使う。PAIRED になるまで null */
       device_id?: string | null;
-      /** @description 端末のサインイン画面に入力するコード。UNPAIRED の間だけ入る */
+      /**
+       * @description 端末のサインイン画面に入力するコード。入力されるか期限が切れるまでの間だけ入る
+       * （UNPAIRED の行と、POST /api/square/devices/{id}/code で発行し直したペアリング済みの行）
+       */
       code?: string | null;
       /**
        * Format: date-time
-       * @description コードの期限。これを過ぎると EXPIRED になる
+       * @description 最後に発行したコードの期限。UNPAIRED の行はこれを過ぎると EXPIRED になる。
+       * ペアリング済みの行は code が消えるだけで PAIRED のまま
        */
       pair_by?: string | null;
       /** Format: date-time */
@@ -755,6 +1346,9 @@ export interface components {
        * @description この決済で作った注文。まだ無ければ null
        */
       order_id?: string | null;
+      refund_status: components["schemas"]["SquareRefundStatus"];
+      /** @description 返金を断られた・確かめられなかったときの Square のエラー */
+      refund_error?: string | null;
       /** Format: date-time */
       created_at: string;
       /** Format: date-time */
@@ -799,7 +1393,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム作成 */
+  /**
+   * アイテム作成
+   * @description そのアイテムの在庫（在庫対象。単位「個」・1 回 1）も同じトランザクションで作る。量や通知の段階は PUT /api/inventory/resources/{id} で変える。
+   */
   createItem: {
     requestBody: {
       content: {
@@ -852,7 +1449,10 @@ export interface operations {
       };
     };
   };
-  /** アイテム削除 */
+  /**
+   * アイテム削除
+   * @description そのアイテムの在庫も同じトランザクションで論理削除する。
+   */
   deleteItem: {
     parameters: {
       path: {
@@ -866,7 +1466,10 @@ export interface operations {
       };
     };
   };
-  /** メニュー一覧取得 */
+  /**
+   * メニュー一覧取得
+   * @description priority の大きい順に返す（同じなら name・id の順）
+   */
   getMenus: {
     responses: {
       /** @description 成功 */
@@ -1078,6 +1681,45 @@ export interface operations {
       };
     };
   };
+  /**
+   * プリンター設定取得
+   * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   */
+  getPrinterSettings: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrinterSettingsResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * プリンター設定の更新
+   * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
+   */
+  updatePrinterSettings: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PrinterSettingsUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PrinterSettingsResponse"];
+        };
+      };
+      /** @description リクエストが不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /** オーダー一覧取得 */
   getOrders: {
     responses: {
@@ -1156,7 +1798,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを準備完了にする */
+  /**
+   * オーダーを準備完了にする
+   * @description 準備完了と未準備を切り替える（カップの準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
+   */
   markOrderReady: {
     parameters: {
       path: {
@@ -1178,7 +1823,10 @@ export interface operations {
       };
     };
   };
-  /** オーダーを提供完了にする */
+  /**
+   * オーダーを提供完了にする
+   * @description 提供済みと未提供を切り替える（カップの提供済み・準備完了もそろえる）。CaOS の盤面（抽出の時刻）は変えない。
+   */
   markOrderServe: {
     parameters: {
       path: {
@@ -1202,7 +1850,7 @@ export interface operations {
   };
   /**
    * カップを準備完了にする
-   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。
+   * @description 1杯ずつ準備完了と未準備を切り替える。全カップが準備完了になると注文も準備完了になり、外すと注文の準備完了も外れる。CaOS の盤面（抽出の時刻）は変えない（CaOS の「次へ」は進めない）。
    */
   markOrderCupReady: {
     parameters: {
@@ -1236,7 +1884,7 @@ export interface operations {
   };
   /**
    * カップを提供完了にする
-   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。
+   * @description 1杯ずつ提供済みと未提供を切り替える。全カップが提供済みになると注文も提供済みになり、外すと注文の提供済みも外れる。CaOS の盤面（抽出の時刻）は変えない。
    */
   markOrderCupServe: {
     parameters: {
@@ -1320,6 +1968,359 @@ export interface operations {
     };
   };
   /**
+   * CaOSのDBログをJSONファイルとして書き出す
+   * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+   */
+  exportCaosLogs: {
+    responses: {
+      /** @description ログのJSONファイル */
+      200: {
+        content: {
+          "application/json": {
+            /** Format: date-time */
+            exportedAt: string;
+            entries: components["schemas"]["CaosStoredLogEntry"][];
+            operations: {
+              [key: string]: unknown;
+            }[];
+            cups: {
+              [key: string]: unknown;
+            }[];
+          };
+        };
+      };
+      /** @description 書き出しに失敗 */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet の保存済みクライアント操作ログを取得する
+   * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+   */
+  getCaosLogs: {
+    parameters: {
+      query?: {
+        limit?: number;
+        offset?: number;
+        tab_id?: string;
+        event?: string;
+      };
+    };
+    responses: {
+      /** @description 保存済みログ */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLogPage"];
+        };
+      };
+      /** @description 検索条件が不正 */
+      400: {
+        content: never;
+      };
+      /** @description DBから取得できない */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet のクライアント操作ログをまとめて保存する
+   * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+   */
+  createCaosLogs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLogBatch"];
+      };
+    };
+    responses: {
+      /** @description 保存済み（重複を含む） */
+      204: {
+        content: never;
+      };
+      /** @description 不正なログ */
+      400: {
+        content: never;
+      };
+      /** @description リクエストが大きすぎる */
+      413: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * CaOS が決めたことを注文のカップに書く
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
+   * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
+   * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
+   * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
+   *
+   * 順番（dripper_position。整数）はサーバーが決める。画面は after の insert_before（どのカードの前に入れるか）だけを送る：
+   * - insert_before のカードの番号を p とし、そのドリッパーで番号が p 以上の、まだ終わっていないカップを全部 +1 してから、書くカップに p を入れる
+   * - insert_before が null なら、そのドリッパーの終わっていないカップの最大＋1（無ければ 1）。ずらさない
+   * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
+   * - 列から抜けたカードの番号は空いたまま（詰めない）
+   *
+   * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+   * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
+   * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
+   * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
+   *
+   * 確かめること：
+   * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
+   * - after の insert_before のカードが、そのドリッパーの待機に無ければ 409
+   * - 終わったカード（brew_finished_at がある）は書けない。抽出中のカードはほかのカードに統合できず（drip_id は今のままか null）、カップを全部いっしょに書く
+   * - 今日（日本時間）の注文のカップだけ書ける
+   * - 抽出が要らない種類（種類の名前に others か milk を含む）のカップは、ドリッパーにもカードにも入れられない
+   * - 指名の番号のあるカップ（明細の dripper が 1〜6）は、その番号のドリッパーにしか置けない
+   * - 指名の違うカップ（明細の dripper。指名なしも 1 つの値）は、1 枚のカード（同じ drip_id）にできない
+   * - 上級生のみのカップ（item_types.senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
+   * - 抽出を始められる（start_brew）のは、書く前のそのドリッパーに抽出中のカードがあるか、書くカップのほかに待機のカードが無いときだけ（抽出中が無く待機があれば、始めるのは「次へ」で待機の先頭）。
+   *   書いたあと、そのドリッパーで抽出中は 1 枚だけ（全部書いてから確かめるので、writes の順によらない）。1 枚のカードは最大 2 杯。同じ drip_id のカップは同じ値（書かないカップも含めて）
+   */
+  writeCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosCupsWriteRequest"];
+      };
+    };
+    responses: {
+      /** @description 書いた */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト・決まりに合わない（何も書かない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description before が今の値と違う（何も書かない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の「次へ」
+   * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
+   * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
+   * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
+   * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+   * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
+   * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
+   * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
+   */
+  advanceCaosDripper: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosNextRequest"];
+      };
+    };
+    responses: {
+      /** @description 終えた・始めた（書いた注文は PUT /api/caos/cups と同じく配る） */
+      204: {
+        content: never;
+      };
+      /** @description 形の違うリクエスト・始めてから 10 秒たっていない（何も変えない） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い・start_next が false で抽出中が無い・待機の先頭が start_drip_id と違う（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * カップを緊急（入れ直し）にする
+   * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
+   * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+   * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+   * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
+   * 今日（日本時間）の注文の、抽出が要るカップだけ。
+   * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+   * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
+   */
+  createCupEmergencies: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CupEmergencyCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 足した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["CupEmergencyCreateResponse"];
+        };
+      };
+      /** @description 形の違うリクエスト・決まりに合わない（何も足さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description カップが消えた（何も足さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * よく使う緊急（入れ直し）の理由
+   * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+   */
+  getCupEmergencyReasons: {
+    responses: {
+      /** @description 理由（よく使う順） */
+      200: {
+        content: {
+          "application/json": string[];
+        };
+      };
+    };
+  };
+  /**
+   * 緊急（入れ直し）を取り消す
+   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
+   * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
+   * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
+   */
+  deleteCupEmergency: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消した */
+      204: {
+        content: never;
+      };
+      /** @description 抽出を始めた入れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS のドリッパーの担当者を替える（交代）
+   * @description そのドリッパーの今日の担当者を替える。押したらその場で替える（抽出中かどうかは見ない。待機のカードもそのまま残す）。
+   * name が空なら担当者なし（senior は false にする）。senior は画面が sohosai-shift の上級生の名簿（seniors）で判定した値で、そのまま持つ。
+   * 変えたら今日の担当者の全部を /api/ws/orders の {"type":"caos_lanes"} で全部の画面に配り、ほかのインスタンスへは DB の通知（dripper_assignees_changed）で知らせる
+   * （画面は今日の担当者をこの配信で受け取る。つないだときにも、今日の担当者があれば届く。読むだけの API は無い）。
+   * 同じトランザクションで交代の記録（dripper_assignee_changes。時刻・ドリッパー・前の名前・後の名前・後の人が上級生か）を 1 行足す（抽出の統計のため。画面には出さない）。
+   */
+  putCaosLane: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description 替えた。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の 2 つのドリッパーの担当者を入れ替える
+   * @description 2 つのドリッパーの今日の担当者（名前と上級生か）を 1 つのトランザクションで入れ替える。カードは動かさない。
+   * 配信は PUT /api/caos/lanes/{dripper} と同じ。交代の記録はドリッパーごとに 1 行ずつ（2 行）足す。
+   */
+  swapCaosLanes: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneSwapRequest"];
+      };
+    };
+    responses: {
+      /** @description 入れ替えた。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト（同じドリッパーどうし、など） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * CaOS の今の担当者の上級生かだけを直す
+   * @description 画面が sohosai-shift の上級生の名簿（seniors）を読み直したとき、今の担当者の上級生かを新しい名簿の判定に合わせる。名前は変えない。
+   * 今日の担当者の名前が lanes の name と同じ（ほかの画面が替えていない）で、上級生かが senior と違うドリッパーだけ senior を書く
+   * （名前の無いドリッパー・名前の違うドリッパーは何もしない。同じ値を何度送っても同じ結果）。
+   * 交代ではないので、交代の記録（dripper_assignee_changes）は足さない。
+   * 書いたドリッパーがあれば、配信は PUT /api/caos/lanes/{dripper} と同じ（無ければ配らない）。
+   */
+  updateCaosLaneSeniors: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLaneSeniorsRequest"];
+      };
+    };
+    responses: {
+      /** @description 直した（直すものが無かったときも）。今日の担当者の全部 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLanes"];
+        };
+      };
+      /** @description 形の違うリクエスト（ドリッパーの番号が違う、など） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
    * オーダーストップの記録の一覧
    * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
    * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
@@ -1362,7 +2363,14 @@ export interface operations {
   };
   /**
    * 在庫の残量一覧
-   * @description 最後の棚卸しからの入荷・注文での消費を差し引いた推定残量。
+   * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
+   * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
+   *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
+   *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
+   *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
+   *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+   * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
    */
   getInventory: {
     responses: {
@@ -1374,7 +2382,10 @@ export interface operations {
       };
     };
   };
-  /** 在庫対象の作成 */
+  /**
+   * カップの作成
+   * @description 作れるのはカップだけ。アイテムの在庫はアイテムと一緒に作る（POST /api/items）。
+   */
   createStockResource: {
     requestBody: {
       content: {
@@ -1388,9 +2399,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 名前が空、または item_type_ids の種類が無い・重複 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の更新 */
+  /**
+   * 在庫対象の更新
+   * @description アイテムの在庫は量・単位・通知の段階だけ変えられる。name・item_type_ids を送ると 400（名前を変えるときはアイテムの名前を変える。PUT /api/items/{id}）。
+   */
   updateStockResource: {
     parameters: {
       path: {
@@ -1409,9 +2429,18 @@ export interface operations {
           "application/json": components["schemas"]["StockResourceResponse"];
         };
       };
+      /** @description 値が正しくない。アイテムの在庫に name・item_type_ids を送った */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
-  /** 在庫対象の削除 */
+  /**
+   * カップの削除
+   * @description 消せるのはカップだけ。アイテムの在庫はアイテムを消すと一緒に消える（DELETE /api/items/{id}）。
+   */
   deleteStockResource: {
     parameters: {
       path: {
@@ -1422,6 +2451,12 @@ export interface operations {
       /** @description 成功 */
       204: {
         content: never;
+      };
+      /** @description アイテムの在庫は消せない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
       };
     };
   };
@@ -1445,33 +2480,6 @@ export interface operations {
       201: {
         content: {
           "application/json": components["schemas"]["StockEventCreateResponse"];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量一覧 */
-  getStockUsages: {
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
-        };
-      };
-    };
-  };
-  /** アイテム1杯あたりの使用量をまとめて置き換える */
-  replaceStockUsages: {
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["StockUsage"][];
-      };
-    };
-    responses: {
-      /** @description 成功 */
-      200: {
-        content: {
-          "application/json": components["schemas"]["StockUsage"][];
         };
       };
     };
@@ -1563,7 +2571,8 @@ export interface operations {
   /**
    * Square 端末の一覧
    * @description 登録した端末と、ペアリング待ちのコード。古い順。
-   * ペアリング待ち（UNPAIRED）の行は、Square に問い合わせて最新にしてから返す。
+   * コードの入力を待っている行（UNPAIRED の行と、コードを発行し直したペアリング済みの行）は、
+   * Square に問い合わせて最新にしてから返す。
    * レジは status が PAIRED の行から、そのレジで使う端末を選ぶ。
    */
   getSquareDevices: {
@@ -1701,6 +2710,61 @@ export interface operations {
     };
   };
   /**
+   * ペアリング済みの端末にコード（Device Code）を発行し直す
+   * @description 端末がサインアウトしたときに、サインインし直すコードを発行する。返ってきた code を端末のサインイン画面
+   * （「デバイスコードでサインイン」）に入力する。発行しただけでは端末はサインアウトしない。
+   * 入力されるまでも status は PAIRED のままで、今の device_id で決済に使える。
+   * 入力されたら GET /api/square/devices で code が消える。同じ端末なら device_id は変わらない。
+   * 別の端末で入力したら、その端末の device_id に置き換わる。
+   * 入力されないまま期限が切れたら code が消えるだけで、status は PAIRED のまま。
+   * 入力待ちのときにもう一度呼ぶと、新しいコードに置き換わる。
+   */
+  issueSquareDeviceCode: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 発行した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareDeviceResponse"];
+        };
+      };
+      /** @description ID が不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description ペアリング済みの端末ではない（ペアリング待ち・期限切れ） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square がコードを発行しなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
    * Square Terminal に決済画面を出す
    * @description 決済が先・注文が後の順で使う。完了したら、返ってきた id を square_checkout_id に入れて POST /api/orders する。
    * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
@@ -1755,6 +2819,8 @@ export interface operations {
   /**
    * 支払い済みなのに注文と結び付いていない決済依頼
    * @description 決済中にレジが落ちた・注文の送信に失敗したなどで、お金だけ受け取った状態のものを照合するために使う。新しい順。
+   * 返金が終わったものは出さない。返金の結果待ち（refund_status が pending）のものは、Square に問い合わせて最新にしてから返す。
+   * 注文を残して返金した決済（一覧には出さない）も、返金の結果待ちなら Square に問い合わせ、変わったらその注文を配り直す。
    */
   getUnlinkedSquareCheckouts: {
     responses: {
@@ -1818,6 +2884,163 @@ export interface operations {
       409: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 支払い済みの決済を全額返金する
+   * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
+   * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
+   * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
+   * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+   * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
+   * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
+   * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
+   * GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 応答が失われたら同じ決済でもう一度呼んでよい（同じ idempotency_key で頼み直すので二重に返金されない）。
+   */
+  refundSquareCheckout: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す
+   * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
+   * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+   * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
+   */
+  refundOrderSquarePayment: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付け、注文を消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文に使った Square の決済を全額返金し、注文は残す
+   * @description その注文に結び付いた決済依頼を POST /api/square/checkouts/{id}/refund と同じように返金するが、注文は消さない
+   * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
+   * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
+   * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
+   * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+   * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
+   */
+  refundOrderSquarePaymentKeepingOrder: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。注文はそのまま */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+        };
+      };
+      /** @description Square が返金を断った、または応答が無かった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

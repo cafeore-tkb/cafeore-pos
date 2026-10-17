@@ -1,16 +1,13 @@
-import createClient from "openapi-fetch";
+import { apiClient, throwApiError } from "../api/client";
 import {
+  commentConverter,
   orderEntityToCreateRequest,
   orderToUpdateRequest,
   responseToOrderEntity,
-} from "../firebase-utils/converter";
+} from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
-import type { OrderEntity, OrderPayment } from "../models/order";
-import type { paths } from "../types/api";
-import { API_BASE_URL, throwApiError } from "./item";
+import type { OrderComment, OrderEntity } from "../models/order";
 import type { OrderRepository } from "./type";
-
-const client = createClient<paths>({ baseUrl: API_BASE_URL });
 
 // TODO(toririm): エラーハンドリングをやる
 // Result型を使う NeverThrow を使ってみたい
@@ -20,7 +17,7 @@ export const orderRepoFactory = (): OrderRepository => {
     id: string,
     order: WithId<OrderEntity>,
   ): Promise<WithId<OrderEntity>> => {
-    const { data, error, response } = await client.PUT("/api/orders/{id}", {
+    const { data, error, response } = await apiClient.PUT("/api/orders/{id}", {
       params: {
         path: { id },
       },
@@ -28,7 +25,7 @@ export const orderRepoFactory = (): OrderRepository => {
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to update item");
+      throwApiError(response, error, "Failed to update order");
     }
 
     return responseToOrderEntity(data);
@@ -36,14 +33,21 @@ export const orderRepoFactory = (): OrderRepository => {
 
   const create = async (
     order: OrderEntity,
-    payment?: OrderPayment,
+    options?: Parameters<OrderRepository["save"]>[1],
   ): Promise<WithId<OrderEntity>> => {
-    const { data, error, response } = await client.POST("/api/orders", {
-      body: orderEntityToCreateRequest(order, payment),
+    const { data, error, response } = await apiClient.POST("/api/orders", {
+      body: {
+        ...orderEntityToCreateRequest(
+          order,
+          options?.method ? options : undefined,
+        ),
+        idempotency_key: options?.idempotencyKey,
+        created_at: options?.createdAt?.toISOString(),
+      },
     });
 
     if (error || !response.ok) {
-      await throwApiError(response, "Failed to create item");
+      throwApiError(response, error, "Failed to create order");
     }
 
     const returnedOrder = responseToOrderEntity(data);
@@ -54,15 +58,15 @@ export const orderRepoFactory = (): OrderRepository => {
   };
 
   return {
-    save: async (order, payment) => {
+    save: async (order, options) => {
       if (hasId(order)) {
         return await update(order.id, order);
       }
-      return await create(order, payment);
+      return await create(order, options);
     },
 
     ready: async (id: string): Promise<void> => {
-      const { data, error, response } = await client.PATCH(
+      const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/ready",
         {
           params: {
@@ -72,12 +76,12 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !response.ok) {
-        await throwApiError(response, "Failed to mark order as ready");
+        throwApiError(response, error, "Failed to mark order as ready");
       }
     },
 
     serve: async (id: string): Promise<void> => {
-      const { data, error, response } = await client.PATCH(
+      const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/served",
         {
           params: {
@@ -87,12 +91,12 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !response.ok) {
-        await throwApiError(response, "Failed to mark order as served");
+        throwApiError(response, error, "Failed to mark order as served");
       }
     },
 
     readyCup: async (id: string, cupId: string) => {
-      const { data, error, response } = await client.PATCH(
+      const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/cups/{cupId}/ready",
         {
           params: {
@@ -102,14 +106,14 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !data || !response.ok) {
-        return await throwApiError(response, "Failed to mark cup as ready");
+        throwApiError(response, error, "Failed to mark cup as ready");
       }
 
       return responseToOrderEntity(data);
     },
 
     serveCup: async (id: string, cupId: string) => {
-      const { data, error, response } = await client.PATCH(
+      const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/cups/{cupId}/served",
         {
           params: {
@@ -119,7 +123,7 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !data || !response.ok) {
-        return await throwApiError(response, "Failed to mark cup as served");
+        throwApiError(response, error, "Failed to mark cup as served");
       }
 
       return responseToOrderEntity(data);
@@ -129,8 +133,8 @@ export const orderRepoFactory = (): OrderRepository => {
       id: string,
       author: string,
       text: string,
-    ): Promise<void> => {
-      const { error, response } = await client.POST(
+    ): Promise<OrderComment> => {
+      const { data, error, response } = await apiClient.POST(
         "/api/orders/{id}/comments",
         {
           params: {
@@ -141,44 +145,51 @@ export const orderRepoFactory = (): OrderRepository => {
       );
 
       if (error || !response.ok) {
-        await throwApiError(response, "Failed to add comment");
+        throwApiError(response, error, "Failed to add comment");
       }
+      return commentConverter(data);
     },
 
     delete: async (id) => {
-      await client.DELETE("/api/orders/{id}", {
+      const { error, response } = await apiClient.DELETE("/api/orders/{id}", {
         params: {
           path: { id },
         },
       });
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to delete order");
+      }
     },
 
     findById: async (id) => {
-      const { data, error, response } = await client.GET("/api/orders/{id}", {
-        params: {
-          path: { id },
+      const { data, error, response } = await apiClient.GET(
+        "/api/orders/{id}",
+        {
+          params: {
+            path: { id },
+          },
         },
-      });
+      );
 
       if (response.status === 404) {
         return null;
       }
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch order");
+        throwApiError(response, error, "Failed to fetch order");
       }
 
       return responseToOrderEntity(data);
     },
 
     findAll: async () => {
-      const { data, error, response } = await client.GET("/api/orders");
+      const { data, error, response } = await apiClient.GET("/api/orders");
 
       if (error || !response.ok) {
-        throw new Error("Failed to fetch items");
+        throwApiError(response, error, "Failed to fetch orders");
       }
 
-      console.log("raw order data:", data); // APIレスポンス確認
       return data.map(responseToOrderEntity);
     },
   };

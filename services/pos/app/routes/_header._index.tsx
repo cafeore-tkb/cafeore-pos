@@ -2,6 +2,8 @@ import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { DownloadButton } from "~/components/organisms/DownloadData";
+import { BuildInfo } from "~/components/organisms/top/BuildInfo";
+import { DownloadCaosLogs } from "~/components/organisms/top/DownloadCaosLogs";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -48,9 +50,9 @@ const sections: Section[] = [
         to: "/cashier",
         title: "レジ",
         audience: "staff",
-        where: "レジ担当（ラベルプリンターと接続）",
+        where: "レジ担当（ラベル・レシートのプリンターと接続）",
         description:
-          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルが印刷されます。",
+          "商品・割引・備考・お預かり金額を入力して注文を送信。送信するとカップに貼るラベルとレシートが印刷されます。",
       },
       {
         kind: "master",
@@ -79,6 +81,24 @@ const sections: Section[] = [
         description:
           "未割当の注文をドリッパー1〜6に割り当て、抽出の進み具合をタイムラインで管理。過去の祭の注文でテストプレイもできます。",
       },
+      {
+        kind: "master-sheet-view",
+        to: "/master-sheet/view",
+        title: "CaOS（閲覧のみ）",
+        audience: "staff",
+        where: "盤面を映しておく画面・様子を見たい人の端末",
+        description:
+          "CaOS の盤面をタイムラインで映すだけ。注文と抽出がリアルタイムに流れます。操作はできないので、どの端末で開いても盤面は変わりません。",
+      },
+      {
+        kind: "master-sheet-libero",
+        to: "/master-sheet/libero",
+        title: "CaOS リベロビュー",
+        audience: "staff",
+        where: "リベロ（お湯を持って回る係）が見る端末・テレビ",
+        description:
+          "ドリッパーごとに、入れ始めてからの時間と長い順の順位を大きく表示。長いほど濃く、予定の抽出時間を過ぎたら赤。閲覧のみです。",
+      },
     ],
   },
   {
@@ -102,7 +122,7 @@ const sections: Section[] = [
         audience: "customer",
         where: "受け取り口の大型ディスプレイ",
         description:
-          "お呼び出し中の番号を大きく表示し、ドリップ中の番号も一覧。呼び出しのたびに通知音が鳴ります。",
+          "呼び出しが無い間は CM を流し、呼び出しが入るとお呼び出し中の番号を大きく表示。ドリップ中（ドリッパー付き）と準備中の番号も出し、呼び出しのたびに通知音のあと番号を読み上げ、ドリップを始めたら「〜番のお客様、ファーストにてドリップいたします」と案内します。",
       },
     ],
   },
@@ -130,6 +150,15 @@ const sections: Section[] = [
           "棚卸しの実数と入荷・注文から、豆とカップの残量を推定。棚卸し・入荷の記録もここで。",
       },
       {
+        kind: "products",
+        to: "/products",
+        title: "商品管理",
+        audience: "admin",
+        where: "祭の前の準備・メニューの変更",
+        description:
+          "メニュー・アイテム・タイプ・背景色と、アイテムごとの在庫の量・カップを編集。CSV / JSON で取り込み・書き出しもできます。",
+      },
+      {
         kind: "rehearsal",
         to: "/rehearsal",
         title: "オペ練",
@@ -143,9 +172,9 @@ const sections: Section[] = [
 ];
 
 const settingLinks = [
-  { to: "/products", label: "商品管理" },
-  { to: "/inventory/settings", label: "在庫の設定" },
   { to: "/square-devices", label: "Square 端末" },
+  { to: "/printer-settings", label: "プリンター" },
+  { to: "/callscreen-cm", label: "呼び出し画面の CM" },
 ];
 
 export default function Index() {
@@ -178,7 +207,7 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            メニュー・商品・在庫の通知条件・Square 端末を設定します
+            Square 端末・プリンター・呼び出し画面の CM を設定します
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (
@@ -199,7 +228,16 @@ export default function Index() {
           </p>
           <DownloadButton />
         </div>
+        <div className="rounded-lg border p-4">
+          <h2 className="font-bold">CaOS 操作ログ</h2>
+          <p className="mt-1 mb-3 text-muted-foreground text-sm">
+            DBに保存された操作ログと、統合・割当ての履歴をJSONでダウンロードします
+          </p>
+          <DownloadCaosLogs />
+        </div>
       </section>
+
+      <BuildInfo />
     </div>
   );
 }

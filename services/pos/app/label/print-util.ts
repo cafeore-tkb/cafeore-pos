@@ -1,116 +1,238 @@
-import type { OrderEntity } from "@cafeore/common";
-import { useRawPrinter } from "./printer";
+import type { OrderEntity, ReceiptPrinterModel } from "@cafeore/common";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import type { PrintJob } from "./document";
+import { createEposPrinter } from "./infra/epos";
+import type {
+  CreateLabelPrinter,
+  PrinterConnectionStatus,
+} from "./infra/printer";
+import { cupLabelJob, orderLabelJob } from "./order-label";
+import {
+  addPendingPrint,
+  readPendingPrints,
+  removePendingPrint,
+  subscribePendingPrints,
+  withPendingPrintsLock,
+} from "./pending-prints";
+import type { ReceiptPayment, ReceiptSplit } from "./receipt";
+import {
+  claimReceiptJob,
+  formalReceiptJob,
+  orderReceiptJob,
+} from "./receipt-canvas";
 
-type CupItem = ReturnType<OrderEntity["getCoffeeCups"]>[number];
+/**
+ * プリンターにつないでおき、印刷データを刷る
+ *
+ * createPrinter が変わったら（IP アドレスを変えたときなど）、前のプリンターを切ってつなぎ直す。
+ * 呼ぶ側は、同じプリンターの間は同じ createPrinter を渡す（useMemo などで）。
+ */
+const useConnectedPrinter = (createPrinter: CreateLabelPrinter) => {
+  const [status, setStatus] = useState<"init" | PrinterConnectionStatus>(
+    "init",
+  );
+  const printer = useMemo(() => createPrinter(setStatus), [createPrinter]);
 
-export const usePrinter = () => {
-  const rawPrinter = useRawPrinter();
+  useEffect(() => {
+    printer.connect();
+    return () => printer.disconnect();
+  }, [printer]);
 
-  const printSingleItemLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
-    console.log(item.name);
-    rawPrinter.addHeader(orderId, null);
-    rawPrinter.addLine(item.name, [1, 2]);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    if (item.assignee) {
-      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addFeed(1);
-  };
+  const print = useCallback((job: PrintJob) => printer.print(job), [printer]);
+  const reconnect = useCallback(() => {
+    printer.disconnect();
+    printer.connect();
+  }, [printer]);
 
-  // 追加で番号と注文を載せたラベルを印刷
-  const printOrderSummaryLabel = (order: OrderEntity) => {
-    rawPrinter.addHeader(order.orderId, order.total);
+  return { status, print, reconnect };
+};
 
-    const assignedMenus = order.menus.filter((menu) => menu.assignee !== null);
-    const unassignedMenus = order.menus.filter(
-      (menu) => menu.assignee === null,
-    );
+/** 刷れなかったシールを送り直す・つながらないプリンターにつなぎ直す間隔（ミリ秒） */
+const RETRY_INTERVAL_MS = 10_000;
 
-    assignedMenus.map((menu) => {
-      rawPrinter.addLine(menu.name, [1, 1]);
-      rawPrinter.addLine(`  指名：${menu.assignee}`, [1, 1]);
-    });
+/** active のあいだ、一定の間隔で retry を呼ぶ */
+const useRetryInterval = (active: boolean, retry: () => void) => {
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(retry, RETRY_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [active, retry]);
+};
 
-    for (let i = 0; i < unassignedMenus.length; i += 2) {
-      // アイテム名が8文字以上のときは6文字だけ取り出す
-      // 俺ブレが正式名称だと入らない、ブレンで切りたくないため
-      const item1 =
-        unassignedMenus[i].name.length < 8
-          ? unassignedMenus[i].name
-          : unassignedMenus[i].name.slice(0, 6);
-      const item2 = unassignedMenus[i + 1]
-        ? unassignedMenus[i + 1].name.length < 8
-          ? unassignedMenus[i + 1].name
-          : unassignedMenus[i + 1].name.slice(0, 6)
-        : null;
+const countPendingPrints = () => readPendingPrints().length;
 
-      if (item2) {
-        // 2つある場合は横に並べる
-        const line = `${item1.padEnd(8, " ")}${item2}`;
-        rawPrinter.addLine(line, [1, 1]);
-      } else {
-        // 1つだけの場合
-        rawPrinter.addLine(item1, [1, 1]);
-      }
-    }
-  };
+/**
+ * シールのプリンター
+ *
+ * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
+ * 使うプリンターは createPrinter で差し替えられる（既定は Epson の ePOS）。
+ *
+ * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
+ * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
+ */
+export const usePrinter = (
+  createPrinter: CreateLabelPrinter = createEposPrinter,
+  onActivity?: (event: string, details: Record<string, unknown>) => void,
+) => {
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
+  const pendingCount = useSyncExternalStore(
+    subscribePendingPrints,
+    countPendingPrints,
+    () => 0,
+  );
 
-  const printLogoLabel = (
-    orderId: number,
-    index: number,
-    total: number,
-    item: CupItem,
-  ) => {
-    rawPrinter.feedCurrentTop();
-    rawPrinter.addPageBegin();
-    rawPrinter.addPageArea(0, 24, 570, 230);
-
-    const y = 48;
-    rawPrinter.addPagePosition(0, 48);
-    rawPrinter.addHeader(orderId, null);
-    rawPrinter.addPagePosition(0, 108);
-    rawPrinter.addLine(item.name, [1, 2]);
-    rawPrinter.addPagePosition(0, 156);
-    rawPrinter.addLine(`${index}/${total}`, [2, 1]);
-    rawPrinter.addPagePosition(0, 204);
-    if (item.assignee) {
-      rawPrinter.addLine(`指名： ${item.assignee}`, [1, 1]);
-    } else {
-      rawPrinter.addLine("　", [1, 1]);
-    }
-    rawPrinter.addPagePosition(230, 204);
-    rawPrinter.addLogo();
-    rawPrinter.addPageEnd();
-  };
-  const printOrderLabel = (order: OrderEntity) => {
-    rawPrinter.init();
-    const coffees = order.getCoffeeCups();
-
-    console.log(coffees);
-
-    // 各アイテムのラベルを印刷
-    for (const [idx, item] of coffees.entries()) {
-      printLogoLabel(
-        order.orderId,
-        idx + 1,
-        order.getCoffeeCups().length,
-        item,
+  const printJob = useCallback(
+    async (job: PrintJob, pendingId?: string) => {
+      onActivity?.("printer.print.requested", { emergencyId: pendingId });
+      const printed = await print(job);
+      onActivity?.(
+        printed ? "printer.print.succeeded" : "printer.print.queued",
+        { emergencyId: pendingId },
       );
+      if (!printed) addPendingPrint(job, pendingId);
+    },
+    [print, onActivity],
+  );
+
+  // 残りを古い順に送り、刷れたものを消す（刷れなかったものは残して次を送る。1 件のせいで後ろが刷れなくならないように）
+  const sending = useRef(false);
+  const sendPending = useCallback(async () => {
+    if (sending.current) return;
+    sending.current = true;
+    try {
+      await withPendingPrintsLock(async () => {
+        for (const pending of readPendingPrints()) {
+          // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
+          if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
+          onActivity?.("printer.resend.requested", { pendingId: pending.id });
+          const printed = await print(pending.job);
+          onActivity?.(
+            printed ? "printer.resend.succeeded" : "printer.resend.pending",
+            { pendingId: pending.id },
+          );
+          if (printed) removePendingPrint(pending.id);
+        }
+      });
+    } finally {
+      sending.current = false;
     }
+  }, [print, onActivity]);
 
-    // 引換券に貼るラベルを印刷
-    printOrderSummaryLabel(order);
+  /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る） */
+  const retry = useCallback(() => {
+    if (status === "connected") void sendPending();
+    else if (status === "disconnected") reconnect();
+  }, [status, sendPending, reconnect]);
 
-    rawPrinter.addFeed(7);
-    rawPrinter.print();
+  // つながったらすぐ送る（開き直したときの残りも）。あとは残っているあいだ一定の間隔で
+  useEffect(() => {
+    if (status === "connected") void sendPending();
+  }, [status, sendPending]);
+
+  useRetryInterval(pendingCount > 0, retry);
+
+  /** 注文のシールを刷る。刷るシールが無い（抽出が要るものが無い）注文は、紙を送るだけになるので送らない */
+  const printOrderLabel = useCallback(
+    async (order: OrderEntity) => {
+      const job = orderLabelJob(order);
+      if (job.labels.length > 0) await printJob(job);
+    },
+    [printJob],
+  );
+
+  /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
+  const printCupLabel = useCallback(
+    async (order: OrderEntity, cupId: string, emergencyId: string) => {
+      const job = cupLabelJob(order, cupId);
+      if (job) await printJob(job, emergencyId);
+    },
+    [printJob],
+  );
+
+  return {
+    status,
+    pendingCount,
+    retry,
+    printOrderLabel,
+    printCupLabel,
   };
+};
 
-  return { status: rawPrinter.status, printOrderLabel };
+/**
+ * レシートと領収書のプリンター
+ *
+ * 刷れなくても会計は止めないので、どちらも例外は投げず、プリンターに送れたかを返す。
+ * 画像を描くのを待つので結果は Promise。描くのに時間がかかっても、頼まれた順に刷る。
+ * つながっていなければ、シールのプリンターと同じ間隔でつなぎ直す（刷れなかったものは送り直さない）。
+ * レシート・領収書の画像は、プリンターの機種（model）の印字幅で描く。
+ */
+export const useReceiptPrinter = (
+  createPrinter: CreateLabelPrinter,
+  model: ReceiptPrinterModel,
+) => {
+  const { status, print, reconnect } = useConnectedPrinter(createPrinter);
+  useRetryInterval(status === "disconnected", reconnect);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+
+  /**
+   * 印刷データはすぐ作り始め、刷るのは頼まれた順にする
+   *
+   * buildJob は async 関数を渡す（同期で投げない）。作れなくても会計の流れに例外は出さない。
+   */
+  const printSafely = useCallback(
+    (buildJob: () => Promise<PrintJob>) => {
+      const job = buildJob();
+      // 刷る番が来る前に失敗しても未処理の reject にしない（下の try で拾う）
+      job.catch(() => {});
+      const printed = queue.current.then(async () => {
+        try {
+          return print(await job);
+        } catch (error) {
+          console.error("レシート用のプリンターで印刷できませんでした", error);
+          return false;
+        }
+      });
+      queue.current = printed;
+      return printed;
+    },
+    [print],
+  );
+
+  /** 会計のたびに刷るレシート。split（注文を何回かに分けて払う 1 回分）なら引換券番号は載せない */
+  const printReceipt = useCallback(
+    (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
+      printSafely(() => orderReceiptJob(model, order, payment, split)),
+    [printSafely, model],
+  );
+
+  /** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート */
+  const printClaimReceipt = useCallback(
+    (order: OrderEntity) => printSafely(() => claimReceiptJob(model, order)),
+    [printSafely, model],
+  );
+
+  /**
+   * 求められたときだけ刷る領収書
+   *
+   * お客さんに渡すものの後に、同じ中身の店舗控を続けて刷る（1 枚ずつ切る）。どちらも送れたら true
+   */
+  const printFormalReceipt = useCallback(
+    async (order: OrderEntity) => {
+      const printed = await Promise.all([
+        printSafely(() => formalReceiptJob(model, order)),
+        printSafely(() => formalReceiptJob(model, order, { storeCopy: true })),
+      ]);
+      return printed.every(Boolean);
+    },
+    [printSafely, model],
+  );
+
+  return { status, printReceipt, printClaimReceipt, printFormalReceipt };
 };

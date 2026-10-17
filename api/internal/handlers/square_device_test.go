@@ -70,13 +70,17 @@ func TestValidateSquareDeviceName(t *testing.T) {
 }
 
 func TestToSquareDeviceResponseShowsCodeOnlyWhilePairing(t *testing.T) {
-	code := "ABCDEF"
-	device := &models.SquareDevice{ID: uuid.New(), Name: "レジ1", Status: squareDeviceUnpaired, Code: &code}
-	if response := toSquareDeviceResponse(device); response.Code == nil || *response.Code != code || response.Status != models.UNPAIRED {
-		t.Fatalf("pairing device must show its code: %+v", response)
+	code, codeID := "ABCDEF", "code-1"
+	// ペアリング待ちの行と、ペアリング済みの端末にコードを発行し直した行は、コードを見せる。
+	for _, status := range []string{squareDeviceUnpaired, squareDevicePaired} {
+		device := &models.SquareDevice{ID: uuid.New(), Name: "レジ1", Status: status, CodeID: &codeID, Code: &code}
+		if response := toSquareDeviceResponse(device); response.Code == nil || *response.Code != code || string(response.Status) != status {
+			t.Fatalf("%s device waiting for its code must show it: %+v", status, response)
+		}
 	}
+	// 入力されたか期限が切れてコードを消した行は見せない（code_id は残る）。
 	for _, status := range []string{squareDevicePaired, squareDeviceExpired} {
-		device.Status = status
+		device := &models.SquareDevice{ID: uuid.New(), Name: "レジ1", Status: status, CodeID: &codeID}
 		if response := toSquareDeviceResponse(device); response.Code != nil {
 			t.Fatalf("%s device must not show a code: %+v", status, response)
 		}
