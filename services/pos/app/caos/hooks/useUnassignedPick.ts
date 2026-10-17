@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ControlViewProps } from "../components/ControlWorkspace";
 import { orderLabel, quickMergePartner } from "../logic/cards";
 import { laneActive } from "../logic/lanes";
+import { useCaosStateLog } from "./useCaosStateLog";
 import {
   type DropTarget,
   dropTargetAt,
@@ -42,6 +43,7 @@ export const useUnassignedPick = ({
   onCancelEmergency?: (card: CaosCard) => void;
 }) => {
   const [openKey, setOpenKey] = useState<string | null>(null);
+  useCaosStateLog("ui.unassigned-menu.changed", { openKey });
   const openCard = orders.find((order) => order.key === openKey);
   const assign = (card: CaosCard, bayId: number, place?: CaosPlace) => {
     onAssignToBay(card, bayId, place);
@@ -71,7 +73,11 @@ export const useUnassignedPick = ({
   useOutsidePress(
     openKey !== null,
     (target) =>
-      Boolean(target.closest("[data-unassigned-uid], [data-merge-tap]")),
+      Boolean(
+        target.closest(
+          "[data-unassigned-uid], [data-merge-tap], [data-unassigned-slot]",
+        ),
+      ),
     () => {
       setOpenKey(null);
       onSelectOrder(null);
@@ -93,6 +99,8 @@ export const useUnassignedPick = ({
   return {
     drag,
     assign,
+    /** 未割当で現在選んでいるカード（空きスロットを押して割当可能） */
+    openCard,
     isOpen: (card: CaosCard) => card.key === openKey,
     canMergeWith,
     partner,

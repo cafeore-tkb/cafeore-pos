@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -465,6 +466,17 @@ func TestOrderComments(t *testing.T) {
 	if comment.OrderId != created.Id || comment.Author != "master" || comment.Text != "豆を切らした" {
 		t.Fatalf("comment: %+v", comment)
 	}
+	var audit models.CaosOperation
+	if err := api.db.Where("kind = ?", "comment.created").First(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	var details map[string]any
+	if err := json.Unmarshal(audit.Details, &details); err != nil {
+		t.Fatal(err)
+	}
+	if details["orderId"] != created.Id.String() || details["author"] != "master" || details["text"] != "豆を切らした" {
+		t.Fatalf("comment audit: %s", audit.Details)
+	}
 	// コメントの付いた注文を配信する
 	msg := api.nextBroadcast()
 	if msg.Type != WSMessageTypeOrder || msg.Order.Comments == nil || len(*msg.Order.Comments) != 1 {
@@ -486,5 +498,23 @@ func TestOrderComments(t *testing.T) {
 	api.do(http.MethodPost, base, `{`).expect(http.StatusBadRequest)
 	api.do(http.MethodPost, "/api/orders/"+uuid.NewString()+"/comments", models.CommentCreateRequest{Author: "cashier", Text: "x"}).
 		expect(http.StatusNotFound)
+	api.noBroadcast()
+}
+
+func TestCommentAuditFailureRollsBackComment(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	created := api.createOrder(1, m.blendMenu)
+	if err := api.db.Exec("ALTER TABLE caos_operations ADD CONSTRAINT reject_comment_audit CHECK (kind <> 'comment.created') NOT VALID").Error; err != nil {
+		t.Fatal(err)
+	}
+	api.do(http.MethodPost, "/api/orders/"+created.Id.String()+"/comments", models.CommentCreateRequest{Author: "master", Text: "👍 了解"}).expect(http.StatusInternalServerError)
+	var count int64
+	if err := api.db.Model(&models.Comment{}).Where("order_id = ?", created.Id).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("failed audit left %d comments", count)
+	}
 	api.noBroadcast()
 }

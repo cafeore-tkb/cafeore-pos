@@ -2,6 +2,10 @@ import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import type { Label, TextLine } from "./document";
 import { cupLabelJob, orderLabelJob } from "./order-label";
+import { LABEL_WIDTHS } from "./paper";
+
+/** 80mm の紙の印字幅 */
+const WIDTH = LABEL_WIDTHS["80mm"];
 
 const hotType: ItemType = {
   id: "1",
@@ -65,7 +69,7 @@ describe("[unit] orderLabelJob", () => {
       menu("クッキー", goodsType, null),
     ]);
 
-    const { labels } = orderLabelJob(order);
+    const { labels } = orderLabelJob(order, WIDTH);
 
     expect(labels.map((label) => label.type)).toEqual(["fixed", "fixed"]);
     expect(cupLines(labels[0])).toEqual([" No.7", " ブレンド", " 1/2", " 　"]);
@@ -80,7 +84,7 @@ describe("[unit] orderLabelJob", () => {
   test("カップのシールにはロゴを置く", () => {
     const order = orderOf(7, [menu("ブレンド", hotType, null)]);
 
-    const [cup] = orderLabelJob(order).labels;
+    const [cup] = orderLabelJob(order, WIDTH).labels;
 
     expect(cup.type === "fixed" && cup.elements.at(-1)).toEqual({
       type: "logo",
@@ -89,10 +93,31 @@ describe("[unit] orderLabelJob", () => {
     });
   });
 
+  test("カップのシールの範囲は、80mm の紙では今までどおり、58mm の紙では印字幅に縮める", () => {
+    const order = orderOf(7, [menu("ブレンド", hotType, null)]);
+    const areaOf = (width: number) => {
+      const [cup] = orderLabelJob(order, width).labels;
+      return cup.type === "fixed" && cup.area;
+    };
+
+    expect(areaOf(LABEL_WIDTHS["80mm"])).toEqual({
+      x: 0,
+      y: 24,
+      width: 570,
+      height: 210,
+    });
+    expect(areaOf(LABEL_WIDTHS["58mm"])).toEqual({
+      x: 0,
+      y: 24,
+      width: 416,
+      height: 210,
+    });
+  });
+
   test("抽出が要るものが無ければ、何も刷らない", () => {
     const order = orderOf(12, [menu("クッキー", goodsType, null)]);
 
-    expect(orderLabelJob(order).labels).toEqual([]);
+    expect(orderLabelJob(order, WIDTH).labels).toEqual([]);
   });
 
   // test("引換券のシールは、指名ありを先に 1 つずつ、指名なしを 2 列で並べる", () => {
@@ -103,7 +128,7 @@ describe("[unit] orderLabelJob", () => {
   //     menu("ラテ", hotType, null),
   //   ]);
   //
-  //   const summary = orderLabelJob(order).labels.at(-1);
+  //   const summary = orderLabelJob(order, WIDTH).labels.at(-1);
   //
   //   expect(summary && summaryLines(summary)).toEqual([
   //     " 明細 No.045 ￥1200-",
@@ -149,9 +174,9 @@ describe("[unit] cupLabelJob", () => {
         })),
     });
 
-    expect(cupLabelJob(saved, "cup-カフェオレ")).toEqual({
-      labels: [orderLabelJob(order).labels[1]],
+    expect(cupLabelJob(saved, "cup-カフェオレ", WIDTH)).toEqual({
+      labels: [orderLabelJob(order, WIDTH).labels[1]],
     });
-    expect(cupLabelJob(saved, "cup-クッキー")).toBeNull();
+    expect(cupLabelJob(saved, "cup-クッキー", WIDTH)).toBeNull();
   });
 });

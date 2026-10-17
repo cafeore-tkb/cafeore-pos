@@ -19,6 +19,7 @@ import {
   eposCertificateUrl,
   eposPrinterAt,
 } from "~/label/infra/epos";
+import { LABEL_WIDTHS, RECEIPT_WIDTHS } from "~/label/paper";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
 import { isModifierKey } from "~/lib/menuKey";
@@ -326,20 +327,23 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレスが変わったら、つなぎ直す
+  // プリンターの IP アドレスが変わったら、つなぎ直す。用紙の幅が変わっても、つなぎ直さずに刷るものの幅だけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
+    LABEL_WIDTHS[printerAddresses.label_printer_paper_width],
   );
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
-  // 機種が変わっても、つなぎ直さずに画像の幅だけ変える
+  // 機種・用紙の幅が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;
   const receiptPrinter = useReceiptPrinter(
     useMemo(
       () => eposPrinterAt(receiptPrinterIp, RECEIPT_EPOS_PRINTER_CONFIG),
       [receiptPrinterIp],
     ),
-    printerAddresses.receipt_printer_model,
+    RECEIPT_WIDTHS[printerAddresses.receipt_printer_model][
+      printerAddresses.receipt_printer_paper_width
+    ],
   );
 
   /**
@@ -348,7 +352,7 @@ const CashierV2 = ({
    */
   const printOrderLabel = printer.printOrderLabel;
 
-  // 先払いのレシートを刷った注文は、レシートの番号（引換券番号）のまま確定する（別のレジが送って次の番号が進んでも変えない）
+  // 先払いのレシートを刷った注文は、レシートに載せた番号（No.）のまま確定する（別のレジが送って次の番号が進んでも変えない）
   const fixedOrderId = draft.fixedOrderId;
   /**
    * FIXME #412 useEffect内でstateを更新している
@@ -489,10 +493,11 @@ const CashierV2 = ({
   );
 
   /**
-   * 会計中の小計で受け取った（一括で払う注文でないとき）。その分のレシートを刷り、受け取った分として覚える。
-   * 注文全体を払い終えたら、支払いを全部付けて注文を送り、支払いの内訳とお釣りを出す。
+   * 会計中の小計で受け取った（一括で払う注文でないとき）。その分のレシート（引換券番号は載せない）を刷り、
+   * 受け取った分として覚える。注文全体を払い終えたら、支払いを全部付けて注文を送り、引換券番号のレシートを
+   * 別に刷って、支払いの内訳とお釣りを出す。
    * まだ残っていれば、小計の残り（金額で分けた）か残りの商品（個別小計を払い終えた）を出し、
-   * レシートに載せた番号（引換券番号）で確定するよう、番号を固定する。
+   * レシートに載せた番号（No.）で確定するよう、番号を固定する。
    * 下書きは決済の途中（非同期）からも呼ぶので、ストアから今の値を読む
    */
   const completeTender = useCallback(
@@ -523,6 +528,7 @@ const CashierV2 = ({
       if (after.split.current === null && unpaidLines(after).length === 0) {
         const submitOne = splitOrderForSubmit(prepareSubmit(order), after);
         printOrderLabel(submitOne);
+        receiptPrinter.printClaimReceipt(submitOne);
         const paidBySquare = submitOne.payments.some(
           (payment) => payment.method === "square",
         );

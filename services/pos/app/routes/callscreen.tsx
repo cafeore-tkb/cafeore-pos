@@ -10,6 +10,7 @@ import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
 import { useCmPlaylist } from "~/lib/callscreen-cm";
+import { useCallScreenSound } from "~/lib/callscreen-sound";
 import {
   BOARD_W,
   BrewingIndicator,
@@ -62,6 +63,7 @@ export default function FieldsOfCallScreen() {
   const soundRef = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
   const cm = useCmPlaylist();
+  const sound = useCallScreenSound();
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
   // ドリップ中は CaOS のカードの状態で決める（@cafeore/common の splitCallScreenOrders）
@@ -151,7 +153,8 @@ export default function FieldsOfCallScreen() {
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
   useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);
-  useWarmCallVoices(waitingIds, isOrdersLoaded);
+  // 読み上げを切っている間は、読み上げを作らせない
+  useWarmCallVoices(waitingIds, isOrdersLoaded && sound.voice);
 
   const showCall = useCallVisibility(shownCalling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);

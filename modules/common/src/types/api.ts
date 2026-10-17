@@ -75,12 +75,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスと用紙の幅、機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -131,6 +131,25 @@ export interface paths {
     get: operations["getOrderComments"];
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
+  };
+  "/api/caos/logs/export": {
+    /**
+     * CaOSのDBログをJSONファイルとして書き出す
+     * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+     */
+    get: operations["exportCaosLogs"];
+  };
+  "/api/caos/logs": {
+    /**
+     * master-sheet の保存済みクライアント操作ログを取得する
+     * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+     */
+    get: operations["getCaosLogs"];
+    /**
+     * master-sheet のクライアント操作ログをまとめて保存する
+     * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+     */
+    post: operations["createCaosLogs"];
   };
   "/api/caos/cups": {
     /**
@@ -255,9 +274,17 @@ export interface paths {
     post: operations["updateCaosLaneSeniors"];
   };
   "/api/master-status": {
-    /** マスターステート取得 */
+    /**
+     * オーダーストップの記録の一覧
+     * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+     * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+     */
     get: operations["getMasterState"];
-    /** マスターステート更新 */
+    /**
+     * オーダーストップ・再開
+     * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+     * オーダーストップの状態を書くのはここだけ。
+     */
     post: operations["updateMasterState"];
   };
   "/api/inventory": {
@@ -306,7 +333,6 @@ export interface paths {
      * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
      *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
      *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
-     * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
      * 直近に注文が無い（営業していない）ときは送らない。
      */
     post: operations["remindInventory"];
@@ -812,7 +838,8 @@ export interface components {
       type: string;
     };
     MasterStateUpdateRequest: {
-      type: string;
+      /** @enum {string} */
+      type: "stop" | "operational";
     };
     /**
      * @description 背景色を設定する対象の種類
@@ -852,12 +879,18 @@ export interface components {
       color: string;
     };
     /**
-     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
-     * tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
+     * 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
      *
      * @enum {string}
      */
     ReceiptPrinterModel: "tm_l90" | "tm_m30";
+    /**
+     * @description プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+     *
+     * @enum {string}
+     */
+    PrinterPaperWidth: "58mm" | "80mm";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -870,6 +903,8 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -883,6 +918,8 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -903,6 +940,31 @@ export interface components {
       };
       /** Format: uuid */
       submitted_order_id: string | null;
+    };
+    CaosLogEntry: {
+      /** Format: date-time */
+      at: string;
+      /** Format: uuid */
+      tabId: string;
+      /** Format: int64 */
+      sequence: number;
+      event: string;
+      details: {
+        [key: string]: unknown;
+      };
+    };
+    CaosStoredLogEntry: components["schemas"]["CaosLogEntry"] & {
+      /** Format: date-time */
+      receivedAt: string;
+    };
+    CaosLogPage: {
+      entries: components["schemas"]["CaosStoredLogEntry"][];
+      limit: number;
+      offset: number;
+      hasMore: boolean;
+    };
+    CaosLogBatch: {
+      entries: components["schemas"]["CaosLogEntry"][];
     };
     /** @description カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当 */
     CaosCupState: {
@@ -938,6 +1000,11 @@ export interface components {
      * 終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く
      */
     CaosCupsWrite: {
+      /**
+       * Format: uuid
+       * @description 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+       */
+      merge_into?: string;
       cup_ids: string[];
       before: components["schemas"]["CaosCupState"];
       after: components["schemas"]["CaosCupAfter"];
@@ -1684,7 +1751,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙の幅、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1698,7 +1765,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスと用紙の幅、機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {
@@ -1965,6 +2032,89 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
+      };
+    };
+  };
+  /**
+   * CaOSのDBログをJSONファイルとして書き出す
+   * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+   */
+  exportCaosLogs: {
+    responses: {
+      /** @description ログのJSONファイル */
+      200: {
+        content: {
+          "application/json": {
+            /** Format: date-time */
+            exportedAt: string;
+            entries: components["schemas"]["CaosStoredLogEntry"][];
+            operations: {
+              [key: string]: unknown;
+            }[];
+            cups: {
+              [key: string]: unknown;
+            }[];
+          };
+        };
+      };
+      /** @description 書き出しに失敗 */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet の保存済みクライアント操作ログを取得する
+   * @description 新しい時刻順。端末とイベントで絞り込める。hasMore が true なら offset を limit 分進めて続きを取得する。
+   */
+  getCaosLogs: {
+    parameters: {
+      query?: {
+        limit?: number;
+        offset?: number;
+        tab_id?: string;
+        event?: string;
+      };
+    };
+    responses: {
+      /** @description 保存済みログ */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosLogPage"];
+        };
+      };
+      /** @description 検索条件が不正 */
+      400: {
+        content: never;
+      };
+      /** @description DBから取得できない */
+      500: {
+        content: never;
+      };
+    };
+  };
+  /**
+   * master-sheet のクライアント操作ログをまとめて保存する
+   * @description 同じ tabId・sequence の再送は重複保存しない。業務操作の成功履歴とは区別する。
+   */
+  createCaosLogs: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosLogBatch"];
+      };
+    };
+    responses: {
+      /** @description 保存済み（重複を含む） */
+      204: {
+        content: never;
+      };
+      /** @description 不正なログ */
+      400: {
+        content: never;
+      };
+      /** @description リクエストが大きすぎる */
+      413: {
+        content: never;
       };
     };
   };
@@ -2283,7 +2433,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート取得 */
+  /**
+   * オーダーストップの記録の一覧
+   * @description オーダーストップ・再開の記録を古い順（created_at の昇順）に返す。
+   * 今の状態は最後の1件。画面は WebSocket の master_state で受け取る。
+   */
   getMasterState: {
     responses: {
       /** @description 成功 */
@@ -2294,7 +2448,11 @@ export interface operations {
       };
     };
   };
-  /** マスターステート更新 */
+  /**
+   * オーダーストップ・再開
+   * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+   * オーダーストップの状態を書くのはここだけ。
+   */
   updateMasterState: {
     requestBody: {
       content: {
@@ -2302,10 +2460,16 @@ export interface operations {
       };
     };
     responses: {
-      /** @description 成功 */
-      200: {
+      /** @description 記録した */
+      201: {
         content: {
           "application/json": components["schemas"]["MasterStateResponse"];
+        };
+      };
+      /** @description type が stop でも operational でもない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
@@ -2438,7 +2602,6 @@ export interface operations {
    * @description スケジューラから定期的に叩く。次のどちらかを満たさないと 401。
    *   - Authorization: Bearer の Google ID トークン（INVENTORY_REMIND_INVOKER の SA が audience INVENTORY_REMIND_AUDIENCE で発行したもの）。本番の Cloud Scheduler はこちら
    *   - X-Cron-Secret ヘッダーが INVENTORY_CRON_SECRET と一致する。ローカルや手動実行用
-   * （ヘッダーをパラメータやセキュリティスキームとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
    * 直近に注文が無い（営業していない）ときは送らない。
    */
   remindInventory: {

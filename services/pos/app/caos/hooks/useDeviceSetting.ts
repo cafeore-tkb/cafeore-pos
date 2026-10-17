@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { caosLog } from "../utils/log";
+
 /**
  * この端末にだけ覚える画面の設定（localStorage。DB には書かない）。覚えたものが無い・形が違う・読めないときは initial。
  * 書けないときは、開いている間だけ持つ
@@ -16,6 +18,7 @@ export const useDeviceSetting = <T>(key: string, initial: T) => {
     }
   });
   const save = (next: T) => {
+    caosLog("device-setting.changed", { key, value: next });
     setValue(next);
     try {
       localStorage.setItem(key, JSON.stringify(next));

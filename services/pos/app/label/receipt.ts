@@ -30,8 +30,8 @@ const SQUARE_PAYMENT_LABEL: Partial<Record<string, string>> = {
 } satisfies Record<SquarePaymentType, string>;
 
 /**
- * 小計を分けて払ったとき（小計分割・一部金額先払い）の、この支払いの前後。
- * prepaid はこの小計で先に払った額、deferred はこのあとに払う額
+ * 注文を何回かに分けて払うとき（個別小計・小計分割・一部金額先払い）の、この支払いの前後。
+ * prepaid はこの小計で先に払った額、deferred はこの小計でこのあとに払う額（分けていなければどちらも 0）
  */
 export type ReceiptSplit = { prepaid: number; deferred: number };
 
@@ -57,6 +57,19 @@ export type OrderReceipt = {
   total: string;
   /** 現金ならお預り・お釣り、Square なら決済手段 */
   payments: ReceiptRow[];
+  /**
+   * 引換券番号として大きく載せる注文番号。注文を何回かに分けて払うときは載せず、
+   * 払い終えたら引換券番号だけのレシート（ClaimReceipt）を別に刷る
+   */
+  claimNumber?: string;
+};
+
+/** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの中身 */
+export type ClaimReceipt = {
+  /** 2026/11/07 10:23 */
+  dateTime: string;
+  /** No.123 */
+  orderNo: string;
   /** 引換券番号として大きく載せる注文番号 */
   claimNumber: string;
 };
@@ -83,6 +96,14 @@ export const yen = (amount: number) =>
   `${amount < 0 ? "-" : ""}￥${Math.abs(amount).toLocaleString("ja-JP")}`;
 
 const orderNo = (order: OrderEntity) => `No.${order.orderId}`;
+
+/** 2026/11/07 10:23。注文を確定した時刻（日本時間） */
+const receiptDateTime = (order: OrderEntity) => {
+  const createdAt = order.createdAt.getTime();
+  const date = jstDate(createdAt).replaceAll("-", "/");
+  const time = jstClock(createdAt).slice(0, 5);
+  return `${date} ${time}`;
+};
 
 /** 同じ名前・値段の商品をまとめた明細 */
 const receiptItems = (order: OrderEntity): ReceiptRow[] => {
@@ -112,17 +133,15 @@ const receiptItems = (order: OrderEntity): ReceiptRow[] => {
  * 商品ごとの金額・割引・合計と、現金ならお預り・お釣り、Square なら決済手段を載せる。
  * 日時は注文を確定した時刻（日本時間）。
  *
- * 個別小計では order はその小計の商品だけの注文。小計を金額で分けて払ったとき（split）は、
+ * 注文を何回かに分けて払うとき（split）は、order はその小計の商品だけの注文。
  * 小計から先に払った額とあとで払う額を引いた残りを、この支払いの合計にする。
+ * 引換券番号は載せない（払い終えたら claimReceipt を別に刷る）。
  */
 export const orderReceipt = (
   order: OrderEntity,
   payment: ReceiptPayment,
   split?: ReceiptSplit,
 ): OrderReceipt => {
-  const createdAt = order.createdAt.getTime();
-  const date = jstDate(createdAt).replaceAll("-", "/");
-  const time = jstClock(createdAt).slice(0, 5);
   const prepaid = split?.prepaid ?? 0;
   const deferred = split?.deferred ?? 0;
   const total = order.billingAmount - prepaid - deferred;
@@ -160,15 +179,27 @@ export const orderReceipt = (
         ];
 
   return {
-    dateTime: `${date} ${time}`,
+    dateTime: receiptDateTime(order),
     orderNo: orderNo(order),
     items: receiptItems(order),
     adjustments,
     total: yen(total),
     payments,
-    claimNumber: `${order.orderId}`,
+    ...(split === undefined && { claimNumber: `${order.orderId}` }),
   };
 };
+
+/**
+ * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート
+ *
+ * 支払いごとのレシートには引換券番号を載せないので、注文に 1 枚だけ刷る。
+ * 日時は注文を確定した時刻（日本時間）。
+ */
+export const claimReceipt = (order: OrderEntity): ClaimReceipt => ({
+  dateTime: receiptDateTime(order),
+  orderNo: orderNo(order),
+  claimNumber: `${order.orderId}`,
+});
 
 /** 2026年11月7日 */
 const jaDate = (ms: number) => {

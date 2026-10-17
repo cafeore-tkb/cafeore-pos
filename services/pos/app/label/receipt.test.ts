@@ -1,6 +1,6 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { formalReceipt, orderReceipt, yen } from "./receipt";
+import { claimReceipt, formalReceipt, orderReceipt, yen } from "./receipt";
 
 const hotType: ItemType = {
   id: "1",
@@ -122,6 +122,32 @@ describe("[unit] orderReceipt", () => {
         { prepaid: 0, deferred: 850 },
       ).payments,
     ).toEqual([{ label: "電子マネー", amount: "￥300" }]);
+  });
+
+  test("一括で払うときは引換券番号を載せ、何回かに分けて払う 1 回分（split）には載せない", () => {
+    const order = createOrder();
+    order.received = order.billingAmount;
+
+    expect(orderReceipt(order, { method: "cash" }).claimNumber).toBe("123");
+    // 個別小計（金額では分けていない）でも載せない
+    for (const split of [
+      { prepaid: 0, deferred: 0 },
+      { prepaid: 300, deferred: 400 },
+    ]) {
+      expect(orderReceipt(order, { method: "cash" }, split)).not.toHaveProperty(
+        "claimNumber",
+      );
+    }
+  });
+});
+
+describe("[unit] claimReceipt", () => {
+  test("日時・注文番号と、引換券番号を載せる", () => {
+    expect(claimReceipt(createOrder())).toEqual({
+      dateTime: "2026/11/07 10:23",
+      orderNo: "No.123",
+      claimNumber: "123",
+    });
   });
 });
 

@@ -23,4 +23,11 @@ describe("[unit] openapiEnumLabels", () => {
       tm_m30: "TM-m30",
     });
   });
+
+  test("プリンターの用紙の幅の名前", () => {
+    expect(openapiEnumLabels("PrinterPaperWidth")).toEqual({
+      "58mm": "58mm",
+      "80mm": "80mm",
+    });
+  });
 });

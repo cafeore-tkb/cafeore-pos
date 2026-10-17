@@ -19,7 +19,9 @@ import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { LaneChangeDialog, ShiftFeedSettings } from "../components/LaneDialogs";
 import { noNextReason } from "../logic/shiftFeed";
+import { caosLog } from "../utils/log";
 import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
+import { useCaosStateLog } from "./useCaosStateLog";
 import { useRememberAction } from "./useLastAction";
 import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 
@@ -128,6 +130,7 @@ export const CaosLanesProvider = ({
     nowMs: number;
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useCaosStateLog("ui.lane-dialog.changed", { changing, settingsOpen });
 
   // 端末に残して送る（残した操作の id を返す）。替えたあとの担当者で、指名の無い上級生のみのカード（抽出中・待機）があるドリッパーがあれば、止めずに POS の通知で知らせる
   const request = (
@@ -136,6 +139,7 @@ export const CaosLanesProvider = ({
     label: string,
     op: CaosOutboxOp,
   ) => {
+    caosLog("lanes.operation.requested", { label, op });
     setChanging(null);
     const warnings = laneChangeWarnings(boardCards(), changes, single);
     const id = enqueueCaosOp(label, op);
@@ -163,7 +167,10 @@ export const CaosLanesProvider = ({
 
   // 次の人（ボタンに出していた人）にすぐ替え、「直前の操作」に覚える（上級生のみのカード（抽出中・待機）があれば知らせる）
   const changeToNext = (dripper: number, { name, senior }: LaneCandidate) => {
-    if (sending.current.has(dripper)) return;
+    if (sending.current.has(dripper)) {
+      caosLog("lanes.operation.ignored", { dripper, reason: "double-tap" });
+      return;
+    }
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);

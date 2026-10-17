@@ -19,6 +19,8 @@ import {
   toPracticeOrders,
   withPracticeItemTypes,
 } from "../logic/historical";
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
 import type { CaosNextOp } from "./useLiveBoard";
 
 /** 実データテスト。時間帯（startMs〜endMs）・練習の時計の今（currentMs）と、時間帯の注文（時刻の順） */
@@ -111,12 +113,23 @@ export const useTestPlay = ({
   // 結果の盤面を入れる。断ったら理由を出して false
   const commit = (result: CaosPracticeResult) => {
     if (result.error !== undefined) {
+      caosLog("practice.operation.rejected", { error: result.error });
       toast.error(result.error);
       return false;
     }
     replace(result.orders);
     return true;
   };
+  useCaosStateLog("practice.board.changed", {
+    cards: cards.map((card) => ({
+      key: card.key,
+      status: card.status,
+      dripper: card.dripper,
+      startedAt: card.startedAt,
+      finishedAt: card.finishedAt,
+      cupIds: card.cups.map((c) => c.cupId),
+    })),
+  });
   const practiceNow = () => new Date(sessionRef.current?.currentMs ?? 0);
 
   return {
@@ -124,16 +137,28 @@ export const useTestPlay = ({
     cards,
     /** 実績に出す、届いた注文（提供時間は練習の結果） */
     salesOrders,
-    runWrites: (writes: CaosCupsWrite[]) =>
-      commit(
+    runWrites: (writes: CaosCupsWrite[], label: string) => {
+      caosLog("practice.operation.requested", {
+        label,
+        writes,
+        simulatedAt: sessionRef.current?.currentMs,
+      });
+      return commit(
         applyCaosPracticeWrites(practiceRef.current, writes, practiceNow()),
-      ),
+      );
+    },
     // before（押した待機のカードを待機の先頭へ）を当ててから「次へ」
     runNext: (
       { dripper, dripId, startNext }: CaosNextOp,
-      _label: string,
+      label: string,
       before: CaosCupsWrite[] = [],
     ) => {
+      caosLog("practice.operation.requested", {
+        label,
+        next: { dripper, dripId, startNext },
+        before,
+        simulatedAt: sessionRef.current?.currentMs,
+      });
       const moved = applyCaosPracticeWrites(
         practiceRef.current,
         before,

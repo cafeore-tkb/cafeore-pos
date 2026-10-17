@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getCallScreenSound } from "~/lib/callscreen-sound";
 
 /** 光り始めてから、元に戻り始めるまで */
 const FLASH_HOLD_MS = 5000;
@@ -254,6 +255,57 @@ const playToEnd = (audio: HTMLAudioElement, timeoutMs: number) =>
     audio.play().catch(done);
   });
 
+/** 読み上げのエコー。声から遅れて返すまでの秒数 */
+const ECHO_DELAY_S = 0.12;
+/** 返すたびに小さくする割合 */
+const ECHO_FEEDBACK = 0.25;
+
+/**
+ * 読み上げに少しエコーをかける（Web Audio で、そのままの声に遅らせて小さくした声を重ねる）。
+ * level は返す声の大きさ（そのままの声を 1 として。0 ならエコー無し）。
+ * つなぐと要素の音は AudioContext からしか出なくなり、AudioContext が止まっている（自動再生の制限など）と声ごと消えるので、
+ * 動いている（running）ときだけつなぐ。動かせない・Web Audio が無いときは、エコー無しで流す。
+ * 一度つなぐと外せないので、切ったときは返す声を 0 にする
+ */
+function useEcho(audioRef: React.RefObject<HTMLAudioElement>) {
+  const ctxRef = useRef<AudioContext | null>(null);
+  const wetRef = useRef<GainNode | null>(null);
+
+  return useCallback(
+    (level: number) => {
+      const wet = wetRef.current;
+      if (wet) wet.gain.value = level;
+      const audio = audioRef.current;
+      // 切っていて、まだつないでいなければ Web Audio は使わない
+      if (!audio || (level === 0 && !wet)) return;
+      try {
+        ctxRef.current ??= new AudioContext();
+        const ctx = ctxRef.current;
+        if (ctx.state !== "running") {
+          void ctx.resume().catch(() => undefined);
+          return;
+        }
+        if (wet) return;
+        const source = ctx.createMediaElementSource(audio);
+        const delay = ctx.createDelay();
+        delay.delayTime.value = ECHO_DELAY_S;
+        const feedback = ctx.createGain();
+        feedback.gain.value = ECHO_FEEDBACK;
+        const wetGain = ctx.createGain();
+        wetGain.gain.value = level;
+        source.connect(ctx.destination);
+        source.connect(delay);
+        delay.connect(feedback).connect(delay);
+        delay.connect(wetGain).connect(ctx.destination);
+        wetRef.current = wetGain;
+      } catch {
+        // Web Audio が使えなければ、エコー無しで流す
+      }
+    },
+    [audioRef],
+  );
+}
+
 export type Announcement = {
   /** 読み上げの音声（callVoicePath・dripVoicePath） */
   path: string;
@@ -267,33 +319,43 @@ export type Announcement = {
  * 読み上げる。何件も重なったときは 1 件ずつ順に流す。
  * 音声は頼んだ時点で取りに行き、届いてからチャイムを鳴らして、間を空けずに続けて流す
  * （届く前にチャイムを鳴らすと、作っている間だけチャイムと声の間が空く）。
- * 音声が取れなければ、チャイムだけ鳴らす（チャイムの無い案内は何も鳴らさない）
+ * 音声が取れなければ、チャイムだけ鳴らす（チャイムの無い案内は何も鳴らさない）。
+ * チャイム・読み上げ・エコーは、頼んだ時点の設定（lib/callscreen-sound）で鳴らすか決める
  */
 export function useAnnouncer(
   chimeRef: React.RefObject<HTMLAudioElement>,
   voiceRef: React.RefObject<HTMLAudioElement>,
 ) {
   const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const echo = useEcho(voiceRef);
 
   return useCallback(
     ({ path, chime, onStart }: Announcement) => {
-      const voice = loadVoice(path);
+      const sound = getCallScreenSound();
+      const voice = sound.voice ? loadVoice(path) : Promise.resolve(null);
+      const echoLevel = sound.echo ? sound.echoLevel / 100 : 0;
       queueRef.current = queueRef.current.then(async () => {
         const url = await voice;
         const audio = voiceRef.current;
-        // チャイムの間に読み込ませておき、鳴り終わったらすぐ流せるようにする
+        // チャイムの間に読み込ませ、AudioContext も動かしておき、鳴り終わったらすぐ流せるようにする
         if (url && audio) {
           audio.src = url;
           audio.load();
+          echo(echoLevel);
         }
         onStart?.();
         const chimeAudio = chimeRef.current;
-        if (chime && chimeAudio) await playToEnd(chimeAudio, CHIME_TIMEOUT_MS);
-        if (url && audio) await playToEnd(audio, VOICE_TIMEOUT_MS);
+        if (chime && sound.chime && chimeAudio) {
+          await playToEnd(chimeAudio, CHIME_TIMEOUT_MS);
+        }
+        if (url && audio) {
+          echo(echoLevel);
+          await playToEnd(audio, VOICE_TIMEOUT_MS);
+        }
         if (url) URL.revokeObjectURL(url);
       });
     },
-    [chimeRef, voiceRef],
+    [chimeRef, voiceRef, echo],
   );
 }
 

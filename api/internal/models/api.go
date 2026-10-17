@@ -40,10 +40,22 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for MasterStateUpdateRequestType.
+const (
+	Operational MasterStateUpdateRequestType = "operational"
+	Stop        MasterStateUpdateRequestType = "stop"
+)
+
 // Defines values for PaymentMethod.
 const (
 	Cash   PaymentMethod = "cash"
 	Square PaymentMethod = "square"
+)
+
+// Defines values for PrinterPaperWidth.
+const (
+	PrinterPaperWidth58mm PrinterPaperWidth = "58mm"
+	PrinterPaperWidth80mm PrinterPaperWidth = "80mm"
 )
 
 // Defines values for ReceiptPrinterModel.
@@ -142,6 +154,9 @@ type CaosCupsWrite struct {
 	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
+
+	// MergeInto 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+	MergeInto *openapi_types.UUID `json:"merge_into,omitempty"`
 }
 
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
@@ -243,6 +258,28 @@ type CaosLanes struct {
 	Lanes []CaosLane `json:"lanes"`
 }
 
+// CaosLogBatch defines model for CaosLogBatch.
+type CaosLogBatch struct {
+	Entries []CaosLogEntry `json:"entries"`
+}
+
+// CaosLogEntry defines model for CaosLogEntry.
+type CaosLogEntry struct {
+	At       time.Time              `json:"at"`
+	Details  map[string]interface{} `json:"details"`
+	Event    string                 `json:"event"`
+	Sequence int64                  `json:"sequence"`
+	TabId    openapi_types.UUID     `json:"tabId"`
+}
+
+// CaosLogPage defines model for CaosLogPage.
+type CaosLogPage struct {
+	Entries []CaosStoredLogEntry `json:"entries"`
+	HasMore bool                 `json:"hasMore"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+}
+
 // CaosNextRequest defines model for CaosNextRequest.
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
@@ -278,6 +315,16 @@ type CaosPress struct {
 
 	// SentAt 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
 	SentAt int64 `json:"sent_at"`
+}
+
+// CaosStoredLogEntry defines model for CaosStoredLogEntry.
+type CaosStoredLogEntry struct {
+	At         time.Time              `json:"at"`
+	Details    map[string]interface{} `json:"details"`
+	Event      string                 `json:"event"`
+	ReceivedAt time.Time              `json:"receivedAt"`
+	Sequence   int64                  `json:"sequence"`
+	TabId      openapi_types.UUID     `json:"tabId"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -516,8 +563,11 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type string `json:"type"`
+	Type MasterStateUpdateRequestType `json:"type"`
 }
+
+// MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
+type MasterStateUpdateRequestType string
 
 // MenuCreateRequest defines model for MenuCreateRequest.
 type MenuCreateRequest struct {
@@ -770,17 +820,26 @@ type OrderUpdateRequest struct {
 // PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 type PaymentMethod string
 
+// PrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+type PrinterPaperWidth string
+
 // PrinterSettingsResponse defines model for PrinterSettingsResponse.
 type PrinterSettingsResponse struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
-	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
-	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
 	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
 }
 
 // PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
@@ -788,16 +847,22 @@ type PrinterSettingsUpdateRequest struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
-	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
-	// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
 	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
 }
 
-// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
-// tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種の用紙（receipt_printer_paper_width）の印字幅に合わせて描く。
+// 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
 type ReceiptPrinterModel string
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
@@ -1032,6 +1097,14 @@ type StockResourceResponse struct {
 	Unit       string  `json:"unit"`
 }
 
+// GetCaosLogsParams defines parameters for GetCaosLogs.
+type GetCaosLogsParams struct {
+	Limit  *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                `form:"offset,omitempty" json:"offset,omitempty"`
+	TabId  *openapi_types.UUID `form:"tab_id,omitempty" json:"tab_id,omitempty"`
+	Event  *string             `form:"event,omitempty" json:"event,omitempty"`
+}
+
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
@@ -1052,6 +1125,9 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
+
+// CreateCaosLogsJSONRequestBody defines body for CreateCaosLogs for application/json ContentType.
+type CreateCaosLogsJSONRequestBody = CaosLogBatch
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest

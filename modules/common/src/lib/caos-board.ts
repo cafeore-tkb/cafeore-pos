@@ -584,7 +584,9 @@ export const mergeWrites = (
     insert_before: null,
     start_brew: false,
   };
-  const writes = [writeOf(card, after)];
+  const writes: CaosCupsWrite[] = [
+    { ...writeOf(card, after), merge_into: into.cups[0].id },
+  ];
   if (into.status !== "brewing") writes.push(writeOf(into, after));
   return { writes };
 };

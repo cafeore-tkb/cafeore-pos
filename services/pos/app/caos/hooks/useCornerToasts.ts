@@ -1,6 +1,9 @@
 import type { CaosCard, CaosLane } from "@cafeore/common";
 import { useState } from "react";
 
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
+
 // 右上に出しておく秒。何もしなければ消える（確かめはやめる扱いで何も送らず、知らせは読んだ扱い）
 const SHOW_SEC = 8;
 
@@ -55,6 +58,9 @@ export const useCornerToasts = (nowMs: number) => {
     );
     return secondsLeft > 0 ? [{ ...toast, secondsLeft }] : [];
   });
+  useCaosStateLog("notice.active.changed", {
+    notices: open.map(({ id, kind }) => ({ id, kind })),
+  });
   const drop = (id: string) =>
     setShown((list) => list.filter((toast) => toast.id !== id));
 
@@ -67,6 +73,7 @@ export const useCornerToasts = (nowMs: number) => {
      */
     show: (toast: CornerToast, ops: string[] = []) => {
       const id = toastId(toast);
+      caosLog("notice.shown", { id, notice: toast, ops });
       const atMs = Date.now();
       setShown((list) => [
         { ...toast, id, ops, atMs },
@@ -79,7 +86,10 @@ export const useCornerToasts = (nowMs: number) => {
       return open.find((toast) => toast.id === id) ?? null;
     },
     /** 閉じる（確かめはやめる、知らせは読んだ） */
-    dismiss: drop,
+    dismiss: (id: string) => {
+      caosLog("notice.dismissed", { id });
+      drop(id);
+    },
     /** 端末に残した盤面の操作（entry）が断られて盤面が戻ったので、その操作の知らせを消す（id で引くので、同じ名前のほかの操作の知らせは残す） */
     forgetOp: (entry: { id: string }) =>
       setShown((list) => list.filter((toast) => !toast.ops.includes(entry.id))),
