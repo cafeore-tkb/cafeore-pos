@@ -1,4 +1,9 @@
-import { dripperLabel, splitCallScreenOrders } from "@cafeore/common";
+import {
+  dripperLabel,
+  isCallOutOfOrder,
+  planDripAnnouncement,
+  splitCallScreenOrders,
+} from "@cafeore/common";
 import { useCallback, useMemo, useRef } from "react";
 import type { MetaFunction } from "react-router";
 import logoSVG from "~/assets/cafeore.svg";
@@ -22,10 +27,14 @@ import {
   stageContentStyle,
 } from "./callscreen.components";
 import {
+  callVoicePath,
+  dripVoicePath,
+  useAnnouncer,
   useCallVisibility,
   useFlash,
   useOnAdded,
   useStageScale,
+  useWarmCallVoices,
 } from "./callscreen.hooks";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -50,11 +59,12 @@ export default function FieldsOfCallScreen() {
   const { orders, isOrdersLoaded } = useOrdersWSContext();
 
   const soundRef = useRef<HTMLAudioElement>(null);
+  const voiceRef = useRef<HTMLAudioElement>(null);
   const cm = useCmPlaylist();
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
   // ドリップ中は CaOS のカードの状態で決める（@cafeore/common の splitCallScreenOrders）
-  const { calling, dripping, preparing } = useMemo(
+  const { calling, dripping, preparing, brewing } = useMemo(
     () => splitCallScreenOrders(orders),
     [orders],
   );
@@ -63,36 +73,77 @@ export default function FieldsOfCallScreen() {
     () => dripping.map((order) => order.orderId),
     [dripping],
   );
+  // まだ呼んでいない注文。呼び出しの読み上げを先に作らせておく
+  const waitingIds = useMemo(
+    () => [...preparing, ...drippingIds],
+    [preparing, drippingIds],
+  );
+  const brewingKeys = useMemo(() => brewing.map((card) => card.key), [brewing]);
 
   const { startFlash, isFlashing } = useFlash();
 
-  const playChime = useCallback(() => {
-    const audio = soundRef.current;
-    if (!audio) return;
-
-    try {
-      audio.currentTime = 0;
-    } catch (error) {
-      // Safari など currentTime の操作に失敗する環境があるので握りつぶす
-    }
-
-    void audio.play().catch(() => {
-      // 自動再生の制限で弾かれた場合は握りつぶす
-    });
-  }, []);
+  const announce = useAnnouncer(soundRef, voiceRef);
+  // 呼んだ時点の一覧で「順番が前後するか」を決めたいので、最新の一覧を持っておく
+  const ordersRef = useRef(orders);
+  ordersRef.current = orders;
+  const brewingRef = useRef(brewing);
+  brewingRef.current = brewing;
+  // ドリップの案内を流した注文（ID）と、最後に「よろしければ…」を付けた時刻
+  const announcedDripOrdersRef = useRef(new Set<string>());
+  const lastDripInviteAtRef = useRef<number | null>(null);
 
   const onCalled = useCallback(
     (orderId: number) => {
-      playChime();
+      announce({
+        path: callVoicePath(
+          orderId,
+          isCallOutOfOrder(ordersRef.current, orderId),
+        ),
+        chime: true,
+      });
       startFlash(orderId);
     },
-    [playChime, startFlash],
+    [announce, startFlash],
   );
 
-  // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える。
-  // 呼び出しはチャイムと点滅、ドリップ入りは点滅だけ
+  // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
+  // 「N番のお客様、ファーストにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない。
+  // 1 つの注文につき最初の 1 回だけ流し、立て続け（1 分以内）なら「よろしければ…」を省く（@cafeore/common の planDripAnnouncement）
+  const onBrewStarted = useCallback(
+    (key: string) => {
+      const card = brewingRef.current.find((item) => item.key === key);
+      if (!card) return;
+      const now = Date.now();
+      const plan = planDripAnnouncement(
+        card,
+        announcedDripOrdersRef.current,
+        lastDripInviteAtRef.current,
+        now,
+      );
+      if (!plan) return;
+      for (const order of plan.orders) {
+        announcedDripOrdersRef.current.add(order.id);
+      }
+      if (plan.invite) lastDripInviteAtRef.current = now;
+      announce({
+        path: dripVoicePath(
+          plan.orders.map((order) => order.orderId),
+          card.dripper,
+          plan.invite,
+        ),
+        chime: false,
+      });
+    },
+    [announce],
+  );
+
+  // 一覧が届くまでは「新しく入った」の判定ができないので、最初の一覧を受け取ってから数える
+  // （開いたときにもう呼んでいた・淹れていたものは読み上げない）。
+  // 呼び出しはチャイムと読み上げと点滅、ドリップ入りは点滅、淹れ始めたカードはドリップの案内
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
+  useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);
+  useWarmCallVoices(waitingIds, isOrdersLoaded);
 
   const showCall = useCallVisibility(calling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);
@@ -245,6 +296,10 @@ export default function FieldsOfCallScreen() {
       </div>
 
       <audio src={brightNotifications} ref={soundRef} preload="auto">
+        <track kind="captions" />
+      </audio>
+      {/* 読み上げ。src は読むたびに useAnnouncer が入れる */}
+      <audio ref={voiceRef} preload="none">
         <track kind="captions" />
       </audio>
     </div>
