@@ -13,7 +13,11 @@ const RollingDigit = ({
       return;
     oldCell.current.textContent = previous.current;
     previous.current = digit;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (
+      duration <= 0 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
     const animation = track.current.animate(
       [{ transform: "translateY(0)" }, { transform: "translateY(-50%)" }],
       { duration, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
@@ -88,20 +92,26 @@ export const RollingOrderNumber = ({ value }: { value: number | null }) => (
   </span>
 );
 
-/** 秒は毎秒更新されるため、他の数字よりゆっくりと切り替える。 */
+/** 時計による1秒増加は即時更新。対象変更などによる増減だけ桁送りする。 */
 export const RollingClock = ({ seconds }: { seconds: number }) => {
   const safe = Math.max(0, Math.round(seconds));
+  const previousSeconds = useRef(safe);
+  const clockTick = safe === previousSeconds.current + 1;
+  useLayoutEffect(() => {
+    previousSeconds.current = safe;
+  }, [safe]);
   return (
     <span className="caos-order-number">
       <RollingNumber
         value={Math.floor(safe / 60)}
+        duration={clockTick ? 0 : 280}
         label={`${Math.floor(safe / 60)}分`}
       />
       <span aria-hidden="true">:</span>
       <RollingNumber
         value={safe % 60}
         minDigits={2}
-        duration={520}
+        duration={clockTick ? 0 : 520}
         label={`${safe % 60}秒`}
       />
     </span>
