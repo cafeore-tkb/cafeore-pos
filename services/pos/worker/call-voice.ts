@@ -1,14 +1,16 @@
-// 呼び出し画面で流す音声（/call-voice/call・/call-voice/drip）。
+// 呼び出し画面で流す音声（/call-voice/call・/call-voice/recall・/call-voice/drip）。
 //
 //   - 呼び出し：「（順番が前後いたします。）N番のお客様、提供口までお越しください。」
-//   - ドリップの案内：「N番のお客様、ファーストにてドリップいたします。（よろしければぜひ、お近くでご覧ください。）」
-//     括弧の中は invite=0 のときは省く（立て続けの案内。いつ省くかは画面が決める。@cafeore/common の planDripAnnouncement）
+//   - 呼び出しの催促：「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」
+//   - ドリップの案内：「N番のお客様、M番ドリッパーにてドリップいたします。（よろしければぜひ、お近くでご覧ください。）」
+//     M はドリッパーの番号。括弧の中は invite=0 のときは省く（立て続けの案内。いつ省くかは画面が決める。@cafeore/common の planDripAnnouncement）
 //
 // 文はここで決め、画面からは注文番号・「順番が前後するか」・ドリッパーの番号だけを受け取る
 // （任意の文を読ませないため。ElevenLabs の利用枠を使うのはこの決まった文だけになる）。
+// 番号は仮名の読み（303 なら「さんびゃくさん」）にして渡す。数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。
 //
 // 文は片（「N番のお客様、」「提供口までお越しください。」など）に分けて ElevenLabs で作り、つないで 1 本で返す。
-// 片ごとに R2（CALL_VOICES）に溜めるので、番号の片は呼び出しとドリップの案内で同じものを使い、
+// 片ごとに R2（CALL_VOICES）に溜めるので、番号の片は呼び出し・催促・ドリップの案内で同じものを使い、
 // 決まった文の片は一度作れば済む。溜める鍵は、ElevenLabs に送る中身のハッシュ。文や声を変えれば別の鍵になり、作り直される。
 //
 // ElevenLabs の鍵は Worker の secret の ELEVENLABS_API_KEY。デプロイの workflow が GitHub の secret の
@@ -54,23 +56,58 @@ const ORDER_NO = /^[1-9]\d{0,3}$/;
 /** ドリップの案内で一度に読む注文の数（1 枚のカードは最大 2 杯） */
 const MAX_DRIP_ORDERS = 2;
 
-/** ドリッパーの読み（画面の 1st〜6th。英字のままだと読み方が揺れうるので仮名で渡す） */
-const DRIPPER_READINGS: Record<number, string> = {
-  1: "ファースト",
-  2: "セカンド",
-  3: "サード",
-  4: "フォース",
-  5: "フィフス",
-  6: "シックス",
+/** ドリッパーの数（画面の 1st〜6th） */
+const MAX_DRIPPER = 6;
+
+/** 1〜9 の読み。4・7・9 は聞き取りやすい「よん」「なな」「きゅう」にする */
+const DIGIT_READINGS = [
+  "",
+  "いち",
+  "に",
+  "さん",
+  "よん",
+  "ご",
+  "ろく",
+  "なな",
+  "はち",
+  "きゅう",
+];
+/** 位（千・百・十・一）と、その読み */
+const PLACES = [
+  [1000, "せん"],
+  [100, "ひゃく"],
+  [10, "じゅう"],
+  [1, ""],
+] as const;
+/** 音が変わるもの（「さんびゃく」「はっせん」など）と、1 を読まないもの（「せん」「ひゃく」「じゅう」） */
+const PLACE_READINGS: Record<number, string> = {
+  1000: "せん",
+  3000: "さんぜん",
+  8000: "はっせん",
+  100: "ひゃく",
+  300: "さんびゃく",
+  600: "ろっぴゃく",
+  800: "はっぴゃく",
+  10: "じゅう",
 };
+
+/** 1〜9999 の読み（ひらがな）。位ごとに「数字の読み＋位の読み」をつなぐ。303 なら「さんびゃくさん」 */
+export const numberReading = (n: number) =>
+  PLACES.map(([place, name]) => {
+    const digit = Math.floor(n / place) % 10;
+    if (digit === 0) return "";
+    return PLACE_READINGS[digit * place] ?? `${DIGIT_READINGS[digit]}${name}`;
+  }).join("");
 
 /** 片の文 */
 export const callVoiceSegments = {
   reordered: "順番が前後いたします。",
-  orderNo: (orderNo: number) => `${orderNo}番のお客様、`,
+  orderNo: (orderNo: number) => `${numberReading(orderNo)}番のお客様、`,
   callTail: "提供口までお越しください。",
+  recallReady: "商品のご用意ができております。",
+  recallTail: "お急ぎ、提供口までお越しください。",
   dripper: (dripper: number) =>
-    `${DRIPPER_READINGS[dripper]}にてドリップいたします。`,
+    `${numberReading(dripper)}番ドリッパーにてドリップいたします。`,
   dripTail: "よろしければぜひ、お近くでご覧ください。",
 };
 
@@ -79,6 +116,13 @@ export const callAnnouncement = (orderNo: number, reordered: boolean) => [
   ...(reordered ? [callVoiceSegments.reordered] : []),
   callVoiceSegments.orderNo(orderNo),
   callVoiceSegments.callTail,
+];
+
+/** 呼び出しの催促の片（呼んでも来ないお客様に、もう一度呼びかける） */
+export const recallAnnouncement = (orderNo: number) => [
+  callVoiceSegments.orderNo(orderNo),
+  callVoiceSegments.recallReady,
+  callVoiceSegments.recallTail,
 ];
 
 /** ドリップの案内の片。invite が false なら「よろしければぜひ、お近くでご覧ください。」を省く */
@@ -133,9 +177,15 @@ export const parseAnnouncement = (url: URL): string[] | null => {
       url.searchParams.get("reordered") === "1",
     );
   }
+  if (url.pathname === "/call-voice/recall") {
+    if (orderNos.length !== 1) return null;
+    return recallAnnouncement(orderNos[0]);
+  }
   if (url.pathname === "/call-voice/drip") {
     const dripper = Number(url.searchParams.get("dripper"));
-    if (!(dripper in DRIPPER_READINGS)) return null;
+    if (!Number.isInteger(dripper) || dripper < 1 || dripper > MAX_DRIPPER) {
+      return null;
+    }
     if (orderNos.length > MAX_DRIP_ORDERS) return null;
     return dripAnnouncement(
       orderNos,
