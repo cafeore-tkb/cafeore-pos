@@ -96,11 +96,14 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 // ほかのインスタンスからの通知で配り直すときも使う。Publish で読み込みから配信までを
 // 1つずつ行い、POST での配信と通知での配信が入れ違って古い状態が後から届かないようにする。
 func broadcastMasterState(db *gorm.DB, hub *Hub) {
-	_ = hub.Publish(func() (WSMessage, error) {
+	err := hub.Publish(func() (WSMessage, error) {
 		msg, ok := masterStateMessage(db)
 		if !ok {
 			return WSMessage{}, errors.New("no master state")
 		}
 		return msg, nil
 	})
+	if err != nil {
+		log.Println("failed to broadcast master state:", err)
+	}
 }
