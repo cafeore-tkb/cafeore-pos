@@ -42,11 +42,13 @@ export const RollingNumber = ({
   minDigits = 1,
   duration = 280,
   label,
+  className = "",
 }: {
   value: number | null;
   minDigits?: number;
   duration?: number;
   label?: string;
+  className?: string;
 }) => {
   const text =
     value === null
@@ -56,7 +58,10 @@ export const RollingNumber = ({
     .split("")
     .map((digit, index) => ({ digit, place: 10 ** (text.length - index - 1) }));
   return (
-    <span className="caos-order-digits" aria-label={label ?? text}>
+    <span
+      className={`caos-order-digits ${className}`}
+      aria-label={label ?? text}
+    >
       <span aria-hidden="true" className="caos-order-digits">
         {value === null ? (
           <span
@@ -75,8 +80,11 @@ export const RollingNumber = ({
   );
 };
 
-export const RollingOrderNumber = ({ value }: { value: number | null }) => (
-  <span className="caos-order-number">
+export const RollingOrderNumber = ({
+  value,
+  className = "",
+}: { value: number | null; className?: string }) => (
+  <span className={`caos-order-number ${className}`}>
     <span aria-hidden="true" className="opacity-60">
       #
     </span>

@@ -189,3 +189,22 @@ html:has(.caos-root) body {
   border-radius: 0.25rem;
   padding: 0.2em 0.35em;
 }
+
+/* 未提供が20分を超えた場合だけ、最長時間をゆっくり点滅させる。 */
+@keyframes caos-unserved-time-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.caos-root .caos-unserved-time-blink {
+  animation: caos-unserved-time-blink 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caos-root .caos-unserved-time-blink {
+    animation: none;
+  }
+}

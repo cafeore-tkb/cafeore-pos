@@ -130,10 +130,6 @@ export default function App() {
           }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
-          counts={session.counts}
-          backlog={session.backlog}
-          unserved={unfinished.rows}
-          onFindOrder={(orderNo) => selection.openSearch(String(orderNo))}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
           simulating={session.simulating}

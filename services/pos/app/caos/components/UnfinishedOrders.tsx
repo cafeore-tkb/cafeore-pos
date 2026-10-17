@@ -61,6 +61,18 @@ export const UnassignedHeading: React.FC<{
   children,
 }) => {
   const unassignedCounts = orderAndCupCounts(unassignedOrders);
+  const unassignedNumberTone =
+    unassignedCounts.orders >= 10 ? "text-red-600" : "";
+  const longestWaitSec = Math.max(
+    0,
+    ...(view?.rows.map((row) => row.waitSec) ?? []),
+  );
+  const longestTimeTone =
+    longestWaitSec > 20 * 60
+      ? "text-red-600 caos-unserved-time-blink"
+      : longestWaitSec > 15 * 60
+        ? "text-red-600"
+        : "";
   const unservedCups = view?.rows.reduce((sum, row) => sum + row.cups, 0) ?? 0;
   const smallestUnassigned = unassignedOrders.reduce<number | null>(
     (smallest, card) =>
@@ -101,10 +113,21 @@ export const UnassignedHeading: React.FC<{
       >
         {icon}
         {label}
-        <RollingOrderNumber value={smallestUnassigned} />
+        <RollingOrderNumber
+          value={smallestUnassigned}
+          className={unassignedNumberTone}
+        />
         <span className="caos-tab-count">
-          <RollingNumber value={unassignedCounts.orders} />件{" "}
-          <RollingNumber value={unassignedCounts.cups} />杯
+          <RollingNumber
+            value={unassignedCounts.orders}
+            className={unassignedNumberTone}
+          />
+          件{" "}
+          <RollingNumber
+            value={unassignedCounts.cups}
+            className={unassignedNumberTone}
+          />
+          杯
         </span>
         <span
           className="caos-tab-time"
@@ -145,11 +168,8 @@ export const UnassignedHeading: React.FC<{
           <RollingNumber value={view.rows.length} />件{" "}
           <RollingNumber value={unservedCups} />杯
         </span>
-        <span className="caos-tab-time">
-          最長{" "}
-          <RollingClock
-            seconds={Math.max(0, ...view.rows.map((row) => row.waitSec))}
-          />
+        <span className={`caos-tab-time ${longestTimeTone}`}>
+          最長 <RollingClock seconds={longestWaitSec} />
         </span>
         {view.badge > 0 && (
           <output
