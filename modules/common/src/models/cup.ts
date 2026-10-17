@@ -30,7 +30,8 @@ export const cupSchema = z.object({
   item: itemSchema.required(),
   readyAt: z.date().nullable(),
   servedAt: z.date().nullable(),
-  // CaOS（ドリップ管制）が決めたこと（API の同じ名前の列）。CaOS 以外の画面は読まない。
+  // CaOS（ドリップ管制）が決めたこと（API の同じ名前の列）。CaOS 以外の画面は読まない
+  // （呼び出し画面だけは、ドリップ中かを lib/callscreen.ts で読む）。
   // 読み方は lib/caos-board.ts（状態は時刻で決まる）
   /** ドリッパーの番号（1〜6）。未割当なら null */
   dripper: z.number().int().nullable(),

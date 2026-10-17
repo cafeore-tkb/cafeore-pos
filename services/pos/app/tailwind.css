@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource/zen-old-mincho";
+@import "@fontsource/zen-old-mincho/600.css";
 @import "@fontsource-variable/noto-sans-jp";
 
 @plugin "tailwindcss-animate";
@@ -40,6 +41,8 @@
   --color-hot: #f74316;
   --color-ice: #0ebbf0;
   --color-ore: #834f2f;
+  /* お客さん向けの画面（cashier-mini・呼び出し画面）の差し色 */
+  --color-theme-gold: #b09860;
   /* レジの先払い（個別小計・小計分割）。撫子色を沈めた色で、先会計・小計分割の地と文字に使う */
   --color-prepay: #9b5c73;
   --color-prepay-ink: #6e3b4f;
