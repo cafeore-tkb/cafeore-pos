@@ -15,15 +15,17 @@ export const PanelHeader: React.FC<{
   icon?: LucideIcon;
   title?: string;
   className?: string;
+  backgroundClassName?: string;
   children?: React.ReactNode;
 }> = ({
   icon: Icon,
   title,
   className = "border-slate-200 border-b",
   children,
+  backgroundClassName = "bg-slate-50",
 }) => (
   <header
-    className={`flex h-11 shrink-0 items-center gap-2 rounded-t-lg bg-slate-50 px-3 ${className}`}
+    className={`flex h-11 shrink-0 items-center gap-2 rounded-t-lg px-3 ${backgroundClassName} ${className}`}
   >
     {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-700" />}
     {title && (

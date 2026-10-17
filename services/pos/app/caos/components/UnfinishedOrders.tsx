@@ -25,10 +25,15 @@ export interface UnfinishedView {
   onSelectOrder: (orderNo: number) => void;
 }
 
+/** タブラベル・見出し・表示領域で共通の背景色。 */
+export const unassignedAreaBackground = (view?: UnfinishedView) =>
+  view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
+
 const TAB =
   "relative flex h-8 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap rounded-md border px-2 font-black";
-const TAB_ON = "border-slate-900 bg-slate-900 text-white";
-const TAB_OFF = "border-slate-300 bg-white text-slate-600 hover:bg-slate-100";
+const TAB_ON =
+  "border-slate-700 text-slate-950 shadow-[inset_0_-2px_0_var(--color-slate-700)]";
+const TAB_OFF = "border-slate-300 text-slate-600 hover:border-slate-500";
 
 /**
  * 未割当の欄の見出し。view があれば「未割当」「未提供」のタブにし、children（件数）は「未割当」のタブの中に添える。
@@ -61,7 +66,7 @@ export const UnassignedHeading: React.FC<{
         role="tab"
         aria-selected={view.tab === "unassigned"}
         onClick={() => view.onSelectTab("unassigned")}
-        className={`${TAB} ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} bg-white ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
       >
         {icon}
         {label}
@@ -72,7 +77,7 @@ export const UnassignedHeading: React.FC<{
         role="tab"
         aria-selected={view.tab === "unfinished"}
         onClick={() => view.onSelectTab("unfinished")}
-        className={`${TAB} ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} bg-[#f5ede3] ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供

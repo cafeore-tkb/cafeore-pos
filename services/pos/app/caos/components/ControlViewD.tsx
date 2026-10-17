@@ -47,7 +47,11 @@ import { LaneChangeButton, LaneName } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
 import { OrderCommentBadge } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
-import { UnassignedHeading, UnfinishedList } from "./UnfinishedOrders";
+import {
+  UnassignedHeading,
+  UnfinishedList,
+  unassignedAreaBackground,
+} from "./UnfinishedOrders";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
 // 右の注文カードを選んで表の「ここに配置」をタップするか、列へドラッグして割り振る。表の待機・抽出中のカードも、列へドラッグして移す
@@ -479,7 +483,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
 
       <aside
         data-return-target
-        className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 bg-white shadow-xs ${LINE}`}
+        className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${unassignedAreaBackground(unfinished)} ${LINE}`}
       >
         {dragSource?.kind === "ticket" && (
           <div
@@ -492,7 +496,10 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
             ここで離すと未割当に戻す
           </div>
         )}
-        <PanelHeader className={`border-b-2 ${LINE}`}>
+        <PanelHeader
+          backgroundClassName={unassignedAreaBackground(unfinished)}
+          className={`border-b-2 ${LINE}`}
+        >
           <UnassignedHeading
             view={unfinished}
             label="注文内容"

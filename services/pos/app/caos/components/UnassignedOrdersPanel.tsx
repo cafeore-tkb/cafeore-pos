@@ -29,6 +29,7 @@ import {
   UnassignedHeading,
   UnfinishedList,
   type UnfinishedView,
+  unassignedAreaBackground,
 } from "./UnfinishedOrders";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
@@ -182,9 +183,11 @@ export const UnassignedStrip: React.FC<
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
-      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${folded ? "" : "h-full"}`}
+      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 ${unassignedAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
     >
-      <header className="flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-50 px-2">
+      <header
+        className={`flex h-10 shrink-0 items-center gap-2 border-slate-200 border-b px-2 ${unassignedAreaBackground(unfinished)}`}
+      >
         <UnassignedHeading view={unfinished} className="text-[18px]">
           <CountChip orders={orders} />
         </UnassignedHeading>
@@ -275,8 +278,10 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
 }) => {
   const rows = unassignedRows(orders);
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
-      <PanelHeader>
+    <section
+      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${unassignedAreaBackground(unfinished)}`}
+    >
+      <PanelHeader backgroundClassName={unassignedAreaBackground(unfinished)}>
         <UnassignedHeading view={unfinished}>
           <CountChip
             orders={orders}
