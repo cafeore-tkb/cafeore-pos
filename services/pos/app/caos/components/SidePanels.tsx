@@ -413,19 +413,19 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルで開く
+// 補助のタブ（ドリッパー・豆残量確認・実績）。右のパネルで開く
 export type AuxiliaryTab = "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
   bays: "ドリッパー",
-  beans: "豆キュー",
+  beans: "豆残量確認",
   analytics: "実績",
 };
 
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
-    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
+    /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
   } & React.ComponentProps<typeof AnalyticsView>
 > = ({ tab, beans, lanes, ...analytics }) => {

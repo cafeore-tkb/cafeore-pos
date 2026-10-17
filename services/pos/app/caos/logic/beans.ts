@@ -12,7 +12,7 @@ import {
 /** 商品 ID → その商品の在庫 */
 export type BeanIndex = ReadonlyMap<string, StockResource>;
 
-/** 豆キューに出す在庫。抽出が要る（種類の needs_brew。盤面のカードと同じ cupNeedsBrew）アイテムの在庫だけ。ミルクやグッズは出さない */
+/** 豆残量確認に出す在庫。抽出が要る（種類の needs_brew。盤面のカードと同じ cupNeedsBrew）アイテムの在庫だけ。ミルクやグッズは出さない */
 export const dripItemStatuses = (
   statuses: readonly InventoryStatus[],
   items: readonly WithId<ItemEntity>[],

@@ -1,7 +1,7 @@
 import {
   BarChart3,
+  Bean,
   CalendarClock,
-  Coffee,
   Database,
   History,
   type LucideIcon,
@@ -51,7 +51,7 @@ const DripperNavIcon: React.FC<{ className?: string }> = ({
 const NAV_ITEMS = [
   { id: "control", label: "CaOS", icon: null },
   { id: "bays", label: AUXILIARY_TITLES.bays, icon: DripperNavIcon },
-  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Coffee },
+  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Bean },
   { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
 ] as const;
 
