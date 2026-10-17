@@ -11,7 +11,7 @@ import {
 } from "../logic/unfinished";
 import { useDeviceSetting } from "./useDeviceSetting";
 
-/** 未割当の欄のタブ（未割当のカード・未完了の注文） */
+/** 未割当の欄のタブ（未割当のカード・未提供の注文） */
 export type UnassignedTab = "unassigned" | "unfinished";
 
 const NOTHING_SEEN: UnfinishedSeen = { late: [], comments: [] };
@@ -23,8 +23,8 @@ const validSeen = (seen: UnfinishedSeen): UnfinishedSeen =>
     : NOTHING_SEEN;
 
 /**
- * 未割当の欄のタブと、未完了の注文（logic/unfinished）と、「未完了」のタブの件数の印（まだ見ていない 15 分超の注文と新しいコメント）。
- * 「未完了」を開いているあいだは、出ているものをみな見たことにする。右下などでその注文のコメントを見ている（viewedLabel）ときは、そのコメントも見たことにする。
+ * 未割当の欄のタブと、未提供の注文（logic/unfinished）と、「未提供」のタブの件数の印（まだ見ていない 15 分超の注文と新しいコメント）。
+ * 「未提供」を開いているあいだは、出ているものをみな見たことにする。右下などでその注文のコメントを見ている（viewedLabel）ときは、そのコメントも見たことにする。
  * 見た印はこの端末にだけ覚える（localStorage。開き直しても残る）。実データテスト中は覚えない
  */
 export const useUnfinishedTab = ({
@@ -86,9 +86,9 @@ export const useUnfinishedTab = ({
   return {
     tab,
     onSelectTab: setTab,
-    /** 未完了の注文（注文番号の順） */
+    /** 未提供の注文（注文番号の順） */
     rows,
-    /** 「未完了」のタブの印の件数（開いているあいだは 0） */
+    /** 「未提供」のタブの印の件数（開いているあいだは 0） */
     badge: open ? 0 : unseen.late.length + unseen.comments.length,
   };
 };

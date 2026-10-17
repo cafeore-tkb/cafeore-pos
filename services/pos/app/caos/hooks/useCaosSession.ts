@@ -25,7 +25,6 @@ import {
   seniorOnlyOffSenior,
   splitWrites,
   unassignWrites,
-  unstartWrites,
   useColorSettings,
   useItemMaster,
 } from "@cafeore/common";
@@ -51,6 +50,7 @@ import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
 import { boardLanes } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
+import { runCardAction } from "../logic/runCardAction";
 import { soundManager } from "../utils/audio";
 import { caosLog, logCaosAsync } from "../utils/log";
 import { useBeanInventory } from "./useBeanInventory";
@@ -573,27 +573,20 @@ export const useCaosSession = () => {
      * カードの上のアイコンの操作（logic/cardActions）。
      *   - start（▶）：未着手のカードを始める（「次へ」。抽出中があれば断る）
      *   - finish（✓）：抽出中のカードを終え、待機の先頭を始める（「次へ」）
-     *   - hold（✋）：抽出中のカードを終え、待機の先頭は始めない（未着手で止める。「次へ」の start_next: false）
-     *   - unstart（↻）：抽出中のカードを未着手に戻す（始めた時刻を消して待機の先頭へ。@cafeore/common の unstartWrites）
+     *   - unstart（✋）：着手後60秒未満のカードを未着手に戻す
+     *   - assign:1〜6・unassign：未着手のカードを再割当・未割当に戻す
      * 終える操作は「次へ」と同じ押し間違いの決まり（endBrewing）。押したときの盤面とカードの段階が違えば断る
      */
-    runCardAction: (pressed: CaosCard, action: CardBoardAction) => {
-      const card = cardOf(pressed.key);
-      if (!card?.dripper) return fail(NOT_FOUND);
-      const { brewing } = caosLane(cards, card.dripper);
-      if (action === "unstart")
-        return write(
-          unstartWrites(cards, card),
-          `未着手に戻す ${orderLabel(card)}`,
-        );
-      if (action === "start") {
-        if (brewing) return fail(`${orderLabel(brewing)} が抽出中です`);
-        return runNext(card.dripper, null, { key: card.key });
-      }
-      if (brewing?.key !== card.key)
-        return fail("このカードはもう抽出中ではありません");
-      return endBrewing(card.dripper, action === "finish" ? "head" : "none");
-    },
+    runCardAction: (pressed: CaosCard, action: CardBoardAction) =>
+      runCardAction(cards, pressed, action, nowMs, {
+        write,
+        fail,
+        newId: newDripId,
+        onAssigned: (card, bayId) =>
+          noticeNonSenior([card], nonSeniorPlacement(card, bayId, people)),
+        start: (bayId, key) => runNext(bayId, null, { key }),
+        finish: (bayId) => endBrewing(bayId, "head"),
+      }),
     /** 右上の確かめ（「次へ」）と知らせ（時間のたったカードへの統合・上級生のみのカードを上級生でない担当者に置いた）。新しいものが先 */
     cornerToasts: toasts.open,
     /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */

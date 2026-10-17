@@ -3,8 +3,7 @@ import { Clock3, type LucideIcon, Pause, Play, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenCornerToast } from "../hooks/useCornerToasts";
-import lateIcon from "../icons/late.svg";
-import { lateCard, longWaitMinutes } from "../logic/alerts";
+import { longWaitMinutes } from "../logic/alerts";
 import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
@@ -175,8 +174,8 @@ const toastText = (toast: OpenCornerToast) => {
 };
 
 /**
- * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない、抽出中のカードを終える操作（カードの ✓・✋。抽出時間の半分もたっていない）は
- * ［やめる（残りの秒）］［次へ進める］（✋ は［終える］）。
+ * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない、抽出中のカードを終える操作（カードの ✓。抽出時間の半分もたっていない）は
+ * ［やめる（残りの秒）］［次へ進める］。
  * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
  * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
  * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
@@ -265,7 +264,7 @@ export const NextAvailableChips: React.FC<{
 
 /**
  * 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる。
- * 15 分を超えたら（lateCard）時計を「15」の印にする
+ * 提供の15分超過アイコンは未提供の一覧に表示する
  */
 export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
   card,
@@ -278,15 +277,7 @@ export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
         title={`受けてから ${minutes} 分、未割当で待っています`}
         className="-top-2 border-(color:--caos-overtime-line) bg-(color:--caos-overtime) text-(color:--caos-overtime-text) pointer-events-none absolute left-5 z-20 flex items-center gap-0.5 whitespace-nowrap rounded-full border px-1.5 py-0.5 font-black text-[11px] leading-none shadow-xs"
       >
-        {lateCard(card, nowMs) ? (
-          <img
-            src={lateIcon}
-            alt=""
-            className="h-4 w-4 rounded-full bg-white"
-          />
-        ) : (
-          <Clock3 className="h-3 w-3" />
-        )}
+        <Clock3 className="h-3 w-3" />
         待ち {minutes}分
       </span>
     )

@@ -86,7 +86,7 @@ export default function App() {
       Boolean(selection.scheduled),
   });
   const commentNotices = useCommentNotices(session.comments, viewed.label);
-  // 未割当の欄の「未完了」のタブ（まだ提供していない注文。15 分超・新しいコメントはタブに件数の印）と、コメントにスタンプで返す
+  // 未割当の欄の「未提供」のタブ（まだ提供していない注文。15 分超・新しいコメントはタブに件数の印）と、コメントにスタンプで返す
   const unfinished = useUnfinishedTab({
     orders: session.emergency.orders,
     cards: session.cards,
@@ -140,6 +140,7 @@ export default function App() {
           timeStr={session.timeLabel}
           counts={session.counts}
           backlog={session.backlog}
+          unserved={unfinished.rows}
           onFindOrder={(orderNo) => selection.openSearch(String(orderNo))}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
@@ -319,7 +320,7 @@ export default function App() {
       )}
     </div>
   );
-  // コメントの中身（右下・未完了の行・パネル）の下に、スタンプで返すボタンを出す
+  // コメントの中身（右下・未提供の行・パネル）の下に、スタンプで返すボタンを出す
   return (
     <StampReplyContext.Provider value={stampReply}>
       {page}

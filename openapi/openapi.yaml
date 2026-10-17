@@ -337,7 +337,7 @@ paths:
   /api/printer-settings:
     get:
       summary: プリンター設定取得
-      description: ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+      description: ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
       operationId: getPrinterSettings
       responses:
         '200':
@@ -348,7 +348,7 @@ paths:
                 $ref: '#/components/schemas/PrinterSettingsResponse'
     put:
       summary: プリンター設定の更新
-      description: 全レジで共通。両方の IP アドレスをまとめて置き換える
+      description: 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
       operationId: updatePrinterSettings
       requestBody:
         required: true
@@ -2561,11 +2561,27 @@ components:
           type: string
           pattern: '^#[0-9a-fA-F]{6}$'
           example: "#bfdbfe"
+    ReceiptPrinterModel:
+      type: string
+      description: |
+        レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+        tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+      enum:
+        - tm_l90
+        - tm_m30
+      x-enum-varnames:
+        - ReceiptPrinterModelTmL90
+        - ReceiptPrinterModelTmM30
+      # 画面に出す名前。POS（openapiEnumLabels）はここに合わせる
+      x-enum-descriptions:
+        - TM-L90
+        - TM-m30
     PrinterSettingsResponse:
       type: object
       required:
         - label_printer_ip
         - receipt_printer_ip
+        - receipt_printer_model
       properties:
         label_printer_ip:
           type: string
@@ -2575,11 +2591,14 @@ components:
           type: string
           description: レシート・領収書用のプリンターの IPv4 アドレス
           example: "192.168.77.3"
+        receipt_printer_model:
+          $ref: '#/components/schemas/ReceiptPrinterModel'
     PrinterSettingsUpdateRequest:
       type: object
       required:
         - label_printer_ip
         - receipt_printer_ip
+        - receipt_printer_model
       properties:
         label_printer_ip:
           type: string
@@ -2589,6 +2608,8 @@ components:
           type: string
           description: レシート・領収書用のプリンターの IPv4 アドレス
           example: "192.168.77.3"
+        receipt_printer_model:
+          $ref: '#/components/schemas/ReceiptPrinterModel'
     CashierStateResponse:
       type: object
       required:

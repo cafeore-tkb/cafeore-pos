@@ -6,6 +6,7 @@ import {
   type WithId,
   getDiscountOrderStatus,
 } from "@cafeore/common";
+import { isSameKeySet, menuKeyChord } from "~/lib/menuKey";
 import {
   type CashierSplit,
   emptySplit,
@@ -156,6 +157,22 @@ export const addLine = (
     nextKey: draft.nextKey + 1,
     selected: draft.lines.length,
   };
+};
+
+/**
+ * 同時押しの商品を足す。同時押しの途中で先に押したキーで足した行（replaceLineKeys）は、
+ * 同時押しの商品に置き換える（消してから足す）
+ */
+export const addChordLine = (
+  draft: CashierDraft,
+  menu: WithId<MenuEntity>,
+  replaceLineKeys: readonly number[],
+): CashierDraft => {
+  if (!canEditLines(draft)) return draft;
+  const lines = draft.lines.filter(
+    (line) => !replaceLineKeys.includes(line.key),
+  );
+  return addLine({ ...draft, lines }, menu);
 };
 
 /** 行を削除する（一覧から消す。戻すときはもう一度足す）。選んでいた行は外す */
@@ -436,12 +453,17 @@ export type CashierKeyIntent =
   | { type: "update"; draft: CashierDraft }
   | { type: "openAssign" }
   | { type: "openMemo" }
-  /** 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る） */
-  | { type: "goPay" }
+  /**
+   * 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る）。
+   * square があれば、進んだらその決済手段で決済を始める（決済手段のキー）
+   */
+  | { type: "goPay"; square?: SquarePaymentType }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
   | { type: "submitCash" }
   | { type: "startSquare"; paymentType: SquarePaymentType }
+  /** 決済手段のキーで選んだ Square の決済手段が今使えない（知らせる） */
+  | { type: "paymentUnavailable"; paymentType: SquarePaymentType }
   /** 会計の段階の Esc。小計分割をやめる、でなければ会計をやめて入れる段階に戻る */
   | { type: "leavePay" }
   | { type: "reset" };
@@ -451,6 +473,12 @@ type KeyContext = {
   menus: readonly WithId<MenuEntity>[];
   /** 会計の段階で ↑↓ で選べる決済手段 */
   payments: readonly CashierPayment[];
+  /** 押しているキー（このキーも含む）。2 つ以上で同時押しの商品と照らし合わせる */
+  held?: readonly string[];
+  /** 押しているキーで足した行。同時押しがそろったら同時押しの商品に置き換える */
+  heldLineKeys?: readonly number[];
+  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さない */
+  repeat?: boolean;
 };
 
 const NONE: CashierKeyIntent = { type: "none" };
@@ -462,7 +490,8 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
 /**
  * レジの画面で押したキーを、何をするかに直す
  *
- * - 商品キー: 商品を足す（入れる段階だけ）
+ * - 商品キー: 商品を足す（入れる段階だけ）。同時押し（「a+s」）は、押しているキーがそろったときに足し、
+ *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
  *   選んでいなければ、入れる段階は引換券番号（3 桁で備考に移る）、会計の段階は受取金額
  * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
@@ -476,8 +505,26 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
 export const cashierKeyIntent = (
   draft: CashierDraft,
   key: string,
-  { menus, payments }: KeyContext,
+  {
+    menus,
+    payments,
+    held = [key],
+    heldLineKeys = [],
+    repeat = false,
+  }: KeyContext,
 ): CashierKeyIntent => {
+  // 同時押しは、そのキーのどれかを押したときだけ（Shift などを押し足したときは足さない）
+  if (held.length >= 2 && held.includes(key)) {
+    const chordMenu = menus.find((candidate) => {
+      const chord = menuKeyChord(candidate.key);
+      return chord !== null && isSameKeySet(chord, held);
+    });
+    if (chordMenu) {
+      return draft.step === "entry" && !repeat
+        ? update(addChordLine(draft, chordMenu, heldLineKeys))
+        : NONE;
+    }
+  }
   const menu = menus.find((candidate) => candidate.key === key);
   if (menu) {
     return draft.step === "entry" ? update(addLine(draft, menu)) : NONE;
@@ -537,6 +584,58 @@ export const cashierKeyIntent = (
     case "Escape":
       return draft.step === "pay" ? { type: "leavePay" } : { type: "reset" };
     default:
-      return { type: "ignore" };
+      // 同時押しに使うキーは、1 つだけでも既定の動き（Firefox の / の検索など）を止める
+      return menus.some((candidate) =>
+        menuKeyChord(candidate.key)?.includes(key),
+      )
+        ? NONE
+        : { type: "ignore" };
   }
+};
+
+/**
+ * 決済手段のキー（Alt と一緒に押す。キーパッドの決済のボタン）。左から順にヒントに出す。
+ * 配列や Option で出る文字が変わらないよう、KeyboardEvent.code（キーの位置）で引く
+ */
+export const PAYMENT_KEYS: readonly {
+  code: string;
+  payment: CashierPayment;
+}[] = [
+  { code: "KeyC", payment: "cash" },
+  { code: "KeyT", payment: "CARD_PRESENT" },
+  { code: "KeyQ", payment: "QR_CODE" },
+];
+
+/**
+ * Alt と一緒に押したキー（code）を、何をするかに直す。決済手段のキーは押したらすぐ決済を始める
+ *
+ * - 入れる段階: 一括会計に進む。Square の決済手段なら、進んだらその手段で決済を始める
+ * - 会計の段階: 現金は選ぶだけ（受取金額を入れて Enter で確定）、Square の決済手段は決済を始める
+ * - 今使えない Square の決済手段（端末が決まっていない・つながっていないなど）は知らせる
+ * - 押しっぱなしの繰り返し（keydown の repeat）は何もしない（決済を二重に始めない）
+ */
+export const cashierPaymentKeyIntent = (
+  draft: CashierDraft,
+  code: string,
+  { payments, repeat = false }: Pick<KeyContext, "payments" | "repeat">,
+): CashierKeyIntent => {
+  const payment = PAYMENT_KEYS.find((key) => key.code === code)?.payment;
+  if (payment === undefined) {
+    return { type: "ignore" };
+  }
+  if (repeat) {
+    return NONE;
+  }
+  if (draft.step === "entry") {
+    if (!canGoPay(draft)) return NONE;
+    return payment === "cash"
+      ? { type: "goPay" }
+      : { type: "goPay", square: payment };
+  }
+  if (payment === "cash") {
+    return update(setPayment(draft, "cash"));
+  }
+  return payments.includes(payment)
+    ? { type: "startSquare", paymentType: payment }
+    : { type: "paymentUnavailable", paymentType: payment };
 };

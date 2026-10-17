@@ -21,6 +21,7 @@ import {
 } from "~/label/infra/epos";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
+import { isModifierKey } from "~/lib/menuKey";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
@@ -38,6 +39,7 @@ import {
   canAssignSelected,
   canGoPay,
   cashierKeyIntent,
+  cashierPaymentKeyIntent,
   clearDigits,
   couponStatus,
   deleteDigit,
@@ -81,6 +83,15 @@ import {
 } from "../functional/cashierSplit";
 import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
 import type { ConnectionIssue } from "../functional/connectionIssues";
+import {
+  type HeldKeys,
+  emptyHeldKeys,
+  heldKeyValues,
+  heldLineKeys,
+  pressKey,
+  releaseKey,
+  rememberAddedLine,
+} from "../functional/heldKeys";
 import { refundSquareOrderAutomatically } from "../functional/refundSquareOrderAutomatically";
 import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
@@ -140,7 +151,7 @@ type props = {
   squareEnabled: boolean;
   /** このレジで使う Square 端末。決まっていなければ Square のボタンを出さない */
   squareDevice: SquareDeviceSelection;
-  /** つなぐプリンター（ラベル用・レシート用）の IP アドレス */
+  /** つなぐプリンター（ラベル用・レシート用）の IP アドレスと、レシート用のプリンターの機種 */
   printerAddresses: PrinterSettings;
   /** 注文を裏で送る。onSaved は、すぐに送って保存できたときに呼ぶ */
   submitPayload: (
@@ -155,10 +166,9 @@ type props = {
   syncOrder: (order: OrderEntity) => void;
 };
 
-/** 会計の欄に出す Square の決済手段（左から順） */
+/** 会計の欄に出す Square の決済手段（左から順）。電子マネー（FELICA_ALL）は使わない */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
   "CARD_PRESENT",
-  "FELICA_ALL",
   "QR_CODE",
 ];
 const NO_SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [];
@@ -321,13 +331,15 @@ const CashierV2 = ({
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
   );
-  // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る
+  // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
+  // 機種が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;
   const receiptPrinter = useReceiptPrinter(
     useMemo(
       () => eposPrinterAt(receiptPrinterIp, RECEIPT_EPOS_PRINTER_CONFIG),
       [receiptPrinterIp],
     ),
+    printerAddresses.receipt_printer_model,
   );
 
   /**
@@ -757,6 +769,53 @@ const CashierV2 = ({
     startSubtotal((c) => beginRest(c, discountCups, discountPerCup));
   }, [store, startSubtotal, discountCups, discountPerCup]);
 
+  /**
+   * 決済手段のキーで選んだ Square の決済手段が、今は使えないことを知らせる。
+   * 理由は canStartSquare・payments と同じ順に見る
+   */
+  const warnSquareUnavailable = useCallback(
+    (paymentType: SquarePaymentType) => {
+      const reason =
+        squareDeviceId === null
+          ? "Square の端末が決まっていません"
+          : !canSaveNow
+            ? "つながっていません（現金ならオフラインでも払えます）"
+            : due < 1
+              ? "請求額が 0 円です。現金で確定してください"
+              : "今は始められません";
+      toast.warning(
+        `${squarePaymentTypeLabel[paymentType]}は使えません：${reason}`,
+      );
+    },
+    [squareDeviceId, canSaveNow, due],
+  );
+
+  // 入れる段階で決済手段のキー（Alt+T など）を押したら、会計の段階に進んでから決済を始める
+  // （今払う額は、進んで小計を作ってから決まるので）
+  const [queuedSquare, setQueuedSquare] = useState<SquarePaymentType | null>(
+    null,
+  );
+  useEffect(() => {
+    if (queuedSquare === null) {
+      return;
+    }
+    setQueuedSquare(null);
+    if (!paying) {
+      return;
+    }
+    if (payments.includes(queuedSquare)) {
+      startSquarePayment(queuedSquare);
+    } else {
+      warnSquareUnavailable(queuedSquare);
+    }
+  }, [
+    queuedSquare,
+    paying,
+    payments,
+    startSquarePayment,
+    warnSquareUnavailable,
+  ]);
+
   /** 個別小計。選んだ商品の小計を会計する */
   const startItemsSubtotal = useCallback(
     (keys: number[]) =>
@@ -876,6 +935,27 @@ const CashierV2 = ({
     }
   }, [newOrder]);
 
+  // 押しているキー（同時押しの商品のため）。離したキーは、レジのキー操作を使わない間も忘れる
+  const heldKeysRef = useRef<HeldKeys>(emptyHeldKeys());
+  useEffect(() => {
+    const release = (event: KeyboardEvent) => {
+      heldKeysRef.current = releaseKey(
+        heldKeysRef.current,
+        event.code || event.key,
+      );
+    };
+    // ほかのウィンドウに移ると keyup が届かないので、全部離したことにする
+    const releaseAll = () => {
+      heldKeysRef.current = emptyHeldKeys();
+    };
+    window.addEventListener("keyup", release);
+    window.addEventListener("blur", releaseAll);
+    return () => {
+      window.removeEventListener("keyup", release);
+      window.removeEventListener("blur", releaseAll);
+    };
+  }, []);
+
   // レジのキー操作。ダイアログ・決済中・過去の注文を見ている間は使わない
   useEffect(() => {
     if (
@@ -887,17 +967,34 @@ const CashierV2 = ({
       return;
     }
     const handler = (event: KeyboardEvent) => {
-      // Shift は商品キー（* # など）に使うので見ない
-      if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
+      // Shift は商品キー（* # など）に使うので見ない。Alt は決済手段のキー（Alt+C など）に使う
+      if (event.isComposing || event.metaKey || event.ctrlKey) {
         return;
       }
       if (isOutsideRegister(event.target)) {
         return;
       }
-      const intent = cashierKeyIntent(viewDraft, event.key, {
-        menus: items ?? [],
-        payments,
-      });
+      // Alt と一緒に押したキー（決済手段のキー）は、同時押しの商品には数えない
+      if (!event.altKey && !isModifierKey(event.key)) {
+        heldKeysRef.current = pressKey(
+          heldKeysRef.current,
+          event.code || event.key,
+          event.key,
+        );
+      }
+      const held = heldKeysRef.current;
+      const intent = event.altKey
+        ? cashierPaymentKeyIntent(viewDraft, event.code, {
+            payments,
+            repeat: event.repeat,
+          })
+        : cashierKeyIntent(viewDraft, event.key, {
+            menus: items ?? [],
+            payments,
+            held: heldKeyValues(held),
+            heldLineKeys: heldLineKeys(held),
+            repeat: event.repeat,
+          });
       if (intent.type === "ignore") {
         return;
       }
@@ -906,6 +1003,11 @@ const CashierV2 = ({
       switch (intent.type) {
         case "update":
           updateDraft(() => intent.draft);
+          heldKeysRef.current = rememberAddedLine(
+            heldKeysRef.current,
+            viewDraft,
+            intent.draft,
+          );
           return;
         case "openAssign":
           openAssign();
@@ -915,6 +1017,9 @@ const CashierV2 = ({
           return;
         case "goPay":
           startPayment();
+          if (intent.square !== undefined) {
+            setQueuedSquare(intent.square);
+          }
           return;
         case "exactReceived":
           updateDraft((c) => setExactReceived(c, due));
@@ -924,6 +1029,9 @@ const CashierV2 = ({
           return;
         case "startSquare":
           startSquarePayment(intent.paymentType);
+          return;
+        case "paymentUnavailable":
+          warnSquareUnavailable(intent.paymentType);
           return;
         case "leavePay":
           leavePay();
@@ -964,6 +1072,7 @@ const CashierV2 = ({
     startPayment,
     submitCash,
     startSquarePayment,
+    warnSquareUnavailable,
     leavePay,
     resetAll,
   ]);

@@ -8,7 +8,7 @@ import { useOutsidePress } from "./useOutsidePress";
 
 /**
  * ドリッパーのカード（管制盤 A・C・D）の上に出す操作（logic/cardActions）。開くのはいつも 1 枚。
- * カードを押すと開き、もう一度押すか ✕・外を押すと閉じる（外を押した click はそのまま届けるので、ほかのカードを押せばそのカードが開く）。
+ * カードを押すと開き、もう一度押すか外を押すと閉じる（外を押した click はそのまま届けるので、ほかのカードを押せばそのカードが開く）。
  * アイコンを押すと閉じてから、盤面の操作（onRun）・入れ直しのパネル（onEmergency）・右下のコメント（onComments）を呼ぶ
  */
 export const useCardMenu = ({
@@ -44,7 +44,7 @@ export const useCardMenu = ({
       setOpenKey(null);
       if (action === "emergency") onEmergency(card);
       else if (action === "comment") onComments(orderLabel(card));
-      else if (action !== "close") onRun(card, action);
+      else onRun(card, action);
     },
   };
 };

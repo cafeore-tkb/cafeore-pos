@@ -75,12 +75,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -839,6 +839,13 @@ export interface components {
       /** @example #bfdbfe */
       color: string;
     };
+    /**
+     * @description レシート用のプリンターの機種。レシート・領収書の画像を、この機種の 58mm の紙の印字幅に合わせて描く。
+     * tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）
+     *
+     * @enum {string}
+     */
+    ReceiptPrinterModel: "tm_l90" | "tm_m30";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -850,6 +857,7 @@ export interface components {
        * @example 192.168.77.3
        */
       receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -862,6 +870,7 @@ export interface components {
        * @example 192.168.77.3
        */
       receipt_printer_ip: string;
+      receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1665,7 +1674,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレス。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレスと、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1679,7 +1688,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスをまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスと機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {

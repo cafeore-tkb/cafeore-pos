@@ -184,7 +184,7 @@ export const useOrderSearch = ({
     pending: digits !== searched,
     press,
     finish,
-    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未完了の行）。盤面にカードが無ければ選ぶだけ */
+    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未提供の行）。盤面にカードが無ければ選ぶだけ */
     select: (orderNo: number) => {
       const found = findOrder({ ...board, orderNo });
       const card = found && focusCard(found);

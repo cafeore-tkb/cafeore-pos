@@ -16,4 +16,11 @@ describe("[unit] openapiEnumLabels", () => {
       cup: "カップ",
     });
   });
+
+  test("レシート用のプリンターの機種の名前", () => {
+    expect(openapiEnumLabels("ReceiptPrinterModel")).toEqual({
+      tm_l90: "TM-L90",
+      tm_m30: "TM-m30",
+    });
+  });
 });

@@ -32,7 +32,7 @@ import {
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
 // どちらも未割当のカードだけを、注文番号の行（logic/cards の unassignedRows）にまとめる。長く待っているカードには待ち時間の札を付ける。
-// unfinished を渡すと（操作の画面）、見出しを「未割当」「未完了」のタブにし、「未完了」ではまだ提供していない注文の一覧（UnfinishedList）を出す。
+// unfinished を渡すと（操作の画面）、見出しを「未割当」「未提供」のタブにし、「未提供」ではまだ提供していない注文の一覧（UnfinishedList）を出す。
 // カードはなぞると掴むので、スクロールはスクロールバー（ScrollArea）か、カードの無い所をなぞる。
 
 /**
@@ -145,7 +145,7 @@ type UnassignedProps = {
   pick: UnassignedPick;
   /** 閲覧だけの画面。カードを押しても開かず、動かさない */
   readOnly?: boolean;
-  /** 「未完了」のタブ（操作の画面だけ） */
+  /** 「未提供」のタブ（操作の画面だけ） */
   unfinished?: UnfinishedView;
 };
 
