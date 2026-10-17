@@ -1,6 +1,7 @@
 import { orderRepository } from "@cafeore/common";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
+import { beginCaosReply, endCaosReply } from "../logic/caosReplies";
 
 /**
  * コメントにスタンプで返す（その注文にマスターのコメントとして、スタンプの文字を付ける。POST /api/orders/{id}/comments）。
@@ -9,18 +10,30 @@ import { toast } from "sonner";
  */
 export const useStampReply = (onReply: (orderId: string) => void) => {
   const [sending, setSending] = useState(false);
+  const busy = useRef(false);
   return {
     /** 送っているあいだ */
     sending,
     send: async (orderId: string, stamp: string) => {
-      if (sending) return;
+      if (busy.current || !stamp.trim()) return false;
+      busy.current = true;
       setSending(true);
+      const token = beginCaosReply(orderId, stamp);
       try {
-        await orderRepository.addComment(orderId, "master", stamp);
+        const comment = await orderRepository.addComment(
+          orderId,
+          "master",
+          stamp,
+        );
+        endCaosReply(token, comment);
         onReply(orderId);
+        return true;
       } catch {
-        toast.error(`スタンプ「${stamp}」を送れませんでした`);
+        endCaosReply(token);
+        toast.error("コメントを送れませんでした。もう一度送信してください");
+        return false;
       } finally {
+        busy.current = false;
         setSending(false);
       }
     },

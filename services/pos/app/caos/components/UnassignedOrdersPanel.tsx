@@ -23,6 +23,7 @@ import {
   OrderCard,
   SplitCupButtons,
 } from "./OrderCard";
+import { OrderCommentBadge } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
 import {
   UnassignedHeading,
@@ -222,7 +223,14 @@ export const UnassignedStrip: React.FC<
                 className="flex shrink-0 flex-col gap-0.5"
               >
                 <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
-                  {orderNoLabel(orderNo)}
+                  <span className="flex items-center gap-1">
+                    {orderNoLabel(orderNo)}
+                    <OrderCommentBadge
+                      cards={cards}
+                      looks={looks}
+                      orderNo={orderNo}
+                    />
+                  </span>
                   {emergency && (
                     <span className="font-sans text-[12px] text-red-600">
                       緊急
@@ -289,8 +297,15 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
               key={`${emergency}:${orderNo}`}
               className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
             >
-              <span className="flex w-11 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
-                {orderNoLabel(orderNo)}
+              <span className="flex w-20 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
+                <span className="flex items-center gap-1">
+                  {orderNoLabel(orderNo)}
+                  <OrderCommentBadge
+                    cards={cards}
+                    looks={looks}
+                    orderNo={orderNo}
+                  />
+                </span>
                 {emergency && (
                   <span className="mt-1 font-sans text-[11px] text-red-600">
                     緊急
