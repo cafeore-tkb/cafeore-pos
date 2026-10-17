@@ -19,7 +19,6 @@ import {
   eposCertificateUrl,
   eposPrinterAt,
 } from "~/label/infra/epos";
-import { orderLabelJob } from "~/label/order-label";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
 import { isModifierKey } from "~/lib/menuKey";
@@ -165,9 +164,6 @@ type props = {
   ) => Promise<WithId<OrderEntity>>;
   syncOrder: (order: OrderEntity) => void;
 };
-
-/** シールの中身が同じかを比べるためのキー（刷る印刷データそのもの） */
-const labelKey = (order: OrderEntity) => JSON.stringify(orderLabelJob(order));
 
 /** 会計の欄に出す Square の決済手段（左から順）。電子マネー（FELICA_ALL）は使わない */
 const SQUARE_PAYMENT_TYPES: readonly SquarePaymentType[] = [
@@ -344,28 +340,13 @@ const CashierV2 = ({
   );
 
   /**
-   * 注文のシールを刷る。このレジで先に刷った、まだ登録していない注文と同じ中身なら刷り直さない
-   * （一括会計・Square の決済で先に刷ったシールを、確定・会計し直しのときにそのまま使う）。
-   * 刷ったら番号と中身を下書き（printedLabel）に覚え、番号は確定まで変えない。注文を消したとき・登録したときに忘れる。
-   * 決済の途中（非同期）からも呼ぶので、下書きはストアから今の値を読む。
+   * 注文のシールを刷る。刷るのは会計を終えて注文を送るとき（注文全体を払い終えたとき）だけで、
+   * 一括会計・Square の決済を始めたとき・先払いの途中では刷らない
    */
-  const printOrderLabel = useCallback(
-    (order: OrderEntity) => {
-      const key = labelKey(order);
-      if (store.get(cashierDraftAtom).printedLabel?.key === key) {
-        return;
-      }
-      printer.printOrderLabel(order);
-      updateDraft((current) => ({
-        ...current,
-        printedLabel: { orderId: order.orderId, key },
-      }));
-    },
-    [store, printer, updateDraft],
-  );
+  const printOrderLabel = printer.printOrderLabel;
 
-  // 先にシールを刷った注文は、シールの番号のまま確定する（別のレジが送って次の番号が進んでも変えない）
-  const printedOrderId = draft.printedLabel?.orderId ?? null;
+  // 先払いのレシートを刷った注文は、レシートの番号（引換券番号）のまま確定する（別のレジが送って次の番号が進んでも変えない）
+  const fixedOrderId = draft.fixedOrderId;
   /**
    * FIXME #412 useEffect内でstateを更新している
    * https://ja.react.dev/learn/you-might-not-need-an-effect#notifying-parent-components-about-state-changes
@@ -373,9 +354,9 @@ const CashierV2 = ({
   useEffect(() => {
     dispatchOrder({
       type: "updateOrderId",
-      orderId: printedOrderId ?? nextOrderId,
+      orderId: fixedOrderId ?? nextOrderId,
     });
-  }, [printedOrderId, nextOrderId, dispatchOrder]);
+  }, [fixedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
   const coupon = useMemo(
@@ -414,44 +395,6 @@ const CashierV2 = ({
     setDialog(null);
     setPrepayDialog(null);
   }, [dispatchOrder, setDraft]);
-
-  /**
-   * 先に刷ったシールを取り消す。取り消しのシールを刷り、覚えていたシールを忘れる。
-   * skipOrderId なら、その番号は使わずに次の番号へ進める（「取消 No.N」のあとに同じ No.N のシールが出ないように）
-   */
-  const cancelPrintedLabel = useCallback(
-    (skipOrderId: boolean) => {
-      const printed = store.get(cashierDraftAtom).printedLabel;
-      if (printed === null) {
-        return;
-      }
-      const canceled = newOrder.clone();
-      canceled.orderId = printed.orderId;
-      printer.printCancelLabel(canceled);
-      updateDraft((current) => ({ ...current, printedLabel: null }));
-      if (skipOrderId) {
-        markOrderIdIssued(printed.orderId);
-        if (manualOrderId !== null) {
-          setOrderIdOverride(printed.orderId + 1);
-        }
-      }
-    },
-    [
-      store,
-      newOrder,
-      printer,
-      updateDraft,
-      markOrderIdIssued,
-      manualOrderId,
-      setOrderIdOverride,
-    ],
-  );
-
-  /** 入力中の注文を消す。先に刷ったシールがあれば取り消しのシールを刷る */
-  const discardOrder = useCallback(() => {
-    cancelPrintedLabel(true);
-    resetAll();
-  }, [cancelPrintedLabel, resetAll]);
 
   const itemCount = newOrder.menus.length;
   const billing = newOrder.billingAmount;
@@ -537,7 +480,8 @@ const CashierV2 = ({
   /**
    * 会計中の小計で受け取った（一括で払う注文でないとき）。その分のレシートを刷り、受け取った分として覚える。
    * 注文全体を払い終えたら、支払いを全部付けて注文を送り、支払いの内訳とお釣りを出す。
-   * まだ残っていれば、小計の残り（金額で分けた）か残りの商品（個別小計を払い終えた）を出す。
+   * まだ残っていれば、小計の残り（金額で分けた）か残りの商品（個別小計を払い終えた）を出し、
+   * レシートに載せた番号（引換券番号）で確定するよう、番号を固定する。
    * 下書きは決済の途中（非同期）からも呼ぶので、ストアから今の値を読む
    */
   const completeTender = useCallback(
@@ -594,7 +538,10 @@ const CashierV2 = ({
         });
         return;
       }
-      updateDraft(() => after);
+      updateDraft(() => ({
+        ...after,
+        fixedOrderId: after.fixedOrderId ?? order.orderId,
+      }));
       resyncDisplay();
       setPrepayDialog(
         after.split.current !== null
@@ -676,26 +623,16 @@ const CashierV2 = ({
   );
 
   /**
-   * 端末に決済画面を出せた Square の決済と、そのとき先に印刷したシールの注文番号。
-   * 「未登録の Square 決済」から結び付けるときに、同じシールを刷り直さないために使う。
-   */
-  const prePrintedRef = useRef(new Map<string, number>());
-
-  /**
    * Square で支払い済みの注文を送る。送れたら true
    *
    * 注文（order）を、その注文番号のまま送る。お預かりは請求額と同じにする。
-   * 登録できたと分かってから入力を消し、レシートを刷る。print なら、そのときシールも印刷する。
+   * 登録できたと分かってから入力を消し、シールとレシートを刷る。
    * 登録に失敗したら reject する（お金は受け取っているので、呼ぶ側で支払い済みのまま送り直せるようにする）。
    * 「常に返金（キャンセルしない）」なら、登録できたあとに裏で返金する（注文は残す）。返金できなくても
    * 登録は済んでいるので reject しない（送り直すと断られるだけ）。結果はトーストで知らせる。
    */
   const submitSquareOrder = useCallback(
-    async (
-      checkout: SquareCheckout,
-      order: OrderEntity,
-      print: boolean,
-    ): Promise<boolean> => {
+    async (checkout: SquareCheckout, order: OrderEntity): Promise<boolean> => {
       if (!canSaveNow || order.menus.length === 0) {
         return false;
       }
@@ -705,9 +642,7 @@ const CashierV2 = ({
       if (autoSquareRefund) {
         void refundSquareOrderAutomatically(savedOrder);
       }
-      if (print) {
-        printOrderLabel(submitOne);
-      }
+      printOrderLabel(submitOne);
       receiptPrinter.printReceipt(submitOne, {
         method: "square",
         paymentType: checkout.payment_type,
@@ -732,23 +667,16 @@ const CashierV2 = ({
   /** 小計の分（一括で払う注文でない）を Square で払っている。決済が終わったら受け取った分として覚える */
   const subtotalSquareRef = useRef(false);
 
-  // シールは端末に決済画面が出た時点で先に印刷し、支払いを待つ間に作り始められるようにする。
-  // 登録はシールと同じ番号（決済を始めた時点の番号）で行う。お金を受け取らずに終わっても
-  // 印刷はしない（ダイアログで知らせる）。
-  // 小計の分を払うときは、決済するのはその額だけ。シールは注文全体のものを刷り、
-  // 支払いが確定したら受け取った分として覚える（注文全体を払い終えたら注文を送る）。
+  // 注文全体を払うときは、支払いが確定して注文を登録できたらシールを刷る。
+  // 番号は決済を始めた時点ではなく今の番号で登録する（支払いを待つ間に別のレジが同じ番号で送っても重ならないように）。
+  // 小計の分を払うときは、決済するのはその額だけ。支払いが確定したら受け取った分として覚え、
+  // 注文全体を払い終えたら注文を送ってシールを刷る（completeTender）。
   const squarePayment = useSquarePayment({
-    onStarted: (checkout, order) => {
-      if (subtotalSquareRef.current) {
-        printOrderLabel(store.get(editingOrderAtom));
-        return;
-      }
-      prePrintedRef.current.set(checkout.id, order.orderId);
-      printOrderLabel(order);
-    },
     onPaid: async (checkout, order) => {
       if (!subtotalSquareRef.current) {
-        return submitSquareOrder(checkout, order, false);
+        const paid = order.clone();
+        paid.orderId = store.get(editingOrderAtom).orderId;
+        return submitSquareOrder(checkout, paid);
       }
       subtotalSquareRef.current = false;
       completeTender(
@@ -766,25 +694,14 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
-  /**
-   * 「未登録の Square 決済」を、入力中の注文で登録する。
-   * このレジで先にシールを印刷した決済なら、刷り直さず、シールと同じ番号で登録する。
-   * そうでなければ（別のレジで決済した・画面を開き直したなど）、今の番号で登録して印刷する。
-   */
+  /** 「未登録の Square 決済」を、入力中の注文（今の番号）で登録し、シールとレシートを刷る */
   const submitUnlinkedSquareOrder = useCallback(
     (checkout: SquareCheckout) => {
-      const prePrintedOrderId = prePrintedRef.current.get(checkout.id);
-      const order = newOrder.clone();
-      if (prePrintedOrderId !== undefined) {
-        order.orderId = prePrintedOrderId;
-      }
-      submitSquareOrder(checkout, order, prePrintedOrderId === undefined).catch(
-        (error) => {
-          toast.error(
-            `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        },
-      );
+      submitSquareOrder(checkout, newOrder).catch((error) => {
+        toast.error(
+          `注文を送れませんでした: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     },
     [newOrder, submitSquareOrder],
   );
@@ -829,20 +746,16 @@ const CashierV2 = ({
   );
 
   /**
-   * 小計を作って会計の段階に進み、シールを先に刷る（Square と同じく、お金を受け取る間に
-   * 作り始められるように）。個別小計でも注文全体のシールを 1 回だけ刷る。
-   * 番号を決められない（オフラインで番号を付けていない）ときは、確定のときに刷る
+   * 小計を作って会計の段階に進む。シールはまだ刷らず、注文全体を払い終えて注文を送るときに刷る
+   * （個別小計・小計分割でも、注文全体のシールを最後に 1 回だけ刷る）
    */
   const startSubtotal = useCallback(
     (update: (draft: CashierDraft) => CashierDraft) => {
       updateDraft(update);
       setPrepayDialog(null);
       resyncDisplay();
-      if (canSubmitOrder) {
-        printOrderLabel(store.get(editingOrderAtom));
-      }
     },
-    [updateDraft, resyncDisplay, canSubmitOrder, printOrderLabel, store],
+    [updateDraft, resyncDisplay],
   );
 
   /** 一括会計・残りを会計。まだ払っていない商品を全部 1 つの小計にして会計する */
@@ -871,20 +784,16 @@ const CashierV2 = ({
   }, [canOpenItems]);
 
   /**
-   * 会計取消。会計をやめて入れる段階に戻る。先払いが無ければ、先に刷ったシールは取り消しの
-   * シールを刷って使わない（先払いがあれば同じ注文の続きなので、シールはそのまま使う）。
+   * 会計取消。会計をやめて入れる段階に戻る（シールはまだ刷っていない）。
    * 小計の途中まで払ったら、払い終えるか取り消すまで戻れない
    */
   const cancelPayment = useCallback(() => {
     if (!canLeavePayment(draft)) {
       return;
     }
-    if (!hasTenders(draft)) {
-      cancelPrintedLabel(true);
-    }
     updateDraft(leavePayment);
     resyncDisplay();
-  }, [draft, cancelPrintedLabel, updateDraft, resyncDisplay]);
+  }, [draft, updateDraft, resyncDisplay]);
 
   /** 会計の段階の Esc。小計分割中なら分割をやめ、でなければ会計取消 */
   const leavePay = useCallback(() => {
@@ -946,13 +855,17 @@ const CashierV2 = ({
     [],
   );
 
-  /** 番号を手で付け直す。先に刷ったシールの番号とずれるので、取り消しのシールを刷る */
+  /** 番号を手で付け直す。先払いのレシートで固定した番号があっても、手で付けた番号を使う */
   const overrideOrderId = useCallback(
     (orderId: number | null) => {
-      cancelPrintedLabel(false);
+      updateDraft((current) =>
+        current.fixedOrderId === null
+          ? current
+          : { ...current, fixedOrderId: null },
+      );
       setOrderIdOverride(orderId);
     },
-    [cancelPrintedLabel, setOrderIdOverride],
+    [updateDraft, setOrderIdOverride],
   );
 
   const openAssign = useCallback(() => {
@@ -1073,7 +986,7 @@ const CashierV2 = ({
           if (hasDraftInput(viewDraft)) {
             setDialog("reset");
           } else {
-            discardOrder();
+            resetAll();
           }
           return;
       }
@@ -1098,7 +1011,7 @@ const CashierV2 = ({
     submitCash,
     startSquarePayment,
     leavePay,
-    discardOrder,
+    resetAll,
   ]);
 
   const selectedLine =
@@ -1444,16 +1357,12 @@ const CashierV2 = ({
         title="取消"
         sub={`No.${newOrder.orderId}`}
         question="入力中の注文を消しますか？"
-        note={`${resetSummary} が消えます。消した注文は戻せません。${
-          draft.printedLabel
-            ? `先に刷った No.${draft.printedLabel.orderId} のシールは使わず、取り消しのシールを刷ります。`
-            : ""
-        }`}
+        note={`${resetSummary} が消えます。消した注文は戻せません。`}
         hint="Enter でやめる ・ 消すときは「消す」を押す（Tab で移って Enter）"
         confirmLabel="消す"
         // 戻せないので、押し間違いの Enter では消さない
         focus="cancel"
-        onConfirm={discardOrder}
+        onConfirm={resetAll}
         onClose={() => setDialog(null)}
       />
       <SquarePaymentDialog

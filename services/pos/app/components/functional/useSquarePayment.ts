@@ -39,18 +39,12 @@ export type SquarePaymentState = {
   /** 端末で受け取る額。ふつうは注文の請求額、個別小計・小計分割ではその小計（の一部）の額 */
   amount: number;
   checkout: SquareCheckout | null;
-  /** 端末に決済画面を出せた（onStarted を呼んだ） */
-  started: boolean;
   /** 進行中だった別の決済（phase が conflict のとき） */
   conflicting: SquareCheckout | null;
   message: string | null;
 };
 
 type Options = {
-  /**
-   * 端末に決済画面が出たときに 1 回だけ呼ぶ。支払いを待つ間にシールを先に印刷するのに使う。
-   */
-  onStarted: (checkout: SquareCheckout, order: OrderEntity) => void;
   /**
    * 支払いが確定したときに呼ぶ。注文を登録できたら true で解決する（ダイアログを閉じる）。
    * false か reject なら phase を paid に戻して、手で送り直せるようにする。
@@ -74,13 +68,11 @@ const cancelMessage = (checkout: SquareCheckout): string => {
 /**
  * Square Terminal での決済を進める
  *
- * 決済が先・注文が後。start で端末に決済画面を出し（出せたら onStarted）、完了するまで
+ * 決済が先・注文が後。start で端末に決済画面を出し、完了するまで
  * 問い合わせ続け、支払いが確定したら onPaid に注文を渡す。
  */
-export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
+export const useSquarePayment = ({ onPaid }: Options) => {
   const [state, setState] = useState<SquarePaymentState | null>(null);
-  const onStartedRef = useRef(onStarted);
-  onStartedRef.current = onStarted;
   const onPaidRef = useRef(onPaid);
   onPaidRef.current = onPaid;
 
@@ -170,16 +162,12 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
           paymentType: base.paymentType,
           orderNumber: base.order.orderId,
         });
-        // 送り直しで、もう終わった決済が返ってくることがある。取り消し済みなら始めない（印刷しない）
-        const started = checkout.outcome !== "failed";
+        // 送り直しで、もう終わった決済が返ってくることがある（applyCheckout で終わった状態にする）
         setState((prev) =>
           prev?.idempotencyKey === base.idempotencyKey
-            ? { ...prev, checkout, phase: "waiting", started }
+            ? { ...prev, checkout, phase: "waiting" }
             : prev,
         );
-        if (started) {
-          onStartedRef.current(checkout, base.order);
-        }
         applyCheckout(checkout);
       } catch (error) {
         if (error instanceof SquareCheckoutConflictError) {
@@ -229,7 +217,6 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
         order: order.clone(),
         amount,
         checkout: null,
-        started: false,
         conflicting: null,
         message: null,
       });
@@ -256,7 +243,6 @@ export const useSquarePayment = ({ onStarted, onPaid }: Options) => {
       ...state,
       idempotencyKey: crypto.randomUUID(),
       checkout: null,
-      started: false,
       conflicting: null,
       message: null,
     });

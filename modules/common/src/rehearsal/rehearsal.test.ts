@@ -28,15 +28,19 @@ import {
 const at = (sec: number) =>
   new Date(Date.parse("2025-11-02T01:00:00Z") + sec * 1000).toISOString();
 
+// 品目は「id:種類」で書く
 const order = (orderId: number, sec: number, items: string[]): RawOrder => ({
   orderId,
   createdAt: at(sec),
   readyAt: at(sec + 300),
-  items: items.map((id) => ({ id })),
+  items: items.map((item) => {
+    const [id, type] = item.split(":");
+    return { id, type };
+  }),
 });
 
 const params: GeneratorParams = {
-  version: 2,
+  version: 3,
   source: { dates: ["2025-11-02"], orders: 0 },
   binMinutes: 10,
   edges: [0.8, 1.0, 1.2],
@@ -47,8 +51,8 @@ const params: GeneratorParams = {
     [20, 30],
   ],
   baskets: [
-    { roles: { house_blend: 1 }, goods: 0, weight: 3 },
-    { roles: { ice_ore: 2 }, goods: 0, weight: 1 },
+    { types: { hot: 1 }, weight: 3 },
+    { types: { iceOre: 2 }, weight: 1 },
   ],
   days: [],
   items: [],
@@ -76,7 +80,9 @@ describe("[unit] rehearsal params", () => {
     order(
       i + 1,
       sec,
-      i % 3 === 0 ? ["30_ice_ore", "50_coaster"] : ["02_cafeore_brend"],
+      i % 3 === 0
+        ? ["30_ice_ore:iceOre", "50_coaster:others"]
+        : ["02_cafeore_brend:hot"],
     ),
   );
 
@@ -84,8 +90,8 @@ describe("[unit] rehearsal params", () => {
     const fitted = fitParams(
       [
         ...day,
-        { ...order(100, 1250, ["30_ice_ore"]), readyAt: null }, // 壊れたレコードは落とす
-        order(101, 86400, ["10_ice_coffee"]), // 対象外の日
+        { ...order(100, 1250, ["30_ice_ore:iceOre"]), readyAt: null }, // 壊れたレコードは落とす
+        order(101, 86400, ["10_ice_coffee:ice"]), // 対象外の日
       ],
       ["2025-11-02"],
     );
@@ -110,19 +116,19 @@ describe("[unit] rehearsal params", () => {
       {
         id: "02_cafeore_brend",
         name: "02_cafeore_brend",
-        role: "house_blend",
+        type: "hot",
         counts: { "2025": 14 },
       },
       {
         id: "30_ice_ore",
         name: "30_ice_ore",
-        role: "ice_ore",
+        type: "iceOre",
         counts: { "2025": 7 },
       },
       {
         id: "50_coaster",
         name: "50_coaster",
-        role: "goods",
+        type: "others",
         counts: { "2025": 7 },
       },
     ]);
@@ -131,8 +137,8 @@ describe("[unit] rehearsal params", () => {
   test("fitParams counts identical baskets together", () => {
     const fitted = fitParams(day, ["2025-11-02"]);
     expect(fitted.baskets).toEqual([
-      { roles: { house_blend: 1 }, goods: 0, weight: 14 },
-      { roles: { ice_ore: 1 }, goods: 1, weight: 7 },
+      { types: { hot: 1 }, weight: 14 },
+      { types: { iceOre: 1, others: 1 }, weight: 7 },
     ]);
   });
 
@@ -149,7 +155,7 @@ describe("[unit] rehearsal params", () => {
     expect(tagged.tagged.map((t) => t.gapSec)).toEqual([null, 60, null, 39]);
   });
 
-  test("fitParams stops on an unknown item id", () => {
+  test("fitParams stops on an item without a type", () => {
     expect(() =>
       fitParams([...day, order(100, 2400, ["99_unknown"])], ["2025-11-02"]),
     ).toThrow("99_unknown");
@@ -224,24 +230,9 @@ describe("[unit] rehearsal generator", () => {
 
   test("baskets are drawn in proportion to their weight", () => {
     const drawn = sampleBaskets(params, xoshiro128ss(3), 20000);
-    const share =
-      drawn.filter((b) => b.roles.house_blend === 1).length / drawn.length;
+    const share = drawn.filter((b) => b.types.hot === 1).length / drawn.length;
     expect(share).toBeGreaterThan(0.73);
     expect(share).toBeLessThan(0.77);
-  });
-
-  test("drinkCups counts cups but not goods", () => {
-    const withGoods: GeneratorParams = {
-      ...params,
-      baskets: [{ roles: { ice_ore: 2, house_blend: 1 }, goods: 1, weight: 1 }],
-    };
-    const [first] = generateOrders(withGoods, {
-      profile: [1.3],
-      durationMin: 1,
-      seed: 1,
-    });
-    expect(first.drinkCups).toBe(3);
-    expect(first.goods).toBe(1);
   });
 });
 

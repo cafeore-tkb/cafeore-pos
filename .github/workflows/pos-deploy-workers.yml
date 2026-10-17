@@ -234,6 +234,9 @@ jobs:
           # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
           LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
+          # 呼び出し画面の音声を作る ElevenLabs の鍵（worker/call-voice.ts）。
+          # Worker の secret の ELEVENLABS_API_KEY として、本番にもプレビューにも入れる。
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           set -uo pipefail
@@ -307,16 +310,33 @@ jobs:
           # 消えると中継が LB で 403 になり、POS が API に届かなくなる。
           # --secrets-file に書いていない secret は消えない（wrangler の挙動）。
           #
+          # ElevenLabs の鍵は本番の deploy でもプレビューの versions upload でも毎回入れる。
+          # 書かなかった secret は前のバージョンから引き継がれるので、片方だけで入れると
+          # もう片方に古い値が残る。どちらも同じ GitHub の secret から入れて揃える。
+          # 無ければ入れない（呼び出し画面は音声を流さず、チャイムだけになる）。
+          #
           # 値はコマンドラインに載せず、RUNNER_TEMP のファイル経由で渡して最後に消す。
-          secret_args=()
+          proxy_token=""
           if [ "$mode" = "deploy" ] && [ -n "$API_ORIGIN" ]; then
             if [ -z "$LB_PROXY_TOKEN" ]; then
               echo "::error::WORKERS_API_ORIGIN があるのに secret の LB_PROXY_TOKEN が無い。このままだと中継が LB で 403 になる"
               exit 1
             fi
+            proxy_token="$LB_PROXY_TOKEN"
+          fi
+          if [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::warning::secret の ELEVENLABS_API_KEY が無いので、呼び出し画面の音声は作れない（チャイムだけになる）"
+          fi
+          secret_args=()
+          if [ -n "$proxy_token" ] || [ -n "$ELEVENLABS_API_KEY" ]; then
             secrets_file="$RUNNER_TEMP/worker-secrets.json"
             trap 'rm -f "$secrets_file"' EXIT
-            (umask 077 && jq -n --arg token "$LB_PROXY_TOKEN" '{PROXY_TOKEN: $token}' > "$secrets_file")
+            (umask 077 && jq -n \
+              --arg proxy "$proxy_token" \
+              --arg eleven "$ELEVENLABS_API_KEY" \
+              '(if $proxy == "" then {} else {PROXY_TOKEN: $proxy} end)
+               + (if $eleven == "" then {} else {ELEVENLABS_API_KEY: $eleven} end)' \
+              > "$secrets_file")
             secret_args=(--secrets-file "$secrets_file")
           fi
 
@@ -326,7 +346,8 @@ jobs:
           else
             out=$(pnpm exec wrangler versions upload \
               --tag "pr-$PR_NUMBER" \
-              --message "PR #$PR_NUMBER ($GITHUB_SHA)" 2>&1) || status=$?
+              --message "PR #$PR_NUMBER ($GITHUB_SHA)" \
+              "${secret_args[@]}" 2>&1) || status=$?
           fi
 
           echo "$out"

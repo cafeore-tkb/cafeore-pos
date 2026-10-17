@@ -113,6 +113,60 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
 渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
 
+### 呼び出し画面の CM
+
+呼び出し画面（`/callscreen`）は、呼び出しが無い間は CM を全画面で流す。
+
+- 流すものは、トップの「マスタ設定」→「呼び出し画面の CM」（`/callscreen-cm`）で、**呼び出し画面を映す端末の**
+  ファイル（動画・画像。何個でも）を選ぶ。上から順に繰り返し流す（動画は最後まで、画像は決めた秒数だけ。1 つだけなら繰り返す）
+- 選んだファイルはどこにも上げず、保存もしない。**そのタブのメモリにだけ持つ**（`services/pos/app/lib/callscreen-cm.ts`）ので、
+  読み込み直す・タブを閉じると消える。呼び出し画面は設定の画面の「呼び出し画面を開く」から同じタブで開く（新しいタブでは流れない）
+- 選んでいなければ `services/pos/public/callscreen-cm.mp4` を流す（今は置いていない）。そこにも無ければロゴの画面を出す。
+  public に置くものは Workers の静的アセットなので 1 ファイル 25 MiB まで、リポジトリは public なので誰でもダウンロードできる
+- 流せないもの（壊れている、ブラウザが流せない形式。Chrome の HEVC の .mov など）は飛ばす。動画は H.264 の mp4 なら
+  Chrome・Edge・Safari で流せる。音は消して流す
+- 呼び出し画面を被せている間は止め、CM に戻ったら続きから流す
+
+### 呼び出しの音声（ElevenLabs・R2）
+
+呼び出し画面（`/callscreen`）は、ElevenLabs で作った音声で次の 2 つを読み上げる。重なったときは 1 件ずつ順に流す。
+
+| いつ | 読む文 | チャイム |
+|--|--|--|
+| 番号を呼んだとき | （順番が前後いたします。）N番のお客様、提供口までお越しください。 | 先に鳴らす |
+| CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた・積まれていたカードを担当し始めた）。1 つの注文につき最初の 1 回だけ | N番のお客様、ファーストにてドリップいたします。（よろしければぜひ、お近くでご覧ください。） | 鳴らさない（呼び出しと取り違えないため） |
+
+- 音声は POS の Worker の `/call-voice/call?order=N(&reordered=1)`・`/call-voice/drip?order=N&dripper=K` が返す
+  （`services/pos/worker/call-voice.ts`。ドリップの案内の括弧の中は `&invite=0` で省く）。文は Worker が決め、画面が渡すのは番号・「順番が前後するか」・ドリッパーの番号・括弧の中を省くかだけ。
+  決まった文しか読ませないので、作る音声の数には上限がある（番号は 1〜9999、ドリップの案内は 1 枚のカードの 2 注文まで）
+- 文は片（「N番のお客様、」「提供口までお越しください。」「順番が前後いたします。」「ファーストにてドリップいたします。」
+  「よろしければぜひ、お近くでご覧ください。」）に分けて作り、Worker がつないで 1 本の MP3 で返す（`worker/mp3.ts`。
+  片ごとの ID3 タグと Info ヘッダーを落としてフレームをつなぐ）。番号の片は呼び出しとドリップの案内で同じものを使う。
+  ドリッパーは画面の「1st」ではなく「ファースト」のように仮名で読ませる
+- 片は R2 のバケット `cafeore-call-voices`（Cloudflare のアカウント `cafeorepos`）に溜め、溜めてあれば ElevenLabs を呼ばない。
+  鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
+  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューで同じバケットを使う
+- 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
+  さらに、まだ呼んでいない注文の呼び出しの音声を、画面に見えた時点で先に作らせておく（番号の片が溜まるので、ドリップの案内も速くなる）
+- 呼ぶ注文より先に注文した注文（同じ日）がまだ待っている（準備完了でも提供済みでもない）ときは、冒頭に
+  「順番が前後いたします。」を付ける（`@cafeore/common` の `isCallOutOfOrder`）
+- ドリップの案内は 1 つの注文につき最初の 1 回だけ流す（2 杯を続けて・別のドリッパーで淹れても、2 回目からは流さない。
+  統合したカードで片方の注文はもう案内していれば、まだの注文の番号だけを読む）。緊急（入れ直し）のカード、もう呼んだ注文のカードでは流さない
+- 「よろしければぜひ、お近くでご覧ください。」は、前にそれを付けた案内から 1 分以内（立て続け）なら省く。付けた案内から数えるので、
+  続いている間も 1 分に 1 回は付く（`@cafeore/common` の `planDripAnnouncement`）
+- ElevenLabs の鍵は GitHub の secret `ELEVENLABS_API_KEY`。本番もプレビューもデプロイのたびに
+  `--secrets-file` で Worker の secret に入れる（書かなかった secret は前のバージョンから引き継がれるので、
+  片方だけで入れると古い値が残る）
+- 音声が取れないとき（鍵が無い、ElevenLabs が断った、ローカルの `react-router dev` には Worker が無い）は、
+  呼び出しはチャイムだけ、ドリップの案内は何も鳴らさない
+- Worker ごと手元で試すときは `pnpm pos build` のあと `services/pos` で `pnpm exec wrangler dev`
+  （R2 は手元の模擬になる。鍵は `.dev.vars` に `ELEVENLABS_API_KEY=...` と書く）
+- **バケットが無いと Worker のデプロイが失敗する。** はじめにダッシュボードで R2 を有効にし、
+  `pnpm exec wrangler r2 bucket create cafeore-call-voices` で作っておくこと
+- プレビューの URL（`preview_urls`）は PR を閉じても残る（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。
+  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。片の数は番号の幅で抑えてあるが、
+  ElevenLabs の利用枠が気になるなら、プレビューの URL も Access で守るか、`preview_urls` を止める
+
 ### backend（Artifact Registry → Cloud Run）
 
 `api-build` が `api/Dockerfile` からイメージを作り、Artifact Registry へ push する。
@@ -702,6 +756,7 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
 | `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
+| `ELEVENLABS_API_KEY` | Secrets | `pos-deploy-workers`。呼び出し画面の音声を作る ElevenLabs の鍵。本番の deploy にもプレビューの versions upload にも、Worker の secret `ELEVENLABS_API_KEY` として入れる（[呼び出しの音声](#呼び出しの音声elevenlabsr2)）。無いと音声は流れず、チャイムだけになる |
 | `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
