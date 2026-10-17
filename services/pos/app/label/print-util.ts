@@ -181,9 +181,19 @@ export const useReceiptPrinter = (createPrinter: CreateLabelPrinter) => {
     [printSafely],
   );
 
-  /** 求められたときだけ刷る領収書 */
+  /**
+   * 求められたときだけ刷る領収書
+   *
+   * お客さんに渡すものの後に、同じ中身の店舗控を続けて刷る（1 枚ずつ切る）。どちらも送れたら true
+   */
   const printFormalReceipt = useCallback(
-    (order: OrderEntity) => printSafely(() => formalReceiptJob(order)),
+    async (order: OrderEntity) => {
+      const printed = await Promise.all([
+        printSafely(() => formalReceiptJob(order)),
+        printSafely(() => formalReceiptJob(order, { storeCopy: true })),
+      ]);
+      return printed.every(Boolean);
+    },
     [printSafely],
   );
 

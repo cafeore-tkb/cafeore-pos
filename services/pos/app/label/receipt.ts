@@ -65,7 +65,12 @@ export type FormalReceipt = {
   note: string;
   /** 2026年11月7日 */
   date: string;
+  /** 店に残す控えなら、そうと分かる印（「店舗控」）。お客さんに渡すものには無い */
+  copyMark?: string;
 };
+
+/** 店に残す領収書の控えに付ける印 */
+const STORE_COPY_MARK = "店舗控";
 
 /** ￥1,234。全角の円記号はシールと同じ */
 export const yen = (amount: number) =>
@@ -154,10 +159,15 @@ const jaDate = (ms: number) => {
  * 求められたときだけ刷る領収書
  *
  * 宛名は手で書けるよう空けておく。日付は注文を受けた日、金額は請求額（割引後）。
+ * storeCopy なら、同じ中身に店舗控の印を付ける。
  */
-export const formalReceipt = (order: OrderEntity): FormalReceipt => ({
+export const formalReceipt = (
+  order: OrderEntity,
+  { storeCopy = false }: { storeCopy?: boolean } = {},
+): FormalReceipt => ({
   orderNo: orderNo(order),
   amount: `${yen(order.billingAmount)}-`,
   note: "但し 飲食代として",
   date: jaDate(order.createdAt.getTime()),
+  ...(storeCopy && { copyMark: STORE_COPY_MARK }),
 });
