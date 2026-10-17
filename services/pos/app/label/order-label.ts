@@ -25,8 +25,14 @@ const line = (text: string, size: TextSize): TextLine => [
 const assignmentLine = (assignment: string | null) =>
   assignment ? `指名： ${assignment}` : "　";
 
-/** カップのシール 1 枚の範囲 */
-const CUP_LABEL_AREA = { x: 0, y: 24, width: 570, height: 230 };
+/**
+ * カップのシール 1 枚の範囲
+ *
+ * 範囲の終わり（y + height）まで紙が送られるので、ラベル 1 枚（ラベルと隙間）より長いと次のラベルの頭を越え、
+ * 次のシールでそのラベルを飛ばして白紙が出る（高さ 230 で同じ注文のシールの間に毎回出た）。
+ * そのため中身の下端（いちばん下の行の y = 204。文字は y が基準線で少し下まで、ロゴは y が下端）の少し下で終える。
+ */
+const CUP_LABEL_AREA = { x: 0, y: 24, width: 570, height: 210 };
 
 /** カップに貼るシール（1 杯につき 1 枚） */
 const cupLabel = (
