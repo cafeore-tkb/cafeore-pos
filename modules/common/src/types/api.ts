@@ -405,6 +405,8 @@ export interface paths {
      * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
      * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
      * 別の端末で進行中の決済依頼があっても出せる。
+     * その端末に決済手段を選ぶ画面（POST /api/square/actions）を出したままなら、先に取り消してから出す
+     * （端末への依頼は順に出るので、残っていると決済画面がその後ろに並ぶ）。
      */
     post: operations["createSquareCheckout"];
   };
@@ -467,6 +469,33 @@ export interface paths {
      * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
      */
     post: operations["refundOrderSquarePaymentKeepingOrder"];
+  };
+  "/api/square/actions": {
+    /**
+     * Square Terminal にお客さんが決済手段を選ぶ画面を出す
+     * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
+     * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+     * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
+     * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
+     * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。
+     * 決済依頼を作るとき（POST /api/square/checkouts）も、その端末に出したままのこの画面を先に取り消す。
+     */
+    post: operations["createSquareAction"];
+  };
+  "/api/square/actions/{id}": {
+    /**
+     * 決済手段を選ぶ画面の状態を取る
+     * @description まだ選ばれていなければ Square に問い合わせて最新にしてから返す。レジはこれを数秒おきに呼んで、選ばれるのを待つ。
+     */
+    get: operations["getSquareAction"];
+  };
+  "/api/square/actions/{id}/cancel": {
+    /**
+     * 決済手段を選ぶ画面を取り消す
+     * @description スタッフがレジで決済手段を選んだとき・会計を終えたときに呼ぶ。端末は待ち受けの画面に戻る。
+     * 既に選ばれていた・取り消されていたときは、何もせずに今の状態を返す（outcome で分かる）。
+     */
+    post: operations["cancelSquareAction"];
   };
   "/api/square/webhook": {
     /**
@@ -1366,6 +1395,54 @@ export interface components {
     SquareCheckoutConflictResponse: {
       error: string;
       checkout: components["schemas"]["SquareCheckoutResponse"];
+    };
+    /**
+     * @description 決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+     * 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
+     *
+     * @enum {string}
+     */
+    SquareActionOption: "CASH" | "CARD_PRESENT" | "FELICA_ALL" | "QR_CODE";
+    /**
+     * @description レジが次に何をすべきかをサーバーが判定したもの。
+     *   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
+     *   - selected: お客さんが選んだ。selected の決済手段で会計する
+     *   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
+     *
+     * @enum {string}
+     */
+    SquareActionOutcome: "pending" | "selected" | "closed";
+    SquareActionCreateRequest: {
+      /** @description 画面を出す端末。GET /api/square/devices で PAIRED の行の device_id */
+      device_id: string;
+      /** @description レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする */
+      idempotency_key: string;
+      /** @description 今払う額（円）。画面に出す */
+      amount: number;
+      /** @description 端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個 */
+      options: components["schemas"]["SquareActionOption"][];
+    };
+    SquareActionResponse: {
+      /** Format: uuid */
+      id: string;
+      /** @description 画面を出した端末 */
+      device_id: string;
+      /** @description Square の TerminalAction の id */
+      action_id?: string | null;
+      /** @description Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR */
+      status: string;
+      outcome: components["schemas"]["SquareActionOutcome"];
+      /** @description Square の cancel_reason（BUYER_CANCELED / SELLER_CANCELED / TIMED_OUT） */
+      cancel_reason?: string | null;
+      amount: number;
+      options: components["schemas"]["SquareActionOption"][];
+      /** @description お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る */
+      selected?: string | null;
+      error_message?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
     };
   };
   responses: never;
@@ -2778,6 +2855,8 @@ export interface operations {
    * 同じ idempotency_key で再送したときは、新しく作らずに同じ決済依頼を返す。
    * 同じ端末で別の決済依頼が進行中なら 409 を返し、進行中のものを checkout に入れる。
    * 別の端末で進行中の決済依頼があっても出せる。
+   * その端末に決済手段を選ぶ画面（POST /api/square/actions）を出したままなら、先に取り消してから出す
+   * （端末への依頼は順に出るので、残っていると決済画面がその後ろに並ぶ）。
    */
   createSquareCheckout: {
     requestBody: {
@@ -3043,6 +3122,129 @@ export interface operations {
       502: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Square Terminal にお客さんが決済手段を選ぶ画面を出す
+   * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
+   * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+   * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
+   * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
+   * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。
+   * 決済依頼を作るとき（POST /api/square/checkouts）も、その端末に出したままのこの画面を先に取り消す。
+   */
+  createSquareAction: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SquareActionCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description 同じ idempotency_key のものが既にある */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareActionResponse"];
+        };
+      };
+      /** @description 作成した */
+      201: {
+        content: {
+          "application/json": components["schemas"]["SquareActionResponse"];
+        };
+      };
+      /** @description 入力が不正、または device_id がペアリング済みの端末として登録されていない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 同じ端末で決済依頼が進行中 */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が依頼を受け付けなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["SquareActionResponse"];
+        };
+      };
+      /** @description Square 連携が設定されていない */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 決済手段を選ぶ画面の状態を取る
+   * @description まだ選ばれていなければ Square に問い合わせて最新にしてから返す。レジはこれを数秒おきに呼んで、選ばれるのを待つ。
+   */
+  getSquareAction: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareActionResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 決済手段を選ぶ画面を取り消す
+   * @description スタッフがレジで決済手段を選んだとき・会計を終えたときに呼ぶ。端末は待ち受けの画面に戻る。
+   * 既に選ばれていた・取り消されていたときは、何もせずに今の状態を返す（outcome で分かる）。
+   */
+  cancelSquareAction: {
+    parameters: {
+      path: {
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 取り消しを依頼した、または既に終わっていた */
+      200: {
+        content: {
+          "application/json": components["schemas"]["SquareActionResponse"];
+        };
+      };
+      /** @description 見つからない */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square にまだ届いていない（作っている途中） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Square が取り消しを受け付けなかった */
+      502: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Square 連携が設定されていない */

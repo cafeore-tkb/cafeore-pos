@@ -1948,5 +1948,120 @@
         "$ref": "#/components/schemas/SquareCheckoutResponse"
       }
     }
+  },
+  "SquareActionOption": {
+    "type": "string",
+    "enum": ["CASH", "CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
+    "x-enum-varnames": [
+      "OptionCash",
+      "OptionCardPresent",
+      "OptionFelicaAll",
+      "OptionQrCode"
+    ],
+    "description": "決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。\n端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。\n"
+  },
+  "SquareActionOutcome": {
+    "type": "string",
+    "enum": ["pending", "selected", "closed"],
+    "x-enum-varnames": ["ActionPending", "ActionSelected", "ActionClosed"],
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ\n  - selected: お客さんが選んだ。selected の決済手段で会計する\n  - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ\n"
+  },
+  "SquareActionCreateRequest": {
+    "type": "object",
+    "required": ["idempotency_key", "device_id", "amount", "options"],
+    "properties": {
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "画面を出す端末。GET /api/square/devices で PAIRED の行の device_id"
+      },
+      "idempotency_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "今払う額（円）。画面に出す"
+      },
+      "options": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 5,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/components/schemas/SquareActionOption"
+        },
+        "description": "端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個"
+      }
+    }
+  },
+  "SquareActionResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "device_id",
+      "status",
+      "outcome",
+      "amount",
+      "options",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "device_id": {
+        "type": "string",
+        "description": "画面を出した端末"
+      },
+      "action_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の TerminalAction の id"
+      },
+      "status": {
+        "type": "string",
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+      },
+      "outcome": {
+        "$ref": "#/components/schemas/SquareActionOutcome"
+      },
+      "cancel_reason": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の cancel_reason（BUYER_CANCELED / SELLER_CANCELED / TIMED_OUT）"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/SquareActionOption"
+        }
+      },
+      "selected": {
+        "type": "string",
+        "nullable": true,
+        "description": "お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る"
+      },
+      "error_message": {
+        "type": "string",
+        "nullable": true
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
   }
 }

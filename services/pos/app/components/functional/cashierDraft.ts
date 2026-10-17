@@ -470,9 +470,9 @@ export type CashierKeyIntent =
   | { type: "openMemo" }
   /**
    * 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る）。
-   * square があれば、進んだらその決済手段で決済を始める（決済手段のキー）
+   * payment があれば、進んだらその決済手段を選ぶ（決済手段のキー。Square の決済手段なら決済を始める）
    */
-  | { type: "goPay"; square?: SquarePaymentType }
+  | { type: "goPay"; payment?: CashierPayment }
   /** 受取金額を請求額ちょうどにする（受取金額が空のときの Enter） */
   | { type: "exactReceived" }
   | { type: "submitCash" }
@@ -627,7 +627,7 @@ export const PAYMENT_KEYS: readonly {
 /**
  * Alt と一緒に押したキー（code）を、何をするかに直す。決済手段のキーは押したらすぐ決済を始める
  *
- * - 入れる段階: 一括会計に進む。Square の決済手段なら、進んだらその手段で決済を始める
+ * - 入れる段階: 一括会計に進み、その決済手段を選ぶ。Square の決済手段なら、進んだらその手段で決済を始める
  * - 会計の段階: 現金は選ぶだけ（受取金額を入れて Enter で確定）、Square の決済手段は決済を始める
  * - 今使えない Square の決済手段（端末が決まっていない・つながっていないなど）は知らせる
  * - 押しっぱなしの繰り返し（keydown の repeat）は何もしない（決済を二重に始めない）
@@ -646,9 +646,7 @@ export const cashierPaymentKeyIntent = (
   }
   if (draft.step === "entry") {
     if (!canGoPay(draft)) return NONE;
-    return payment === "cash"
-      ? { type: "goPay" }
-      : { type: "goPay", square: payment };
+    return { type: "goPay", payment };
   }
   if (payment === "cash") {
     return update(setPayment(draft, "cash"));

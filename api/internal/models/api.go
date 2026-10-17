@@ -56,6 +56,21 @@ const (
 	ReceiptPrinterModelTmM30 ReceiptPrinterModel = "tm_m30"
 )
 
+// Defines values for SquareActionOption.
+const (
+	OptionCardPresent SquareActionOption = "CARD_PRESENT"
+	OptionCash        SquareActionOption = "CASH"
+	OptionFelicaAll   SquareActionOption = "FELICA_ALL"
+	OptionQrCode      SquareActionOption = "QR_CODE"
+)
+
+// Defines values for SquareActionOutcome.
+const (
+	ActionClosed   SquareActionOutcome = "closed"
+	ActionPending  SquareActionOutcome = "pending"
+	ActionSelected SquareActionOutcome = "selected"
+)
+
 // Defines values for SquareCheckoutOutcome.
 const (
 	Attention SquareCheckoutOutcome = "attention"
@@ -811,6 +826,61 @@ type PrinterSettingsUpdateRequest struct {
 // 58mm の紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm の紙はどちらも 576 ドット
 type ReceiptPrinterModel string
 
+// SquareActionCreateRequest defines model for SquareActionCreateRequest.
+type SquareActionCreateRequest struct {
+	// Amount 今払う額（円）。画面に出す
+	Amount int `json:"amount"`
+
+	// DeviceId 画面を出す端末。GET /api/square/devices で PAIRED の行の device_id
+	DeviceId string `json:"device_id"`
+
+	// IdempotencyKey レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする
+	IdempotencyKey string `json:"idempotency_key"`
+
+	// Options 端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個
+	Options []SquareActionOption `json:"options"`
+}
+
+// SquareActionOption 決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+// 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
+type SquareActionOption string
+
+// SquareActionOutcome レジが次に何をすべきかをサーバーが判定したもの。
+//   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
+//   - selected: お客さんが選んだ。selected の決済手段で会計する
+//   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
+type SquareActionOutcome string
+
+// SquareActionResponse defines model for SquareActionResponse.
+type SquareActionResponse struct {
+	// ActionId Square の TerminalAction の id
+	ActionId *string `json:"action_id"`
+	Amount   int     `json:"amount"`
+
+	// CancelReason Square の cancel_reason（BUYER_CANCELED / SELLER_CANCELED / TIMED_OUT）
+	CancelReason *string   `json:"cancel_reason"`
+	CreatedAt    time.Time `json:"created_at"`
+
+	// DeviceId 画面を出した端末
+	DeviceId     string               `json:"device_id"`
+	ErrorMessage *string              `json:"error_message"`
+	Id           openapi_types.UUID   `json:"id"`
+	Options      []SquareActionOption `json:"options"`
+
+	// Outcome レジが次に何をすべきかをサーバーが判定したもの。
+	//   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
+	//   - selected: お客さんが選んだ。selected の決済手段で会計する
+	//   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
+	Outcome SquareActionOutcome `json:"outcome"`
+
+	// Selected お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る
+	Selected *string `json:"selected"`
+
+	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+	Status    string    `json:"status"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
 type SquareCheckoutConflictResponse struct {
 	Checkout SquareCheckoutResponse `json:"checkout"`
@@ -1122,6 +1192,9 @@ type CreateOrderCommentJSONRequestBody = CommentCreateRequest
 
 // UpdatePrinterSettingsJSONRequestBody defines body for UpdatePrinterSettings for application/json ContentType.
 type UpdatePrinterSettingsJSONRequestBody = PrinterSettingsUpdateRequest
+
+// CreateSquareActionJSONRequestBody defines body for CreateSquareAction for application/json ContentType.
+type CreateSquareActionJSONRequestBody = SquareActionCreateRequest
 
 // CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
 type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest

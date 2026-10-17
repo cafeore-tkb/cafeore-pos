@@ -109,6 +109,9 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 		sq.GET("/checkouts/:id", square.GetCheckout)
 		sq.POST("/checkouts/:id/cancel", square.CancelCheckout)
 		sq.POST("/checkouts/:id/refund", square.RefundCheckout)
+		sq.POST("/actions", square.CreateAction)
+		sq.GET("/actions/:id", square.GetAction)
+		sq.POST("/actions/:id/cancel", square.CancelAction)
 		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
 		api.POST("/orders/:id/square-refund", square.RefundOrder)
 	}

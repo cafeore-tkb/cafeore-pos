@@ -2,6 +2,7 @@ import {
   type MenuEntity,
   type OrderEntity,
   type PrinterSettings,
+  type SquareActionOption,
   type SquareCheckout,
   SquareCheckoutConflictError,
   type SquarePaymentType,
@@ -98,6 +99,10 @@ import { useLatestOrderId } from "../functional/useLatestOrderId";
 import type { OrderAction } from "../functional/useOrderState";
 import type { SquareDeviceSelection } from "../functional/useSquareDevice";
 import { useSquarePayment } from "../functional/useSquarePayment";
+import {
+  type SquarePaymentSelectRequest,
+  useSquarePaymentSelect,
+} from "../functional/useSquarePaymentSelect";
 import { OrderIdDisplay } from "../molecules/OrderIdDisplay";
 import { PendingPrints } from "../molecules/PendingPrints";
 import { ReadyTimeEstimate } from "../molecules/ReadyTimeEstimate";
@@ -711,6 +716,56 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
+  /**
+   * お客さんが Square 端末で決済手段を選べるようにする（会計の段階で、スタッフがまだ選んでいない間）。
+   * 選んだら、その決済手段で会計する（onTerminalSelectedRef）。スタッフがレジで決済手段を選ぶ（dismiss）・
+   * 決済を始める・会計を終える・今払う額が変わる・先払いのダイアログを開くと取り消す
+   */
+  const squareSelectRequest = useMemo<SquarePaymentSelectRequest | null>(
+    () =>
+      squareDeviceId !== null &&
+      canStartSquare &&
+      !squarePaymentActive &&
+      prepayDialog === null
+        ? {
+            key: `${squareDeviceId}:${current?.id ?? ""}:${split.tenders.length}:${due}`,
+            deviceId: squareDeviceId,
+            amount: due,
+            options: ["CASH", ...squarePaymentTypes],
+          }
+        : null,
+    [
+      squareDeviceId,
+      canStartSquare,
+      squarePaymentActive,
+      prepayDialog,
+      current?.id,
+      split.tenders.length,
+      due,
+      squarePaymentTypes,
+    ],
+  );
+  // お客さんが選んだときは決済を始める（startSquarePayment）ので、それを作ってから中身を入れる
+  const onTerminalSelectedRef = useRef<(option: SquareActionOption) => void>(
+    () => {},
+  );
+  const squareSelect = useSquarePaymentSelect({
+    request: squareSelectRequest,
+    onSelected: (option) => onTerminalSelectedRef.current(option),
+  });
+  const dismissSquareSelect = squareSelect.dismiss;
+
+  /** 会計の段階で、スタッフが決済の欄（決済手段・受取金額）を操作した。お客さんには端末で選ばせない */
+  const updatePayment = useCallback(
+    (update: (draft: CashierDraft) => CashierDraft) => {
+      if (store.get(cashierDraftAtom).step === "pay") {
+        dismissSquareSelect();
+      }
+      updateDraft(update);
+    },
+    [store, dismissSquareSelect, updateDraft],
+  );
+
   /** 「未登録の Square 決済」を、入力中の注文（今の番号）で登録し、シールとレシートを刷る */
   const submitUnlinkedSquareOrder = useCallback(
     (checkout: SquareCheckout) => {
@@ -733,6 +788,7 @@ const CashierV2 = ({
       ) {
         return;
       }
+      dismissSquareSelect();
       updateDraft((c) => setPayment(c, paymentType));
       if (!wholeOrder && current !== null) {
         // 小計の分は、今払う額だけを決済する
@@ -753,6 +809,7 @@ const CashierV2 = ({
       canStartSquare,
       squareDeviceId,
       squarePaymentActive,
+      dismissSquareSelect,
       updateDraft,
       squarePayment.start,
       newOrder,
@@ -804,31 +861,50 @@ const CashierV2 = ({
     [squareDeviceId, canSaveNow, due],
   );
 
-  // 入れる段階で決済手段のキー（Alt+T など）を押したら、会計の段階に進んでから決済を始める
-  // （今払う額は、進んで小計を作ってから決まるので）
-  const [queuedSquare, setQueuedSquare] = useState<SquarePaymentType | null>(
+  // 入れる段階で決済手段のキー（Alt+C・Alt+T など）を押したら、会計の段階に進んでからその決済手段を選ぶ
+  // （今払う額は、進んで小計を作ってから決まるので）。Square の決済手段なら決済を始める
+  const [queuedPayment, setQueuedPayment] = useState<CashierPayment | null>(
     null,
   );
   useEffect(() => {
-    if (queuedSquare === null) {
+    if (queuedPayment === null) {
       return;
     }
-    setQueuedSquare(null);
+    setQueuedPayment(null);
     if (!paying) {
       return;
     }
-    if (payments.includes(queuedSquare)) {
-      startSquarePayment(queuedSquare);
+    if (queuedPayment === "cash") {
+      // 現金を選んで進んだので、お客さんには端末で選ばせない
+      dismissSquareSelect();
+    } else if (payments.includes(queuedPayment)) {
+      startSquarePayment(queuedPayment);
     } else {
-      warnSquareUnavailable(queuedSquare);
+      warnSquareUnavailable(queuedPayment);
     }
   }, [
-    queuedSquare,
+    queuedPayment,
     paying,
     payments,
+    dismissSquareSelect,
     startSquarePayment,
     warnSquareUnavailable,
   ]);
+
+  // お客さんが端末で選んだ。現金ならレジを現金にして知らせ、Square の決済手段なら決済を始める
+  onTerminalSelectedRef.current = (option) => {
+    if (option === "CASH") {
+      updateDraft((c) => setPayment(c, "cash"));
+      showNotice(
+        "お客さんが端末で現金を選びました",
+        "受取金額を入れて確定してください",
+      );
+    } else if (payments.includes(option)) {
+      startSquarePayment(option);
+    } else {
+      warnSquareUnavailable(option);
+    }
+  };
 
   /** 個別小計。選んだ商品の小計を会計する */
   const startItemsSubtotal = useCallback(
@@ -1017,7 +1093,7 @@ const CashierV2 = ({
       event.preventDefault();
       switch (intent.type) {
         case "update":
-          updateDraft(() => intent.draft);
+          updatePayment(() => intent.draft);
           heldKeysRef.current = rememberAddedLine(
             heldKeysRef.current,
             viewDraft,
@@ -1032,12 +1108,12 @@ const CashierV2 = ({
           return;
         case "goPay":
           startPayment();
-          if (intent.square !== undefined) {
-            setQueuedSquare(intent.square);
+          if (intent.payment !== undefined) {
+            setQueuedPayment(intent.payment);
           }
           return;
         case "exactReceived":
-          updateDraft((c) => setExactReceived(c, due));
+          updatePayment((c) => setExactReceived(c, due));
           return;
         case "submitCash":
           submitCash(false);
@@ -1082,7 +1158,7 @@ const CashierV2 = ({
     payments,
     checkCoupon,
     due,
-    updateDraft,
+    updatePayment,
     openAssign,
     openMemo,
     startPayment,
@@ -1349,25 +1425,27 @@ const CashierV2 = ({
               }
               note={payNote}
               squarePaymentTypes={squarePaymentTypes}
+              terminalSelect={squareSelect.status}
+              terminalSelectMessage={squareSelect.message}
               canStartSquare={canStartSquare}
               canSubmit={canSubmitOrder}
               canSplit={canSplit}
               onCash={() =>
-                updateDraft((current) => setPayment(current, "cash"))
+                updatePayment((current) => setPayment(current, "cash"))
               }
               onSquare={startSquarePayment}
               onDigits={(digits) =>
-                updateDraft((current) =>
+                updatePayment((current) =>
                   inputDigits(current, digits, checkCoupon),
                 )
               }
-              onDeleteDigit={() => updateDraft(deleteDigit)}
-              onClearDigits={() => updateDraft(clearDigits)}
+              onDeleteDigit={() => updatePayment(deleteDigit)}
+              onClearDigits={() => updatePayment(clearDigits)}
               onAddReceived={(amount) =>
-                updateDraft((current) => addReceived(current, amount))
+                updatePayment((current) => addReceived(current, amount))
               }
               onExactReceived={() =>
-                updateDraft((current) => setExactReceived(current, due))
+                updatePayment((current) => setExactReceived(current, due))
               }
               onSubmitCash={() => submitCash(false)}
               onOpenSplit={openPart}

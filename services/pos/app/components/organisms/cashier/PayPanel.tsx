@@ -6,6 +6,7 @@ import {
   type CashierPayment,
   canInputCoupon,
 } from "../../functional/cashierDraft";
+import type { SquarePaymentSelectStatus } from "../../functional/useSquarePaymentSelect";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 
 type props = {
@@ -20,6 +21,10 @@ type props = {
   note: string;
   /** 出す Square の決済手段。Square を使わないレジでは空 */
   squarePaymentTypes: readonly SquarePaymentType[];
+  /** お客さんが Square 端末で決済手段を選ぶ画面を出しているか */
+  terminalSelect: SquarePaymentSelectStatus;
+  /** その画面を出せなかった理由（terminalSelect が failed のとき） */
+  terminalSelectMessage: string | null;
   /** Square で決済を始められるか（つながっている・1 円以上） */
   canStartSquare: boolean;
   /** 注文を送れるか（つながっている、または番号を手で付けた） */
@@ -84,6 +89,7 @@ const methodColor = (payment: CashierPayment) =>
  *
  * テンキーは、入れる段階では引換券番号、会計の段階では受取金額に打つ。
  * Square の決済手段は押すとすぐ小計の額で端末に送る（↑↓ で選んで Enter でも送る）。
+ * Square 端末でお客さんが決済手段を選べる間は、受取金額の欄の右にそう出す。
  */
 export const PayPanel = ({
   draft,
@@ -92,6 +98,8 @@ export const PayPanel = ({
   deferred,
   note,
   squarePaymentTypes,
+  terminalSelect,
+  terminalSelectMessage,
   canStartSquare,
   canSubmit,
   canSplit,
@@ -225,8 +233,23 @@ export const PayPanel = ({
           })}
         </div>
 
-        <div className="mt-3 flex h-6 items-center font-medium text-stone-500 text-xs">
-          {cash ? "受取金額" : "請求額"}
+        <div className="mt-3 flex h-6 items-center gap-2 font-medium text-stone-500 text-xs">
+          <span>{cash ? "受取金額" : "請求額"}</span>
+          <span className="flex-1" />
+          {paying && terminalSelect === "showing" && (
+            <span className="flex min-w-0 items-center gap-1.5 truncate font-bold text-theme-primary">
+              <span className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-theme-primary" />
+              お客さんが端末で選べます
+            </span>
+          )}
+          {paying && terminalSelect === "failed" && (
+            <span
+              className="min-w-0 truncate text-stone-400"
+              title={terminalSelectMessage ?? undefined}
+            >
+              端末に決済手段の選択を出せませんでした
+            </span>
+          )}
         </div>
         <div
           className="mt-1 flex h-10.5 items-center justify-end gap-2 rounded-lg border-2 bg-white px-3 transition-colors duration-150"
