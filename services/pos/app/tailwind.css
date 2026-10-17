@@ -126,6 +126,18 @@
   }
 }
 
+/* 呼び出し画面に入ってきたプレート（callscreen.components の PlateBoard）。ほかが滑り終わってから、その場所に浮かぶ */
+@keyframes plate-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @utility container {
   margin-left: auto;
   margin-right: auto;

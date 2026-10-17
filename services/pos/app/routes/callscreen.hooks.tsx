@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** 光り始めてから、元に戻り始めるまで */
 const FLASH_HOLD_MS = 5000;
@@ -128,6 +128,47 @@ export function useOnAdded<T>(
 }
 
 /**
+ * お呼び出し中のうち、画面に出す番号を返す。新しく呼んだ番号は reveal（チャイムを鳴らすとき）まで出さない。
+ * 何件も立て続けに入っても、読み上げは 1 件ずつ順に流れるので、番号もそれに合わせて 1 件ずつ音と同時に出すため。
+ *
+ * useOnAdded と同じく、enabled（最初の一覧を受け取ったか）が true になった最初の一覧は読み上げないので、そのまま出す。
+ * 呼び出しから外れた番号は忘れ、また呼ばれたら reveal まで待たせる
+ */
+export function useRevealedCalls(calling: readonly number[], enabled: boolean) {
+  // null の間は最初の一覧を待っている（その一覧はそのまま出す）
+  const [revealed, setRevealed] = useState<ReadonlySet<number> | null>(null);
+  const callingRef = useRef(calling);
+  callingRef.current = calling;
+
+  useEffect(() => {
+    if (!enabled) {
+      setRevealed(null);
+      return;
+    }
+    setRevealed((prev) => {
+      if (prev === null) return new Set(calling);
+      const kept = [...prev].filter((id) => calling.includes(id));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
+  }, [calling, enabled]);
+
+  /** 番号を画面に出す。鳴らすまでに提供済みなどで呼び出しから外れていたら false */
+  const reveal = useCallback((id: number) => {
+    if (!callingRef.current.includes(id)) return false;
+    setRevealed((prev) => new Set(prev ?? []).add(id));
+    return true;
+  }, []);
+
+  const shown = useMemo(
+    () =>
+      revealed === null ? calling : calling.filter((id) => revealed.has(id)),
+    [calling, revealed],
+  );
+
+  return { shown, reveal };
+}
+
+/**
  * 呼び出しがある間は呼び出し画面を出し、無くなってから delayMs 後に CM へ戻す。
  * 提供が途切れるたびに切り替わらないよう、少し待ってから戻す。
  */
@@ -218,6 +259,8 @@ export type Announcement = {
   path: string;
   /** 読み上げの前にチャイムを鳴らすか（呼び出しだけ鳴らす） */
   chime: boolean;
+  /** 鳴らし始めるとき（音声が届いて、チャイムを鳴らす直前）に呼ぶ。呼び出しの番号を音と同時に画面に出すのに使う */
+  onStart?: () => void;
 };
 
 /**
@@ -233,7 +276,7 @@ export function useAnnouncer(
   const queueRef = useRef<Promise<void>>(Promise.resolve());
 
   return useCallback(
-    ({ path, chime }: Announcement) => {
+    ({ path, chime, onStart }: Announcement) => {
       const voice = loadVoice(path);
       queueRef.current = queueRef.current.then(async () => {
         const url = await voice;
@@ -243,6 +286,7 @@ export function useAnnouncer(
           audio.src = url;
           audio.load();
         }
+        onStart?.();
         const chimeAudio = chimeRef.current;
         if (chime && chimeAudio) await playToEnd(chimeAudio, CHIME_TIMEOUT_MS);
         if (url && audio) await playToEnd(audio, VOICE_TIMEOUT_MS);

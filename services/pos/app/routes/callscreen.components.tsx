@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { FLASH_FADE_MS, FLASH_MS, type Flash } from "./callscreen.hooks";
 
@@ -39,6 +39,10 @@ const PREP_BAR_CAP = 10;
 const GRAD_DEEP =
   "linear-gradient(135deg in oklch, var(--color-theme-deep), color-mix(in oklch, var(--color-theme-deep) 65%, black))";
 const EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
+/** 件数が変わったときに、プレートが新しい場所へ滑る長さ */
+const SLIDE_MS = 300;
+/** 入ってきたプレートが浮かぶ長さ */
+const ENTER_MS = 360;
 
 /**
  * 件数ごとの行割り。行が増えるほど 1 件あたりが小さくなるので、
@@ -86,6 +90,8 @@ export type PlateRect = PlateItem & {
   w: number;
   h: number;
   fontSize: number;
+  /** 上から何段目か */
+  row: number;
 };
 
 /**
@@ -127,6 +133,7 @@ export const layoutPlates = (
         fontSize: Math.round(
           Math.min(box, (w * 0.82) / String(item.id).length, maxFontSize),
         ),
+        row: rowIndex,
       });
       index++;
     }
@@ -338,6 +345,9 @@ function PrismLight({ startedAt }: { startedAt: number }) {
   );
 }
 
+/** 段が変わったら別のプレートとして作り直す */
+const plateKey = (plate: PlateRect) => `${plate.id}:${plate.row}`;
+
 type PlateBoardProps = {
   plates: PlateRect[];
   /** calling はお呼び出し中（金の縁で目立たせる）、drip はドリップ中 */
@@ -349,7 +359,9 @@ type PlateBoardProps = {
 
 /**
  * プレートを並べる領域。位置と大きさは絶対指定で、
- * 件数が変わったときは同じプレートが滑って移動する。
+ * 件数が変わったときは、同じ段に残るプレートは滑って移動する（どれも同じ速さで動くので、すき間を保ったまま重ならない）。
+ * 新しく入った番号と段が変わる番号は作り直し、ほかのプレートが滑り終わってから、その場所に浮かべる
+ * （そのまま滑らせると、段をまたいで斜めに横切ったり、どいていくプレートの下から出てきたりして重なる）。
  * プレートは地が透ける硝子のカード。新しく入った番号は光の地を浮かべてプリズムの光を流し、終われば硝子のカードに戻る。
  * 光らせている最中にまた呼ばれたら、地は重ね、光の帯はそれぞれ流す
  */
@@ -359,9 +371,24 @@ export function PlateBoard({
   flashesOf,
   shadow = true,
 }: PlateBoardProps) {
+  // プレート（番号と段）ごとの、浮かべ始めるまでの待ち。初めて出たときに決めて、あとは変えない
+  const enterDelaysRef = useRef(new Map<string, number>());
+  const prevDelays = enterDelaysRef.current;
+  const keys = plates.map(plateKey);
+  // 前から残るプレートがあれば、それが滑り終わるのを待つ。無ければ（最初の 1 件など）すぐ浮かべる
+  const othersSlide = keys.some((key) => prevDelays.has(key));
+  const enterDelays = new Map(
+    keys.map((key) => [
+      key,
+      prevDelays.get(key) ?? (othersSlide ? SLIDE_MS : 0),
+    ]),
+  );
+  enterDelaysRef.current = enterDelays;
+
   return (
     <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
       {plates.map((plate) => {
+        const key = plateKey(plate);
         const flashes = flashesOf(plate.id);
         // 縁と文字は、元に戻るフェードに入ったら地と一緒に戻す
         const lit = flashes.some((flash) => !flash.fading);
@@ -369,7 +396,7 @@ export function PlateBoard({
 
         return (
           <div
-            key={plate.id}
+            key={key}
             className={cn(
               "isolate flex flex-col items-center justify-center overflow-hidden rounded-2xl border",
               tone === "calling" ? "bg-white/[0.1]" : "bg-white/[0.07]",
@@ -389,7 +416,9 @@ export function PlateBoard({
               width: `${plate.w}px`,
               height: `${plate.h}px`,
               gap: plate.caption ? "4px" : 0,
-              transition: `left 300ms ${EASE}, top 300ms ${EASE}, width 300ms ${EASE}, height 300ms ${EASE}, border-color ${litTransition}`,
+              transition: `left ${SLIDE_MS}ms ${EASE}, top ${SLIDE_MS}ms ${EASE}, width ${SLIDE_MS}ms ${EASE}, height ${SLIDE_MS}ms ${EASE}, border-color ${litTransition}`,
+              // 出てきたときだけ流れる（作り直さない限り、二度は流れない）
+              animation: `plate-enter ${ENTER_MS}ms ${EASE} ${enterDelays.get(key)}ms both`,
             }}
           >
             {/* 地を全部敷いてから光の帯を重ねる（後の地で前の光の帯が隠れないように） */}
@@ -407,7 +436,7 @@ export function PlateBoard({
               )}
               style={{
                 fontSize: `${plate.fontSize}px`,
-                transition: `text-shadow ${litTransition}`,
+                transition: `font-size ${SLIDE_MS}ms ${EASE}, text-shadow ${litTransition}`,
               }}
             >
               {plate.id}
@@ -420,7 +449,7 @@ export function PlateBoard({
                 )}
                 style={{
                   fontSize: `${Math.max(20, Math.round(plate.fontSize * 0.24))}px`,
-                  transition: `color ${litTransition}`,
+                  transition: `font-size ${SLIDE_MS}ms ${EASE}, color ${litTransition}`,
                 }}
               >
                 {plate.caption}
