@@ -13,7 +13,11 @@ import {
   useCmPlaylist,
 } from "~/lib/callscreen-cm";
 import {
-  type CallScreenSound,
+  CALL_SCREEN_SOUND_DEFAULT,
+  type CallScreenSoundFlag,
+  ECHO_LEVEL_MAX,
+  ECHO_LEVEL_MIN,
+  ECHO_LEVEL_STEP,
   setCallScreenSound,
   useCallScreenSound,
 } from "~/lib/callscreen-sound";
@@ -23,7 +27,7 @@ export const meta: MetaFunction = () => {
 };
 
 const SOUND_FIELDS: {
-  key: keyof CallScreenSound;
+  key: CallScreenSoundFlag;
   label: string;
   description: string;
 }[] = [
@@ -214,6 +218,34 @@ export default function CallScreenCmPage() {
               </div>
             </div>
           ))}
+          {/* スイッチの幅（w-11）と間（gap-3）だけずらし、エコーの欄の下にそろえる */}
+          <div className="grid gap-1 pl-14">
+            <Label htmlFor="sound-echo-level">エコーの強さ</Label>
+            <div className="flex items-center gap-3">
+              <input
+                id="sound-echo-level"
+                type="range"
+                min={ECHO_LEVEL_MIN}
+                max={ECHO_LEVEL_MAX}
+                step={ECHO_LEVEL_STEP}
+                value={sound.echoLevel}
+                disabled={!sound.voice || !sound.echo}
+                onChange={(e) =>
+                  setCallScreenSound({
+                    ...sound,
+                    echoLevel: Number(e.target.value),
+                  })
+                }
+                className="w-56 accent-primary disabled:opacity-50"
+              />
+              <span className="text-sm tabular-nums">{sound.echoLevel}%</span>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              返す声の大きさです（読み上げの声を 100% として）。既定は{" "}
+              {CALL_SCREEN_SOUND_DEFAULT.echoLevel}
+              %。上げるほど響きますが、番号は聞き取りにくくなります
+            </p>
+          </div>
         </div>
       </section>
 

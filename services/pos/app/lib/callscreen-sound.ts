@@ -12,7 +12,16 @@ export interface CallScreenSound {
   voice: boolean;
   /** 読み上げにかけるエコー */
   echo: boolean;
+  /** エコーの強さ。返す声の大きさ（読み上げの声を 100 として、%） */
+  echoLevel: number;
 }
+
+/** あり・なしで切り替えるもの */
+export type CallScreenSoundFlag = "chime" | "voice" | "echo";
+
+export const ECHO_LEVEL_MIN = 5;
+export const ECHO_LEVEL_MAX = 50;
+export const ECHO_LEVEL_STEP = 5;
 
 const STORAGE_KEY = "cafeore:callscreen-sound";
 
@@ -20,19 +29,35 @@ export const CALL_SCREEN_SOUND_DEFAULT: CallScreenSound = {
   chime: true,
   voice: true,
   echo: true,
+  echoLevel: 20,
 };
 
-/** 覚えたものを読む。無い・形の違う項目は既定のまま */
+/** 覚えたものを読む。無い・形の違う項目は既定のまま。エコーの強さは ECHO_LEVEL_MIN〜MAX の、ECHO_LEVEL_STEP 刻みに丸める */
 export const parseCallScreenSound = (value: unknown): CallScreenSound => {
   const stored: Record<string, unknown> =
     typeof value === "object" && value !== null ? { ...value } : {};
-  const flag = (key: keyof CallScreenSound) => {
+  const flag = (key: CallScreenSoundFlag) => {
     const flagValue = stored[key];
     return typeof flagValue === "boolean"
       ? flagValue
       : CALL_SCREEN_SOUND_DEFAULT[key];
   };
-  return { chime: flag("chime"), voice: flag("voice"), echo: flag("echo") };
+  const level = stored.echoLevel;
+  return {
+    chime: flag("chime"),
+    voice: flag("voice"),
+    echo: flag("echo"),
+    echoLevel:
+      typeof level === "number" && Number.isFinite(level)
+        ? Math.min(
+            ECHO_LEVEL_MAX,
+            Math.max(
+              ECHO_LEVEL_MIN,
+              Math.round(level / ECHO_LEVEL_STEP) * ECHO_LEVEL_STEP,
+            ),
+          )
+        : CALL_SCREEN_SOUND_DEFAULT.echoLevel,
+  };
 };
 
 // 読んだもの（変わるまで同じものを返す。useSyncExternalStore にそのまま渡せる）

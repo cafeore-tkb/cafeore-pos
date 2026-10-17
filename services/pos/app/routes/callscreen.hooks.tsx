@@ -259,11 +259,10 @@ const playToEnd = (audio: HTMLAudioElement, timeoutMs: number) =>
 const ECHO_DELAY_S = 0.12;
 /** 返すたびに小さくする割合 */
 const ECHO_FEEDBACK = 0.25;
-/** 返す声の大きさ（そのままの声を 1 として） */
-const ECHO_WET = 0.2;
 
 /**
  * 読み上げに少しエコーをかける（Web Audio で、そのままの声に遅らせて小さくした声を重ねる）。
+ * level は返す声の大きさ（そのままの声を 1 として。0 ならエコー無し）。
  * つなぐと要素の音は AudioContext からしか出なくなり、AudioContext が止まっている（自動再生の制限など）と声ごと消えるので、
  * 動いている（running）ときだけつなぐ。動かせない・Web Audio が無いときは、エコー無しで流す。
  * 一度つなぐと外せないので、切ったときは返す声を 0 にする
@@ -273,12 +272,12 @@ function useEcho(audioRef: React.RefObject<HTMLAudioElement>) {
   const wetRef = useRef<GainNode | null>(null);
 
   return useCallback(
-    (on: boolean) => {
+    (level: number) => {
       const wet = wetRef.current;
-      if (wet) wet.gain.value = on ? ECHO_WET : 0;
+      if (wet) wet.gain.value = level;
       const audio = audioRef.current;
       // 切っていて、まだつないでいなければ Web Audio は使わない
-      if (!audio || (!on && !wet)) return;
+      if (!audio || (level === 0 && !wet)) return;
       try {
         ctxRef.current ??= new AudioContext();
         const ctx = ctxRef.current;
@@ -293,7 +292,7 @@ function useEcho(audioRef: React.RefObject<HTMLAudioElement>) {
         const feedback = ctx.createGain();
         feedback.gain.value = ECHO_FEEDBACK;
         const wetGain = ctx.createGain();
-        wetGain.gain.value = ECHO_WET;
+        wetGain.gain.value = level;
         source.connect(ctx.destination);
         source.connect(delay);
         delay.connect(feedback).connect(delay);
@@ -334,6 +333,7 @@ export function useAnnouncer(
     ({ path, chime, onStart }: Announcement) => {
       const sound = getCallScreenSound();
       const voice = sound.voice ? loadVoice(path) : Promise.resolve(null);
+      const echoLevel = sound.echo ? sound.echoLevel / 100 : 0;
       queueRef.current = queueRef.current.then(async () => {
         const url = await voice;
         const audio = voiceRef.current;
@@ -341,7 +341,7 @@ export function useAnnouncer(
         if (url && audio) {
           audio.src = url;
           audio.load();
-          echo(sound.echo);
+          echo(echoLevel);
         }
         onStart?.();
         const chimeAudio = chimeRef.current;
@@ -349,7 +349,7 @@ export function useAnnouncer(
           await playToEnd(chimeAudio, CHIME_TIMEOUT_MS);
         }
         if (url && audio) {
-          echo(sound.echo);
+          echo(echoLevel);
           await playToEnd(audio, VOICE_TIMEOUT_MS);
         }
         if (url) URL.revokeObjectURL(url);
