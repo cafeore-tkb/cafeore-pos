@@ -20,6 +20,7 @@ import {
   isBayId,
   staysInLane,
 } from "../logic/lanes";
+import { caosLog } from "../utils/log";
 
 // カードのドラッグ。管制盤 A（タイムラインの待機カード・未割当）・C（未割当）・D（右の注文と表の待機・抽出中のカード）で共通。
 // 12px 動くまではタップ、それより動かすと向きに関係なくすぐ掴む（カードは touch-action none。枠のスクロールは ScrollArea のバー）。
@@ -248,6 +249,7 @@ export const useCardDrag = <S, T>(handlers: {
       latest.current.onHold &&
       window.setTimeout(() => {
         if (!latest.current.onHold?.(source)) return;
+        caosLog("gesture.hold", { source });
         cleanup();
         swallowNextClick();
       }, HOLD_MS);
@@ -265,6 +267,7 @@ export const useCardDrag = <S, T>(handlers: {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
         window.clearTimeout(hold);
         dragging = true;
+        caosLog("gesture.drag.started", { source, pointerId, startX, startY });
         countDragging(1);
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
@@ -288,6 +291,13 @@ export const useCardDrag = <S, T>(handlers: {
       const dropTarget = dropped
         ? latest.current.targetAt(source, upEvent.clientX, upEvent.clientY)
         : null;
+      caosLog("gesture.drag.ended", {
+        source,
+        target: dropTarget,
+        dropped: Boolean(dropTarget),
+        x: upEvent.clientX,
+        y: upEvent.clientY,
+      });
       if (dropTarget !== null) latest.current.onDrop(source, dropTarget);
     };
     const onUp = (upEvent: PointerEvent) => finish(upEvent, true);
@@ -302,7 +312,10 @@ export const useCardDrag = <S, T>(handlers: {
     };
     endPress.current = () => {
       cleanup();
-      if (dragging) countDragging(-1);
+      if (dragging) {
+        caosLog("gesture.drag.cancelled", { source });
+        countDragging(-1);
+      }
       setDrag(null);
       setTarget(null);
     };

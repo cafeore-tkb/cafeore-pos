@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { beginCaosReply, endCaosReply } from "../logic/caosReplies";
 
+import { logCaosAsync } from "../utils/log";
+
 /**
  * コメントにスタンプで返す（その注文にマスターのコメントとして、スタンプの文字を付ける。POST /api/orders/{id}/comments）。
  * 付けたコメントは共有の WebSocket の注文で届き、ほかのコメントと同じく出る。送っているあいだはスタンプを押せない（二度押しで 2 つ付けない）。
@@ -20,10 +22,10 @@ export const useStampReply = (onReply: (orderId: string) => void) => {
       setSending(true);
       const token = beginCaosReply(orderId, stamp);
       try {
-        const comment = await orderRepository.addComment(
-          orderId,
-          "master",
-          stamp,
+        const comment = await logCaosAsync(
+          "comment.stamp",
+          { orderId, stamp },
+          () => orderRepository.addComment(orderId, "master", stamp),
         );
         endCaosReply(token, comment);
         onReply(orderId);

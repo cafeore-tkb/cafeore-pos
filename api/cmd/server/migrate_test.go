@@ -373,14 +373,14 @@ func TestMigrateRenamesTables(t *testing.T) {
 		t.Errorf("next id = %d, want 2", maxID)
 	}
 
-	// 表・索引・制約・連番に前の名前が残らない
+	// 担当者の表・索引・制約・連番に前の名前が残らない（新しいCaOSログ表は対象外）
 	var left []string
 	if err := db.Raw(`
 		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relname LIKE '%caos%'
+		WHERE n.nspname = 'public' AND c.relname LIKE '%caos_lane%'
 		UNION ALL
 		SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-		WHERE n.nspname = 'public' AND conname LIKE '%caos%'`).Scan(&left).Error; err != nil {
+		WHERE n.nspname = 'public' AND conname LIKE '%caos_lane%'`).Scan(&left).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {

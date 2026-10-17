@@ -945,6 +945,86 @@
       }
     }
   },
+  "CaosLogEntry": {
+    "type": "object",
+    "required": ["at", "tabId", "sequence", "event", "details"],
+    "properties": {
+      "at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "tabId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+      },
+      "event": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "details": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "CaosStoredLogEntry": {
+    "allOf": [
+      {
+        "$ref": "#/components/schemas/CaosLogEntry"
+      },
+      {
+        "type": "object",
+        "required": ["receivedAt"],
+        "properties": {
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    ]
+  },
+  "CaosLogPage": {
+    "type": "object",
+    "required": ["entries", "limit", "offset", "hasMore"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosStoredLogEntry"
+        }
+      },
+      "limit": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "hasMore": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CaosLogBatch": {
+    "type": "object",
+    "required": ["entries"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 100,
+        "items": {
+          "$ref": "#/components/schemas/CaosLogEntry"
+        }
+      }
+    }
+  },
   "CaosCupState": {
     "type": "object",
     "description": "カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当",
@@ -1016,6 +1096,11 @@
     "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く\n",
     "required": ["cup_ids", "before", "after"],
     "properties": {
+      "merge_into": {
+        "type": "string",
+        "format": "uuid",
+        "description": "統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。"
+      },
       "cup_ids": {
         "type": "array",
         "minItems": 1,

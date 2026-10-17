@@ -2,6 +2,8 @@ import type { CaosCard } from "@cafeore/common";
 import { useState } from "react";
 import type { CardAction, CardBoardAction } from "../logic/cardActions";
 import { orderLabel } from "../logic/cards";
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
 import { useOutsidePress } from "./useOutsidePress";
 
 /**
@@ -19,6 +21,7 @@ export const useCardMenu = ({
   onComments: (label: string, anchor?: HTMLElement) => void;
 }) => {
   const [openKey, setOpenKey] = useState<string | null>(null);
+  useCaosStateLog("ui.card-menu.changed", { openKey });
   useOutsidePress(
     openKey !== null,
     (target) =>
@@ -32,6 +35,12 @@ export const useCardMenu = ({
     toggle: (card: CaosCard) =>
       setOpenKey((key) => (key === card.key ? null : card.key)),
     run: (card: CaosCard, action: CardAction, anchor?: HTMLElement) => {
+      caosLog("card.action", {
+        action,
+        cardKey: card.key,
+        cupIds: card.cups.map((c) => c.cupId),
+        unitIds: card.cups.map((c) => c.id),
+      });
       setOpenKey(null);
       if (action === "emergency") onEmergency(card);
       else if (action === "comment") onComments(orderLabel(card), anchor);

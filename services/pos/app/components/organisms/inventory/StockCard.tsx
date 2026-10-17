@@ -43,10 +43,12 @@ const kindLabels = openapiEnumLabels("StockResourceKind");
 export function StockCard({
   status,
   onRecorded,
+  onRecordActivity,
   children,
 }: {
   status: InventoryStatus;
   onRecorded?: () => void;
+  onRecordActivity?: (phase: string, details: Record<string, unknown>) => void;
   children?: ReactNode;
 }) {
   const { resource } = status;
@@ -72,18 +74,25 @@ export function StockCard({
 
   const record = async (kind: StockEventKind) => {
     const quantity = Number(value);
+    const details = { resourceId: resource.id, kind, quantity };
+    const reject = (reason: string) =>
+      onRecordActivity?.("rejected", { ...details, reason });
     if (value.trim() === "" || Number.isNaN(quantity)) {
+      reject("数量を入力してください");
       toast("数量を入力してください");
       return;
     }
     if (kind === "count" && quantity < 0) {
+      reject("実数は 0 以上で入力してください");
       toast("実数は 0 以上で入力してください");
       return;
     }
     if (kind === "receipt" && quantity <= 0) {
+      reject("入荷は 0 より大きい数で入力してください");
       toast("入荷は 0 より大きい数で入力してください");
       return;
     }
+    onRecordActivity?.("requested", details);
     try {
       setSubmitting(true);
       const result = await inventoryRepository.recordEvent(
@@ -91,6 +100,7 @@ export function StockCard({
         kind,
         quantity,
       );
+      onRecordActivity?.("succeeded", { ...details, result });
       setValue("");
       if (kind === "count" && result.estimated != null) {
         const diff = quantity - result.estimated;
@@ -108,6 +118,10 @@ export function StockCard({
       }
       onRecorded?.();
     } catch (e) {
+      onRecordActivity?.("failed", {
+        ...details,
+        error: e instanceof Error ? e.message : String(e),
+      });
       toast(e instanceof Error ? e.message : "記録に失敗しました");
     } finally {
       setSubmitting(false);
