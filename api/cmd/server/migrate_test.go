@@ -563,3 +563,57 @@ func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {
 		t.Errorf("索引を作り直したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
 	}
 }
+
+// item_id が既にある DB に旧使用量の表だけが残っていても回収する。
+// 既に記録された注文時の量は、現在の旧設定から計算した値で上書きしない。
+func TestMigrateLegacyStockUsagesWithCurrentSchema(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(migrate(db))
+	must(db.AutoMigrate(&oldItemStockUsage{}))
+	kind := models.ItemType{Name: "hot", DisplayName: "ホット"}
+	must(db.Create(&kind).Error)
+	item := models.Item{Name: "ブレンド", Abbr: "ブ", ItemTypeID: kind.ID}
+	must(db.Create(&item).Error)
+	stock := models.NewItemStockResource(item.ID)
+	must(db.Create(&stock).Error)
+	cup := models.StockResource{Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1}
+	must(db.Create(&cup).Error)
+	must(db.Create(&[]oldItemStockUsage{{ItemID: item.ID, ResourceID: cup.ID, Amount: 1}, {ItemID: item.ID, ResourceID: stock.ID, Amount: 1}}).Error)
+	menu := models.Menu{Name: "ブレンド2杯", Abbr: "ブ2", Price: 1000, Key: "b2", MenuItems: []models.MenuItem{{ItemID: item.ID, Quantity: 2}}}
+	must(db.Create(&menu).Error)
+	line := models.OrderMenu{ID: uuid.New(), MenuID: menu.ID, MenuName: menu.Name, UnitPrice: menu.Price}
+	order := models.Order{CreatedAt: time.Now(), BillingAmount: 1000, Received: 1000, OrderMenus: []models.OrderMenu{line}}
+	must(db.Create(&order).Error)
+	existing := models.OrderStockUsage{OrderMenuID: line.ID, ResourceID: cup.ID, OrderID: order.ID, Servings: 3, Amount: 7}
+	must(db.Create(&existing).Error)
+	for range 2 {
+		must(migrate(db))
+		var resources int64
+		must(db.Model(&models.StockResource{}).Count(&resources).Error)
+		if resources != 2 {
+			t.Fatalf("在庫対象が重複した: %d", resources)
+		}
+		var usages []models.OrderStockUsage
+		must(db.Order("amount").Find(&usages).Error)
+		if len(usages) != 2 {
+			t.Fatalf("使用履歴 = %+v", usages)
+		}
+		if usages[0].ResourceID != stock.ID || usages[0].Amount != 2 || usages[0].Servings != 2 || usages[1] != existing {
+			t.Fatalf("補完または既存履歴の維持に失敗: %+v", usages)
+		}
+		if db.Migrator().HasTable("item_stock_usages") {
+			t.Fatal("旧使用量の表が残っている")
+		}
+		drift, err := findSchemaDrift(db)
+		must(err)
+		if len(drift) != 0 {
+			t.Fatalf("schema drift: %v", drift)
+		}
+	}
+}
