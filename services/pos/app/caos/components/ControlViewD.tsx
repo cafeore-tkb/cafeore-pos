@@ -501,6 +501,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           className={`border-b-2 [--caos-folder-border:2px] [--caos-folder-line:var(--color-slate-900)] ${LINE}`}
         >
           <UnassignedHeading
+            unassignedOrders={unassignedOrders}
             view={unfinished}
             label="注文内容"
             className={unfinished ? "text-[13px]" : undefined}

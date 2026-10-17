@@ -141,3 +141,32 @@ html:has(.caos-root) body {
   background: inherit;
   content: "";
 }
+
+/* 注文番号：フォントはタブから継承し、各桁の1文字分だけを静かに送る。 */
+.caos-root .caos-order-number {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.15em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.caos-root .caos-order-digits { display: inline-flex; }
+.caos-root .caos-order-digit {
+  display: inline-block;
+  width: 0.65em;
+  height: 1em;
+  overflow: hidden;
+}
+.caos-root .caos-order-digit-track {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(-50%);
+}
+.caos-root .caos-order-digit-cell {
+  display: block;
+  height: 1em;
+  line-height: 1;
+  text-align: center;
+}
+.caos-root .caos-order-empty { width: 1.95em; text-align: center; }

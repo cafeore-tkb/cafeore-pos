@@ -1,3 +1,4 @@
+import type { CaosCard } from "@cafeore/common";
 import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
@@ -6,6 +7,7 @@ import { labelHasOrder, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
 import { CommentList } from "./OrderComments";
+import { RollingOrderNumber } from "./RollingOrderNumber";
 import { ScrollArea } from "./ScrollArea";
 
 // 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
@@ -40,11 +42,33 @@ const TAB_OFF = "text-slate-600 hover:text-slate-950";
  */
 export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
+  unassignedOrders?: readonly CaosCard[];
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
   className?: string;
   children?: React.ReactNode;
-}> = ({ view, label = "未割当", className = "text-[15px]", children }) => {
+}> = ({
+  view,
+  unassignedOrders = [],
+  label = "未割当",
+  className = "text-[15px]",
+  children,
+}) => {
+  const smallestUnassigned = unassignedOrders.reduce<number | null>(
+    (smallest, card) =>
+      card.cups.reduce<number | null>(
+        (current, cup) =>
+          current === null ? cup.orderNo : Math.min(current, cup.orderNo),
+        smallest,
+      ),
+    null,
+  );
+  const smallestUnserved =
+    view?.rows.reduce<number | null>(
+      (smallest, row) =>
+        smallest === null ? row.orderNo : Math.min(smallest, row.orderNo),
+      null,
+    ) ?? null;
   const icon = <ClipboardList className="h-[1.1em] w-[1.1em] shrink-0" />;
   if (!view)
     return (
@@ -69,6 +93,7 @@ export const UnassignedHeading: React.FC<{
       >
         {icon}
         {label}
+        <RollingOrderNumber value={smallestUnassigned} />
         {children}
       </button>
       <button
@@ -80,6 +105,7 @@ export const UnassignedHeading: React.FC<{
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
+        <RollingOrderNumber value={smallestUnserved} />
         {view.rows.some((row) => row.late) && (
           <img
             src={lateIcon}
