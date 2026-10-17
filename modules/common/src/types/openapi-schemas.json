@@ -210,7 +210,8 @@
       "makes_cup",
       "needs_brew",
       "senior_only",
-      "iced_brew"
+      "iced_brew",
+      "needs_finishing"
     ],
     "properties": {
       "id": {
@@ -238,6 +239,10 @@
       "iced_brew": {
         "type": "boolean",
         "description": "この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false"
+      },
+      "needs_finishing": {
+        "type": "boolean",
+        "description": "この種類のアイテムは、ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）では呼び出さず、提供が呼び出す。needs_brew が false なら必ず false"
       }
     }
   },
@@ -266,6 +271,11 @@
         "description": "省略したら false。needs_brew が false のときに true は 400"
       },
       "iced_brew": {
+        "type": "boolean",
+        "default": false,
+        "description": "省略したら false。needs_brew が false のときに true は 400"
+      },
+      "needs_finishing": {
         "type": "boolean",
         "default": false,
         "description": "省略したら false。needs_brew が false のときに true は 400"
@@ -299,6 +309,10 @@
         "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       },
       "iced_brew": {
+        "type": "boolean",
+        "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
+      },
+      "needs_finishing": {
         "type": "boolean",
         "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
       }
@@ -358,6 +372,7 @@
       "drip_id",
       "brew_started_at",
       "brew_finished_at",
+      "delivered_at",
       "emergencies"
     ],
     "properties": {
@@ -377,7 +392,7 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）"
+        "description": "このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付けるほか、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）で注文のカップがそろったときにも付く（CaOS の「次へ」では付かない）"
       },
       "served_at": {
         "type": "string",
@@ -413,7 +428,13 @@
         "type": "string",
         "format": "date-time",
         "nullable": true,
-        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
+        "description": "CaOS で抽出を終えた時刻（CaOS の「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）が付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ"
+      },
+      "delivered_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "ドリッパーがこのカップを提供へ届けた時刻（ドリップ完了の報告。POST /api/caos/drippers/{dripper}/deliver だけが付ける）。届けていなければ null。準備完了（ready_at）とは別に持つ"
       },
       "emergencies": {
         "type": "array",
@@ -435,6 +456,7 @@
       "drip_id",
       "brew_started_at",
       "brew_finished_at",
+      "delivered_at",
       "reason"
     ],
     "properties": {
@@ -471,6 +493,11 @@
         "nullable": true
       },
       "brew_finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "delivered_at": {
         "type": "string",
         "format": "date-time",
         "nullable": true
@@ -1123,6 +1150,58 @@
         "$ref": "#/components/schemas/CaosPress"
       }
     }
+  },
+  "CaosDeliverRequest": {
+    "type": "object",
+    "required": ["drip_id"],
+    "properties": {
+      "drip_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "届けたカードの drip_id（そのドリッパーの抽出中か、終えたカード）"
+      }
+    }
+  },
+  "CaosDeliverResponse": {
+    "type": "object",
+    "required": ["orders"],
+    "properties": {
+      "orders": {
+        "type": "array",
+        "description": "届けたカードのカップの注文（注文番号の順。入れ直しは入れ直したカップの注文）",
+        "items": {
+          "$ref": "#/components/schemas/CaosDeliveredOrder"
+        }
+      }
+    }
+  },
+  "CaosDeliveredOrder": {
+    "type": "object",
+    "required": ["id", "order_id", "call"],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "order_id": {
+        "type": "integer",
+        "description": "注文番号"
+      },
+      "call": {
+        "$ref": "#/components/schemas/CaosDeliverCall"
+      }
+    }
+  },
+  "CaosDeliverCall": {
+    "type": "string",
+    "enum": ["called", "finishing", "waiting", "already"],
+    "x-enum-varnames": [
+      "CaosDeliverCalled",
+      "CaosDeliverFinishing",
+      "CaosDeliverWaiting",
+      "CaosDeliverAlready"
+    ],
+    "description": "届けた注文をどうしたか。\n- called：全部のカップがそろったので呼び出した（準備完了にした）\n- finishing：提供で仕上げるカップ（抽出が要らないカップ・提供で仕上げる種類）が残っているので、提供が呼び出す\n- waiting：まだ届いていないカップがある（ほかのカードのカップ・入れ直し）。最後のカップが届いたら呼び出す\n- already：もう呼び出し中か提供済み（変えない）\n"
   },
   "CaosLane": {
     "type": "object",

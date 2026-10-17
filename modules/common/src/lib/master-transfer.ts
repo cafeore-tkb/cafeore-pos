@@ -276,6 +276,7 @@ const ITEM_TYPE_FLAGS = [
   "needs_brew",
   "senior_only",
   "iced_brew",
+  "needs_finishing",
 ] as const;
 
 // ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない。

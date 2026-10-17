@@ -394,6 +394,7 @@ func main() {
 		api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
 		api.PUT("/caos/cups", caosHandler.WriteCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caosHandler.AdvanceCaosDripper)
+		api.POST("/caos/drippers/:dripper/deliver", caosHandler.DeliverCaosDrip)
 		api.POST("/cup-emergencies", caosHandler.CreateCupEmergencies)
 		api.GET("/cup-emergencies/reasons", caosHandler.GetCupEmergencyReasons)
 		api.DELETE("/cup-emergencies/:id", caosHandler.DeleteCupEmergency)

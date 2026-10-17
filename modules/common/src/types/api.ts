@@ -171,13 +171,28 @@ export interface paths {
      * CaOS の「次へ」
      * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
      * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
-     * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-     * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+     * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など と、ドリップ完了の報告）。
+     * カードを終えるのはこの「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
      * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
      * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
      */
     post: operations["advanceCaosDripper"];
+  };
+  "/api/caos/drippers/{dripper}/deliver": {
+    /**
+     * ドリップ完了の報告（ドリッパーが提供へ届けた）
+     * @description ドリッパーが淹れたカード（drip_id）を提供へ持って行ったときに、提供に置いた端末から送る。1 つのトランザクションで次のことをする：
+     * - カードが抽出中なら終える（brew_finished_at。時刻はサーバーの今。始めてから 10 秒は「次へ」と同じく断る）。待機の先頭は始めない（始めるのは CaOS の ▶）
+     * - カードのカップ・入れ直しの delivered_at に今を付ける（もう付いているものはそのまま）
+     * - カードのカップ（入れ直しは入れ直したカップ）の注文ごとに、全部のカップがそろったら、注文と全部のカップを準備完了（ready_at）にする。呼び出し画面はそれで呼ぶ
+     * カップがそろったとみるのは、準備完了（提供済みも）か、届けた（delivered_at。入れ直しがあれば、入れ直しを全部届けた）うえで、抽出が要り提供で仕上げない種類（item_types.needs_finishing が false）のとき。
+     * 入れ直しを足したのにまだ届けていないカップは、最初の抽出を届けていてもそろわない。
+     * 抽出が要らないカップ（ミルクなど）と、提供で仕上げる種類のカップは、提供の画面で準備完了にするまでそろわない（提供が呼び出す）。
+     * もう準備完了・提供済みの注文は変えない。もう全部届けたカードをもう一度送っても、何も変えずに 200（二度押し。注文は全部 already。提供が呼び出しを取り消した注文も呼び直さない）。
+     * 書いた注文は PUT /api/caos/cups と同じく配る。
+     */
+    post: operations["deliverCaosDrip"];
   };
   "/api/cup-emergencies": {
     /**
@@ -551,6 +566,8 @@ export interface components {
       senior_only: boolean;
       /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
       iced_brew: boolean;
+      /** @description この種類のアイテムは、ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）では呼び出さず、提供が呼び出す。needs_brew が false なら必ず false */
+      needs_finishing: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
@@ -572,6 +589,11 @@ export interface components {
        * @default false
        */
       iced_brew?: boolean;
+      /**
+       * @description 省略したら false。needs_brew が false のときに true は 400
+       * @default false
+       */
+      needs_finishing?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
@@ -586,6 +608,8 @@ export interface components {
       senior_only?: boolean;
       /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
       iced_brew?: boolean;
+      /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
+      needs_finishing?: boolean;
     };
     MenuInfo: {
       /**
@@ -614,7 +638,7 @@ export interface components {
       item: components["schemas"]["ItemResponse"];
       /**
        * Format: date-time
-       * @description このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
+       * @description このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付けるほか、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）で注文のカップがそろったときにも付く（CaOS の「次へ」では付かない）
        */
       ready_at: string | null;
       /**
@@ -638,9 +662,14 @@ export interface components {
       brew_started_at: string | null;
       /**
        * Format: date-time
-       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
+       * @description CaOS で抽出を終えた時刻（CaOS の「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）が付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
        */
       brew_finished_at: string | null;
+      /**
+       * Format: date-time
+       * @description ドリッパーがこのカップを提供へ届けた時刻（ドリップ完了の報告。POST /api/caos/drippers/{dripper}/deliver だけが付ける）。届けていなければ null。準備完了（ready_at）とは別に持つ
+       */
+      delivered_at: string | null;
       /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
       emergencies: components["schemas"]["CupEmergencyResponse"][];
     };
@@ -660,6 +689,8 @@ export interface components {
       brew_started_at: string | null;
       /** Format: date-time */
       brew_finished_at: string | null;
+      /** Format: date-time */
+      delivered_at: string | null;
     };
     MenuInfoCreate: {
       /**
@@ -964,6 +995,34 @@ export interface components {
       start_drip_id?: string;
       press?: components["schemas"]["CaosPress"];
     };
+    CaosDeliverRequest: {
+      /**
+       * Format: uuid
+       * @description 届けたカードの drip_id（そのドリッパーの抽出中か、終えたカード）
+       */
+      drip_id: string;
+    };
+    CaosDeliverResponse: {
+      /** @description 届けたカードのカップの注文（注文番号の順。入れ直しは入れ直したカップの注文） */
+      orders: components["schemas"]["CaosDeliveredOrder"][];
+    };
+    CaosDeliveredOrder: {
+      /** Format: uuid */
+      id: string;
+      /** @description 注文番号 */
+      order_id: number;
+      call: components["schemas"]["CaosDeliverCall"];
+    };
+    /**
+     * @description 届けた注文をどうしたか。
+     * - called：全部のカップがそろったので呼び出した（準備完了にした）
+     * - finishing：提供で仕上げるカップ（抽出が要らないカップ・提供で仕上げる種類）が残っているので、提供が呼び出す
+     * - waiting：まだ届いていないカップがある（ほかのカードのカップ・入れ直し）。最後のカップが届いたら呼び出す
+     * - already：もう呼び出し中か提供済み（変えない）
+     *
+     * @enum {string}
+     */
+    CaosDeliverCall: "called" | "finishing" | "waiting" | "already";
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
       dripper: number;
@@ -1969,8 +2028,8 @@ export interface operations {
    * CaOS の「次へ」
    * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
    * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
-   * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-   * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+   * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など と、ドリップ完了の報告）。
+   * カードを終えるのはこの「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
    * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
    * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -1999,6 +2058,51 @@ export interface operations {
         };
       };
       /** @description 画面の見ている抽出中が今と違う・抽出中も待機も無い・start_next が false で抽出中が無い・待機の先頭が start_drip_id と違う（何も変えない） */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * ドリップ完了の報告（ドリッパーが提供へ届けた）
+   * @description ドリッパーが淹れたカード（drip_id）を提供へ持って行ったときに、提供に置いた端末から送る。1 つのトランザクションで次のことをする：
+   * - カードが抽出中なら終える（brew_finished_at。時刻はサーバーの今。始めてから 10 秒は「次へ」と同じく断る）。待機の先頭は始めない（始めるのは CaOS の ▶）
+   * - カードのカップ・入れ直しの delivered_at に今を付ける（もう付いているものはそのまま）
+   * - カードのカップ（入れ直しは入れ直したカップ）の注文ごとに、全部のカップがそろったら、注文と全部のカップを準備完了（ready_at）にする。呼び出し画面はそれで呼ぶ
+   * カップがそろったとみるのは、準備完了（提供済みも）か、届けた（delivered_at。入れ直しがあれば、入れ直しを全部届けた）うえで、抽出が要り提供で仕上げない種類（item_types.needs_finishing が false）のとき。
+   * 入れ直しを足したのにまだ届けていないカップは、最初の抽出を届けていてもそろわない。
+   * 抽出が要らないカップ（ミルクなど）と、提供で仕上げる種類のカップは、提供の画面で準備完了にするまでそろわない（提供が呼び出す）。
+   * もう準備完了・提供済みの注文は変えない。もう全部届けたカードをもう一度送っても、何も変えずに 200（二度押し。注文は全部 already。提供が呼び出しを取り消した注文も呼び直さない）。
+   * 書いた注文は PUT /api/caos/cups と同じく配る。
+   */
+  deliverCaosDrip: {
+    parameters: {
+      path: {
+        /** @description ドリッパーの番号（1〜6） */
+        dripper: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosDeliverRequest"];
+      };
+    };
+    responses: {
+      /** @description 届けた（注文ごとに、呼び出したか） */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosDeliverResponse"];
+        };
+      };
+      /** @description 形の違うリクエスト・始めてから 10 秒たっていない・今日の注文でない（何も変えない） */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description カードが無い・そのドリッパーのカードでない・まだ始めていない（何も変えない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];

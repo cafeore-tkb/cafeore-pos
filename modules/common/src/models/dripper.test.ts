@@ -29,6 +29,7 @@ const menu = () =>
             needs_brew: true,
             senior_only: false,
             iced_brew: false,
+            needs_finishing: false,
           },
         },
         quantity: 1,

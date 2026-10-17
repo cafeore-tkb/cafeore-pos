@@ -37,6 +37,7 @@ const itemType = (name: string, needsBrew: boolean): ItemType => ({
   needs_brew: needsBrew,
   senior_only: false,
   iced_brew: false,
+  needs_finishing: false,
 });
 
 const menu = (id: string, key: string, type: ItemType) =>

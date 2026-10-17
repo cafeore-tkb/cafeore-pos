@@ -240,9 +240,11 @@ type itemTypeBackfill struct {
 //   - グッズ（others）はカップを作らない。ミルク（milk）とグッズは抽出しない
 //   - CaOS が限定（SP）として扱っていた limited だけ上級生のみ
 //   - アイス（ice）とアイスオレ（iceOre）だけアイスで淹れる
+//   - オレ（hotOre・iceOre）は提供でミルクを入れて仕上げる（ドリップ完了の報告でそのまま呼び出さない。2026-10 に足した項目）
 var itemTypeBackfills = []itemTypeBackfill{
 	{column: "makes_cup", value: false, names: []string{"others"}},
 	{column: "needs_brew", value: false, names: []string{"milk", "others"}},
 	{column: "senior_only", value: true, names: []string{"limited"}},
 	{column: "iced_brew", value: true, names: []string{"ice", "iceOre"}},
+	{column: "needs_finishing", value: true, names: []string{"hotOre", "iceOre"}},
 }

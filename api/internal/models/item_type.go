@@ -28,6 +28,10 @@ type ItemType struct {
 	// この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。
 	// NeedsBrew が false なら false にする（API で検査する）。既定値が false なのでポインタにしなくてよい。
 	IcedBrew bool `gorm:"not null;default:false"`
+	// この種類のアイテムは、ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告
+	// （POST /api/caos/drippers/:dripper/deliver）では呼び出さず、提供が呼び出す。NeedsBrew が false なら false にする（API で検査する）。
+	// 抽出が要らない種類（ミルクなど）は、この値によらず提供が準備完了にする。既定値が false なのでポインタにしなくてよい。
+	NeedsFinishing bool `gorm:"not null;default:false"`
 }
 
 func (item_type *ItemType) BeforeCreate(tx *gorm.DB) error {

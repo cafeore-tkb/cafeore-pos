@@ -83,6 +83,7 @@ func itemTypeUpdatedMessage(before, after *models.ItemType) string {
 		change{"抽出が要る", formatOnOff(before.BrewRequired()), formatOnOff(after.BrewRequired())},
 		change{"上級生のみ", formatOnOff(before.SeniorOnly), formatOnOff(after.SeniorOnly)},
 		change{"アイスで淹れる", formatOnOff(before.IcedBrew), formatOnOff(after.IcedBrew)},
+		change{"提供で仕上げる", formatOnOff(before.NeedsFinishing), formatOnOff(after.NeedsFinishing)},
 	))
 }
 

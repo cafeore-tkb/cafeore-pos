@@ -96,6 +96,7 @@ export const toCaosPracticeOrder = (
           needs_brew: type.needs_brew,
           senior_only: type.senior_only,
           iced_brew: false,
+          needs_finishing: false,
         },
       },
       readyAt: null,
@@ -105,6 +106,7 @@ export const toCaosPracticeOrder = (
       dripId: null,
       brewStartedAt: null,
       brewFinishedAt: null,
+      deliveredAt: null,
       emergencies: [],
     });
     menus.push({
@@ -507,6 +509,7 @@ export const addCaosPracticeEmergencies = (
       dripId: null,
       brewStartedAt: null,
       brewFinishedAt: null,
+      deliveredAt: null,
     };
     cup.emergencies.push(emergency);
     ids.push(emergency.id);

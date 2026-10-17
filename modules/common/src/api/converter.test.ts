@@ -44,6 +44,7 @@ const response: OrderResponse = {
                 needs_brew: true,
                 senior_only: false,
                 iced_brew: false,
+                needs_finishing: false,
               },
             },
           },
@@ -65,6 +66,7 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   drip_id: null,
   brew_started_at: null,
   brew_finished_at: null,
+  delivered_at: null,
   emergencies: [],
 });
 

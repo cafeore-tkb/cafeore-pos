@@ -86,7 +86,7 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 		emergencies = append(emergencies, models.CupEmergencyResponse{
 			Id: e.ID, CreatedAt: e.CreatedAt, Reason: e.Reason,
 			Dripper: e.Dripper, DripperPosition: e.DripperPosition, DripId: e.DripID,
-			BrewStartedAt: e.BrewStartedAt, BrewFinishedAt: e.BrewFinishedAt,
+			BrewStartedAt: e.BrewStartedAt, BrewFinishedAt: e.BrewFinishedAt, DeliveredAt: e.DeliveredAt,
 		})
 	}
 	return models.OrderCupResponse{
@@ -101,6 +101,7 @@ func toOrderCupResponse(cup *models.OrderCup) models.OrderCupResponse {
 		DripId:          cup.DripID,
 		BrewStartedAt:   cup.BrewStartedAt,
 		BrewFinishedAt:  cup.BrewFinishedAt,
+		DeliveredAt:     cup.DeliveredAt,
 		Emergencies:     emergencies,
 	}
 }

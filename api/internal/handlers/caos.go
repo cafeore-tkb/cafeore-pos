@@ -29,11 +29,13 @@ import (
 //     抽出中のカードも動かせる（始めた時刻を消して待機・未割当にする）。書いたあと、1 つのドリッパーで抽出中は 1 枚まで（caosBrewingTwice）。
 //     上級生のみのカップ（種類の senior_only）も、担当者が上級生でないドリッパーに置ける（断らない。画面が置いたときに知らせる）
 //   - POST /api/caos/drippers/:dripper/next：「次へ」。抽出中のカードを終え（brew_finished_at）、待機の先頭を始める（brew_started_at。start_next が false なら始めない）。
-//     カップの準備完了（ready_at）は付けない（付けるのは提供の画面）。抽出を始めてから caosNextCooldown は断る
+//     カップの準備完了（ready_at）は付けない（付けるのは提供の画面と、ドリップ完了の報告）。抽出を始めてから caosNextCooldown は断る
 //     （二度押し・続けて押すのを防ぐ。始めた時刻と「次へ」を押した時刻の差で見る）
+//   - POST /api/caos/drippers/:dripper/deliver：ドリップ完了の報告（caos_deliver.go）。抽出中のカードを終え（待機の先頭は始めない）、
+//     提供へ届けた時刻を付け、注文のカップがそろえば準備完了にする
 //
-// 盤面（抽出の開始・終わり・待機）を書くのは CaOS の操作だけ。提供の画面の準備完了・提供（order_status.go）は盤面を書かず、
-// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。終えるのは「次へ」だけ）。
+// 盤面（抽出の開始・終わり・待機）を書くのは CaOS の操作とドリップ完了の報告だけ。提供の画面の準備完了・提供（order_status.go）は盤面を書かず、
+// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。終えるのは「次へ」と報告だけ）。
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。カップを置くドリッパーの advisory lock は
 // 注文の行より先に取り、列の番号を決めて書き終えるまで・抽出を始めるドリッパーが空いているかを確かめるまで、同じドリッパーへの書き込みを待たせる。
@@ -121,11 +123,11 @@ func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.T
 
 // caosUnits は CaOS のカードに入る行：注文のカップ（最初の抽出）と、緊急（入れ直し）。列は order_cups と同じ名前で、
 // cup_id は入れ直したカップ（カップなら自分）。注文・明細・商品は入れ直したカップのもの。
-// 準備完了・提供の時刻は盤面の決まりに使わないので読まない。
+// 準備完了・提供の時刻は盤面の決まりに使わないので読まない。提供へ届けた時刻（delivered_at）はドリップ完了の報告が読む。
 const caosUnits = `(SELECT id, id AS cup_id, order_id, order_menu_id, item_id,
-		dripper, dripper_position, drip_id, brew_started_at, brew_finished_at FROM order_cups
+		dripper, dripper_position, drip_id, brew_started_at, brew_finished_at, delivered_at FROM order_cups
 	UNION ALL SELECT e.id, e.order_cup_id, c.order_id, c.order_menu_id, c.item_id,
-		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at
+		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at, e.delivered_at
 	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id)`
 
 // caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）。

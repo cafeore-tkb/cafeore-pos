@@ -79,6 +79,19 @@ export const nextCaosDripper = async (
   );
 
 /**
+ * ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）。ドリッパーが dripId のカードを提供へ届けたことにする。
+ * 抽出中なら終え（待機の先頭は始めない）、注文のカップがそろえば呼び出す。data.orders は注文ごとにどうしたか（lib/caos-deliver.ts の決まり）。
+ * CaOS の操作と違い、端末に残して送り直さない（届けたその場で押すので、通らなければ理由を出してもう一度押してもらう）
+ */
+export const deliverCaosDrip = async (dripper: number, dripId: string) =>
+  send(
+    apiClient.POST("/api/caos/drippers/{dripper}/deliver", {
+      params: { path: { dripper } },
+      body: { drip_id: dripId },
+    }),
+  );
+
+/**
  * カップを緊急（入れ直し）にする（POST /api/cup-emergencies）。1 杯につき入れ直しを 1 つ足す（同じカップに何度でも）。
  * reason は入れ直す理由（空なら理由なし）。入れ直しはカップの emergencies に入り、CaOS で未割当の入れ直しのカードになる。
  * data.ids は足した入れ直しの id（cupIds と同じ順）

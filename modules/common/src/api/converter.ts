@@ -168,6 +168,7 @@ export const responseToOrderEntity = (
       brewFinishedAt: cup.brew_finished_at
         ? new Date(cup.brew_finished_at)
         : null,
+      deliveredAt: cup.delivered_at ? new Date(cup.delivered_at) : null,
       emergencies: (cup.emergencies ?? []).map((emergency) => ({
         id: emergency.id,
         createdAt: new Date(emergency.created_at),
@@ -180,6 +181,9 @@ export const responseToOrderEntity = (
           : null,
         brewFinishedAt: emergency.brew_finished_at
           ? new Date(emergency.brew_finished_at)
+          : null,
+        deliveredAt: emergency.delivered_at
+          ? new Date(emergency.delivered_at)
           : null,
       })),
     })),

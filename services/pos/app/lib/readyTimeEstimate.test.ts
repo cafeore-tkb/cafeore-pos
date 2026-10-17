@@ -33,6 +33,7 @@ describe("[unit] currentStack", () => {
     needs_brew: makesCup,
     senior_only: false,
     iced_brew: false,
+    needs_finishing: false,
   });
   const hot = itemType("hot", true);
   const goods = itemType("others", false);

@@ -708,8 +708,8 @@ paths:
       description: |
         そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
         時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
-        カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-        カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+        カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など と、ドリップ完了の報告）。
+        カードを終えるのはこの「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
         start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
         start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
         drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -742,6 +742,56 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: 画面の見ている抽出中が今と違う・抽出中も待機も無い・start_next が false で抽出中が無い・待機の先頭が start_drip_id と違う（何も変えない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/caos/drippers/{dripper}/deliver:
+    post:
+      summary: ドリップ完了の報告（ドリッパーが提供へ届けた）
+      description: |
+        ドリッパーが淹れたカード（drip_id）を提供へ持って行ったときに、提供に置いた端末から送る。1 つのトランザクションで次のことをする：
+        - カードが抽出中なら終える（brew_finished_at。時刻はサーバーの今。始めてから 10 秒は「次へ」と同じく断る）。待機の先頭は始めない（始めるのは CaOS の ▶）
+        - カードのカップ・入れ直しの delivered_at に今を付ける（もう付いているものはそのまま）
+        - カードのカップ（入れ直しは入れ直したカップ）の注文ごとに、全部のカップがそろったら、注文と全部のカップを準備完了（ready_at）にする。呼び出し画面はそれで呼ぶ
+        カップがそろったとみるのは、準備完了（提供済みも）か、届けた（delivered_at。入れ直しがあれば、入れ直しを全部届けた）うえで、抽出が要り提供で仕上げない種類（item_types.needs_finishing が false）のとき。
+        入れ直しを足したのにまだ届けていないカップは、最初の抽出を届けていてもそろわない。
+        抽出が要らないカップ（ミルクなど）と、提供で仕上げる種類のカップは、提供の画面で準備完了にするまでそろわない（提供が呼び出す）。
+        もう準備完了・提供済みの注文は変えない。もう全部届けたカードをもう一度送っても、何も変えずに 200（二度押し。注文は全部 already。提供が呼び出しを取り消した注文も呼び直さない）。
+        書いた注文は PUT /api/caos/cups と同じく配る。
+      operationId: deliverCaosDrip
+      tags:
+        - caos
+      parameters:
+        - name: dripper
+          in: path
+          required: true
+          description: ドリッパーの番号（1〜6）
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 6
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosDeliverRequest'
+      responses:
+        '200':
+          description: 届けた（注文ごとに、呼び出したか）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaosDeliverResponse'
+        '400':
+          description: 形の違うリクエスト・始めてから 10 秒たっていない・今日の注文でない（何も変えない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: カードが無い・そのドリッパーのカードでない・まだ始めていない（何も変えない）
           content:
             application/json:
               schema:
@@ -1914,6 +1964,7 @@ components:
         - needs_brew
         - senior_only
         - iced_brew
+        - needs_finishing
       properties:
         id:
           type: string
@@ -1934,6 +1985,9 @@ components:
         iced_brew:
           type: boolean
           description: この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false
+        needs_finishing:
+          type: boolean
+          description: この種類のアイテムは、ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）では呼び出さず、提供が呼び出す。needs_brew が false なら必ず false
     ItemTypeCreateRequest:
       type: object
       required:
@@ -1956,6 +2010,10 @@ components:
           default: false
           description: 省略したら false。needs_brew が false のときに true は 400
         iced_brew:
+          type: boolean
+          default: false
+          description: 省略したら false。needs_brew が false のときに true は 400
+        needs_finishing:
           type: boolean
           default: false
           description: 省略したら false。needs_brew が false のときに true は 400
@@ -1984,6 +2042,9 @@ components:
           type: boolean
           description: 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
         iced_brew:
+          type: boolean
+          description: 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
+        needs_finishing:
           type: boolean
           description: 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
     # 指名を入れたMenu
@@ -2033,6 +2094,7 @@ components:
         - drip_id
         - brew_started_at
         - brew_finished_at
+        - delivered_at
         - emergencies
       properties:
         id:
@@ -2048,7 +2110,7 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付ける（CaOS の「次へ」では付かない）
+          description: このカップが準備完了（提供可能）になった時刻。未準備なら null。提供の画面で付けるほか、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）で注文のカップがそろったときにも付く（CaOS の「次へ」では付かない）
         served_at:
           type: string
           format: date-time
@@ -2078,7 +2140,12 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
+          description: CaOS で抽出を終えた時刻（CaOS の「次へ」と、ドリップ完了の報告（POST /api/caos/drippers/{dripper}/deliver）が付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ドリッパーがこのカップを提供へ届けた時刻（ドリップ完了の報告。POST /api/caos/drippers/{dripper}/deliver だけが付ける）。届けていなければ null。準備完了（ready_at）とは別に持つ
         emergencies:
           type: array
           description: このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
@@ -2095,6 +2162,7 @@ components:
         - drip_id
         - brew_started_at
         - brew_finished_at
+        - delivered_at
         - reason
       properties:
         id:
@@ -2123,6 +2191,10 @@ components:
           format: date-time
           nullable: true
         brew_finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        delivered_at:
           type: string
           format: date-time
           nullable: true
@@ -2694,6 +2766,49 @@ components:
           description: 始めるはずの待機の先頭のカードの drip_id（CaOS で待機のカードを押したとき）。待機の先頭が違えば 409。省略すると確かめない
         press:
           $ref: '#/components/schemas/CaosPress'
+    CaosDeliverRequest:
+      type: object
+      required: [drip_id]
+      properties:
+        drip_id:
+          type: string
+          format: uuid
+          description: 届けたカードの drip_id（そのドリッパーの抽出中か、終えたカード）
+    CaosDeliverResponse:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          description: 届けたカードのカップの注文（注文番号の順。入れ直しは入れ直したカップの注文）
+          items:
+            $ref: '#/components/schemas/CaosDeliveredOrder'
+    CaosDeliveredOrder:
+      type: object
+      required: [id, order_id, call]
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_id:
+          type: integer
+          description: 注文番号
+        call:
+          $ref: '#/components/schemas/CaosDeliverCall'
+    CaosDeliverCall:
+      type: string
+      enum: [called, finishing, waiting, already]
+      x-enum-varnames:
+        - CaosDeliverCalled
+        - CaosDeliverFinishing
+        - CaosDeliverWaiting
+        - CaosDeliverAlready
+      description: |
+        届けた注文をどうしたか。
+        - called：全部のカップがそろったので呼び出した（準備完了にした）
+        - finishing：提供で仕上げるカップ（抽出が要らないカップ・提供で仕上げる種類）が残っているので、提供が呼び出す
+        - waiting：まだ届いていないカップがある（ほかのカードのカップ・入れ直し）。最後のカップが届いたら呼び出す
+        - already：もう呼び出し中か提供済み（変えない）
     CaosLane:
       type: object
       description: ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false

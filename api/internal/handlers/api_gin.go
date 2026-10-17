@@ -17,6 +17,9 @@ type ServerInterface interface {
 	// CaOS が決めたことを注文のカップに書く
 	// (PUT /api/caos/cups)
 	WriteCaosCups(c *gin.Context)
+	// ドリップ完了の報告（ドリッパーが提供へ届けた）
+	// (POST /api/caos/drippers/{dripper}/deliver)
+	DeliverCaosDrip(c *gin.Context, dripper int)
 	// CaOS の「次へ」
 	// (POST /api/caos/drippers/{dripper}/next)
 	AdvanceCaosDripper(c *gin.Context, dripper int)
@@ -231,6 +234,30 @@ func (siw *ServerInterfaceWrapper) WriteCaosCups(c *gin.Context) {
 	}
 
 	siw.Handler.WriteCaosCups(c)
+}
+
+// DeliverCaosDrip operation middleware
+func (siw *ServerInterfaceWrapper) DeliverCaosDrip(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "dripper" -------------
+	var dripper int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "dripper", c.Param("dripper"), &dripper, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter dripper: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeliverCaosDrip(c, dripper)
 }
 
 // AdvanceCaosDripper operation middleware
@@ -1463,6 +1490,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.PUT(options.BaseURL+"/api/caos/cups", wrapper.WriteCaosCups)
+	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/deliver", wrapper.DeliverCaosDrip)
 	router.POST(options.BaseURL+"/api/caos/drippers/:dripper/next", wrapper.AdvanceCaosDripper)
 	router.POST(options.BaseURL+"/api/caos/lanes/seniors", wrapper.UpdateCaosLaneSeniors)
 	router.POST(options.BaseURL+"/api/caos/lanes/swap", wrapper.SwapCaosLanes)

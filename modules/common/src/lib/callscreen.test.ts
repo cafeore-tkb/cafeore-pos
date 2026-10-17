@@ -21,6 +21,7 @@ const itemType = (
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  needs_finishing: false,
   ...flags,
 });
 const blend = {
@@ -49,6 +50,7 @@ const cup = (init: Partial<Cup> = {}): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  deliveredAt: null,
   emergencies: [],
   ...init,
 });
@@ -205,6 +207,7 @@ describe("[unit] 呼び出し画面の抽出中のカード（ドリップの案
       dripId: "drip-emergency",
       brewStartedAt: T0,
       brewFinishedAt: null,
+      deliveredAt: null,
     };
     const { brewing: cards } = splitCallScreenOrders([
       order(1, [brewed(3, { emergencies: [emergency] })]),

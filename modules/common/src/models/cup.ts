@@ -15,6 +15,7 @@ export const cupEmergencySchema = z.object({
   dripId: z.string().nullable(),
   brewStartedAt: z.date().nullable(),
   brewFinishedAt: z.date().nullable(),
+  deliveredAt: z.date().nullable(),
 });
 
 export type CupEmergency = z.infer<typeof cupEmergencySchema>;
@@ -43,6 +44,8 @@ export const cupSchema = z.object({
   brewStartedAt: z.date().nullable(),
   /** 抽出を終えた時刻 */
   brewFinishedAt: z.date().nullable(),
+  /** ドリッパーが提供へ届けた時刻（ドリップ完了の報告）。準備完了（readyAt）とは別 */
+  deliveredAt: z.date().nullable(),
   /** 緊急（入れ直し）。足した順 */
   emergencies: z.array(cupEmergencySchema),
 });

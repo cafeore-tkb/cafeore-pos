@@ -40,6 +40,7 @@ const type = (
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  needs_finishing: false,
   ...flags,
 });
 const blend = {
@@ -87,6 +88,7 @@ const cup = ({ line = "line-1", ...init }: CupInit): Cup => ({
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  deliveredAt: null,
   emergencies: [],
   ...init,
 });
@@ -104,6 +106,7 @@ const emergency = (
   dripId: null,
   brewStartedAt: null,
   brewFinishedAt: null,
+  deliveredAt: null,
   ...at,
 });
 
@@ -253,6 +256,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       dripId: "first",
       brewStartedAt: start,
       brewFinishedAt: NOW,
+      deliveredAt: null,
       emergencies: [
         emergency("e1", {
           dripper: 3,

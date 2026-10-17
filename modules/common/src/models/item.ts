@@ -15,6 +15,8 @@ export const itemTypeSchema = z.object({
   senior_only: z.boolean(),
   /** アイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない） */
   iced_brew: z.boolean(),
+  /** ドリッパーが提供へ届けたあと提供で仕上げる（ミルクを入れるなど）。ドリップ完了の報告ではそのまま呼び出さない */
+  needs_finishing: z.boolean(),
 });
 
 export const itemSchema = z.object({
