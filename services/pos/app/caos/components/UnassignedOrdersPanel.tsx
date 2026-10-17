@@ -11,12 +11,7 @@ import {
   unassignedRows,
 } from "../logic/cards";
 import type { NextAvailable } from "../logic/queue";
-import {
-  LongWaitTag,
-  NextAvailableChips,
-  OrderCountLabel,
-  PanelHeader,
-} from "./BoardParts";
+import { LongWaitTag, OrderCountLabel, PanelHeader } from "./BoardParts";
 import {
   BayPad,
   CancelEmergencyButton,
@@ -149,6 +144,7 @@ type UnassignedProps = {
   readOnly?: boolean;
   /** 「未提供」のタブ（操作の画面だけ） */
   unfinished?: UnfinishedView;
+  nextAvailable?: NextAvailable;
 };
 
 /** 未割当の横帯をたたむか（閲覧だけの画面。たたむと見出しの行だけにする） */
@@ -178,7 +174,7 @@ export const UnassignedStrip: React.FC<
 }) => {
   const columns = unassignedRows(orders);
   const folded = fold?.folded ?? false;
-  // 横のスクロールバーを置く、見出しの行の空いた所（件数と「次に空く」の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
+  // 横のスクロールバーを置く、見出しの行の空いた所（件数と右側の操作の間。重ならず、件数や時刻の幅が変わってもそこに収まる）
   const [trackSlot, setTrackSlot] = useState<HTMLDivElement | null>(null);
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
@@ -188,16 +184,13 @@ export const UnassignedStrip: React.FC<
       <header className="flex h-10 shrink-0 items-center gap-2 border-slate-300 border-b bg-slate-100 px-2">
         <UnassignedHeading
           view={unfinished}
+          nextBayId={nextAvailable?.[0]?.bayId}
           unassignedOrders={orders}
           className="text-[18px]"
         >
           <CountChip orders={orders} />
         </UnassignedHeading>
         <div ref={setTrackSlot} className="h-5 min-w-12 flex-1" />
-        <NextAvailableChips
-          nextAvailable={nextAvailable}
-          className="shrink-0 text-[12px]"
-        />
         {fold && (
           <button
             type="button"
@@ -277,6 +270,7 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
   nowMs,
   pick,
   unfinished,
+  nextAvailable,
 }) => {
   const rows = unassignedRows(orders);
   return (
@@ -287,7 +281,11 @@ export const OrderQueuePanel: React.FC<Omit<UnassignedProps, "readOnly">> = ({
         backgroundClassName="bg-slate-100"
         className="border-slate-300 border-b"
       >
-        <UnassignedHeading view={unfinished} unassignedOrders={orders}>
+        <UnassignedHeading
+          view={unfinished}
+          nextBayId={nextAvailable?.[0]?.bayId}
+          unassignedOrders={orders}
+        >
           <CountChip
             orders={orders}
             className="shrink-0 font-bold text-[11px]"

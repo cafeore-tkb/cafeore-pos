@@ -1,4 +1,4 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
@@ -47,6 +47,7 @@ const TAB_OFF = "text-slate-600 hover:text-slate-950";
 export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
   unassignedOrders?: readonly CaosCard[];
+  nextBayId?: number;
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
   className?: string;
@@ -54,6 +55,7 @@ export const UnassignedHeading: React.FC<{
 }> = ({
   view,
   unassignedOrders = [],
+  nextBayId,
   label = "未割当",
   className = "text-[15px]",
   children,
@@ -103,6 +105,23 @@ export const UnassignedHeading: React.FC<{
         <span className="caos-tab-count">
           <RollingNumber value={unassignedCounts.orders} />件{" "}
           <RollingNumber value={unassignedCounts.cups} />杯
+        </span>
+        <span
+          className="caos-tab-time"
+          title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
+        >
+          NEXT→
+          {nextBayId === undefined ? (
+            "—"
+          ) : (
+            <span className="caos-order-digits">
+              <RollingNumber
+                value={nextBayId}
+                label={`ドリッパー ${dripperLabel(nextBayId)}`}
+              />
+              <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
+            </span>
+          )}
         </span>
       </button>
       <button

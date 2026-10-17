@@ -6,7 +6,7 @@ import type { OpenCornerToast } from "../hooks/useCornerToasts";
 import { longWaitMinutes } from "../logic/alerts";
 import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
+import type { LanePhase, LaneStatus } from "../logic/queue";
 
 // 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
@@ -242,26 +242,6 @@ export const EmptySlotButton: React.FC<{
     <Plus className="h-4 w-4 shrink-0" />
     空きスロット
   </button>
-);
-
-/** 「次に空く」ドリッパー（未割当とドリッパーの見出し）。札の幅は決めておく（毎秒の残りや「空き」で見出しの並びが動かないように） */
-export const NextAvailableChips: React.FC<{
-  nextAvailable: NextAvailable;
-  className?: string;
-}> = ({ nextAvailable, className = "ml-1" }) => (
-  <div
-    className={`flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500 ${className}`}
-  >
-    <span className="shrink-0">次に空く:</span>
-    {nextAvailable.map((item, index) => (
-      <span
-        key={item.bayId}
-        className={`min-w-[6em] shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-center font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
-      >
-        #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
-      </span>
-    ))}
-  </div>
 );
 
 /**

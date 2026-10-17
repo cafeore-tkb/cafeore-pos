@@ -105,6 +105,7 @@ const dropLabel = (target: SheetDrop | null) =>
 export const ControlViewD: React.FC<ControlViewProps> = ({
   lanes: bays,
   unassignedOrders,
+  nextAvailable,
   looks,
   nowMs,
   selectedOrderId,
@@ -501,6 +502,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
           className={`border-b-2 [--caos-folder-border:2px] [--caos-folder-line:var(--color-slate-900)] ${LINE}`}
         >
           <UnassignedHeading
+            nextBayId={nextAvailable[0]?.bayId}
             unassignedOrders={unassignedOrders}
             view={unfinished}
             label="注文内容"
