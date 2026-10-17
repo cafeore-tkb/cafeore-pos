@@ -264,7 +264,7 @@ export const PayPanel = ({
 
       <div
         className={cn(
-          "mt-2 grid min-h-0 flex-1 grid-cols-4 grid-rows-[repeat(4,minmax(40px,1fr))] gap-2 transition-opacity duration-200",
+          "mt-2 grid min-h-0 flex-1 grid-cols-4 grid-rows-[repeat(4,minmax(40px,1fr))] gap-3 transition-opacity duration-200",
           !padEnabled && "pointer-events-none",
           !padEnabled && (paying ? "opacity-30" : "opacity-38"),
         )}
@@ -286,6 +286,9 @@ export const PayPanel = ({
               className={cn(
                 "flex items-center justify-center rounded-lg border border-stone-200 p-0 tabular-nums",
                 padEnabled && "disabled:opacity-35",
+                // 押せるキーだけ浮かせ、押すと沈める
+                !off &&
+                  "shadow-[0_2px_0_var(--color-stone-300),0_3px_6px_rgba(28,25,23,.1)] active:translate-y-0.5 active:shadow-none",
                 key.kind === "digit" &&
                   "bg-white font-bold text-[22px] text-stone-900 active:bg-stone-100",
                 key.kind === "back" && "bg-stone-100 active:bg-stone-200",
