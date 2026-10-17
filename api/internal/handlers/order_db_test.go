@@ -445,6 +445,38 @@ func TestConcurrentCupOperationsAreNotLost(t *testing.T) {
 	}
 }
 
+// 呼び出し催促は、呼び出し中（準備完了で、まだ提供していない）の注文だけ。注文は変えず、全部の画面に知らせるだけ
+func TestRecallOrder(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	created := api.createOrder(1, m.blendMenu)
+	base := "/api/orders/" + created.Id.String()
+	recall := func() testResponse { return api.do(http.MethodPost, base+"/recall", nil) }
+
+	// まだ呼んでいない注文は催促できない
+	recall().expect(http.StatusConflict)
+	api.noBroadcast()
+
+	ready := api.patchStatus(base + "/ready")
+	recall().expect(http.StatusNoContent)
+	if msg := api.nextBroadcast(); msg.Type != WSMessageTypeOrderRecalled || msg.OrderID == nil || *msg.OrderID != uuid.UUID(created.Id) {
+		t.Fatalf("broadcast = %+v, want order_recalled %s", msg, created.Id)
+	}
+	// 注文は変えないので、注文の配信も無い
+	api.noBroadcast()
+	if order := api.loadOrder(uuid.UUID(created.Id)); !timeEqual(order.ReadyAt, ready.ReadyAt) || order.ServedAt != nil {
+		t.Fatalf("recall must not change the order: %+v", order)
+	}
+
+	// 提供済みの注文も催促できない
+	api.patchStatus(base + "/served")
+	recall().expect(http.StatusConflict)
+
+	api.do(http.MethodPost, "/api/orders/"+uuid.NewString()+"/recall", nil).expect(http.StatusNotFound)
+	api.do(http.MethodPost, "/api/orders/abc/recall", nil).expect(http.StatusBadRequest)
+	api.noBroadcast()
+}
+
 // -------------------------------------------------------------------
 // コメント
 

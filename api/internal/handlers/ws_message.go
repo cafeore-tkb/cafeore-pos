@@ -26,6 +26,8 @@ const (
 	WSMessageTypeCaosLanes WSMessageType = "caos_lanes"
 	// 取り消された緊急（入れ直し）の ID（cup_emergency.go）。画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す
 	WSMessageTypeCupEmergencyCancelled WSMessageType = "cup_emergency_cancelled"
+	// 呼び出し催促した注文の ID（order_recall.go）。注文は変わらない。呼び出し画面は、この知らせを受けたらその番号をもう一度読み上げ、しばらく目立たせる
+	WSMessageTypeOrderRecalled WSMessageType = "order_recalled"
 )
 
 type WSMessage struct {

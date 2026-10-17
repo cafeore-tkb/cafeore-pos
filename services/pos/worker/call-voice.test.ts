@@ -7,7 +7,9 @@ import {
   callVoiceSegments,
   dripAnnouncement,
   handleCallVoice,
+  numberReading,
   parseAnnouncement,
+  recallAnnouncement,
 } from "./call-voice";
 
 // 片の音声の代わり（MP3 のフレームの形にはしていないので、つないでもそのまま並ぶ）
@@ -59,41 +61,89 @@ afterEach(() => {
 });
 
 describe("[unit] 呼び出しの音声の文", () => {
+  test("番号は 1 桁ずつではなく、数として仮名で読む", () => {
+    const cases: [number, string][] = [
+      [1, "いち"],
+      [4, "よん"],
+      [7, "なな"],
+      [9, "きゅう"],
+      [10, "じゅう"],
+      [14, "じゅうよん"],
+      [20, "にじゅう"],
+      [100, "ひゃく"],
+      [110, "ひゃくじゅう"],
+      [303, "さんびゃくさん"],
+      [1000, "せん"],
+      [1001, "せんいち"],
+      [9999, "きゅうせんきゅうひゃくきゅうじゅうきゅう"],
+    ];
+    for (const [n, reading] of cases) {
+      expect(numberReading(n)).toBe(reading);
+    }
+  });
+
+  test("百・千は音が変わるものを正しく読む", () => {
+    const cases: [number, string][] = [
+      [200, "にひゃく"],
+      [300, "さんびゃく"],
+      [400, "よんひゃく"],
+      [600, "ろっぴゃく"],
+      [800, "はっぴゃく"],
+      [2000, "にせん"],
+      [3000, "さんぜん"],
+      [6000, "ろくせん"],
+      [8000, "はっせん"],
+      [3800, "さんぜんはっぴゃく"],
+    ];
+    for (const [n, reading] of cases) {
+      expect(numberReading(n)).toBe(reading);
+    }
+  });
+
   test("呼び出しは番号の片と決まった片。順番が前後するときは冒頭で断る", () => {
     expect(callAnnouncement(12, false)).toEqual([
-      "12番のお客様、",
+      "じゅうに番のお客様、",
       "提供口までお越しください。",
     ]);
     expect(callAnnouncement(12, true)).toEqual([
       "順番が前後いたします。",
-      "12番のお客様、",
+      "じゅうに番のお客様、",
       "提供口までお越しください。",
+    ]);
+    expect(callAnnouncement(303, false)[0]).toBe("さんびゃくさん番のお客様、");
+  });
+
+  test("呼び出しの催促は番号の片を呼び出しと同じものにし、決まった片を続ける", () => {
+    expect(recallAnnouncement(12)).toEqual([
+      "じゅうに番のお客様、",
+      "商品のご用意ができております。",
+      "お急ぎ、提供口までお越しください。",
     ]);
   });
 
-  test("ドリップの案内は番号の片を呼び出しと同じものにし、ドリッパーは読みで渡す", () => {
+  test("ドリップの案内は番号の片を呼び出しと同じものにし、ドリッパーも番号で読む", () => {
     expect(dripAnnouncement([12], 1)).toEqual([
-      "12番のお客様、",
-      "ファーストにてドリップいたします。",
+      "じゅうに番のお客様、",
+      "いち番ドリッパーにてドリップいたします。",
       "よろしければぜひ、お近くでご覧ください。",
     ]);
     // 立て続けの案内では「よろしければ…」を省く
     expect(dripAnnouncement([12], 2, false)).toEqual([
-      "12番のお客様、",
-      "セカンドにてドリップいたします。",
+      "じゅうに番のお客様、",
+      "に番ドリッパーにてドリップいたします。",
     ]);
     expect(dripAnnouncement([12, 13], 3)).toEqual([
-      "12番のお客様、",
-      "13番のお客様、",
-      "サードにてドリップいたします。",
+      "じゅうに番のお客様、",
+      "じゅうさん番のお客様、",
+      "さん番ドリッパーにてドリップいたします。",
       "よろしければぜひ、お近くでご覧ください。",
     ]);
   });
 
   test("片ごとに ElevenLabs へ送り、声の調子の指定を頭に付ける", () => {
-    expect(callVoiceRequestBody("12番のお客様、").inputs).toEqual([
+    expect(callVoiceRequestBody("じゅうに番のお客様、").inputs).toEqual([
       {
-        text: "[スムーズなナレーターで]12番のお客様、",
+        text: "[スムーズなナレーターで]じゅうに番のお客様、",
         voice_id: "gHBfNp2PWSyFgpPlzCOd",
       },
     ]);
@@ -113,6 +163,7 @@ describe("[unit] 呼び出しの音声の文", () => {
     expect(parse("/call-voice/call?order=7")).toEqual(
       callAnnouncement(7, false),
     );
+    expect(parse("/call-voice/recall?order=7")).toEqual(recallAnnouncement(7));
     expect(parse("/call-voice/drip?order=7&order=8&dripper=6")).toEqual(
       dripAnnouncement([7, 8], 6),
     );
@@ -125,8 +176,14 @@ describe("[unit] 呼び出しの音声の文", () => {
       "/call-voice/call?order=0",
       "/call-voice/call?order=12345",
       "/call-voice/call?order=1&order=2",
+      "/call-voice/recall",
+      "/call-voice/recall?order=0",
+      "/call-voice/recall?order=12345",
+      "/call-voice/recall?order=1&order=2",
       "/call-voice/drip?order=1",
+      "/call-voice/drip?order=1&dripper=0",
       "/call-voice/drip?order=1&dripper=7",
+      "/call-voice/drip?order=1&dripper=1.5",
       "/call-voice/drip?order=1&order=2&order=3&dripper=1",
       "/call-voice/other?order=1",
     ]) {
@@ -155,7 +212,7 @@ describe("[unit] /call-voice", () => {
     expect(res.headers.get("content-type")).toBe("audio/mpeg");
     expect(res.headers.get("x-call-voice-cache")).toBe("miss");
     expect(await textOf(res)).toBe(
-      "<順番が前後いたします。><12番のお客様、><溜めた尻>",
+      "<順番が前後いたします。><じゅうに番のお客様、><溜めた尻>",
     );
     // 作ったのは溜めていなかった 2 つの片だけ
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -166,7 +223,7 @@ describe("[unit] /call-voice", () => {
     expect(new Headers(init.headers).get("xi-api-key")).toBe("secret-key");
   });
 
-  test("作った片は溜め、番号の片は呼び出しとドリップの案内で使い回す", async () => {
+  test("作った片は溜め、番号の片は呼び出し・催促・ドリップの案内で使い回す", async () => {
     const { bucket, put } = memoryBucket();
     const fetchMock = elevenLabs();
     vi.stubGlobal("fetch", fetchMock);
@@ -191,7 +248,7 @@ describe("[unit] /call-voice", () => {
     );
     await second.settle();
     expect(await textOf(call)).toBe(
-      "<12番のお客様、><提供口までお越しください。>",
+      "<じゅうに番のお客様、><提供口までお越しください。>",
     );
     expect(fetchMock).toHaveBeenCalledTimes(4);
 
@@ -203,6 +260,19 @@ describe("[unit] /call-voice", () => {
     );
     expect(again.headers.get("x-call-voice-cache")).toBe("hit");
     expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    // 催促で新しく作るのは、番号の後ろの 2 つの片だけ
+    const third = context();
+    const recall = await handleCallVoice(
+      get("/call-voice/recall?order=12"),
+      env,
+      third.ctx,
+    );
+    await third.settle();
+    expect(await textOf(recall)).toBe(
+      "<じゅうに番のお客様、><商品のご用意ができております。><お急ぎ、提供口までお越しください。>",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   test("鍵が無ければ、溜めていない片は作れないので 503", async () => {

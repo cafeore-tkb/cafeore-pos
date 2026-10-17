@@ -5,9 +5,11 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import dayjs from "dayjs";
+import { useState } from "react";
 import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
 import { ReadyBell } from "~/components/atoms/ReadyBell";
+import { RecallButton } from "~/components/atoms/RecallButton";
 import { ServeCheck } from "~/components/atoms/ServeCheck";
 import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
@@ -84,6 +86,28 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
       orderRepository.serve(order.id).then(() => undefined),
     );
 
+  // 呼び出し催促は、サーバーでも呼び出し中のときだけ出す（呼び出しの切り替えを送っている間は出さない）。
+  // 応答が返るまでは押しても無視する（ダブルタップで 2 回読み上げないように）
+  const canRecall = isReady && order.readyAt !== null;
+  const [recalling, setRecalling] = useState(false);
+  const recall = async () => {
+    if (recalling) return;
+    setRecalling(true);
+    try {
+      await orderRepository.recall(order.id);
+      toast(`呼び出し催促 No.${order.orderId}`, {
+        description: dayjs().format("H時m分"),
+      });
+    } catch (e) {
+      console.error(e);
+      toast.error(`呼び出し催促できませんでした No.${order.orderId}`, {
+        description: "もう一度押してください",
+      });
+    } finally {
+      setRecalling(false);
+    }
+  };
+
   const changeCup = (cupId: string, abbr: string, shown: CupStatus) => {
     if (shown === "preparing") {
       readyCup(cupId, "ready");
@@ -142,11 +166,14 @@ const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {
         }
       />
       <div className="mt-4 flex items-center justify-between">
-        <ReadyBell
-          isReady={isReady}
-          busy={orderPending.isBusy("ready")}
-          changeReady={changeReady}
-        />
+        <div className="flex items-center gap-2">
+          <ReadyBell
+            isReady={isReady}
+            busy={orderPending.isBusy("ready")}
+            changeReady={changeReady}
+          />
+          {canRecall && <RecallButton busy={recalling} onRecall={recall} />}
+        </div>
         <ServeCheck
           order={order}
           busy={orderPending.isBusy("served")}

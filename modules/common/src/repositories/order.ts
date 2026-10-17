@@ -95,6 +95,21 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
+    recall: async (id: string): Promise<void> => {
+      const { error, response } = await apiClient.POST(
+        "/api/orders/{id}/recall",
+        {
+          params: {
+            path: { id },
+          },
+        },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to recall order");
+      }
+    },
+
     readyCup: async (id: string, cupId: string) => {
       const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/cups/{cupId}/ready",

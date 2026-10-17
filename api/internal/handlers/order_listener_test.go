@@ -316,6 +316,47 @@ func TestListenChangesPublishesCupEmergencyCancellations(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
+// 呼び出し催促も、このインスタンスで催促したらその場で配ってほかのインスタンスへ知らせ、
+// ほかのインスタンスから知らせが来たらそのまま配る（注文は変わらないので、DB から読み直すものは無い）
+func TestListenChangesPublishesOrderRecalls(t *testing.T) {
+	db, dsn := openListenTestDB(t)
+	other := listenAsOtherInstance(t, dsn, orderRecalledChannel)
+	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
+	h := NewOrderHandler(db, hub, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.ListenChanges(ctx, dsn)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
+		t.Fatalf("first broadcast = %s, want orders", msg.Type)
+	}
+	recalled := func(id uuid.UUID) {
+		t.Helper()
+		if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrderRecalled || msg.OrderID == nil || *msg.OrderID != id {
+			t.Fatalf("broadcast = %+v, want order_recalled %s", msg, id)
+		}
+	}
+
+	// このインスタンスで催促したときは、その場で 1 回だけ配り（自分の通知では配り直さない）、ほかのインスタンスへ知らせる
+	mine := uuid.New()
+	publishOrderRecalled(db, hub, mine)
+	recalled(mine)
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWait()
+	if n, err := other.WaitForNotification(waitCtx); err != nil || n.Payload != instanceID+" "+mine.String() {
+		t.Fatalf("notification = %+v, %v", n, err)
+	}
+	noBroadcast(t, hub)
+
+	// ほかのインスタンスで催促したら、知らせを受けてそのまま配る
+	theirs := uuid.New()
+	sendNotify(t, db, orderRecalledChannel, uuid.NewString()+" "+theirs.String())
+	recalled(theirs)
+
+	// 形の分からない知らせは、どの注文か分からないので配らない
+	sendNotify(t, db, orderRecalledChannel, uuid.NewString()+" x")
+	noBroadcast(t, hub)
+}
+
 func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	if err := db.Create(&models.MasterState{Type: "stop", CreatedAt: time.Now()}).Error; err != nil {

@@ -41,6 +41,8 @@ export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
   ): Promise<WithId<OrderEntity>>;
   ready(id: string): Promise<void>;
   serve(id: string): Promise<void>;
+  // 呼び出し中の注文をもう一度呼ぶ（呼び出し催促）。注文は変わらず、呼び出し画面が読み上げる
+  recall(id: string): Promise<void>;
   // カップ（1杯）単位の準備完了・提供済みの切り替え。切り替え後の注文を返す。
   readyCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
   serveCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
