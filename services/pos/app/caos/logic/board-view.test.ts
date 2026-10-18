@@ -35,7 +35,7 @@ import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { runCardAction } from "./runCardAction";
 import { findOrder, focusCard } from "./search";
 import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
-import { timelineArrivals } from "./timeline";
+import { brewStarts, timelineArrivals } from "./timeline";
 import {
   markSeen,
   unfinishedOrders,
@@ -389,6 +389,9 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
     expect(timelineArrivals(previous, after).sort()).toEqual(["d2", "d5", "m"]);
     expect(timelineArrivals(previous, cards)).toEqual([]);
+    // リベロビューは抽出を始めたものだけ
+    expect(brewStarts(previous, after)).toEqual(["d5"]);
+    expect(brewStarts(previous, cards)).toEqual([]);
   });
 
   test("ドリッパーに置いたカードの場所の札", () => {

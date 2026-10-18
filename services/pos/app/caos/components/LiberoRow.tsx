@@ -9,7 +9,7 @@ import { LaneName } from "./LaneParts";
 // リベロビューの 1 行（1 つのドリッパー）。抽出中は、経過の長い順の順位と経過（秒まで）をいちばん大きく出し、
 // 進み具合の段（logic/libero.ts の level）で地・枠・順位・帯を濃くする。予定の抽出時間を過ぎたら継続中の赤（caos.css の --caos-overtime）。
 // 抽出していない（待機だけ・空き）ドリッパーは薄く、順位も経過も出さない。
-// 抽出中の行は押すと「お湯を渡した」印（灰色。handed）を付け外しする。flashing の行は数秒だけ点滅させる（caos.css の .caos-arrival）。
+// flashing の行（抽出を始めたばかり）は数秒だけ点滅させる（caos.css の .caos-arrival）。
 
 // 段ごとの見た目（行の地と枠・順位と帯）
 const LEVEL_LOOKS: Record<LiberoLevel, { row: string; mark: string }> = {
@@ -35,12 +35,6 @@ const LEVEL_LOOKS: Record<LiberoLevel, { row: string; mark: string }> = {
   },
 };
 
-// お湯を渡した抽出の見た目（段に関わらず灰色）
-const HANDED_LOOK = {
-  row: "border-(color:--caos-handed-line) bg-(color:--caos-handed) text-(color:--caos-handed-text)",
-  mark: "bg-(color:--caos-handed-line) text-white",
-};
-
 // 行の枠組み（順位・ドリッパー・何を何杯と帯・経過）。文字は画面の高さに合わせる（iPad の横置きからテレビまで）
 const ROW =
   "grid min-h-0 grid-cols-[11vh_minmax(0,1fr)_minmax(0,2fr)_auto] items-center gap-[2vh] rounded-xl border-4 px-[1.5vh]";
@@ -49,23 +43,16 @@ export const LiberoRow: React.FC<{
   row: LiberoLane;
   /** 抽出中のカードの地の色（色の設定。logic/cards.ts の cardColor） */
   color?: string;
-  /** 新しいカードが入ったので点滅させる */
+  /** 抽出を始めたばかりなので点滅させる（抽出中の行だけ） */
   flashing: boolean;
-  /** お湯を渡した（抽出中の行だけ） */
-  handed: boolean;
-  onToggleHanded: () => void;
-}> = ({ row: { lane, brew }, color, flashing, handed, onToggleHanded }) => {
-  const flash = flashing ? "caos-arrival" : "";
-  if (!brew) return <IdleRow lane={lane} className={flash} />;
-  const look = handed ? HANDED_LOOK : LEVEL_LOOKS[brew.level];
+}> = ({ row: { lane, brew }, color, flashing }) => {
+  if (!brew) return <IdleRow lane={lane} />;
+  const look = LEVEL_LOOKS[brew.level];
   return (
-    <button
-      type="button"
-      aria-pressed={handed}
-      onClick={onToggleHanded}
+    <div
       data-libero-dripper={lane.id}
       data-libero-rank={brew.rank}
-      className={`${ROW} touch-manipulation text-left ${look.row} ${flash}`}
+      className={`${ROW} ${look.row} ${flashing ? "caos-arrival" : ""}`}
     >
       <span
         className={`flex aspect-square items-center justify-center rounded-xl font-black font-mono text-[7.5vh] leading-none ${look.mark}`}
@@ -77,18 +64,15 @@ export const LiberoRow: React.FC<{
       <span className="font-black font-mono text-[10vh] tabular-nums leading-none">
         {clockLabel(brew.elapsedSec)}
       </span>
-    </button>
+    </div>
   );
 };
 
 // 抽出していないドリッパー（待機だけ・空き）
-const IdleRow: React.FC<{ lane: Lane; className: string }> = ({
-  lane,
-  className,
-}) => (
+const IdleRow: React.FC<{ lane: Lane }> = ({ lane }) => (
   <div
     data-libero-dripper={lane.id}
-    className={`${ROW} border-transparent bg-slate-200/50 text-slate-400 ${className}`}
+    className={`${ROW} border-transparent bg-slate-200/50 text-slate-400`}
   >
     <span />
     <LaneTitle dripper={lane.id} />
