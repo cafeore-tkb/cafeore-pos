@@ -5,6 +5,7 @@ import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderStatusList } from "~/components/organisms/dashboard/MasterState";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
+import { OperationsDashboard } from "~/components/organisms/dashboard/operations/OperationsDashboard";
 import { Input } from "~/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
@@ -49,13 +50,17 @@ export default function Dashboard() {
           />
         </div>
       </div>
-      <Tabs defaultValue="itemBar">
-        <TabsList>
+      <Tabs defaultValue="operations">
+        <TabsList className="h-auto flex-wrap">
+          <TabsTrigger value="operations">店舗運営・実績</TabsTrigger>
           <TabsTrigger value="itemBar">種類別注文数</TabsTrigger>
           <TabsTrigger value="serveTimeGraph">提供時間推移</TabsTrigger>
           <TabsTrigger value="orderList">注文一覧</TabsTrigger>
           <TabsTrigger value="masterState">オーダーストップ記録</TabsTrigger>
         </TabsList>
+        <TabsContent value="operations" className="p-4">
+          <OperationsDashboard />
+        </TabsContent>
         <TabsContent value="itemBar" className="p-2">
           <div className="w-2/3">
             <ItemBarChart orders={orders} pastOrders={pastOrders} />

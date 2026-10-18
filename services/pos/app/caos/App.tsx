@@ -237,6 +237,7 @@ export default function App() {
               lanes={lanes}
               looks={looks}
               typeNames={typeNames}
+              liveAnalytics={!session.simulating}
               {...testPlay.analytics}
             />
           </AuxiliarySheet>

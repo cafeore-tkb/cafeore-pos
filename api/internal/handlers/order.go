@@ -629,6 +629,12 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 				return err
 			}
 			now := time.Now()
+			if err := recordServiceOperation(tx, "order.created", order.CreatedAt, now, map[string]any{
+				"orderId": order.ID, "orderNo": order.OrderId, "cups": len(order.OrderCups),
+				"billingAmount": order.BillingAmount,
+			}); err != nil {
+				return err
+			}
 			if squareCheckoutID != nil {
 				return linkSquareCheckout(tx, *squareCheckoutID, order.ID, order.BillingAmount, now)
 			}
