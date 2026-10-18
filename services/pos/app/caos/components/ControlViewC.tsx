@@ -1,6 +1,7 @@
 import type { CaosCard } from "@cafeore/common";
 import { CircleDot } from "lucide-react";
 import type React from "react";
+import { useState } from "react";
 import { dropSideOn, useCardHold } from "../hooks/useCardDrag";
 import type { CardMenu } from "../hooks/useCardMenu";
 import {
@@ -28,14 +29,31 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 export const ControlViewC: React.FC<ControlViewProps> = (props) => {
   const pick = useControlPick(props);
   const hold = useCardHold<CaosCard>(props.onHoldCard);
-  return <ControlViewCBoard {...props} pick={pick} hold={hold} />;
+  const [queueTab, setQueueTab] = useState<"unassigned" | "unfinished" | "all">(
+    props.unfinished?.tab ?? "unassigned",
+  );
+  return (
+    <ControlViewCBoard
+      {...props}
+      pick={pick}
+      hold={hold}
+      queueTab={queueTab}
+      onSelectQueueTab={setQueueTab}
+    />
+  );
 };
 
 const ControlViewCBoard: React.FC<
-  ControlViewProps & { pick: UnassignedPick; hold: CardHold }
+  ControlViewProps & {
+    pick: UnassignedPick;
+    hold: CardHold;
+    queueTab: "unassigned" | "unfinished" | "all";
+    onSelectQueueTab: (tab: "unassigned" | "unfinished" | "all") => void;
+  }
 > = ({
   lanes,
   unassignedOrders,
+  orders,
   looks,
   nextAvailable,
   nowMs,
@@ -47,11 +65,13 @@ const ControlViewCBoard: React.FC<
   commentsPanel,
   pick,
   hold,
+  queueTab,
+  onSelectQueueTab,
   readOnly = false,
   flashKeys,
 }) => (
   <section
-    className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_524px] gap-2"
+    className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_560px] gap-2"
     aria-label="Cコントロール画面"
   >
     <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -152,6 +172,19 @@ const ControlViewCBoard: React.FC<
           selectedOrderId={selectedOrderId}
           pick={pick}
           unfinished={unfinished}
+          allOrders={
+            !readOnly && unfinished && orders
+              ? {
+                  orders,
+                  active: queueTab === "all",
+                  onSelect: () => onSelectQueueTab("all"),
+                  onSelectBase: (tab) => {
+                    onSelectQueueTab(tab);
+                    unfinished.onSelectTab(tab);
+                  },
+                }
+              : undefined
+          }
         />
       )}
     </aside>

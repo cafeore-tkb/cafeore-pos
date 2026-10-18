@@ -4,7 +4,6 @@ import type React from "react";
 import { NavLink } from "react-router";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import type { ViewSound } from "../hooks/useViewBoard";
-import { LaneHeaderStatus } from "./LaneParts";
 import { PosStatusBadge } from "./TopHeader";
 
 // 閲覧だけの画面（盤面を読むだけで、書き込みは送らない）。ヘッダーから行き来する
@@ -27,6 +26,9 @@ export const ViewHeader: React.FC<{
   children?: React.ReactNode;
 }> = ({ nowMs, status, sound, children }) => (
   <header className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+    <span className="font-black font-mono text-3xl tabular-nums">
+      {jstClock(nowMs)}
+    </span>
     <span className="rounded-lg bg-slate-900 px-2.5 py-1.5 font-black text-sm text-white">
       CaOS
     </span>
@@ -43,13 +45,8 @@ export const ViewHeader: React.FC<{
         </NavLink>
       ))}
     </nav>
-    <span className="font-black font-mono text-3xl tabular-nums">
-      {jstClock(nowMs)}
-    </span>
     {children}
     <SoundToggle sound={sound} />
-    {/* 上級生のドリッパーが無いときの知らせ（担当者は表示だけ） */}
-    <LaneHeaderStatus />
     <PosStatusBadge status={status} />
   </header>
 );

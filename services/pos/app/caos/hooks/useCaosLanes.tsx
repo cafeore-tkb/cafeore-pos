@@ -33,7 +33,7 @@ import { type ShiftFeedState, useShiftFeed } from "./useShiftFeed";
 // 操作の画面（/master-sheet）は editable で、各ドリッパーの「交代」から替える（押したらその場で替える。抽出中かどうかは見ない）。
 //   - 列の見出しと列の操作のパネルの「交代」は、押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人。nextLaneCandidate）に替える。
 //     替えたら「直前の操作」（LastActionProvider）に出す（間違えたら、もう一度替えて直す）
-//   - ヘッダーの「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
+//   - 設定画面の「ドリッパー」の「交代」は LaneChangeDialog を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする
 // 閲覧だけの画面（/master-sheet/view・/master-sheet/libero）は表示だけ（「交代」・合言葉の設定を出さず、sohosai-shift の予定も読まない）。
 // sohosai-shift の予定（合言葉はこの端末の設定）は名前の候補と上級生の判定にだけ使い、予定の時刻どおりに自動では替えない。
 // 上級生でない人（担当者なしも）にするドリッパーに指名の無い上級生のみのカード（抽出中・待機）があっても止めずに替え、POS の通知で知らせる

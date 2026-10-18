@@ -220,6 +220,7 @@ export default function App() {
                 }
                 lanes={lanes}
                 unassignedOrders={session.unassigned}
+                orders={session.emergency.orders}
                 looks={looks}
                 nextAvailable={session.nextAvailable}
                 selectedOrderId={selection.selectedOrderId}
@@ -278,6 +279,7 @@ export default function App() {
               >
                 <AuxiliaryContent
                   tab={saved.tab}
+                  onSelectTab={selection.openAuxiliary}
                   beans={session.beans}
                   lanes={lanes}
                   looks={looks}

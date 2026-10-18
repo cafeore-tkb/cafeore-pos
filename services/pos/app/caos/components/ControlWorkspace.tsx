@@ -1,4 +1,4 @@
-import type { CaosCard, CaosPlace } from "@cafeore/common";
+import type { CaosCard, CaosOrderInput, CaosPlace } from "@cafeore/common";
 import type React from "react";
 import type { CardMenu } from "../hooks/useCardMenu";
 import type { TimelineCommand } from "../hooks/useTimelineScroll";
@@ -25,6 +25,8 @@ export interface ControlViewProps {
   lanes: Lane[];
   /** 未割当のカード（注文番号の順） */
   unassignedOrders: CaosCard[];
+  /** その日の注文一覧（C案の「一覧」。操作画面だけで渡す） */
+  orders?: readonly CaosOrderInput[];
   /** カードの色・豆と、分けた注文 */
   looks: CardLooks;
   nextAvailable: NextAvailable;

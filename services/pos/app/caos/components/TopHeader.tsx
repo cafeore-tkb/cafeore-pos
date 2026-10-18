@@ -1,12 +1,12 @@
 import {
   BarChart3,
-  Bean,
   CalendarClock,
   Database,
   History,
   type LucideIcon,
   Printer,
   Search,
+  Settings,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -17,11 +17,9 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import openDripperSettingsIcon from "../icons/open-dripper-settings.svg";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { FloatingStatusNotices, FloatingWindowTray } from "./FloatingWindows";
-import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
 
@@ -30,32 +28,10 @@ export type NavTab = "control" | AuxiliaryTab;
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
 
-/** 支給SVGをマスクとして使い、選択状態に合わせた文字色をそのまま継承する。 */
-const DripperNavIcon: React.FC<{ className?: string }> = ({
-  className = "",
-}) => (
-  <span
-    aria-hidden="true"
-    className={`inline-block bg-current ${className}`}
-    style={{
-      maskImage: `url("${openDripperSettingsIcon}")`,
-      WebkitMaskImage: `url("${openDripperSettingsIcon}")`,
-      maskSize: "contain",
-      WebkitMaskSize: "contain",
-      maskRepeat: "no-repeat",
-      WebkitMaskRepeat: "no-repeat",
-      maskPosition: "center",
-      WebkitMaskPosition: "center",
-    }}
-  />
-);
-
-// 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
+// 画面切替。補助機能は歯車の設定画面にまとめる。
 const NAV_ITEMS = [
   { id: "control", label: "CaOS", icon: null },
-  { id: "bays", label: AUXILIARY_TITLES.bays, icon: DripperNavIcon },
-  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Bean },
-  { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
+  { id: "settings", label: AUXILIARY_TITLES.settings, icon: Settings },
 ] as const;
 
 interface TopHeaderProps {
@@ -271,13 +247,31 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
       </FloatingStatusNotices>
       <div className="flex min-w-0 items-center gap-2">
+        {/* 時計は画面の左上に固定し、表示切替より先に読めるようにする。 */}
+        <div className="flex w-[118px] shrink-0 flex-col leading-none">
+          <div className="font-bold font-mono text-[#0f172a] text-[24px] tracking-tight">
+            {timeStr}
+          </div>
+          <output
+            aria-label="直前の操作"
+            title={lastAction ? `直前の操作：${lastAction}` : undefined}
+            className={`mt-1 flex min-w-0 items-center gap-0.5 font-black text-[11px] ${lastAction ? "text-slate-950" : "text-slate-400"}`}
+          >
+            <History className="h-3 w-3 shrink-0" />
+            <span className="truncate">{lastAction ?? "直前の操作なし"}</span>
+          </output>
+        </div>
+
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
           aria-label="画面切替"
         >
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const active = activeTab === item.id;
+            const active =
+              activeTab === item.id ||
+              (item.id === "settings" &&
+                (activeTab === "bays" || activeTab === "beans"));
             return (
               <button
                 key={item.id}
@@ -288,9 +282,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 className={`flex h-10 min-w-10 touch-manipulation items-center justify-center gap-1 rounded-md px-2 font-black text-[11px] ${active ? "bg-slate-950 text-white shadow-sm" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 {Icon && <Icon className="h-4 w-4" />}
-                <span
-                  className={item.id === "control" ? "" : "hidden 2xl:inline"}
-                >
+                <span className={item.id === "control" ? "" : "sr-only"}>
                   {item.label}
                 </span>
               </button>
@@ -319,20 +311,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </nav>
 
         <div className="flex items-center gap-2">
-          {/* 時刻と、その下に直前の操作（この画面が最後にした操作。間違えたら逆の操作で直す）。並びが動かないよう幅を決めておく */}
-          <div className="flex w-[118px] shrink-0 flex-col leading-none">
-            <div className="font-bold font-mono text-[#0f172a] text-[24px] tracking-tight">
-              {timeStr}
-            </div>
-            <output
-              aria-label="直前の操作"
-              title={lastAction ? `直前の操作：${lastAction}` : undefined}
-              className={`mt-1 flex min-w-0 items-center gap-0.5 font-black text-[11px] ${lastAction ? "text-slate-950" : "text-slate-400"}`}
-            >
-              <History className="h-3 w-3 shrink-0" />
-              <span className="truncate">{lastAction ?? "直前の操作なし"}</span>
-            </output>
-          </div>
           {showTimelineNow && (
             <button
               type="button"
@@ -373,8 +351,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <Search className="mb-0.5 h-4 w-4" />
           番号
         </button>
-        {/* ドリッパーの担当者：上級生がいないときの知らせと、sohosai-shift の合言葉の設定 */}
-        <LaneHeaderStatus />
         {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
         <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
           <PosStatusBadge

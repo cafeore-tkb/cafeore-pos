@@ -1,5 +1,5 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import { ClipboardList, ListChecks } from "lucide-react";
+import { ClipboardList, ListChecks, Rows3 } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
 import servingOverdueIcon from "../icons/serving-overdue.svg";
@@ -48,6 +48,13 @@ export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
   unassignedOrders?: readonly CaosCard[];
   nextBayId?: number;
+  /** C案だけに足す、その日の全オーダー一覧タブ */
+  allTab?: {
+    active: boolean;
+    count: number;
+    onSelect: () => void;
+    onSelectBase: (tab: UnassignedTab) => void;
+  };
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
   className?: string;
@@ -55,6 +62,7 @@ export const UnassignedHeading: React.FC<{
   view,
   unassignedOrders = [],
   nextBayId,
+  allTab,
   label = "未割当",
   className = "text-[15px]",
 }) => {
@@ -108,9 +116,13 @@ export const UnassignedHeading: React.FC<{
       <button
         type="button"
         role="tab"
-        aria-selected={view.tab === "unassigned"}
-        onClick={() => view.onSelectTab("unassigned")}
-        className={`${TAB} bg-white ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        aria-selected={!allTab?.active && view.tab === "unassigned"}
+        onClick={() =>
+          allTab
+            ? allTab.onSelectBase("unassigned")
+            : view.onSelectTab("unassigned")
+        }
+        className={`${TAB} bg-white ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
       >
         {icon}
         {label}
@@ -151,9 +163,13 @@ export const UnassignedHeading: React.FC<{
       <button
         type="button"
         role="tab"
-        aria-selected={view.tab === "unfinished"}
-        onClick={() => view.onSelectTab("unfinished")}
-        className={`${TAB} bg-[#f5ede3] ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+        aria-selected={!allTab?.active && view.tab === "unfinished"}
+        onClick={() =>
+          allTab
+            ? allTab.onSelectBase("unfinished")
+            : view.onSelectTab("unfinished")
+        }
+        className={`${TAB} bg-[#f5ede3] ${!allTab?.active && view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
@@ -181,6 +197,21 @@ export const UnassignedHeading: React.FC<{
           </output>
         )}
       </button>
+      {allTab && (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={allTab.active}
+          onClick={allTab.onSelect}
+          className={`${TAB} bg-slate-50 ${allTab.active ? TAB_ON : TAB_OFF}`}
+        >
+          <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
+          一覧
+          <span className="caos-tab-count">
+            <RollingNumber value={allTab.count} />件
+          </span>
+        </button>
+      )}
     </div>
   );
 };

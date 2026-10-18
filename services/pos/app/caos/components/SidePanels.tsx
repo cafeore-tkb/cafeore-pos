@@ -8,7 +8,7 @@ import {
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
-import { ArrowRight, Undo2, X } from "lucide-react";
+import { ArrowRight, Bean, ListChecks, Undo2, X } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import {
@@ -43,6 +43,7 @@ import {
   LaneChangeButton,
   LaneChooseButton,
   LaneName,
+  LaneSettingsStatus,
 } from "./LaneParts";
 import { OrderCard, SplitCupButtons } from "./OrderCard";
 import { CommentList } from "./OrderComments";
@@ -446,22 +447,73 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助のタブ（ドリッパー・豆残量確認・実績）。右のパネルで開く
-export type AuxiliaryTab = "bays" | "beans" | "analytics";
+// 補助の画面。普段使う入口は設定にまとめ、実績はテスト終了時だけ開く。
+export type AuxiliaryTab = "settings" | "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
+  settings: "設定",
   bays: "ドリッパー",
   beans: "豆残量確認",
   analytics: "実績",
 };
 
+const SettingsHome: React.FC<{
+  onSelectTab: (tab: "bays" | "beans") => void;
+}> = ({ onSelectTab }) => (
+  <div className="grid gap-4">
+    <section>
+      <h3 className="mb-2 font-black text-[13px] text-slate-600">
+        担当者の設定
+      </h3>
+      <LaneSettingsStatus />
+    </section>
+    <section>
+      <h3 className="mb-2 font-black text-[13px] text-slate-600">
+        管制盤の設定
+      </h3>
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={() => onSelectTab("bays")}
+          className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+        >
+          <ListChecks className="h-5 w-5 text-blue-700" />
+          <span className="flex flex-col gap-0.5">
+            <span>ドリッパー</span>
+            <span className="font-bold text-[11px] text-slate-500">
+              担当者の交代と各レーンの状況
+            </span>
+          </span>
+          <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectTab("beans")}
+          className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+        >
+          <Bean className="h-5 w-5 text-amber-700" />
+          <span className="flex flex-col gap-0.5">
+            <span>豆残量確認</span>
+            <span className="font-bold text-[11px] text-slate-500">
+              残量と待機中の使用予定を確認
+            </span>
+          </span>
+          <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+        </button>
+      </div>
+    </section>
+  </div>
+);
+
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
+    onSelectTab: (tab: "bays" | "beans") => void;
     /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
   } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, beans, lanes, ...analytics }) => {
+> = ({ tab, onSelectTab, beans, lanes, ...analytics }) => {
+  if (tab === "settings") return <SettingsHome onSelectTab={onSelectTab} />;
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
