@@ -1,12 +1,12 @@
 import type { CaosCard } from "@cafeore/common";
 import type React from "react";
 import type { CardMenu } from "../hooks/useCardMenu";
-import closeIcon from "../icons/close.svg";
-import commentIcon from "../icons/comment.svg";
-import finishIcon from "../icons/done.svg";
-import emergencyIcon from "../icons/emergency.svg";
-import holdIcon from "../icons/hold.svg";
-import startIcon from "../icons/start.svg";
+import finishBrewIcon from "../icons/finish-brew.svg";
+import requestRebrewIcon from "../icons/request-rebrew.svg";
+import startBrewIcon from "../icons/start-brew.svg";
+import unassignIcon from "../icons/unassign.svg";
+import undoBrewStartIcon from "../icons/undo-brew-start.svg";
+import viewCommentsIcon from "../icons/view-comments.svg";
 import { type CardAction, cardActions, cardStage } from "../logic/cardActions";
 import type { CardLook } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
@@ -18,12 +18,12 @@ const ICONS: Record<
   Exclude<CardAction, `assign:${number}`>,
   { src: string; label: string }
 > = {
-  start: { src: startIcon, label: "始める" },
-  finish: { src: finishIcon, label: "終える（待機の先頭を始める）" },
-  unstart: { src: holdIcon, label: "未着手に戻す" },
-  emergency: { src: emergencyIcon, label: "緊急（入れ直し）" },
-  comment: { src: commentIcon, label: "コメントを見る" },
-  unassign: { src: closeIcon, label: "未割当に戻す" },
+  start: { src: startBrewIcon, label: "始める" },
+  finish: { src: finishBrewIcon, label: "終える（待機の先頭を始める）" },
+  unstart: { src: undoBrewStartIcon, label: "未着手に戻す" },
+  emergency: { src: requestRebrewIcon, label: "緊急（入れ直し）" },
+  comment: { src: viewCommentsIcon, label: "コメントを見る" },
+  unassign: { src: unassignIcon, label: "未割当に戻す" },
 };
 
 /** 素材のアイコン（白い丸に載せ、カードの地の色に染まらないようにする） */
@@ -60,7 +60,11 @@ export const CardOverlay: React.FC<{
       {ready && (
         <span className="-bottom-2 -translate-x-1/2 pointer-events-none absolute left-1/2 z-20 flex gap-1">
           {ready && (
-            <Icon src={holdIcon} label="未着手" className="h-6 w-6 shadow-sm" />
+            <Icon
+              src={undoBrewStartIcon}
+              label="未着手"
+              className="h-6 w-6 shadow-sm"
+            />
           )}
         </span>
       )}

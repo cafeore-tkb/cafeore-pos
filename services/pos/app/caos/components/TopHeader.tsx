@@ -16,7 +16,7 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import dripperIcon from "../icons/dripper.svg";
+import openDripperSettingsIcon from "../icons/open-dripper-settings.svg";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
@@ -35,8 +35,8 @@ const DripperNavIcon: React.FC<{ className?: string }> = ({
     aria-hidden="true"
     className={`inline-block bg-current ${className}`}
     style={{
-      maskImage: `url("${dripperIcon}")`,
-      WebkitMaskImage: `url("${dripperIcon}")`,
+      maskImage: `url("${openDripperSettingsIcon}")`,
+      WebkitMaskImage: `url("${openDripperSettingsIcon}")`,
       maskSize: "contain",
       WebkitMaskSize: "contain",
       maskRepeat: "no-repeat",
