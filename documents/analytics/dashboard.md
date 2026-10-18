@@ -46,6 +46,24 @@
 - 既存のCaOS割当・統合・緊急・担当交代、サーバーのcomment.createdと合わせ、事例と明確な処理結果を振り返る。全レジ・提供のUIクリックを捕捉しているわけではない。
 - コメントの書き手はcashier/master/serve等の役割。担当列の名前はその操作の実行者の証明ではない。認証された本人・勤務時間・難易度がないため個人の貢献点・順位を作らない。
 
+### 練習データが業務APIへ流れないことの確認
+
+CaOSの実データテストについて、以下の呼出経路をソースで確認した。
+
+1. `useCaosSession` は `test.session ? test : live` で操作先を選び、共通の `write` / `runNext` を選んだ側へ渡す。
+2. `useTestPlay.runWrites` / `runNext` は `applyCaosPracticeWrites` / `advanceCaosPracticeDripper` の結果をブラウザ内の状態へ反映する。ここから注文作成・準備完了・提供APIや本番outboxへ送る経路はない。
+3. 練習用の注文JSONは `usePracticeData` / `toPracticeOrders` で端末内へ読み込む。`POST /api/orders` は呼ばない。練習の抽出完了も、ローカルの抽出終了時刻を更新し、ready/servedの更新APIは呼ばない。
+4. 入れ直しの追加・取消も `emergencyOps` が `test.session` を見て `test.addEmergencies` / `test.cancelEmergencies` へ分岐する。本番の `addEmergency` と印刷へは渡さない。
+5. `useLiveBoard(enabled: !test.session)` / `usePosOrders` は練習中に本番注文を盤面へ渡さない。分析コンポーネントも `liveAnalytics={!session.simulating}` で本番分析を出さない。
+
+したがって、CaOS練習の注文から `order.created` / `order.status.changed` のサーバー成功履歴は生成されない。サーバーの `details.mode` がないことを「練習ではない証明」とするのではなく、上記の送信経路の分離を根拠にしている。`evidenceRows` のmodeとイベント接頭辞のフィルターは端末側の練習ログを除くためのもの。
+
+例外として、**練習を始める前に保存した本番の未送信操作**は、`useCaosOutboxSender` が練習中も送信する。これは本番注文への本物の更新なので、その成功履歴は本番に残す。練習中に通信があったことだけで、練習注文が送られたとは判定しない。操作ログの保存通信も、練習用注文の保存とは別。
+
+この確認はCaOSのブラウザ内の実データテストを対象とする。実際のレジから練習目的で本番APIへ登録した注文は、システム上は本番注文であり、目的を推測して自動除外することはできない。
+
+`order.status.changed` のoccurred_atと変更するカップのready/servedは、共通の `time.Now().Truncate(time.Microsecond)` を使う。提供取消など、変更後の打刻がnullになる操作も、同じ操作時刻で成功履歴を記録する。
+
 ## 販売可能数と在庫の限界
 
 現在のメニューAPIは登録メニューを返すが、販売可否・品切れ理由・終了/切替の全変更履歴を返さない。登録数を販売可能数とは呼ばない。在庫APIの現在残量から過去の品切れ時刻を補完しない。

@@ -28,7 +28,12 @@ export interface EvidenceRow {
   page: string;
   details: Record<string, unknown>;
 }
-/** 再送・複数ファイルで重複した記録を同一キーで除く。クリックを業務成功に昇格させない。 */
+/**
+ * 再送・複数ファイルで重複した記録を同一キーで除く。クリックを業務成功に昇格させない。
+ * mode / practice. は端末の練習イベントの除外用。サーバー成功履歴は業務APIの保存結果。
+ * CaOS練習はuseTestPlayのローカル更新へ分岐し、注文作成・ready/served APIへ送らない。
+ * 分岐と、練習中も送信される本番の未送信操作との違いはdocuments/analytics/dashboard.md参照。
+ */
 export const evidenceRows = (
   entries: ClientEntry[],
   operations: OperationEvidence[],

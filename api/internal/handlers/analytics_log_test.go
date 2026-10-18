@@ -44,6 +44,17 @@ func TestServiceOperationAuditOnDB(t *testing.T) {
 	if err := api.db.Where("kind = ?", "order.status.changed").Order("recorded_at").Find(&logs).Error; err != nil || len(logs) != 2 {
 		t.Fatalf("status audit count %d: %v", len(logs), err)
 	}
+	var firstPayload struct {
+		Cups []cupStatusEvidence `json:"cups"`
+	}
+	if err := json.Unmarshal(logs[0].Details, &firstPayload); err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPayload.Cups) != 1 ||
+		!timeEqual(firstPayload.Cups[0].AfterReady, &logs[0].OccurredAt) ||
+		!timeEqual(firstPayload.Cups[0].AfterServed, &logs[0].OccurredAt) {
+		t.Fatalf("audit occurrence must equal ready/served timestamps: %s / %s", logs[0].OccurredAt, logs[0].Details)
+	}
 	var payload struct {
 		Cups []cupStatusEvidence `json:"cups"`
 	}
