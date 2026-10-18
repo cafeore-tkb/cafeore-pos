@@ -2,16 +2,21 @@ import type { CaosCard } from "@cafeore/common";
 import { cardOrderNos, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LiberoLane } from "../logic/libero";
+import { brewIntensity, liberoColor } from "../logic/libero-colors";
 import { LaneName } from "./LaneParts";
 
 /** リベロの縦1列。上が抽出中、下が待機先頭。時間は共通の抽出予定に基づく目安。 */
 export function LiberoColumn({
   row: { lane, brew },
   flashing,
-}: { row: LiberoLane; flashing: boolean }) {
+  nextIntensity = 0.25,
+}: { row: LiberoLane; flashing: boolean; nextIntensity?: number }) {
   const next = lane.queued[0];
   const progress = brew?.progress ?? 0;
-  const shade = Math.round(255 - 90 * progress);
+  const currentColor = brew
+    ? liberoColor(brew.card, brewIntensity(progress))
+    : { backgroundColor: "#f1f5f9" };
+  const nextColor = next ? liberoColor(next, nextIntensity) : undefined;
   const remaining = brew ? Math.max(0, brew.plannedSec - brew.elapsedSec) : 0;
   return (
     <section
@@ -30,18 +35,16 @@ export function LiberoColumn({
         />
       </header>
       <div
-        style={{
-          backgroundColor: brew ? `rgb(255, ${shade}, ${shade})` : "#f1f5f9",
-        }}
+        style={currentColor}
         className="flex min-h-0 flex-[3] flex-col items-center justify-center gap-[2vh] overflow-y-auto px-1.5 py-3 text-center transition-colors duration-1000 ease-linear motion-reduce:transition-none"
       >
-        <p className="font-bold text-[clamp(12px,1.1vw,20px)] text-slate-600">
+        <p className="font-bold text-[clamp(12px,1.1vw,20px)] opacity-75">
           {brew ? "いま淹れています" : "抽出していません"}
         </p>
         {brew ? (
           <>
             <CupDetail card={brew.card} />
-            <div className="w-full border-slate-900/10 border-t pt-[2vh]">
+            <div className="w-full border-current/20 border-t pt-[2vh]">
               <p className="mb-1 font-bold text-[clamp(12px,1.1vw,20px)]">
                 {remaining > 0 ? "できあがりまで 約" : "できあがり間近"}
               </p>
@@ -51,11 +54,11 @@ export function LiberoColumn({
                 {remaining > 0 ? clockLabel(remaining) : "あとちょっと"}
               </p>
               <div
-                className="mx-auto mt-3 h-2 w-[85%] overflow-hidden rounded-full bg-black/10"
+                className="mx-auto mt-3 h-2 w-[85%] overflow-hidden rounded-full bg-current/15"
                 aria-label={`残り時間の目安 ${Math.round((1 - progress) * 100)}%`}
               >
                 <div
-                  className="h-full rounded-full bg-red-700/70 transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
+                  className="h-full rounded-full bg-current/70 transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
                   style={{ width: `${(1 - progress) * 100}%` }}
                 />
               </div>
@@ -67,8 +70,11 @@ export function LiberoColumn({
           </p>
         )}
       </div>
-      <div className="flex min-h-0 flex-[2] flex-col items-center justify-center gap-[1.5vh] overflow-y-auto border-slate-300 border-t-2 bg-white px-1.5 py-3 text-center">
-        <p className="font-bold text-[clamp(12px,1.2vw,22px)] text-slate-500">
+      <div
+        style={nextColor}
+        className="flex min-h-0 flex-[2] flex-col items-center justify-center gap-[1.5vh] overflow-y-auto border-slate-300 border-t-2 bg-white px-1.5 py-3 text-center transition-colors duration-1000 motion-reduce:transition-none"
+      >
+        <p className="font-bold text-[clamp(12px,1.2vw,22px)] opacity-75">
           次に淹れる
         </p>
         {next ? (
@@ -98,12 +104,10 @@ function CupDetail({
           <span key={no}>#{orderNoLabel(no)}</span>
         ))}
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <span
-          className={`rounded-lg border px-2 py-1 font-black ${small ? "text-[clamp(14px,1.4vw,26px)]" : "text-[clamp(16px,1.7vw,32px)]"} ${iced ? "border-sky-300 bg-sky-100 text-sky-900" : "border-orange-300 bg-orange-100 text-orange-950"}`}
-        >
-          {iced ? "アイス" : "ホット"}
-        </span>
+      <div
+        className="flex flex-wrap items-center justify-center gap-2"
+        aria-label={`${iced ? "アイス" : "ホット"} ${card.cups.length}杯`}
+      >
         <span
           className={`font-black ${small ? "text-[clamp(18px,1.8vw,34px)]" : "text-[clamp(22px,2.4vw,46px)]"}`}
         >
