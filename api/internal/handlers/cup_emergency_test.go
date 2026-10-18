@@ -306,6 +306,11 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	if len(printIDs) != 1 || printIDs[0] != unrelated {
 		t.Fatalf("label print requests after cancel = %v, want only %s", printIDs, unrelated)
 	}
+	// 取り消した後に頼まれても作らない
+	body, _ := json.Marshal(map[string]any{"id": printID, "job": testLabelJob})
+	if w := callWithParams(t, NewLabelPrintHandler(db, f.hub).CreateLabelPrintRequest, http.MethodPost, string(body), nil); w.Code != http.StatusNotFound {
+		t.Fatalf("request after cancel = %d: %s", w.Code, w.Body.String())
+	}
 
 	// 待機（統合したカップは残る）
 	queuedID := add()

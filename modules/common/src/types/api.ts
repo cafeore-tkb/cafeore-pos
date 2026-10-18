@@ -93,12 +93,12 @@ export interface paths {
     get: operations["getLabelPrintRequests"];
     /**
      * シールをレジに代わりに刷ってもらう（代理印刷）
-     * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかったシールを、代理印刷をオンにしたレジに刷ってもらう。
+     * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（入れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
      * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
      * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
      * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-     * id は頼む端末が決める（緊急のシールは入れ直しの id。緊急を取り消すと、この頼みも消える）。同じ id は 1 つだけで、2 回目からは中身を変えず、
-     * まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+     * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+     * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
      * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
      */
     post: operations["createLabelPrintRequest"];
@@ -1149,7 +1149,7 @@ export interface components {
     LabelPrintRequestCreateRequest: {
       /**
        * Format: uuid
-       * @description 頼みの id（頼む端末が決める。緊急のシールは入れ直しの id）
+       * @description 頼みの id（入れ直しの id）
        */
       id: string;
       job: components["schemas"]["LabelPrintJob"];
@@ -1967,12 +1967,12 @@ export interface operations {
   };
   /**
    * シールをレジに代わりに刷ってもらう（代理印刷）
-   * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかったシールを、代理印刷をオンにしたレジに刷ってもらう。
+   * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（入れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
    * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
    * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
    * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-   * id は頼む端末が決める（緊急のシールは入れ直しの id。緊急を取り消すと、この頼みも消える）。同じ id は 1 つだけで、2 回目からは中身を変えず、
-   * まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+   * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+   * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
    * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
    */
   createLabelPrintRequest: {
@@ -1988,6 +1988,12 @@ export interface operations {
       };
       /** @description 形の違うリクエスト・印刷データが大きすぎる */
       400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 入れ直しが無い（取り消した）。頼みは作らない */
+      404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

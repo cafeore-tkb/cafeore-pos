@@ -1254,7 +1254,7 @@
       "id": {
         "type": "string",
         "format": "uuid",
-        "description": "頼みの id（頼む端末が決める。緊急のシールは入れ直しの id）"
+        "description": "頼みの id（入れ直しの id）"
       },
       "job": {
         "$ref": "#/components/schemas/LabelPrintJob"

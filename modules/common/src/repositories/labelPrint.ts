@@ -24,8 +24,9 @@ const ok = async (request: Promise<{ response: Response }>) => {
 };
 
 /**
- * シールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は頼む端末が決める（緊急のシールは入れ直しの id）。
- * 同じ id を送り直しても 1 つだけ（2 枚刷らない）。受け取ってもらえたら true（刷れたかではない）
+ * 緊急（入れ直し）のシールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は入れ直しの id。
+ * 同じ id を送り直しても 1 つだけ（2 枚刷らない）。受け取ってもらえたら true（刷れたかではない）。
+ * 入れ直しが無い（取り消した）・つながらないときは false（頼む端末は未印刷に残す。取り消しの知らせで消える）
  */
 export const requestLabelPrint = (
   id: string,

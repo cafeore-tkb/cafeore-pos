@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,14 @@ var testLabelJob = map[string]any{
 
 func labelPrintPath(id uuid.UUID, action string) string {
 	return "/api/label-print-requests/" + id.String() + "/" + action
+}
+
+// 頼める入れ直し（代理印刷の頼みの id）を DB に入れる。カップ・注文は見ないので入れない
+func (a *testAPI) seedEmergency() uuid.UUID {
+	a.t.Helper()
+	row := models.CupEmergency{ID: uuid.New(), OrderCupID: uuid.New(), CreatedAt: time.Now()}
+	a.create(&row)
+	return row.ID
 }
 
 // claim を呼んで、返事の status と job を返す
@@ -63,7 +72,7 @@ func sameJSON(t *testing.T, got, want any) {
 
 func TestLabelPrintRequestFlow(t *testing.T) {
 	a := newTestAPI(t)
-	id := uuid.New()
+	id := a.seedEmergency()
 
 	// 頼むと、まだ刷れていない頼みとして配る
 	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": id, "job": testLabelJob}).expect(http.StatusNoContent)
@@ -141,7 +150,7 @@ func TestLabelPrintRequestFlow(t *testing.T) {
 // 引き受けたレジが返事をしないまま引き受けが切れたら、ほかのレジが引き受け直せる
 func TestLabelPrintClaimExpires(t *testing.T) {
 	a := newTestAPI(t)
-	id := uuid.New()
+	id := a.seedEmergency()
 	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": id, "job": testLabelJob}).expect(http.StatusNoContent)
 	a.expectLabelPrintRequested(id)
 	if got := a.claimLabelPrint(id, "register-a"); got.Status != models.Claimed {
@@ -202,11 +211,65 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 	a.t = t
 	a.noBroadcast()
 
+	// 入れ直しが無い（取り消した）なら作らない
 	missing := uuid.New()
+	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": missing, "job": testLabelJob}).expect(http.StatusNotFound)
+	var count int64
+	if err := a.db.Model(&models.LabelPrintRequest{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("label print requests = %d, %v", count, err)
+	}
+	a.noBroadcast()
+
 	for _, action := range []string{"claim", "printed", "release"} {
 		a.do(http.MethodPost, labelPrintPath(missing, action), map[string]any{"device_id": "register-a"}).expect(http.StatusNotFound)
 		a.do(http.MethodPost, "/api/label-print-requests/x/"+action, map[string]any{"device_id": "register-a"}).expect(http.StatusBadRequest)
 		a.do(http.MethodPost, labelPrintPath(missing, action), map[string]any{"device_id": " "}).expect(http.StatusBadRequest)
 		a.do(http.MethodPost, labelPrintPath(missing, action), map[string]any{"device_id": strings.Repeat("x", labelPrintDeviceMax+1)}).expect(http.StatusBadRequest)
 	}
+}
+
+// 緊急の取り消しと同時に頼まれても、取り消した緊急のシールの頼みは残らない。
+// 取り消し（入れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 404 になる
+func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
+	a := newTestAPI(t)
+	id := a.seedEmergency()
+
+	cancel := a.db.Begin()
+	if err := cancel.Delete(&models.CupEmergency{}, "id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		body, _ := json.Marshal(map[string]any{"id": id, "job": testLabelJob})
+		req := httptest.NewRequest(http.MethodPost, "/api/label-print-requests", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, req)
+		done <- rec.Code
+	}()
+	select {
+	case code := <-done:
+		_ = cancel.Rollback()
+		t.Fatalf("request did not wait for the cancel: %d", code)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := cancel.Delete(&models.LabelPrintRequest{}, "id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := cancel.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case code := <-done:
+		if code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not finish")
+	}
+	var count int64
+	if err := a.db.Model(&models.LabelPrintRequest{}).Where("id = ?", id).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("label print requests = %d, %v", count, err)
+	}
+	a.noBroadcast()
 }

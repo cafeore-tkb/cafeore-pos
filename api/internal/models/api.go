@@ -560,7 +560,7 @@ type LabelPrintJob struct {
 
 // LabelPrintRequestCreateRequest defines model for LabelPrintRequestCreateRequest.
 type LabelPrintRequestCreateRequest struct {
-	// Id 頼みの id（頼む端末が決める。緊急のシールは入れ直しの id）
+	// Id 頼みの id（入れ直しの id）
 	Id openapi_types.UUID `json:"id"`
 
 	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
