@@ -44,11 +44,6 @@ html:has(.caos-root) body {
   --caos-overtime: oklch(88.5% 0.062 18.334);
   --caos-overtime-line: oklch(63.7% 0.237 25.331);
   --caos-overtime-text: oklch(39.6% 0.141 25.723);
-  /* 抽出を始めてからの経過（リベロビュー）。予定の抽出時間までを 4 段に分け、長いほど濃い紫（ほかの意味の色と分ける）。過ぎたら継続中の赤 */
-  --caos-elapsed-1: oklch(89.4% 0.057 293.283);
-  --caos-elapsed-2: oklch(70.2% 0.183 293.541);
-  --caos-elapsed-3: oklch(54.1% 0.281 293.009);
-  --caos-elapsed-4: oklch(38% 0.189 293.745);
   /* 注文のコメント（カードの左上の印・コメントの中身）。ほかの意味の色と分けた青緑 */
   --caos-comment: oklch(52% 0.105 223.128);
   --caos-comment-soft: oklch(95.6% 0.045 203.388);

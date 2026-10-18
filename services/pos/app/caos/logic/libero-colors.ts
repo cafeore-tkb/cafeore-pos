@@ -2,20 +2,36 @@ import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { cardOrderNos } from "./cards";
 import type { LiberoLane } from "./libero";
 
-/** 白から濃い赤／青へ。同じ濃さを使い、文字は背景に合わせる。 */
-export const liberoColor = (card: CaosCard, intensity: number) => {
-  const end = card.cups[0].item.item_type.iced_brew
-    ? [29, 78, 216]
-    : [185, 28, 28];
-  const amount = Math.max(0, Math.min(1, intensity));
-  const backgroundColor = `#${end
+/** 全カップを数える。混在カードを先頭カップだけで代表させない。 */
+export const liberoCupCounts = (card: CaosCard) => {
+  const iced = card.cups.filter((cup) => cup.item.item_type.iced_brew).length;
+  return { hot: card.cups.length - iced, iced };
+};
+
+const tint = (end: number[], amount: number) =>
+  `#${end
     .map((channel) =>
       Math.round(255 + (channel - 255) * amount)
         .toString(16)
         .padStart(2, "0"),
     )
     .join("")}`;
-  return { backgroundColor, color: readableTextColor(backgroundColor) };
+
+/** 混在時は赤・青を杯数の比率で分割し、両方を残す。 */
+export const liberoColor = (card: CaosCard, intensity: number) => {
+  const amount = Math.max(0, Math.min(1, intensity));
+  const hotColor = tint([185, 28, 28], amount);
+  const icedColor = tint([29, 78, 216], amount);
+  const { hot, iced } = liberoCupCounts(card);
+  const backgroundColor = hot ? hotColor : icedColor;
+  return {
+    backgroundColor,
+    backgroundImage:
+      hot && iced
+        ? `linear-gradient(to right, ${hotColor} 0% ${(hot / card.cups.length) * 100}%, ${icedColor} ${(hot / card.cups.length) * 100}% 100%)`
+        : undefined,
+    color: readableTextColor(backgroundColor),
+  };
 };
 
 /** 終了間際に濃さが加速する、0〜1に正規化した指数曲線。 */

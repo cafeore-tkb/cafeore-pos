@@ -2,7 +2,11 @@ import type { CaosCard } from "@cafeore/common";
 import { cardOrderNos, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LiberoLane } from "../logic/libero";
-import { brewIntensity, liberoColor } from "../logic/libero-colors";
+import {
+  brewIntensity,
+  liberoColor,
+  liberoCupCounts,
+} from "../logic/libero-colors";
 import { LaneName } from "./LaneParts";
 
 /** リベロの縦1列。上が抽出中、下が待機先頭。時間は共通の抽出予定に基づく目安。 */
@@ -93,7 +97,8 @@ function CupDetail({
   card,
   small = false,
 }: { card: CaosCard; small?: boolean }) {
-  const iced = card.cups[0].item.item_type.iced_brew;
+  const { hot, iced } = liberoCupCounts(card);
+  const mixed = hot > 0 && iced > 0;
   return (
     <>
       <div
@@ -106,13 +111,34 @@ function CupDetail({
       </div>
       <div
         className="flex flex-wrap items-center justify-center gap-2"
-        aria-label={`${iced ? "アイス" : "ホット"} ${card.cups.length}杯`}
+        aria-label={[
+          hot ? `ホット ${hot}杯` : "",
+          iced ? `アイス ${iced}杯` : "",
+        ]
+          .filter(Boolean)
+          .join("、")}
       >
-        <span
-          className={`font-black ${small ? "text-[clamp(18px,1.8vw,34px)]" : "text-[clamp(22px,2.4vw,46px)]"}`}
-        >
-          {card.cups.length}杯
-        </span>
+        {mixed ? (
+          <>
+            <span
+              className={`rounded-lg border border-red-300 bg-red-50 px-2 text-red-950 ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
+            >
+              {hot}杯
+            </span>
+            <span aria-hidden="true">＋</span>
+            <span
+              className={`rounded-lg border border-blue-300 bg-blue-50 px-2 text-blue-950 ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
+            >
+              {iced}杯
+            </span>
+          </>
+        ) : (
+          <span
+            className={`font-black ${small ? "text-[clamp(18px,1.8vw,34px)]" : "text-[clamp(22px,2.4vw,46px)]"}`}
+          >
+            {card.cups.length}杯
+          </span>
+        )}
       </div>
     </>
   );

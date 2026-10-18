@@ -30,7 +30,7 @@ import {
   pendingNominatedCups,
   staysInLane,
 } from "./lanes";
-import { byElapsed, liberoLanes } from "./libero";
+import { liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { runCardAction } from "./runCardAction";
 import { findOrder, focusCard } from "./search";
@@ -592,7 +592,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(laneStatus(lane, T0.getTime()).phase).toBe("waiting");
   });
 
-  test("リベロビュー：抽出中のドリッパーに経過の長い順の順位と、予定の抽出時間に対する進み具合の段", () => {
+  test("リベロビュー：固定順で抽出中の経過と杯数別の予定時間を返す", () => {
     // 1st：#1（1 杯）を 0 秒に、3rd：#2（2 杯）を 100 秒に始めた。2nd は待機だけ、ほかは空き
     const at = (sec: number) => new Date(T0.getTime() + sec * 1000);
     const lanes = boardLanes(
@@ -631,9 +631,6 @@ describe("[unit] CaOS の盤面の見せ方", () => {
           elapsedSec: 310,
           plannedSec: 300,
           progress: 1,
-          overSec: 10,
-          rank: 1,
-          level: "overtime",
         },
       ],
       [2, undefined],
@@ -644,17 +641,11 @@ describe("[unit] CaOS の盤面の見せ方", () => {
           elapsedSec: 210,
           plannedSec: 360,
           progress: 210 / 360,
-          overSec: 0,
-          rank: 2,
-          level: 2,
         },
       ],
       [4, undefined],
       [5, undefined],
       [6, undefined],
-    ]);
-    expect(byElapsed(rows).map(({ lane }) => lane.id)).toEqual([
-      1, 3, 2, 4, 5, 6,
     ]);
   });
 });
