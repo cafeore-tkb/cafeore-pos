@@ -4,7 +4,6 @@ import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
 import { OrderStatusList } from "~/components/organisms/dashboard/MasterState";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
-import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
 import { OperationsDashboard } from "~/components/organisms/dashboard/operations/OperationsDashboard";
 import { Input } from "~/components/ui/input";
 import { dayWindow } from "~/lib/analytics/operations";
@@ -128,18 +127,6 @@ export default function Dashboard() {
                       orders={selectedOrders}
                       pastOrders={selectedPastOrders}
                     />
-                  </>
-                ),
-              },
-              {
-                id: "serveTimeGraph",
-                name: "お渡し時間の変化",
-                content: (
-                  <>
-                    <p className="mb-3 text-sm">
-                      この期間に受けた注文の、お渡しまでの時間です。現在の記録で表示します。
-                    </p>
-                    <ServeTimeGraph orders={selectedOrders} />
                   </>
                 ),
               },

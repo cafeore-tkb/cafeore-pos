@@ -4,7 +4,6 @@ import {
   Archive,
   Banknote,
   BarChart3,
-  ChartNoAxesCombined,
   CheckCheck,
   Coffee,
   History,
@@ -28,6 +27,7 @@ import {
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { AvailabilityReview } from "./AvailabilityReview";
 import { DurationCharts, minutes } from "./DurationCharts";
+import { DurationTrend } from "./DurationTrend";
 import { FlowCharts } from "./FlowCharts";
 import { LogReview } from "./LogReview";
 import { OverviewVisuals, ProductTimeChart } from "./OverviewVisuals";
@@ -49,10 +49,7 @@ const VIEWS = [
   { id: "summary", name: "ひと目でわかる" },
   { id: "flow", name: "注文とお渡し" },
   { id: "acceleration", name: "混み具合の変化" },
-  { id: "histogram", name: "何分かかった？" },
-  { id: "cdf", name: "何分で何割？" },
-  { id: "box", name: "時間のばらつき" },
-  { id: "products", name: "商品ごとの時間" },
+  { id: "duration", name: "提供時間" },
   { id: "availability", name: "在庫とメニュー" },
   { id: "logs", name: "連絡と操作の記録" },
   { id: "baseline", name: "2025年との比較" },
@@ -61,10 +58,7 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
   summary: LayoutDashboard,
   flow: Coffee,
   acceleration: Activity,
-  histogram: BarChart3,
-  cdf: ChartNoAxesCombined,
-  box: Timer,
-  products: Coffee,
+  duration: Timer,
   availability: Archive,
   logs: MessageSquareText,
   baseline: History,
@@ -73,10 +67,7 @@ const SHORT_NAMES: Record<string, string> = {
   summary: "概要",
   flow: "流れ",
   acceleration: "混雑",
-  histogram: "時間",
-  cdf: "割合",
-  box: "幅",
-  products: "商品",
+  duration: "時間",
   availability: "在庫",
   logs: "記録",
   baseline: "昨年",
@@ -223,7 +214,7 @@ export function OperationsDashboard({
       next === "inventory"
         ? "availability"
         : next === "review"
-          ? "histogram"
+          ? "duration"
           : "summary",
     );
   };
@@ -291,7 +282,7 @@ export function OperationsDashboard({
           </button>
         ))}
         <span className="text-stone-500 text-xs">
-          注文・お渡し・混雑・メニュー比較に反映。提供時間の分布は変わりません。
+          注文・お渡し・混雑・提供時間の推移・メニュー比較に反映。提供時間の分布は変わりません。
         </span>
       </fieldset>
       <section>
@@ -574,7 +565,7 @@ export function OperationsDashboard({
                       )}
                     </section>
                   )}
-                  {["histogram", "cdf", "box", "products"].includes(view) && (
+                  {view === "duration" && (
                     <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
                       <h3 className="font-bold">お渡しまでにかかった時間</h3>
                       <p className="text-muted-foreground text-xs">
@@ -584,22 +575,15 @@ export function OperationsDashboard({
                         {report.invalidTimes}
                         杯も時間の集計から外しています。
                       </p>
-                      {view !== "products" && (
-                        <DurationCharts
-                          stats={report.total}
-                          chart={
-                            view === "cdf"
-                              ? "cdf"
-                              : view === "box"
-                                ? "box"
-                                : "histogram"
-                          }
-                        />
-                      )}
-                      {view === "products" && (
-                        <ProductTimeChart products={report.products} />
-                      )}
-                      {view === "products" && (
+                      <DurationTrend
+                        buckets={report.durationBuckets}
+                        intervalMinutes={intervalMinutes}
+                      />
+                      <h4 className="font-bold">期間全体の分布・ばらつき</h4>
+                      <DurationCharts stats={report.total} />
+                      <h4 className="font-bold">商品ごとの時間</h4>
+                      <ProductTimeChart products={report.products} />
+                      {view === "duration" && (
                         <details>
                           <summary className="cursor-pointer font-bold text-sm">
                             杯数と時間の詳しい表
@@ -643,7 +627,7 @@ export function OperationsDashboard({
                           </div>
                         </details>
                       )}
-                      {view === "box" && (
+                      {view === "duration" && (
                         <details>
                           <summary className="cursor-pointer">
                             特に時間が長い・短い記録（{outlierRecords.length}

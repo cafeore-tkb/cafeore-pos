@@ -206,6 +206,7 @@ export const operationsReport = (
     });
     if (complete) previousNet = net;
   }
+  const durationValues = new Map<number, number[]>();
   const productMap = new Map<
     string,
     {
@@ -239,6 +240,12 @@ export const operationsReport = (
       if (handoff !== null) product.handoff.push(handoff);
       if (total !== null) {
         product.total.push(total);
+        const at =
+          window.start +
+          Math.floor((order.created - window.start) / intervalMs) * intervalMs;
+        const values = durationValues.get(at) ?? [];
+        values.push(total);
+        durationValues.set(at, values);
         outlierCups.push({
           orderNo: order.number,
           product: cup.product,
@@ -281,6 +288,20 @@ export const operationsReport = (
   return {
     intervalMinutes,
     buckets,
+    durationBuckets: buckets.map(({ at, complete }) => {
+      const values = (durationValues.get(at) ?? []).sort((a, b) => a - b);
+      return {
+        at,
+        complete,
+        count: values.length,
+        mean: values.length
+          ? values.reduce((sum, value) => sum + value, 0) / values.length
+          : null,
+        median: quantile(values, 0.5),
+        min: values[0] ?? null,
+        max: values.at(-1) ?? null,
+      };
+    }),
     openingBacklog,
     latest,
     products,
