@@ -53,8 +53,13 @@ export const OrderCountLabel: React.FC<{ cards: readonly CaosCard[] }> = ({
 };
 
 /** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
-export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
-  <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[15px] text-slate-600">
+export const LaneBadge: React.FC<{ bayId: number; muted?: boolean }> = ({
+  bayId,
+  muted = false,
+}) => (
+  <span
+    className={`flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[15px] ${muted ? "text-slate-400" : "text-slate-600"}`}
+  >
     {dripperLabel(bayId)}
   </span>
 );

@@ -2,6 +2,7 @@ import { KeyRound, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
 import { useCaosLanes } from "../hooks/useCaosLanes";
 import changeDripperIcon from "../icons/change-dripper.svg";
+import { dripWarnings } from "../logic/dripSupport";
 
 // ドリッパーの見出しの担当者。「1st 山田★」のように、番号（各画面がもう出している）の横に名前と上級生の印を出す。
 // 担当者がいなければ何も出さない（番号だけ）。
@@ -106,36 +107,62 @@ export const LaneChangeButton: React.FC<{
   const upcoming = upcomingOf(dripper);
   const label = lane?.name || "担当者なし";
   return (
-    <LaneButton
-      dripper={dripper}
-      title={
-        upcoming
-          ? `${label}から${upcoming.name}へ交代`
-          : `${label}の担当者を選んで交代`
-      }
-      aria-label={
-        upcoming
-          ? `${label}から${upcoming.name}へ交代`
-          : `${label}の担当者を選んで交代`
-      }
-      onClick={() => {
-        if (upcoming) changeToNext(dripper, upcoming);
-        else openChange(dripper);
-      }}
-      className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
-    >
-      <span className="flex min-w-0 max-w-full items-center gap-1 leading-tight">
-        <span className="line-clamp-2 break-all">{label}</span>
-        {lane?.senior && <SeniorMark />}
-        <ChangeIcon />
-      </span>
-      {upcoming && (
-        <span className="mt-0.5 flex min-w-0 max-w-full items-center gap-0.5 text-[12px] leading-tight">
-          <span className="truncate">次：{upcoming.name}</span>
-          {upcoming.senior && <SeniorMark />}
+    <div className="inline-flex min-w-0 max-w-full flex-col items-start gap-1">
+      <LaneButton
+        dripper={dripper}
+        title={
+          upcoming
+            ? `${label}から${upcoming.name}へ交代`
+            : `${label}の担当者を選んで交代`
+        }
+        aria-label={
+          upcoming
+            ? `${label}から${upcoming.name}へ交代`
+            : `${label}の担当者を選んで交代`
+        }
+        onClick={() => {
+          if (upcoming) changeToNext(dripper, upcoming);
+          else openChange(dripper);
+        }}
+        className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
+      >
+        <span className="flex min-w-0 max-w-full items-center gap-1 leading-tight">
+          <span className="line-clamp-2 break-all">{label}</span>
+          {lane?.senior && <SeniorMark />}
+          <ChangeIcon />
         </span>
-      )}
-    </LaneButton>
+        {upcoming && (
+          <span className="mt-0.5 flex min-w-0 max-w-full items-center gap-0.5 text-[12px] leading-tight">
+            <span className="truncate">次：{upcoming.name}</span>
+            {upcoming.senior && <SeniorMark />}
+          </span>
+        )}
+      </LaneButton>
+      <LaneDripHints dripper={dripper} />
+    </div>
+  );
+};
+
+/** できない抽出だけ表示する。全部対応・未登録は何も付けない。 */
+export const LaneDripHints = ({ dripper }: { dripper: number }) => {
+  const { lanes, shiftFeed } = useCaosLanes();
+  const name = lanes.find((lane) => lane.dripper === dripper)?.name ?? "";
+  const warnings = dripWarnings(shiftFeed.feed, name);
+  if (!warnings.length) return null;
+  return (
+    <div
+      className="flex max-w-full flex-wrap gap-1"
+      aria-label={`${name}の未対応の抽出（割当は可能）`}
+    >
+      {warnings.map((label) => (
+        <span
+          key={label}
+          className="rounded border border-amber-400 bg-amber-50 px-1 py-0.5 font-black text-[12px] text-red-800 leading-tight"
+        >
+          {label}
+        </span>
+      ))}
+    </div>
   );
 };
 

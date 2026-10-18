@@ -318,3 +318,45 @@ describe("[unit] upcomingLaneCandidate", () => {
     ).toBeNull();
   });
 });
+
+describe("名簿と対応抽出の配信", () => {
+  test("旧配信では未登録、新配信では空の対応一覧も維持する", () => {
+    const old = parseShiftFeed(DOC);
+    expect(old.members).toBeUndefined();
+    expect(old.drips).toBeUndefined();
+    const result = parseShiftFeed({
+      fields: {
+        members: {
+          arrayValue: {
+            values: [
+              {
+                mapValue: {
+                  fields: { name: str(" ｻﾄｳ "), grade: str(" B2 ") },
+                },
+              },
+              { mapValue: { fields: { name: str("別の人") } } },
+              { mapValue: { fields: { name: str(" ") } } },
+            ],
+          },
+        },
+        drips: {
+          mapValue: {
+            fields: {
+              " ｻﾄｳ ": names(),
+              別の人: names("1杯ホット", "2杯アイス"),
+              invalid: { integerValue: "1" },
+            },
+          },
+        },
+      },
+    });
+    expect(result.members).toEqual([
+      { name: "ｻﾄｳ", grade: "B2" },
+      { name: "別の人", grade: "" },
+    ]);
+    expect(result.drips).toEqual({
+      ｻﾄｳ: [],
+      別の人: ["1杯ホット", "2杯アイス"],
+    });
+  });
+});
