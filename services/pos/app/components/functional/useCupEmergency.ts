@@ -32,7 +32,7 @@ export const toastEmergenciesCancelled = (count: number) =>
 
 /**
  * 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルで使う。
- * カップに入れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を 1 枚ずつ
+ * カップに入れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を、前に緊急のシールを付けて 1 枚ずつ
  * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。直接刷れなければ、すぐ代理印刷をオンにしたレジに頼む
  * （POST /api/label-print-requests。label/print-relay）。頼めなければ端末に残し、送り直すたびにもう一度試す（usePrinter）。
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。

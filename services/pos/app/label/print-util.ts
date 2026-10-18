@@ -13,7 +13,7 @@ import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { cupLabelJob, orderLabelJob } from "./order-label";
+import { emergencyLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
   isPrintCancelled,
@@ -182,10 +182,13 @@ export const usePrinter = (
     [printJob, width],
   );
 
-  /** 緊急で入れ直したカップのシールを 1 枚刷る。刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す） */
+  /**
+   * 緊急で入れ直したカップのシールを 1 枚、前に緊急のシールを付けて刷る。
+   * 刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す）
+   */
   const printCupLabel = useCallback(
     async (order: OrderEntity, cupId: string, emergencyId: string) => {
-      const job = cupLabelJob(order, cupId, width);
+      const job = emergencyLabelJob(order, cupId, width);
       if (job) await printJob(job, emergencyId);
     },
     [printJob, width],

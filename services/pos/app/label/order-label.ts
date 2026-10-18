@@ -104,12 +104,44 @@ const cupLabel = (
 //   return { type: "flow", lines };
 // };
 
+const EMERGENCY_TEXT = "緊急";
+const EMERGENCY_SIZE: TextSize = [6, 6];
+
+/** 標準の大きさの全角 1 文字の幅と高さ（ドット） */
+const FULL_WIDTH_DOTS = 24;
+
 /**
- * カップ 1 杯のシール（緊急で入れ直したカップに貼る）。注文で刷るカップのシールと同じ中身で、
- * 「2/3」はその注文の抽出が要るカップの中の順番。注文にそのカップが無ければ null。
- * width は刷るプリンターの印字幅（ドット）
+ * 緊急のシール（「緊急」とだけ大きく書いた 1 枚）。緊急で入れ直したカップのシールの前に刷る
+ *
+ * カップのシールはレジで刷るものと同じなので、続けて刷るこれで、入れ直しのシールだと分かるようにする。
+ * 範囲はカップのシールと同じ（シールの切れ目にかからないように）。
+ * ページモードでは文字を寄せられないので、文字の幅から x を決めて中央に置く
+ * （6 倍で 288 × 144 ドット。いちばん狭い 58mm のダイカットラベル（384 ドット）にも入る）。
  */
-export const cupLabelJob = (
+const emergencyLabel = (width: number): Label => {
+  const areaWidth = Math.min(CUP_LABEL_AREA.width, width);
+  const textWidth = EMERGENCY_TEXT.length * FULL_WIDTH_DOTS * EMERGENCY_SIZE[0];
+  const textHeight = FULL_WIDTH_DOTS * EMERGENCY_SIZE[1];
+  return {
+    type: "fixed",
+    area: { ...CUP_LABEL_AREA, width: areaWidth },
+    elements: [
+      {
+        type: "text",
+        x: Math.floor((areaWidth - textWidth) / 2),
+        y: Math.floor((CUP_LABEL_AREA.height + textHeight) / 2),
+        line: [{ text: EMERGENCY_TEXT, size: EMERGENCY_SIZE }],
+      },
+    ],
+  };
+};
+
+/**
+ * 緊急で入れ直したカップ 1 杯の分：緊急のシールと、そのカップのシール。
+ * カップのシールは注文で刷るものと同じ中身で、「2/3」はその注文の抽出が要るカップの中の順番。
+ * 注文にそのカップが無ければ null。width は刷るプリンターの印字幅（ドット）
+ */
+export const emergencyLabelJob = (
   order: OrderEntity,
   cupId: string,
   width: number,
@@ -119,6 +151,7 @@ export const cupLabelJob = (
   if (index < 0) return null;
   return {
     labels: [
+      emergencyLabel(width),
       cupLabel(order.orderId, index + 1, cups.length, cups[index], width),
     ],
   };
