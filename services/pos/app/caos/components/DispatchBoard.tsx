@@ -22,7 +22,7 @@ import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton } from "./BoardParts";
 import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
-import { LaneChangeButton, LaneName } from "./LaneParts";
+import { LaneChangeButton } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
@@ -257,12 +257,10 @@ export const DispatchBoard: React.FC<
                       className="h-[66px] w-[44px]"
                     />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                      <LaneName
+                      <LaneChangeButton
                         dripper={bay.id}
-                        wrap
                         className="max-w-full font-black text-[16px] text-slate-950 leading-tight"
                       />
-                      <LaneChangeButton dripper={bay.id} />
                     </div>
                   </div>
 

@@ -1,7 +1,8 @@
-import { KeyRound, Star, TriangleAlert, UserRoundPen } from "lucide-react";
+import { KeyRound, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
 import { toast } from "sonner";
 import { useCaosLanes } from "../hooks/useCaosLanes";
+import changeDripperIcon from "../icons/change-dripper.svg";
 
 // ドリッパーの見出しの担当者。「1st 山田★」のように、番号（各画面がもう出している）の横に名前と上級生の印を出す。
 // 担当者がいなければ何も出さない（番号だけ）。
@@ -71,64 +72,75 @@ const LaneButton: React.FC<
   />
 );
 
-// 見出しの「交代」の並べ方。stacked は「交代 →」の下に次の人（幅の狭い A・D の見出し）、inline は 1 行（列の操作のパネル・C）
-const LAYOUTS = {
-  stacked: "flex flex-col items-start justify-center px-1 py-0.5",
-  inline: "inline-flex h-7 items-center gap-1 px-1.5",
-};
+/** 添付の交代SVG。文字色に合わせる。 */
+const ChangeIcon: React.FC<{ className?: string }> = ({
+  className = "h-5 w-5",
+}) => (
+  <span
+    aria-hidden="true"
+    className={`inline-block shrink-0 bg-current ${className}`}
+    style={{
+      maskImage: `url("${changeDripperIcon}")`,
+      WebkitMaskImage: `url("${changeDripperIcon}")`,
+      maskRepeat: "no-repeat",
+      maskPosition: "center",
+      maskSize: "contain",
+      WebkitMaskRepeat: "no-repeat",
+      WebkitMaskPosition: "center",
+      WebkitMaskSize: "contain",
+    }}
+  />
+);
+const CHANGE_TONE =
+  "rounded-lg border-slate-300 bg-white text-slate-700 shadow-xs hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-slate-500";
 
-/**
- * 列の見出し・列の操作のパネルの「交代」。押したらすぐ次の人（sohosai-shift の予定で、今の担当者より後ろの最初の人）に替え、ボタンに次の人を出す。
- * 次の人がいなければ押せない見た目にし、押すと理由を通知で出す。閲覧だけの画面では出さない
- */
+/** 現在の名前そのものが交代ボタン。次の名前の予告は実際の開始10分前から。 */
 export const LaneChangeButton: React.FC<{
   dripper: number;
-  layout?: keyof typeof LAYOUTS;
+  layout?: "stacked" | "inline";
   className?: string;
-}> = ({ dripper, layout = "stacked", className = "" }) => {
-  const { editable, nextOf, changeToNext } = useCaosLanes();
-  if (!editable) return null;
+}> = ({ dripper, className = "" }) => {
+  const { editable, lanes, nextOf, upcomingOf, changeToNext } = useCaosLanes();
+  const lane = lanes.find((item) => item.dripper === dripper);
+  if (!editable)
+    return <LaneName dripper={dripper} wrap className={className} />;
   const found = nextOf(dripper);
-  const head = (arrow: string) => (
-    <span className="flex shrink-0 items-center gap-0.5 whitespace-nowrap text-[10px] leading-tight">
-      <UserRoundPen className="h-3 w-3 shrink-0" />
-      交代{arrow}
-    </span>
-  );
-  if ("reason" in found)
-    return (
-      <LaneButton
-        dripper={dripper}
-        aria-disabled
-        title={found.reason}
-        onClick={() =>
-          toast(found.reason, {
-            description:
-              "ほかの人にするときは、ヘッダーの「ドリッパー」の「交代」から選ぶか名前を入れます",
-          })
-        }
-        className={`${LAYOUTS[layout]} border-slate-300 border-dashed bg-slate-50 text-slate-400 ${className}`}
-      >
-        {head("")}
-        <span className="max-w-full truncate font-bold text-[10px] leading-tight">
-          次の人なし
-        </span>
-      </LaneButton>
-    );
-  const { name, senior, reasons } = found.next;
+  const upcoming = upcomingOf(dripper);
+  const next = upcoming ?? ("next" in found ? found.next : null);
+  const label = lane?.name || "担当者なし";
   return (
     <LaneButton
       dripper={dripper}
-      title={`交代 → ${name}（${reasons.join("・")}）`}
-      aria-label={`交代 → ${name}`}
-      onClick={() => changeToNext(dripper, found.next)}
-      className={`${LAYOUTS[layout]} border-slate-300 bg-white text-slate-500 hover:bg-slate-50 ${className}`}
+      title={
+        next
+          ? `${label}から${next.name}へ交代`
+          : "reason" in found
+            ? found.reason
+            : "次の人なし"
+      }
+      aria-label={
+        next ? `${label}から${next.name}へ交代` : `${label}：交代先なし`
+      }
+      onClick={() => {
+        if (next) changeToNext(dripper, next);
+        else if ("reason" in found)
+          toast(found.reason, {
+            description: "ドリッパータブの「交代」から選ぶか名前を入れます",
+          });
+      }}
+      className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 ${CHANGE_TONE} ${className}`}
     >
-      {head(" →")}
-      <span className="flex min-w-0 max-w-full items-center text-[12px] text-slate-950 leading-tight">
-        <span className="truncate">{name}</span>
-        {senior && <SeniorMark />}
+      <span className="flex min-w-0 max-w-full items-center gap-1 text-[16px] leading-tight">
+        <span className="line-clamp-2 break-all">{label}</span>
+        {lane?.senior && <SeniorMark />}
+        <ChangeIcon />
       </span>
+      {upcoming && (
+        <span className="mt-0.5 flex min-w-0 max-w-full items-center gap-0.5 text-[12px] leading-tight">
+          <span className="truncate">次：{upcoming.name}</span>
+          {upcoming.senior && <SeniorMark />}
+        </span>
+      )}
     </LaneButton>
   );
 };
@@ -145,9 +157,9 @@ export const LaneChooseButton: React.FC<{
       dripper={dripper}
       onClick={() => openChange(dripper)}
       title="担当者を交代"
-      className={`inline-flex h-7 shrink-0 items-center gap-0.5 border-slate-300 bg-white px-1.5 text-slate-700 hover:bg-slate-50 ${className}`}
+      className={`inline-flex min-h-[52px] min-w-24 shrink-0 items-center justify-center gap-2 px-4 text-[16px] ${CHANGE_TONE} ${className}`}
     >
-      <UserRoundPen className="h-3.5 w-3.5" />
+      <ChangeIcon className="h-6 w-6" />
       交代
     </LaneButton>
   );

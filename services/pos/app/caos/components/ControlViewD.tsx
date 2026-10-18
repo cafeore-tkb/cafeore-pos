@@ -43,7 +43,7 @@ import {
 } from "./BoardParts";
 import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
-import { LaneChangeButton, LaneName } from "./LaneParts";
+import { LaneChangeButton } from "./LaneParts";
 import { CancelEmergencyButton, OrderCard } from "./OrderCard";
 import { OrderCommentBadge } from "./OrderComments";
 import { ScrollArea } from "./ScrollArea";
@@ -337,14 +337,12 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       onOpenLane={readOnly ? undefined : onOpenLane}
                       className="h-[56px] w-full"
                     />
-                    {/* 担当者、その下に「交代」（列の幅が狭いので縦に並べる） */}
+                    {/* 担当者名と交代アイコンを1つのボタンにまとめる */}
                     <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
-                      <LaneName
+                      <LaneChangeButton
                         dripper={bay.id}
-                        wrap
                         className="min-w-0 font-black text-[16px] leading-tight"
                       />
-                      {!readOnly && <LaneChangeButton dripper={bay.id} />}
                     </div>
                   </th>
                 ))}

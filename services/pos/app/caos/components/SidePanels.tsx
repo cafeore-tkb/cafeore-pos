@@ -382,12 +382,11 @@ export const LanePanel: React.FC<{
 }> = ({ lane, onClose, onMoveQueue }) => (
   <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
-      <LaneName dripper={lane.id} className="font-black text-[18px]" />
       <LaneAbility dripper={lane.id} />
       <LaneChangeButton
         dripper={lane.id}
         layout="inline"
-        className="ml-auto h-11 px-3"
+        className="font-black text-[18px]"
       />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
