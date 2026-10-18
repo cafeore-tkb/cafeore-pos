@@ -36,7 +36,7 @@ export const unassignedAreaBackground = (view?: UnfinishedView) =>
   view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
 
 const TAB =
-  "relative flex h-8 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
+  "relative flex h-12 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
 const TAB_ON = "text-slate-950";
 const TAB_OFF = "text-slate-600 hover:text-slate-950";
 
@@ -114,22 +114,6 @@ export const UnassignedHeading: React.FC<{
       >
         {icon}
         {label}
-        <RollingOrderNumber
-          value={smallestUnassigned}
-          className={unassignedNumberTone}
-        />
-        <span className="caos-tab-count">
-          <RollingNumber
-            value={unassignedCounts.orders}
-            className={unassignedNumberTone}
-          />
-          件{" "}
-          <RollingNumber
-            value={unassignedCounts.cups}
-            className={unassignedNumberTone}
-          />
-          杯
-        </span>
         <span
           className="caos-tab-time"
           title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
@@ -146,6 +130,22 @@ export const UnassignedHeading: React.FC<{
               <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
             </span>
           )}
+        </span>
+        <RollingOrderNumber
+          value={smallestUnassigned}
+          className={unassignedNumberTone}
+        />
+        <span className="caos-tab-count">
+          <RollingNumber
+            value={unassignedCounts.orders}
+            className={unassignedNumberTone}
+          />
+          件{" "}
+          <RollingNumber
+            value={unassignedCounts.cups}
+            className={unassignedNumberTone}
+          />
+          杯
         </span>
       </button>
       <button
