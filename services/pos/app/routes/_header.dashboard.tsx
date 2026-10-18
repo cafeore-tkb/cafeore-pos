@@ -52,7 +52,7 @@ export default function Dashboard() {
         <p>お渡し待ち：{unseved}</p>
         <div className="flex items-center gap-2 p-2">
           <div className="whitespace-nowrap font-bold text-sm">
-            <p>過去のデータを</p>
+            <p>追加の過去データを</p>
             <p>読み込む</p>
           </div>
           <Input

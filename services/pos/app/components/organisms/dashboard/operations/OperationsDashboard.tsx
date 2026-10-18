@@ -12,7 +12,14 @@ import {
   MessageSquareText,
   Timer,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { Button } from "~/components/ui/button";
 import { flowCsv } from "~/lib/analytics/flowCsv";
 import { historicalOrders, load2025Baseline } from "~/lib/analytics/historical";
@@ -100,6 +107,7 @@ export function OperationsDashboard({
   const panelId = useId();
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [mode, setMode] = useState<Mode>("floor");
+  const [durationSource, setDurationSource] = useState("live");
   const [reference, setReference] = useState<AnalysisOrder[]>([]);
   const [referenceInfo, setReferenceInfo] = useState("");
   const [referenceDate, setReferenceDate] = useState("");
@@ -170,8 +178,10 @@ export function OperationsDashboard({
   useEffect(() => {
     if (isOrdersLoaded) setSnapshot({ at: Date.now(), orders: orders.length });
   }, [orders, isOrdersLoaded]);
-  const outlierRecords = report.outlierCups.filter((cup) =>
-    report.total.outliers.includes(cup.minutes),
+  const durationReport =
+    durationSource === "reference" && baseline ? baseline : report;
+  const outlierRecords = durationReport.outlierCups.filter((cup) =>
+    durationReport.total.outliers.includes(cup.minutes),
   );
   const last = report.latest;
   const trend = last
@@ -181,22 +191,29 @@ export function OperationsDashboard({
         ? "お渡し待ちを減らせています"
         : "待っている杯数は横ばいです"
     : `最初の${intervalMinutes}分を集計中`;
-  const loadBaseline = async () => {
+  const loadBaseline = useCallback(async () => {
     setLoading(true);
     setFailure("");
     try {
       const data = await load2025Baseline();
       setReference(data.orders);
-      setReferenceDate(jstDate(data.orders[0].created));
+      setReferenceDate(
+        [
+          ...new Set(data.orders.map((order) => jstDate(order.created))),
+        ].sort()[0],
+      );
       setReferenceInfo(
-        `2025年の記録（注文ごと） / sohosai-analysis ${data.commit.slice(0, 8)}`,
+        `2025/data/day12.json（同梱・注文ごと） / sohosai-analysis ${data.commit.slice(0, 8)}`,
       );
     } catch {
       setFailure("2025年データを読み込めませんでした。");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+  useEffect(() => {
+    void loadBaseline();
+  }, [loadBaseline]);
   const exportFlow = () => {
     const csv = flowCsv(report.buckets, intervalMinutes);
     const url = URL.createObjectURL(
@@ -568,21 +585,72 @@ export function OperationsDashboard({
                   {view === "duration" && (
                     <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
                       <h3 className="font-bold">お渡しまでにかかった時間</h3>
+                      <div className="flex flex-wrap items-center gap-3 text-sm">
+                        <label>
+                          表示する記録{" "}
+                          <select
+                            className="ml-2 min-h-10 rounded border bg-white p-2"
+                            value={durationSource}
+                            onChange={(event) =>
+                              setDurationSource(event.target.value)
+                            }
+                          >
+                            <option value="live">今年の実績</option>
+                            <option value="reference" disabled={!baseline}>
+                              2025年の記録
+                            </option>
+                          </select>
+                        </label>
+                        {durationSource === "reference" && (
+                          <label>
+                            日付{" "}
+                            <select
+                              className="ml-2 min-h-10 rounded border bg-white p-2"
+                              value={referenceDate}
+                              onChange={(event) =>
+                                setReferenceDate(event.target.value)
+                              }
+                            >
+                              {[
+                                ...new Set(
+                                  reference.map((order) =>
+                                    jstDate(order.created),
+                                  ),
+                                ),
+                              ]
+                                .sort()
+                                .map((day) => (
+                                  <option key={day}>{day}</option>
+                                ))}
+                            </select>
+                          </label>
+                        )}
+                        {loading && <span>2025年の記録を読込中…</span>}
+                        {failure && (
+                          <span className="text-red-700">{failure}</span>
+                        )}
+                      </div>
+                      {durationSource === "reference" && (
+                        <p className="text-amber-900 text-sm">
+                          {referenceInfo}
+                          。昨年は注文ごとの時刻を各杯に展開した参考値です。上の開始・終了時刻と集計間隔を適用します。
+                        </p>
+                      )}
                       <p className="text-muted-foreground text-xs">
                         この期間に注文され、期間末までに渡した分です。まだ渡していない
-                        {report.censored}
+                        {durationReport.censored}
                         杯はグラフに含みません。時刻がおかしい
-                        {report.invalidTimes}
+                        {durationReport.invalidTimes}
                         杯も時間の集計から外しています。
                       </p>
                       <DurationTrend
-                        buckets={report.durationBuckets}
+                        buckets={durationReport.durationBuckets}
                         intervalMinutes={intervalMinutes}
                       />
                       <h4 className="font-bold">期間全体の分布・ばらつき</h4>
-                      <DurationCharts stats={report.total} />
+                      <DurationCharts stats={durationReport.total} />
                       <h4 className="font-bold">商品ごとの時間</h4>
-                      <ProductTimeChart products={report.products} />
+                      <ProductTimeChart products={durationReport.products} />
                       {view === "duration" && (
                         <details>
                           <summary className="cursor-pointer font-bold text-sm">
@@ -604,7 +672,7 @@ export function OperationsDashboard({
                                 </tr>
                               </thead>
                               <tbody>
-                                {report.products.map((p) => (
+                                {durationReport.products.map((p) => (
                                   <tr key={p.name} className="border-t">
                                     <td className="py-2">{p.name}</td>
                                     <td>
@@ -699,7 +767,7 @@ export function OperationsDashboard({
                           disabled={loading}
                           onClick={() => void loadBaseline()}
                         >
-                          {loading ? "読込中…" : "昨年の記録を開く"}
+                          {loading ? "読込中…" : "同梱の2025年記録に戻す"}
                         </Button>
                         <label className="text-sm">
                           手元の昨年データ{" "}

@@ -28,19 +28,20 @@ export function DurationTrend({
   buckets: ReturnType<typeof operationsReport>["durationBuckets"];
   intervalMinutes: BucketMinutes;
 }) {
+  const chronological = [...buckets].sort((a, b) => a.at - b.at);
   const label = (at: number) =>
     `${jstDate(at).slice(5)} ${jstClock(at).slice(0, 5)}`;
   return (
     <section className="space-y-3" aria-label="時間帯ごとの提供時間">
       <h4 className="font-bold">{intervalMinutes}分ごとの提供時間</h4>
       <p className="text-stone-600 text-xs">
-        その時間帯に受けた注文の、受付から提供まで（1杯ごと）。まだ渡していない杯は除きます。記録がない枠は線をつなぎません。最大・最小には外れ値も含みます。
+        その時間帯に受けた注文の、受付から提供まで（1杯ごと）。まだ渡していない杯は除きます。左が古い時間帯、右が最新です。記録がない枠は線をつなぎません。最大・最小には外れ値も含みます。
       </p>
       {buckets.some((b) => b.count > 0) ? (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={buckets}
+              data={chronological}
               accessibilityLayer
               margin={{ left: 8, right: 12, top: 12, bottom: 12 }}
             >
@@ -100,7 +101,7 @@ export function DurationTrend({
               </tr>
             </thead>
             <tbody>
-              {buckets.map((b) => (
+              {chronological.map((b) => (
                 <tr key={b.at} className="border-t">
                   <td className="p-2">
                     {label(b.at)}〜
