@@ -16,6 +16,7 @@ export const PanelHeader: React.FC<{
   title?: string;
   className?: string;
   backgroundClassName?: string;
+  heightClassName?: string;
   children?: React.ReactNode;
 }> = ({
   icon: Icon,
@@ -23,9 +24,10 @@ export const PanelHeader: React.FC<{
   className = "border-slate-200 border-b",
   children,
   backgroundClassName = "bg-slate-50",
+  heightClassName = "h-11",
 }) => (
   <header
-    className={`flex h-11 shrink-0 items-center gap-2 rounded-t-lg px-3 ${backgroundClassName} ${className}`}
+    className={`flex ${heightClassName} shrink-0 items-center gap-2 rounded-t-lg px-3 ${backgroundClassName} ${className}`}
   >
     {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-700" />}
     {title && (
