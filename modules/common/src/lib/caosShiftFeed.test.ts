@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  type ShiftFeed,
   caosFeedUrl,
   currentShiftPeriods,
   fetchShiftFeed,
@@ -8,6 +9,7 @@ import {
   nextLaneCandidate,
   normalizeFeedKey,
   parseShiftFeed,
+  upcomingLaneCandidate,
 } from "./caosShiftFeed";
 
 // Firestore の REST の形（sohosai-shift の caosFeeds/{合言葉}）
@@ -223,5 +225,96 @@ describe("[unit] sohosai-shift の予定（caosFeeds）", () => {
     expect(normalizeFeedKey("  ")).toBeNull();
     expect(normalizeFeedKey("a b")).toBeNull();
     expect(caosFeedUrl("a+b")).toMatch(/caosFeeds\/a%2Bb$/);
+  });
+});
+
+describe("[unit] upcomingLaneCandidate", () => {
+  const at = (time: string, day = "2026-11-03") =>
+    Date.parse(`${day}T${time}+09:00`);
+  const scheduled = (): ShiftFeed => ({
+    drippers: {
+      "2026-11-03 11:00": ["山田"],
+      "2026-11-03 11:30": ["伊藤"],
+    },
+    drills: [],
+    seniors: ["伊藤"],
+    updatedAt: null,
+  });
+  test("10分前ちょうどから開始直前まで予告する", () => {
+    const feed = scheduled();
+    expect(
+      upcomingLaneCandidate(feed, 1, at("11:19:59.999"), "山田"),
+    ).toBeNull();
+    expect(upcomingLaneCandidate(feed, 1, at("11:20:00"), "山田")).toEqual({
+      name: "伊藤",
+      senior: true,
+      reasons: ["次のシフト 11:30開始"],
+    });
+    expect(
+      upcomingLaneCandidate(feed, 1, at("11:29:59.999"), "山田")?.name,
+    ).toBe("伊藤");
+    expect(upcomingLaneCandidate(feed, 1, at("11:30:00"), "山田")).toBeNull();
+  });
+  test("手動の代打が入っても開始済みの人へ戻す予告をしない", () => {
+    expect(
+      upcomingLaneCandidate(scheduled(), 1, at("11:15:00"), "代打"),
+    ).toBeNull();
+    expect(
+      upcomingLaneCandidate(scheduled(), 1, at("11:20:00"), "代打")?.name,
+    ).toBe("伊藤");
+  });
+  test("枠終了後は候補にしない", () => {
+    expect(
+      upcomingLaneCandidate(scheduled(), 1, at("12:00:00"), "代打"),
+    ).toBeNull();
+  });
+  test("同じ担当者・空き・存在しない番号は予告しない", () => {
+    expect(
+      upcomingLaneCandidate(scheduled(), 1, at("11:20:00"), " 伊藤 "),
+    ).toBeNull();
+    const feed = scheduled();
+    feed.drippers["2026-11-03 11:30"] = ["  "];
+    expect(upcomingLaneCandidate(feed, 1, at("11:20:00"), "山田")).toBeNull();
+    expect(
+      upcomingLaneCandidate(scheduled(), 6, at("11:20:00"), "山田"),
+    ).toBeNull();
+  });
+  test("別日の予定・未読込は予告しない", () => {
+    expect(
+      upcomingLaneCandidate(
+        scheduled(),
+        1,
+        at("11:20:00", "2026-11-04"),
+        "山田",
+      ),
+    ).toBeNull();
+    expect(upcomingLaneCandidate(null, 1, at("11:20:00"), "山田")).toBeNull();
+  });
+  test("オペ練の時間・間隔から次ラウンドの10分前を計算する", () => {
+    const feed = scheduled();
+    feed.drippers = {};
+    feed.drills = [
+      {
+        id: "d1",
+        title: "練習",
+        date: "2026-11-03",
+        start: "11:10",
+        minutes: 20,
+        gap: 5,
+        rounds: 2,
+        drippers: { "1": ["山田"], "2": ["伊藤"] },
+      },
+    ];
+    expect(
+      upcomingLaneCandidate(feed, 1, at("11:24:59.999"), "代打"),
+    ).toBeNull();
+    expect(upcomingLaneCandidate(feed, 1, at("11:25:00"), "代打")?.name).toBe(
+      "伊藤",
+    );
+    expect(upcomingLaneCandidate(feed, 1, at("11:35:00"), "山田")).toBeNull();
+    expect(upcomingLaneCandidate(feed, 1, at("11:55:00"), "山田")).toBeNull();
+    expect(
+      upcomingLaneCandidate(feed, 1, at("11:25:00", "2026-11-04"), "山田"),
+    ).toBeNull();
   });
 });

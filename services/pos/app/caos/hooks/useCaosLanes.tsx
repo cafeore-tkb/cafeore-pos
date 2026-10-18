@@ -12,6 +12,7 @@ import {
   overlayCaosOrders,
   seniorUpdates,
   todaysCaosLanes,
+  upcomingLaneCandidate,
 } from "@cafeore/common";
 import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -52,6 +53,7 @@ interface CaosLanesContextValue {
   openChange: (dripper: number) => void;
   /** 見出しの「交代」ですぐ入る次の人。いなければその理由 */
   nextOf: (dripper: number) => NextLane;
+  upcomingOf: (dripper: number) => LaneCandidate | null;
   /** 次の人にすぐ替える（ボタンに出していた nextOf の人） */
   changeToNext: (dripper: number, next: LaneCandidate) => void;
   openSettings: () => void;
@@ -184,6 +186,13 @@ export const CaosLanesProvider = ({
     hasSenior: lanes.some((lane) => lane.senior),
     openChange: (dripper) => setChanging({ dripper, nowMs: Date.now() }),
     nextOf,
+    upcomingOf: (dripper) =>
+      upcomingLaneCandidate(
+        shiftFeed.feed,
+        dripper,
+        nowMs,
+        laneOf(dripper).name,
+      ),
     changeToNext,
     openSettings: () => setSettingsOpen(true),
     shiftFeed,
