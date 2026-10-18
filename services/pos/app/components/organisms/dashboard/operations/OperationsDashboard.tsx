@@ -32,6 +32,7 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { OrderStatusList } from "../MasterState";
 import { AvailabilityReview } from "./AvailabilityReview";
 import { DurationCharts, minutes } from "./DurationCharts";
 import { DurationTrend } from "./DurationTrend";
@@ -193,10 +194,11 @@ export function OperationsDashboard({
     try {
       const data = await load2025Baseline();
       setReference(data.orders);
-      setReferenceDate(
-        [
-          ...new Set(data.orders.map((order) => jstDate(order.created))),
-        ].sort()[0],
+      const days = [
+        ...new Set(data.orders.map((order) => jstDate(order.created))),
+      ].sort();
+      setReferenceDate((current) =>
+        days.includes(current) ? current : (days[0] ?? ""),
       );
       setReferenceInfo(
         `2025/data/day12.json（同梱・注文ごと） / sohosai-analysis ${data.commit.slice(0, 8)}`,
@@ -252,71 +254,95 @@ export function OperationsDashboard({
             </p>
           </div>
         </div>
-        {mode === "floor" ? (
-          <p className="rounded-xl bg-teal-50 p-3 text-sm">
-            直近1時間 · 5分ごと · 自動更新
-            <br />
-            {jstDate(window.start)} {jstClock(window.start)}〜
-            {jstClock(window.end)}
-          </p>
-        ) : mode === "review" ? (
-          <details>
-            <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
-              期間を変える：{date} {startTime}〜
-              {throughDate !== date ? `${throughDate} ` : ""}
-              {endTime}
-            </summary>
-            <PeriodFilter
-              period={{ date, throughDate, startTime, endTime }}
-              now={now}
-              onChange={(period) => {
-                setSelectedDate(period.date);
-                setEndDate(period.throughDate);
-                setStartTime(period.startTime);
-                setEndTime(period.endTime);
-              }}
-            />
-          </details>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 text-sm">
-            <label>
-              日付{" "}
-              <input
-                type="date"
-                className="ml-2 min-h-10 rounded border p-2"
-                value={date}
-                max={jstDate(now)}
-                onChange={(event) => {
-                  if (event.target.value) setSelectedDate(event.target.value);
-                }}
-              />
-            </label>
-            {mode === "handoff" ? (
-              <label>
-                引き継ぐ時間帯{" "}
-                <select
-                  className="ml-2 min-h-10 rounded border p-2"
-                  value={handoffHour}
-                  onChange={(event) =>
-                    setHandoffHour(Number(event.target.value))
-                  }
-                >
-                  {HOURS.map((hour) => (
-                    <option key={`${hour}:00`} value={hour}>
-                      {hour}時〜{hour + 1}時
-                    </option>
-                  ))}
-                </select>
-              </label>
+        <div className="flex flex-wrap items-start gap-3">
+          <div className="min-w-0 flex-1 basis-80">
+            {mode === "floor" ? (
+              <p className="rounded-xl bg-teal-50 p-3 text-sm">
+                直近1時間 · 5分ごと · 自動更新
+                <br />
+                {jstDate(window.start)} {jstClock(window.start)}〜
+                {jstClock(window.end)}
+              </p>
+            ) : mode === "review" ? (
+              <details>
+                <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
+                  期間を変える：{date} {startTime}〜
+                  {throughDate !== date ? `${throughDate} ` : ""}
+                  {endTime}
+                </summary>
+                <PeriodFilter
+                  period={{ date, throughDate, startTime, endTime }}
+                  now={now}
+                  onChange={(period) => {
+                    setSelectedDate(period.date);
+                    setEndDate(period.throughDate);
+                    setStartTime(period.startTime);
+                    setEndTime(period.endTime);
+                  }}
+                />
+              </details>
             ) : (
-              <span>
-                {mode === "inventory"
-                  ? "在庫は現在値・メニュー比較は選択日の1日分"
-                  : "選択日の0時〜24時（今日の実績は現在まで）"}
-              </span>
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 text-sm">
+                <label>
+                  日付{" "}
+                  <input
+                    type="date"
+                    className="ml-2 min-h-10 rounded border p-2"
+                    value={date}
+                    max={jstDate(now)}
+                    onChange={(event) => {
+                      if (event.target.value)
+                        setSelectedDate(event.target.value);
+                    }}
+                  />
+                </label>
+                {mode === "handoff" ? (
+                  <label>
+                    引き継ぐ時間帯{" "}
+                    <select
+                      className="ml-2 min-h-10 rounded border p-2"
+                      value={handoffHour}
+                      onChange={(event) =>
+                        setHandoffHour(Number(event.target.value))
+                      }
+                    >
+                      {HOURS.map((hour) => (
+                        <option key={`${hour}:00`} value={hour}>
+                          {hour}時〜{hour + 1}時
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <span>
+                    {mode === "inventory"
+                      ? "在庫は現在値・メニュー比較は選択日の1日分"
+                      : "選択日の0時〜24時（今日の実績は現在まで）"}
+                  </span>
+                )}
+              </div>
             )}
           </div>
-        )}
+          {mode !== "inventory" && (
+            <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+              <legend className="px-1 font-bold text-xs">
+                時系列グラフの集計間隔
+              </legend>
+              {([5, 15, 60] as const).map((minutes) => (
+                <button
+                  key={minutes}
+                  type="button"
+                  aria-pressed={intervalMinutes === minutes}
+                  disabled={mode === "floor"}
+                  onClick={() => setIntervalMinutes(minutes)}
+                  className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
+                >
+                  {minutes === 60 ? "1時間" : `${minutes}分`}
+                </button>
+              ))}
+            </fieldset>
+          )}
+        </div>
         {!validPeriod && (
           <p role="alert" className="text-red-700">
             {mode === "handoff"
@@ -337,28 +363,6 @@ export function OperationsDashboard({
           / 現在 {jstClock(now)}
         </p>
       </header>
-      {mode !== "inventory" && (
-        <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
-          <legend className="px-1 font-bold text-xs">
-            時系列グラフの集計間隔
-          </legend>
-          {([5, 15, 60] as const).map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              aria-pressed={intervalMinutes === minutes}
-              disabled={mode === "floor"}
-              onClick={() => setIntervalMinutes(minutes)}
-              className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
-            >
-              {minutes === 60 ? "1時間" : `${minutes}分`}
-            </button>
-          ))}
-          <span className="text-stone-500 text-xs">
-            注文・お渡し・混雑・提供時間の推移・メニュー比較に反映。提供時間の分布は変わりません。
-          </span>
-        </fieldset>
-      )}
       <section>
         <div
           className="-mb-px relative z-[1] flex overflow-x-auto pt-1"
@@ -852,6 +856,16 @@ export function OperationsDashboard({
                         start={window.start}
                         end={Math.min(window.end, now)}
                       />
+                      <section className="space-y-3 border-stone-200 border-t pt-4">
+                        <h3 className="font-bold">注文ストップの記録</h3>
+                        <p className="text-muted-foreground text-xs">
+                          この期間の停止・再開です。
+                        </p>
+                        <OrderStatusList
+                          start={window.start}
+                          end={Math.min(window.end, now)}
+                        />
+                      </section>
                     </section>
                   )}
                   {view === "baseline" && (

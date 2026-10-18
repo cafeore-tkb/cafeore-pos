@@ -2,7 +2,6 @@ import { type OrderEntity, jstClock, jstDate } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
-import { OrderStatusList } from "~/components/organisms/dashboard/MasterState";
 import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { OperationsDashboard } from "~/components/organisms/dashboard/operations/OperationsDashboard";
 import { Input } from "~/components/ui/input";
@@ -16,13 +15,6 @@ export const meta: MetaFunction = () => {
 
 export default function Dashboard() {
   const { orders, allOrders, isOrdersLoaded } = useOrdersWSContext();
-  const unseved = orders?.reduce((acc, cur) => {
-    if (cur.servedAt == null) {
-      return acc + 1;
-    }
-    return acc;
-  }, 0);
-
   const [pastOrders, setPastOrders] = useState<OrderEntity[]>();
   const [pastDate, setPastDate] = useState("");
   const pastDays = useMemo(
@@ -47,22 +39,6 @@ export default function Dashboard() {
 
   return (
     <div className="h-full">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <h1 className="w-auto whitespace-nowrap text-3xl">ダッシュボード</h1>
-        <p>お渡し待ち：{unseved}</p>
-        <div className="flex items-center gap-2 p-2">
-          <div className="whitespace-nowrap font-bold text-sm">
-            <p>追加の過去データを</p>
-            <p>読み込む</p>
-          </div>
-          <Input
-            className="w-60"
-            type="file"
-            accept=".json"
-            onChange={handleFileUpload}
-          />
-        </div>
-      </div>
       <div className="p-4">
         <OperationsDashboard
           additionalPanels={(period) => {
@@ -96,6 +72,19 @@ export default function Dashboard() {
                 name: "商品ごとの杯数",
                 content: (
                   <>
+                    <label
+                      htmlFor="item-comparison-file"
+                      className="mb-3 flex flex-wrap items-center gap-2 text-sm"
+                    >
+                      比較用の過去データ
+                      <Input
+                        id="item-comparison-file"
+                        className="w-60"
+                        type="file"
+                        accept=".json"
+                        onChange={handleFileUpload}
+                      />
+                    </label>
                     <p className="mb-3 text-sm">
                       この期間の注文を表示します。過去側は、下の開始日から同じ時間帯・同じ長さで比べます。
                     </p>
@@ -145,18 +134,6 @@ export default function Dashboard() {
                         : undefined
                     }
                   />
-                ),
-              },
-              {
-                id: "masterState",
-                name: "注文ストップの記録",
-                content: (
-                  <>
-                    <p className="mb-3 text-sm">
-                      選択期間に記録された停止・再開です。
-                    </p>
-                    <OrderStatusList start={period.start} end={cutoff} />
-                  </>
                 ),
               },
             ];
