@@ -38,7 +38,11 @@ export const OrderSearchPanel: React.FC<{
       aria-label="入れた注文番号"
       className="mb-3 flex h-16 items-center justify-center rounded-xl border-2 border-slate-300 bg-slate-50 font-black font-mono text-[40px] text-slate-950 tracking-widest"
     >
-      {digits ? `#${digits}` : <span className="text-slate-300">#---</span>}
+      {digits ? (
+        `#${orderNoLabel(Number(digits))}`
+      ) : (
+        <span className="text-slate-300">#---</span>
+      )}
     </output>
     <div className="grid grid-cols-3 gap-2">
       {KEYS.map(({ key, label, title }) => (
