@@ -11,6 +11,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { useState } from "react";
 import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
@@ -199,6 +200,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenEmergency,
   lastAction,
 }) => {
+  // 手動で隠した警告は、この画面を開いている間は再表示しない。
+  const [printerWarningHidden, setPrinterWarningHidden] = useState(false);
+  const showPrinterWarning =
+    labelPrinter.status === "disconnected" &&
+    !labelPrinter.relayAvailable &&
+    !printerWarningHidden;
   const minute = new Date(nowMs).getUTCMinutes();
   const shiftReminder =
     minute >= 55 ? "シフト交換5分前" : minute >= 50 ? "シフト交換10分前" : null;
@@ -213,21 +220,29 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
       <FloatingStatusNotices
         active={
-          (labelPrinter.status === "disconnected" &&
-            !labelPrinter.relayAvailable) ||
+          showPrinterWarning ||
           unsent.entries.length > 0 ||
           labelPrinter.pendingCount > 0 ||
           labelPrinter.relayedCount > 0
         }
       >
-        {labelPrinter.status === "disconnected" &&
-          !labelPrinter.relayAvailable && (
+        {showPrinterWarning && (
+          <div className="flex items-center gap-3">
             <PrinterStatus
               name="ラベル"
               status={labelPrinter.status}
               certificateUrl={labelPrinter.certificateUrl}
             />
-          )}
+            <button
+              type="button"
+              onClick={() => setPrinterWarningHidden(true)}
+              className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-slate-700 text-sm hover:bg-slate-100"
+              aria-label="プリンター未接続の警告を隠す"
+            >
+              隠す
+            </button>
+          </div>
+        )}
         <UnsentOps
           entries={unsent.entries}
           sending={unsent.sending}
