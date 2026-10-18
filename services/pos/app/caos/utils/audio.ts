@@ -99,6 +99,11 @@ class SoundManager {
     this.playNotes([783.99, 987.77, 1174.66], "sine");
   }
 
+  /** 提供済みのカードの知らせ。タイマー風の同じ高さの短音を3回だけ。 */
+  public playServed() {
+    this.playNotes([1760, 1760, 1760], "square");
+  }
+
   // Dispatch click chime
   public playDispatch() {
     if (!this.enabled) return;
