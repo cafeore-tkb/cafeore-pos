@@ -1,4 +1,4 @@
-import { jstClock, jstDate } from "@cafeore/common";
+import { type SquarePaymentType, jstClock, jstDate } from "@cafeore/common";
 import {
   Activity,
   Banknote,
@@ -25,19 +25,18 @@ import {
   YAxis,
 } from "recharts";
 import {
+  type BucketMinutes,
   dayWindow,
   liveAnalysisOrders,
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 import { OrderList } from "./OrderList";
 import { DurationCharts, minutes } from "./operations/DurationCharts";
 import { DurationTrend } from "./operations/DurationTrend";
 import { FlowCharts } from "./operations/FlowCharts";
-import {
-  OverviewVisuals,
-  ProductTimeChart,
-} from "./operations/OverviewVisuals";
+import { ProductTimeChart } from "./operations/OverviewVisuals";
 
 const SECTIONS = [
   {
@@ -79,6 +78,7 @@ export function DashboardWorkspace() {
   const [now, setNow] = useState(() => Date.now());
   const [selectedDate, setSelectedDate] = useState(() => jstDate(Date.now()));
   const [section, setSection] = useState<DashboardSection>("overview");
+  const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const tabId = useId();
 
   useEffect(() => {
@@ -101,8 +101,13 @@ export function DashboardWorkspace() {
     [sourceOrders, window.start, cutoff],
   );
   const report = useMemo(
-    () => operationsReport(liveAnalysisOrders(sourceOrders), window, 15),
-    [sourceOrders, window],
+    () =>
+      operationsReport(
+        liveAnalysisOrders(sourceOrders),
+        window,
+        intervalMinutes,
+      ),
+    [sourceOrders, window, intervalMinutes],
   );
   const finance = useMemo(() => {
     const validOrders = selectedOrders.filter((order) => {
@@ -111,14 +116,21 @@ export function DashboardWorkspace() {
     });
     let cash = 0;
     let square = 0;
+    const squareByType = new Map<string, number>();
+    const addSquare = (amount: number, paymentType?: string) => {
+      square += amount;
+      const key = paymentType ?? "unknown";
+      squareByType.set(key, (squareByType.get(key) ?? 0) + amount);
+    };
     for (const order of validOrders) {
       if (order.payments.length > 0) {
         for (const payment of order.payments) {
-          if (payment.method === "square") square += payment.amount;
+          if (payment.method === "square")
+            addSquare(payment.amount, payment.squarePaymentType);
           else cash += payment.amount;
         }
       } else if (order.paymentMethod === "square") {
-        square += order.billingAmount;
+        addSquare(order.billingAmount);
       } else {
         cash += order.billingAmount;
       }
@@ -144,6 +156,17 @@ export function DashboardWorkspace() {
     return {
       cash,
       square,
+      squareDetails: [...squareByType.entries()]
+        .map(([type, amount]) => ({
+          type,
+          label:
+            type === "unknown"
+              ? "決済種別の記録なし"
+              : (squarePaymentTypeLabel[type as SquarePaymentType] ??
+                "その他のSquare決済"),
+          amount,
+        }))
+        .sort((a, b) => b.amount - a.amount),
       discount: validOrders.reduce((sum, order) => sum + order.discount, 0),
       cancelled: selectedOrders.length - validOrders.length,
       average:
@@ -297,10 +320,7 @@ export function DashboardWorkspace() {
           {!isOrdersLoaded ? (
             <LoadingState />
           ) : section === "overview" ? (
-            <OverviewSection
-              report={report}
-              onOpenAnalysis={() => setSection("analysis")}
-            />
+            <OverviewSection report={report} />
           ) : section === "sales" ? (
             <SalesSection report={report} finance={finance} />
           ) : section === "details" ? (
@@ -315,7 +335,11 @@ export function DashboardWorkspace() {
               </div>
             </section>
           ) : (
-            <AnalysisSection report={report} />
+            <AnalysisSection
+              report={report}
+              intervalMinutes={intervalMinutes}
+              onIntervalChange={setIntervalMinutes}
+            />
           )}
         </main>
       </div>
@@ -327,6 +351,7 @@ type Report = ReturnType<typeof operationsReport>;
 type Finance = {
   cash: number;
   square: number;
+  squareDetails: { type: string; label: string; amount: number }[];
   discount: number;
   cancelled: number;
   average: number;
@@ -334,13 +359,7 @@ type Finance = {
   peak: { hour: number; label: string; revenue: number; orders: number };
 };
 
-function OverviewSection({
-  report,
-  onOpenAnalysis,
-}: {
-  report: Report;
-  onOpenAnalysis: () => void;
-}) {
+function OverviewSection({ report }: { report: Report }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -360,9 +379,9 @@ function OverviewSection({
         />
         <MetricCard
           icon={Coffee}
-          label="ドリンク"
-          value={`${report.received}杯`}
-          note={`お渡し済み ${report.served}杯`}
+          label="提供済み杯数"
+          value={`${report.served}杯`}
+          note={`注文 ${report.received}杯`}
           tone="indigo"
         />
         <MetricCard
@@ -377,7 +396,6 @@ function OverviewSection({
           tone={report.backlog > 0 ? "orange" : "emerald"}
         />
       </div>
-      <OverviewVisuals report={report} onSelect={() => onOpenAnalysis()} />
     </div>
   );
 }
@@ -496,6 +514,34 @@ function SalesSection({
               ratio={squareRatio}
               color="bg-indigo-500"
             />
+            {finance.squareDetails.length > 0 && (
+              <div className="space-y-2 rounded-2xl bg-indigo-50/70 p-3">
+                <p className="font-bold text-indigo-950 text-xs">
+                  Square決済の内訳
+                </p>
+                <dl className="space-y-2">
+                  {finance.squareDetails.map((payment) => (
+                    <div
+                      key={payment.type}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <dt className="text-indigo-900/70">{payment.label}</dt>
+                      <dd className="font-bold tabular-nums">
+                        {yen(payment.amount)}
+                        <span className="ml-2 font-normal text-[10px] text-indigo-900/55">
+                          {finance.square > 0
+                            ? ((payment.amount / finance.square) * 100).toFixed(
+                                0,
+                              )
+                            : 0}
+                          %
+                        </span>
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            )}
           </div>
           <dl className="mt-7 space-y-3 border-stone-100 border-t pt-5 text-sm">
             <div className="flex items-center justify-between gap-3">
@@ -516,20 +562,52 @@ function SalesSection({
   );
 }
 
-function AnalysisSection({ report }: { report: Report }) {
+function AnalysisSection({
+  report,
+  intervalMinutes,
+  onIntervalChange,
+}: {
+  report: Report;
+  intervalMinutes: BucketMinutes;
+  onIntervalChange: (minutes: BucketMinutes) => void;
+}) {
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+        <div>
+          <p className="font-bold text-sm">集計間隔</p>
+          <p className="mt-1 text-stone-500 text-xs">
+            グラフの時間単位を切り替えます。
+          </p>
+        </div>
+        <fieldset
+          className="inline-flex rounded-xl bg-stone-100 p-1"
+          aria-label="分析グラフの集計間隔"
+        >
+          {([15, 30, 60] as const).map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              aria-pressed={intervalMinutes === minutes}
+              onClick={() => onIntervalChange(minutes)}
+              className={`min-h-10 rounded-lg px-4 font-bold text-xs transition ${intervalMinutes === minutes ? "bg-teal-950 text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-stone-900"}`}
+            >
+              {minutes}分
+            </button>
+          ))}
+        </fieldset>
+      </div>
       <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
         <SectionHeading
           icon={Activity}
-          title="注文とお渡しの流れ"
-          description="15分ごとの注文、お渡し、お渡し待ちの推移です。"
+          title="カップステータス"
+          description={`${intervalMinutes}分ごとの注文、お渡し、お渡し待ちの推移です。`}
         />
         <div className="mt-4">
           <FlowCharts
             buckets={report.buckets}
             chart="flow"
-            intervalMinutes={15}
+            intervalMinutes={intervalMinutes}
           />
         </div>
       </section>
@@ -537,13 +615,13 @@ function AnalysisSection({ report }: { report: Report }) {
       <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
         <SectionHeading
           icon={Clock3}
-          title="提供時間の推移"
+          title="提供時間"
           description={`提供済み ${report.total.count}杯を分析。未提供 ${report.censored}杯は時間集計に含みません。`}
         />
         <div className="mt-5">
           <DurationTrend
             buckets={report.durationBuckets}
-            intervalMinutes={15}
+            intervalMinutes={intervalMinutes}
           />
         </div>
       </section>
