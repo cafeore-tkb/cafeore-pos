@@ -1,15 +1,16 @@
 import type { OrderEntity, WithId } from "@cafeore/common";
 import { useId, useMemo, useState } from "react";
 import { Input } from "~/components/ui/input";
-import { OrderDetail, orderRecordStatus, recordTime } from "./OrderDetail";
+import { OrderDetail, recordTime } from "./OrderDetail";
+import {
+  filterOrderRecords,
+  orderRecordPage,
+  orderRecordStatus,
+} from "./orderRecords";
 
 interface OrderListProps {
   orders: WithId<OrderEntity>[] | undefined;
 }
-const PAGE_SIZE = 30;
-const normalize = (value: string) =>
-  value.normalize("NFKC").toLocaleLowerCase("ja");
-
 /** 選択期間の注文記録。記録の参照のみで、注文や提供状態は変更しない。 */
 export function OrderList({ orders }: OrderListProps) {
   const searchId = useId();
@@ -17,40 +18,11 @@ export function OrderList({ orders }: OrderListProps) {
   const [status, setStatus] = useState("すべて");
   const [page, setPage] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const filtered = useMemo(() => {
-    const words = normalize(query).trim().split(/\s+/).filter(Boolean);
-    return (orders ?? [])
-      .filter((order) => {
-        if (status !== "すべて" && orderRecordStatus(order) !== status)
-          return false;
-        const text = normalize(
-          [
-            `#${order.orderId}`,
-            `#${String(order.orderId).padStart(3, "0")}`,
-            order.id,
-            ...order.menus.flatMap((menu) => [
-              menu.name,
-              menu.assignee ?? "",
-              menu.dripper ? `${menu.dripper}番` : "",
-            ]),
-            ...order.getItems().map((item) => item.name),
-            ...order.comments.map((comment) => comment.text),
-          ].join(" "),
-        );
-        return words.every((word) => text.includes(word));
-      })
-      .sort(
-        (a, b) =>
-          b.createdAt.getTime() - a.createdAt.getTime() ||
-          b.orderId - a.orderId,
-      );
-  }, [orders, query, status]);
-  const lastPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1);
-  const shownPage = Math.min(page, lastPage);
-  const shown = filtered.slice(
-    shownPage * PAGE_SIZE,
-    (shownPage + 1) * PAGE_SIZE,
+  const filtered = useMemo(
+    () => filterOrderRecords(orders ?? [], query, status),
+    [orders, query, status],
   );
+  const { lastPage, shownPage, shown } = orderRecordPage(filtered, page);
   const selected = filtered.find((order) => order.id === selectedId);
   return (
     <section className="space-y-4" aria-label="注文記録">

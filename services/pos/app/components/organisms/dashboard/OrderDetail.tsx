@@ -1,4 +1,5 @@
 import type { OrderEntity } from "@cafeore/common";
+import { orderRecordStatus, refundSections } from "./orderRecords";
 
 export const recordTime = (value: Date | null | undefined) =>
   value
@@ -12,14 +13,6 @@ export const recordTime = (value: Date | null | undefined) =>
         hour12: false,
       }).format(value)
     : "—";
-export const orderRecordStatus = (order: OrderEntity) =>
-  order.isCancelled()
-    ? "キャンセル"
-    : order.servedAt
-      ? "提供済み"
-      : order.readyAt
-        ? "お渡し待ち"
-        : "準備中";
 const refundName = (value: string | undefined) =>
   (
     ({
@@ -45,6 +38,7 @@ const paymentName = (value: string | undefined) =>
 
 /** 注文の会計・商品・各杯の時刻・コメントを参照する。編集操作は置かない。 */
 export function OrderDetail({ order }: { order: OrderEntity }) {
+  const refunds = refundSections(order);
   return (
     <article
       className="space-y-5 rounded-xl border bg-white p-4"
@@ -70,8 +64,12 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
           ["割引", yen(order.discount)],
           ["請求額", yen(order.billingAmount)],
           ["お預かり", yen(order.received)],
-          ["現金返金", recordTime(order.cashRefundedAt)],
-          ["Square返金", refundName(order.squareRefundStatus)],
+          ...(refunds.cash
+            ? [["現金返金", recordTime(order.cashRefundedAt)]]
+            : []),
+          ...(refunds.square
+            ? [["Square返金", refundName(order.squareRefundStatus)]]
+            : []),
           [
             "支払い方法",
             order.payments.length
