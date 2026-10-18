@@ -44,6 +44,7 @@ const ControlViewCBoard: React.FC<
   onOpenEmptySlot,
   onOpenLane,
   unfinished,
+  commentsPanel,
   pick,
   hold,
 }) => (
@@ -136,15 +137,17 @@ const ControlViewCBoard: React.FC<
     </section>
 
     <aside className="min-h-0 min-w-0">
-      <OrderQueuePanel
-        nextAvailable={nextAvailable}
-        orders={unassignedOrders}
-        looks={looks}
-        nowMs={nowMs}
-        selectedOrderId={selectedOrderId}
-        pick={pick}
-        unfinished={unfinished}
-      />
+      {commentsPanel ?? (
+        <OrderQueuePanel
+          nextAvailable={nextAvailable}
+          orders={unassignedOrders}
+          looks={looks}
+          nowMs={nowMs}
+          selectedOrderId={selectedOrderId}
+          pick={pick}
+          unfinished={unfinished}
+        />
+      )}
     </aside>
   </section>
 );

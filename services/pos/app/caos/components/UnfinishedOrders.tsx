@@ -2,7 +2,7 @@ import { type CaosCard, dripperLabel } from "@cafeore/common";
 import { ClipboardList, ListChecks } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
-import lateIcon from "../icons/late.svg";
+import servingOverdueIcon from "../icons/serving-overdue.svg";
 import { labelHasOrder, orderAndCupCounts, orderNoLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import { type UnfinishedOrder, unfinishedStates } from "../logic/unfinished";
@@ -160,7 +160,7 @@ export const UnassignedHeading: React.FC<{
         <RollingOrderNumber value={smallestUnserved} />
         {view.rows.some((row) => row.late) && (
           <img
-            src={lateIcon}
+            src={servingOverdueIcon}
             alt="提供待ち15分以上"
             className="h-6 w-6 rounded-full bg-white"
           />
@@ -211,7 +211,7 @@ const UnfinishedRow: React.FC<{
       </span>
       {row.late && (
         <img
-          src={lateIcon}
+          src={servingOverdueIcon}
           alt="提供待ち15分以上"
           className="h-7 w-7 rounded-full bg-white"
         />

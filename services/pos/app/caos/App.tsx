@@ -7,6 +7,7 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { OrderChatPanel } from "./components/OrderChatPanel";
 import {
   CommentDock,
   FreshCommentsContext,
@@ -37,6 +38,7 @@ import { useStampReply } from "./hooks/useStampReply";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 import { useUnfinishedTab } from "./hooks/useUnfinishedTab";
 import { useViewedComments } from "./hooks/useViewedComments";
+import { orderNoLabel } from "./logic/cards";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
 // 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
@@ -83,7 +85,7 @@ export default function App() {
   });
   // 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない）を音で知らせる
   useForgottenBrewAlert(lanes, session.nowMs);
-  // 右下のコメント：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
+  // 閲覧中のコメント（Aはポップアップ、C・Dは右側のチャット）：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
   // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
   const viewed = useViewedComments({
     selectedOrderId: selection.selectedOrderId,
@@ -183,11 +185,21 @@ export default function App() {
               onCycleSpeed={session.cycleSpeed}
             />
           )}
-          {/* 盤面のカードのコメントの印を押すと、その注文のコメントを右下に出す */}
+          {/* 盤面のカードのコメントの印を押すと、その注文のコメントを開く */}
           <FreshCommentsContext.Provider value={commentNotices.notices}>
             <OpenCommentsContext.Provider value={viewed.open}>
               <ControlWorkspace
                 mode={controlViewMode}
+                commentsPanel={
+                  controlViewMode !== "a" && viewed.viewing ? (
+                    <OrderChatPanel
+                      key={viewed.viewing.label}
+                      label={viewed.viewing.label}
+                      comments={viewed.viewing.comments}
+                      onClose={viewed.close}
+                    />
+                  ) : undefined
+                }
                 lanes={lanes}
                 unassignedOrders={session.unassigned}
                 looks={looks}
@@ -272,12 +284,13 @@ export default function App() {
       />
 
       <CommentDock
-        viewing={viewed.viewing}
+        viewing={controlViewMode === "a" ? viewed.viewing : undefined}
         onCloseViewing={viewed.close}
         notices={commentNotices.notices}
         onOpen={(comment) => {
           commentNotices.dismiss([comment], "open");
-          search.show(comment.orderNo);
+          if (controlViewMode === "a") search.show(comment.orderNo);
+          else viewed.open(`#${orderNoLabel(comment.orderNo)}`);
         }}
         onDismiss={(comments) => commentNotices.dismiss(comments)}
       />
