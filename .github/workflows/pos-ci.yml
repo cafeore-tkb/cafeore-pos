@@ -30,6 +30,13 @@ jobs:
       - uses: './.github/actions/setup-deps'
       - run: pnpm exec vitest run app/lib/analytics/operations.test.ts
 
+  caos-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts
+
   # api-ci の lint と見分けるため、ジョブ名は biome にしている。
   # biome.json がリポジトリ直下にあるので、ルートで実行する。
   biome:

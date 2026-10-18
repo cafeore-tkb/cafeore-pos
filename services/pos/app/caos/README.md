@@ -21,6 +21,10 @@
 
 更新前の画面が持つ旧送信ロック `cafeore:caos-outbox:` の保持・取得待ちも起動時に確認し、存在すれば閲覧専用画面へ案内します。更新前のコード自体に重複防止を後付けすることはできないため、保全が必要な未送信を確認したうえで古い画面を閉じ、新しい画面へ切り替えてください。
 
+`locks.request` が利用できれば操作できます。`locks.query` がない環境では、旧送信ロックも `request({ ifAvailable: true })` で短く確認し、空いていれば直ちに解放します。重複・旧タブの判定を省略したり、ロックを奪ったりしません。`request` 自体がない・拒否される場合は閲覧を案内します。2026-10-18の調査対象iPad（Safari 26.6.1）では `query` の成功を確認済みです。
+
+旧ロックの確認が応答しない場合も、8秒のタイムアウト・画面離脱・部品の終了で自分の操作ロックを返します。遅い応答で操作画面へ戻したり、次のタブの所有権を解除したりしません。
+
 ## 操作ログ
 
 `/master-sheet` のログは端末に残してから `POST /api/caos/logs` でDBに保存します。コンソールには出しません。通信に失敗したログは残し、接続回復後に再送します。同じ `(tabId, sequence)` の再送はDBで重複保存しません。
@@ -241,6 +245,10 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 過去の注文データはリポジトリに入れません。
 
 ## 開発
+
+保存とタブ制御の回帰確認は `api/internal/models/caos_log_details_test.go` と `hooks/useMasterSheetTab.test.ts` にあります。前者はNUL・通常値・ラッパーに似た値を保存用JSONからGET/書き出し用の `MarshalJSON` まで往復し、内容の保持と分類を確認します。後者はHookが使う `utils/master-sheet-tab.ts` を `navigator.locks` のモックで動かし、取得・重複・旧ロック・`query` 不在・拒否・タイムアウト・終了・画面復帰を確認します。ブラウザー実機の確認とは区別します。
+
+タブ制御は `services/pos` で `pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts` を実行します。React Routerの開発用ファイル監視から分離し、POSのCIでも同じコマンドを実行します。Goの往復確認は `api` で `go test ./internal/models -run '^TestCaosClientLogDetailsRoundTrip$'` を実行します。
 
 POS の一部なので、コマンドも POS と同じです（`pnpm pos dev` で開き、`/master-sheet` に行く）。型チェックとビルドも `pnpm pos typecheck`・`pnpm pos build` に含まれます。
 
