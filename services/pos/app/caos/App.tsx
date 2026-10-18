@@ -283,21 +283,24 @@ export default function App() {
                   onCancelEmergency={selection.cancelEmergency}
                 />
               )}
-            {saved.kind === "rebrew" && (saved.key === null || ticket) && (
-              <RebrewPanel
-                card={ticket}
-                look={ticket && looks.get(ticket.key)}
-                lane={ticket?.dripper ? lanes[ticket.dripper - 1] : undefined}
-                orders={session.emergency.orders}
-                practice={session.simulating}
-                onClose={closeSaved}
-                onAdd={session.emergency.add}
-                move={{
-                  onMoveTicket: selection.move,
-                  onReturnToUnassigned: selection.returnToUnassigned,
-                }}
-              />
-            )}
+            {saved.kind === "rebrew" &&
+              (saved.key === null ||
+                ticket?.status === "brewing" ||
+                ticket?.status === "done") && (
+                <RebrewPanel
+                  card={ticket}
+                  look={ticket && looks.get(ticket.key)}
+                  lane={ticket?.dripper ? lanes[ticket.dripper - 1] : undefined}
+                  orders={session.emergency.orders}
+                  practice={session.simulating}
+                  onClose={closeSaved}
+                  onAdd={session.emergency.add}
+                  move={{
+                    onMoveTicket: selection.move,
+                    onReturnToUnassigned: selection.returnToUnassigned,
+                  }}
+                />
+              )}
             {saved.kind === "lane" && (
               <LanePanel
                 lane={lanes[saved.bayId - 1]}

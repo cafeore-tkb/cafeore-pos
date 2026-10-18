@@ -48,6 +48,9 @@ export function useFloatingWindow(title: string, enabled = true) {
   const id = useId();
   const ref = useRef<HTMLElement | null>(null);
   const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (!enabled) setHidden(false);
+  }, [enabled]);
   const [position, setPosition] = useState<{
     left: number;
     top: number;
@@ -160,7 +163,7 @@ export function useFloatingWindow(title: string, enabled = true) {
           left: position.left,
           top: position.top,
           width: position.width,
-          height: position.height,
+          maxHeight: window.innerHeight - position.top,
           right: "auto",
           bottom: "auto",
           margin: 0,

@@ -8,12 +8,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
   const managedByCaos = useLocation().pathname === "/master-sheet";
 
+  // CaOSはOperationNoticesが表示と寿命を管理する。二重のタイマーを持たない。
+  if (managedByCaos) return null;
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className={managedByCaos ? "hidden" : "toaster group"}
-      style={managedByCaos ? { display: "none" } : undefined}
-      duration={managedByCaos ? Number.POSITIVE_INFINITY : undefined}
+      className="toaster group"
       toastOptions={{
         classNames: {
           toast:

@@ -1,4 +1,12 @@
-import { X } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleAlert,
+  Info,
+  LoaderCircle,
+  TriangleAlert,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { type ToastT, toast, useSonner } from "sonner";
 import { useFloatingWindow } from "./FloatingWindows";
 
@@ -28,6 +36,57 @@ function OperationNotice({ notice }: { notice: ToastT }) {
   const floating = useFloatingWindow(
     typeof title === "string" ? title : "操作の通知",
   );
+  const [paused, setPaused] = useState(false);
+  const latest = useRef(notice);
+  latest.current = notice;
+  const remaining = useRef(notice.duration ?? 4000);
+  useEffect(() => {
+    remaining.current = notice.duration ?? 4000;
+  }, [notice]);
+  useEffect(() => {
+    if (
+      (paused && !floating.hidden) ||
+      notice.type === "loading" ||
+      remaining.current === Number.POSITIVE_INFINITY
+    )
+      return;
+    const started = Date.now();
+    const timer = window.setTimeout(
+      () => {
+        latest.current.onAutoClose?.(latest.current);
+        toast.dismiss(latest.current.id);
+      },
+      Math.max(0, remaining.current),
+    );
+    return () => {
+      window.clearTimeout(timer);
+      remaining.current = Math.max(
+        0,
+        remaining.current - (Date.now() - started),
+      );
+    };
+  }, [notice, paused, floating.hidden]);
+  const kind = notice.type ?? "normal";
+  const Icon =
+    kind === "success"
+      ? CheckCircle2
+      : kind === "error"
+        ? CircleAlert
+        : kind === "warning"
+          ? TriangleAlert
+          : kind === "loading"
+            ? LoaderCircle
+            : Info;
+  const tone =
+    kind === "success"
+      ? "border-emerald-400 bg-emerald-50"
+      : kind === "error"
+        ? "border-red-400 bg-red-50"
+        : kind === "warning"
+          ? "border-amber-400 bg-amber-50"
+          : kind === "loading"
+            ? "border-sky-300 bg-sky-50"
+            : "border-slate-300 bg-white";
   const finish = () => {
     notice.onDismiss?.(notice);
     toast.dismiss(notice.id);
@@ -39,11 +98,27 @@ function OperationNotice({ notice }: { notice: ToastT }) {
       }}
       style={floating.style}
       data-popup-hidden={floating.hidden}
-      aria-live="polite"
-      className="pointer-events-auto rounded-xl border-2 border-amber-300 bg-white p-3 text-slate-950 shadow-xl"
+      aria-live={kind === "error" ? "assertive" : "polite"}
+      data-toast-type={kind}
+      onPointerEnter={() => setPaused(true)}
+      onPointerLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setPaused(false);
+      }}
+      className={`pointer-events-auto rounded-xl border-2 p-3 text-slate-950 shadow-xl ${tone} ${notice.className ?? ""}`}
     >
       <header className="flex items-center gap-1">
         {floating.handle}
+        {notice.icon !== undefined ? (
+          notice.icon
+        ) : (
+          <Icon
+            aria-label={kind}
+            className={`h-5 w-5 shrink-0 ${kind === "loading" ? "animate-spin" : ""}`}
+          />
+        )}
         <div className="min-w-0 flex-1 font-bold">{title}</div>
         <button
           type="button"

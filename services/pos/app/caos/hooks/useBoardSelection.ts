@@ -42,20 +42,29 @@ export const useBoardSelection = (
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [panel, writePanel] = useState<OpenPanel>(null);
-  const [panels, setPanels] = useState<NonNullable<OpenPanel>[]>([]);
-  const setPanel = useCallback(
-    (update: SetStateAction<OpenPanel>) => {
-      const next = typeof update === "function" ? update(panel) : update;
-      writePanel(next);
-      setPanels((old) =>
-        next
-          ? [...old.filter((item) => panelKey(item) !== panelKey(next)), next]
-          : old.filter((item) => !panel || panelKey(item) !== panelKey(panel)),
-      );
-    },
-    [panel],
-  );
+  const [{ panel, panels }, setPanelState] = useState<{
+    panel: OpenPanel;
+    panels: NonNullable<OpenPanel>[];
+  }>({ panel: null, panels: [] });
+  const setPanel = useCallback((update: SetStateAction<OpenPanel>) => {
+    setPanelState((state) => {
+      const next = typeof update === "function" ? update(state.panel) : update;
+      return {
+        panel: next,
+        panels: next
+          ? [
+              ...state.panels.filter(
+                (item) => panelKey(item) !== panelKey(next),
+              ),
+              next,
+            ]
+          : state.panels.filter(
+              (item) =>
+                !state.panel || panelKey(item) !== panelKey(state.panel),
+            ),
+      };
+    });
+  }, []);
   useCaosStateLog("ui.selection.changed", { selectedOrderId, panel });
   // 閉じるのは、そのパネルが開いているときだけ（ほかのパネルに替わっていたら何もしない）
   const close = (kind: NonNullable<OpenPanel>["kind"]) =>
@@ -70,9 +79,6 @@ export const useBoardSelection = (
     found?.status === "queued" && found.dripper !== null
       ? { card: found, bayId: found.dripper }
       : null;
-  useEffect(() => {
-    if (ticketKey && !scheduled) setPanel(null);
-  }, [ticketKey, scheduled, setPanel]);
   // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
@@ -83,11 +89,25 @@ export const useBoardSelection = (
       )
     : undefined;
   useEffect(() => {
-    if (rebrewKey && !rebrewing) {
-      setPanel(null);
+    // 非表示のパネルも含め、対象の状態が変わった時点で終了する。
+    const valid = (item: NonNullable<OpenPanel>) => {
+      if (item.kind !== "detail" && item.kind !== "rebrew") return true;
+      if (item.kind === "rebrew" && item.key === null) return true;
+      const card = cards.find((card) => card.key === item.key);
+      return item.kind === "detail"
+        ? card?.status === "queued" && card.dripper !== null
+        : card?.status === "brewing" || card?.status === "done";
+    };
+    setPanelState((state) => {
+      const retained = state.panels.filter(valid);
+      const active = state.panel && valid(state.panel) ? state.panel : null;
+      return retained.length === state.panels.length && active === state.panel
+        ? state
+        : { panel: active, panels: retained };
+    });
+    if (panel?.kind === "rebrew" && panel.key !== null && !valid(panel))
       setSelectedOrderId(null);
-    }
-  }, [rebrewKey, rebrewing, setPanel]);
+  }, [cards, panel]);
 
   const { emergency } = actions;
   // 動かしたら注文の選択を外す
@@ -104,11 +124,21 @@ export const useBoardSelection = (
     panel,
     panels,
     panelKey,
-    activatePanel: (item: NonNullable<OpenPanel>) => writePanel(item),
+    activatePanel: (item: NonNullable<OpenPanel>) =>
+      setPanelState((state) => ({
+        ...state,
+        panel:
+          state.panels.find((saved) => panelKey(saved) === panelKey(item)) ??
+          state.panel,
+      })),
     suspendPanel: (item: NonNullable<OpenPanel>) =>
-      writePanel((current) =>
-        current && panelKey(current) === panelKey(item) ? null : current,
-      ),
+      setPanelState((state) => ({
+        ...state,
+        panel:
+          state.panel && panelKey(state.panel) === panelKey(item)
+            ? null
+            : state.panel,
+      })),
     closePanel: (item: NonNullable<OpenPanel>) => {
       const id = panelKey(item);
       if (
@@ -118,10 +148,10 @@ export const useBoardSelection = (
           (item.kind === "rebrew" && item.key !== null))
       )
         setSelectedOrderId(null);
-      setPanels((old) => old.filter((saved) => panelKey(saved) !== id));
-      writePanel((current) =>
-        current && panelKey(current) === id ? null : current,
-      );
+      setPanelState((state) => ({
+        panels: state.panels.filter((saved) => panelKey(saved) !== id),
+        panel: state.panel && panelKey(state.panel) === id ? null : state.panel,
+      }));
     },
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
@@ -172,8 +202,7 @@ export const useBoardSelection = (
     /** 全部閉じる（リセット・実データテストの開始） */
     clear: () => {
       setSelectedOrderId(null);
-      setPanel(null);
-      setPanels([]);
+      setPanelState({ panel: null, panels: [] });
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
     assign: placeCard,
