@@ -66,7 +66,9 @@ export function LogReview({ start, end }: { start: number; end: number }) {
     setLoading(true);
     setFailure("");
     try {
-      const { data, error } = await apiClient.GET("/api/caos/logs/export");
+      const { data, error } = await apiClient.GET("/api/caos/logs/export", {
+        params: { query: { format: "raw" } },
+      });
       if (error || !data)
         throw new Error("サーバーの成功履歴を取得できませんでした。");
       setArchive(logArchiveSchema.parse(data));
