@@ -37,6 +37,17 @@ const REGISTER_KEYS: ReadonlySet<string> = new Set([
 
 export const isModifierKey = (key: string): boolean => MODIFIER_KEYS.has(key);
 
+/** レジの操作に使うキーか（1 つだけで商品キーにすると、レジでその操作ができなくなる） */
+export const isRegisterKey = (key: string): boolean => REGISTER_KEYS.has(key);
+
+/** キーを画面に出すときの名前（Space は空白のままだと見えない） */
+export const menuKeyPartLabel = (part: string): string =>
+  part === " " ? "Space" : part;
+
+/** メニューのキーを画面に出すときの名前（「a+Space」） */
+export const menuKeyLabel = (key: string): string =>
+  (menuKeyParts(key) ?? [key]).map(menuKeyPartLabel).join(SEPARATOR);
+
 /**
  * キーを同時に押すキーに分ける（「a+s」は a と s）。+ で始まる部分は + そのもの。
  * つなぎ方がおかしい（空・+ で終わる）ときは null

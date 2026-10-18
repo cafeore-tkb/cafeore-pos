@@ -34,7 +34,7 @@ const COLUMNS = 4;
  * メニューを種別ごとにまとめる。メニューは API の並び（優先度の大きい順）のままで、
  * 種別の並びはメニューに最初に出てきた順（その種別で一番大きい優先度の順）
  */
-const groupByItemType = (menus: WithId<MenuEntity>[]): MenuGroup[] => {
+export const groupByItemType = (menus: WithId<MenuEntity>[]): MenuGroup[] => {
   const groups = new Map<string, MenuGroup>();
   for (const menu of menus) {
     const itemType = menu.item_type;
