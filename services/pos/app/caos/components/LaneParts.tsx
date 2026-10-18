@@ -1,6 +1,5 @@
 import { KeyRound, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
-import { toast } from "sonner";
 import { useCaosLanes } from "../hooks/useCaosLanes";
 import changeDripperIcon from "../icons/change-dripper.svg";
 
@@ -99,33 +98,29 @@ export const LaneChangeButton: React.FC<{
   dripper: number;
   className?: string;
 }> = ({ dripper, className = "" }) => {
-  const { editable, lanes, nextOf, upcomingOf, changeToNext } = useCaosLanes();
+  const { editable, lanes, upcomingOf, changeToNext, openChange } =
+    useCaosLanes();
   const lane = lanes.find((item) => item.dripper === dripper);
   if (!editable)
     return <LaneName dripper={dripper} wrap className={className} />;
-  const found = nextOf(dripper);
   const upcoming = upcomingOf(dripper);
-  const next = upcoming ?? ("next" in found ? found.next : null);
   const label = lane?.name || "担当者なし";
   return (
     <LaneButton
       dripper={dripper}
       title={
-        next
-          ? `${label}から${next.name}へ交代`
-          : "reason" in found
-            ? found.reason
-            : "次の人なし"
+        upcoming
+          ? `${label}から${upcoming.name}へ交代`
+          : `${label}の担当者を選んで交代`
       }
       aria-label={
-        next ? `${label}から${next.name}へ交代` : `${label}：交代先なし`
+        upcoming
+          ? `${label}から${upcoming.name}へ交代`
+          : `${label}の担当者を選んで交代`
       }
       onClick={() => {
-        if (next) changeToNext(dripper, next);
-        else if ("reason" in found)
-          toast(found.reason, {
-            description: "ドリッパータブの「交代」から選ぶか名前を入れます",
-          });
+        if (upcoming) changeToNext(dripper, upcoming);
+        else openChange(dripper);
       }}
       className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
     >
