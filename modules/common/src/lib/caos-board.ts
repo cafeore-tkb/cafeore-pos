@@ -697,10 +697,21 @@ export const moveQueueWrites = (
 /** 抽出を始めてから「次へ」を押せるようになるまでの秒（二度押しや、続けて押すのを防ぐ。サーバーも同じ秒で断る） */
 export const CAOS_NEXT_COOLDOWN_SEC = 10;
 
+/** 全杯が提供済みなら、抽出の完了忘れをすぐ修正できる。入れ直しは提供時刻を持たない。 */
+export const caosCardServed = (
+  card: Partial<Pick<CaosCard, "cups">> | undefined,
+) =>
+  Boolean(
+    card?.cups?.length && card.cups.every((cup) => cup.servedAt !== null),
+  );
+
 /** 抽出中のカードの「次へ」をまだ押せないか（始めてから CAOS_NEXT_COOLDOWN_SEC 秒たっていない）。nowMs はエポックのミリ秒 */
 export const caosNextLocked = (
-  card: Pick<CaosCard, "startedAt"> | undefined,
+  card:
+    | (Pick<CaosCard, "startedAt"> & Partial<Pick<CaosCard, "cups">>)
+    | undefined,
   nowMs: number,
 ) =>
+  !caosCardServed(card) &&
   card?.startedAt != null &&
   nowMs - card.startedAt.getTime() < CAOS_NEXT_COOLDOWN_SEC * 1000;

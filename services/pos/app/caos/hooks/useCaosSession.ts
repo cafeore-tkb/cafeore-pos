@@ -8,6 +8,7 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosCardServed,
   caosDayOrders,
   caosLane,
   caosLateMerge,
@@ -248,7 +249,7 @@ export const useCaosSession = () => {
     );
   };
   // 抽出中のカードを終える操作（カードの ✓・✋）。始めてから 10 秒は終えられず、
-  // 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）すぐには送らず右上で確かめる
+  // 抽出時間の半分もたっていなければ右上で確かめる。全杯提供済みの完了忘れは待ち時間・確認を省く
   const endBrewing = (bayId: number, start: NextStart) => {
     const lane = lanes.find((l) => l.id === bayId);
     if (!lane) return;
@@ -256,7 +257,7 @@ export const useCaosSession = () => {
       fail(`始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は終えられません`);
       return;
     }
-    const early = earlyNext(lane, nowMs);
+    const early = caosCardServed(lane.brewing) ? null : earlyNext(lane, nowMs);
     if (early) toasts.show({ kind: "next", bayId, start, ...early });
     else runNext(bayId, lane.brewing?.dripId ?? null, start);
   };

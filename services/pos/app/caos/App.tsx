@@ -150,6 +150,7 @@ export default function App() {
           }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
+          nowMs={session.nowMs}
           cancelledOrderNo={cancelledOrderNo}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}

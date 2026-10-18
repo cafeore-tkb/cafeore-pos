@@ -127,9 +127,9 @@ export const LaneChangeButton: React.FC<{
             description: "ドリッパータブの「交代」から選ぶか名前を入れます",
           });
       }}
-      className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 ${CHANGE_TONE} ${className}`}
+      className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
     >
-      <span className="flex min-w-0 max-w-full items-center gap-1 text-[16px] leading-tight">
+      <span className="flex min-w-0 max-w-full items-center gap-1 leading-tight">
         <span className="line-clamp-2 break-all">{label}</span>
         {lane?.senior && <SeniorMark />}
         <ChangeIcon />

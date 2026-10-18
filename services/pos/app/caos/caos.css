@@ -237,3 +237,21 @@ html:has(.caos-root) body {
     animation: none;
   }
 }
+
+@keyframes caos-served-finish {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.caos-root .caos-served-finish {
+  animation: caos-served-finish 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .caos-root .caos-served-finish {
+    animation: none;
+  }
+}

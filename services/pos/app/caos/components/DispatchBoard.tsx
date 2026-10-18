@@ -259,7 +259,7 @@ export const DispatchBoard: React.FC<
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
                       <LaneChangeButton
                         dripper={bay.id}
-                        className="max-w-full font-black text-[16px] text-slate-950 leading-tight"
+                        className="max-w-full font-black text-[18px] text-slate-950 leading-tight"
                       />
                     </div>
                   </div>

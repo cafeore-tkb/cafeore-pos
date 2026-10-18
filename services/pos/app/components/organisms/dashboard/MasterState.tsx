@@ -30,7 +30,10 @@ const formatMasterStateDate = (value: string) => {
 /**
  * ダッシュボードでオーダーストップの記録を表示するコンポーネント
  */
-export function OrderStatusList() {
+export function OrderStatusList({
+  start,
+  end,
+}: { start: number; end: number }) {
   const { masterStates, isLoading, error, mutateMasterStates } =
     useMasterState();
   // 切り替わったら WebSocket で届くので、そのたびに記録を取り直す
@@ -43,7 +46,7 @@ export function OrderStatusList() {
   if (error) return <div>取得失敗</div>;
 
   return (
-    <div className="h-162.5 w-1/2 overflow-auto">
+    <div className="max-h-[65vh] w-full overflow-auto">
       <Table>
         <TableHeader
           className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b")}
@@ -56,7 +59,10 @@ export function OrderStatusList() {
         <TableBody>
           {/* API は古い順に返すので、新しい順に並べ替える */}
           {masterStates
-            ?.slice()
+            ?.filter((state) => {
+              const at = Date.parse(state.createdAt);
+              return at >= start && at < end;
+            })
             .reverse()
             .map((state) => (
               <TableRow key={state.createdAt}>

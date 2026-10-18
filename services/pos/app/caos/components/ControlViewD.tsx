@@ -255,7 +255,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         }
         // 統合したカードは注文ごとの段の分だけ高く（元の注文の行にまたがる枠では枠いっぱい）。
         // 探して見せるとき、上にはみ出した場所の札も見せる（見出しの高さは useScrollToFirstLive が枠に付ける）
-        className={`${rowIds.length > 1 ? "min-h-[60px] flex-1" : "h-[60px] shrink-0"} ${readOnly ? "touch-manipulation" : "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"} scroll-mt-3 ${flashKeys?.has(ticket.key) ? "caos-arrival" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
+        className={`${rowIds.length > 1 ? "min-h-[72px] flex-1" : "min-h-[72px] shrink-0"} ${readOnly ? "touch-manipulation" : "cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"} scroll-mt-3 ${flashKeys?.has(ticket.key) ? "caos-arrival" : ""} ${state === "current" ? "ring-2 ring-emerald-600 ring-offset-1" : ""}`}
         dragging={dragCup?.key === ticket.key}
       >
         <PlaceTag label={places.get(ticket.key)} />
@@ -341,7 +341,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                     <div className="mt-1 flex min-w-0 flex-col items-center gap-0.5">
                       <LaneChangeButton
                         dripper={bay.id}
-                        className="min-w-0 font-black text-[16px] leading-tight"
+                        className="min-w-0 font-black text-[18px] leading-tight"
                       />
                     </div>
                   </th>
@@ -370,7 +370,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       }`}
                     >
                       <span
-                        className={`font-black font-mono text-[20px] leading-none ${
+                        className={`font-black font-mono text-[24px] leading-none ${
                           row.isLive ? "text-slate-950" : "text-slate-400"
                         }`}
                       >
@@ -410,7 +410,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                               {entries}
                             </div>
                           ) : (
-                            <div className="flex min-h-[60px] flex-col gap-2.5">
+                            <div className="flex min-h-[72px] flex-col gap-2.5">
                               {entries}
                               {cell?.mergedStubs.map(
                                 ({ card: ticket, rowIds }) => (
@@ -427,7 +427,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                                   type="button"
                                   aria-label={`ドリッパー${dripperLabel(bay.id)}に配置`}
                                   onClick={() => picked.assignTo(bay.id)}
-                                  className={`h-[60px] w-full touch-manipulation rounded border-2 font-black text-[11px] ${
+                                  className={`min-h-[72px] w-full touch-manipulation rounded border-2 font-black text-[13px] ${
                                     isDropColumn
                                       ? "border-blue-700 bg-blue-200 text-blue-800 ring-2 ring-blue-400"
                                       : "border-blue-600 bg-blue-50 text-blue-700"
@@ -445,7 +445,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                       className={`border-b-2 border-l-4 px-1 text-center font-black font-mono ${LINE}`}
                     >
                       <span
-                        className={`text-[20px] ${row.isPast ? "text-slate-400" : ""}`}
+                        className={`text-[24px] ${row.isPast ? "text-slate-400" : ""}`}
                       >
                         {row.cups || (row.orderCups ? 0 : "")}
                       </span>
@@ -547,11 +547,11 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
                   <div
                     className={`flex items-center justify-between gap-2 border-b-2 bg-slate-100 px-2 py-1 ${LINE}`}
                   >
-                    <h3 className="flex items-center gap-1 font-black font-mono text-[17px]">
+                    <h3 className="flex items-center gap-1 font-black font-mono text-[20px]">
                       注文 {group.key}
                       <OrderCommentBadge cards={group.items} looks={looks} />
                     </h3>
-                    <span className="font-black text-[13px]">
+                    <span className="font-black text-[15px]">
                       {totalCups(group.items)}杯
                     </span>
                   </div>

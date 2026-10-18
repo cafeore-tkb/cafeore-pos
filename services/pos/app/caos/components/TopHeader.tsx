@@ -62,6 +62,8 @@ interface TopHeaderProps {
   onSelectTab: (tab: NavTab) => void;
   onSelectControlViewMode: (mode: ControlViewMode) => void;
   timeStr: string;
+  /** 盤面の時計。シフト交換の予告にも使う */
+  nowMs: number;
   /** 今日届いた直近の注文キャンセル（練習中・未受信時はnull） */
   cancelledOrderNo: number | null;
   soundEnabled: boolean;
@@ -174,6 +176,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSelectTab,
   onSelectControlViewMode,
   timeStr,
+  nowMs,
   cancelledOrderNo,
   soundEnabled,
   onToggleSound,
@@ -193,6 +196,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenEmergency,
   lastAction,
 }) => {
+  const minute = new Date(nowMs).getUTCMinutes();
+  const shiftReminder =
+    minute >= 55 ? "シフト交換5分前" : minute >= 50 ? "シフト交換10分前" : null;
+  const cancellation =
+    cancelledOrderNo === null
+      ? null
+      : `キャンセル #${orderNoLabel(cancelledOrderNo)}`;
+  const notices = [cancellation, shiftReminder].filter(Boolean);
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
@@ -299,15 +310,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <output
         aria-live="polite"
         aria-atomic="true"
-        title={
-          cancelledOrderNo === null
-            ? undefined
-            : `キャンセル #${orderNoLabel(cancelledOrderNo)}`
-        }
-        className="min-w-0 flex-1 truncate px-2 text-center font-black text-[16px] text-red-600"
+        title={notices.join("・") || undefined}
+        className="flex min-w-0 flex-1 flex-col px-2 text-center font-black text-[16px] text-red-600 leading-tight"
       >
-        {cancelledOrderNo !== null &&
-          `キャンセル #${orderNoLabel(cancelledOrderNo)}`}
+        {cancellation && <span className="truncate">{cancellation}</span>}
+        {shiftReminder && <span className="truncate">{shiftReminder}</span>}
       </output>
 
       <div className="flex shrink-0 items-center gap-1">
