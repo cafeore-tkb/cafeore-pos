@@ -16,6 +16,7 @@ export type OpenPanel =
   | { kind: "lane"; bayId: number }
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | { kind: "search"; digits: string }
+  | { kind: "pastOrders" }
   | null;
 
 const panelKey = (item: NonNullable<OpenPanel>) =>
@@ -162,6 +163,7 @@ export const useBoardSelection = (
         : null,
     /** 緊急の入力を番号から開く（ヘッダーの「緊急」。カードからは openCard） */
     openRebrew: () => setPanel({ kind: "rebrew", key: null }),
+    openPastOrders: () => setPanel({ kind: "pastOrders" }),
     /** 緊急の入力を閉じる（カードから開いていたら、注文の選択も外す） */
     closeRebrew: () => {
       close("rebrew");

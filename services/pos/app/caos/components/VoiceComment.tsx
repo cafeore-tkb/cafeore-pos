@@ -111,6 +111,7 @@ export const VoiceComment = ({
 
   const start = () => {
     if (recognition.current || sending) return;
+    floating.restore();
     setOpen(true);
     const speechWindow = window as SpeechWindow;
     const Constructor =

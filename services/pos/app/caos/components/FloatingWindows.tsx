@@ -41,6 +41,16 @@ export function FloatingWindowsProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** 元の起動ボタンからも、下書きを保持して非表示のウィンドウを戻す。 */
+export function useRestoreFloatingWindow() {
+  const manager = useContext(WindowsContext);
+  return (title: string) => {
+    for (const entry of Object.values(manager?.entries ?? {})) {
+      if (entry.title === title) entry.restore();
+    }
+  };
+}
+
 /** 隠した画面はアンマウントしない。入力・確認内容は解決するまで部品自身が保持する。 */
 export function useFloatingWindow(title: string, enabled = true) {
   const manager = useContext(WindowsContext);
@@ -51,6 +61,10 @@ export function useFloatingWindow(title: string, enabled = true) {
   useEffect(() => {
     if (!enabled) setHidden(false);
   }, [enabled]);
+  const scopeActive = scope?.active;
+  useEffect(() => {
+    if (scopeActive) setHidden(false);
+  }, [scopeActive]);
   const [position, setPosition] = useState<{
     left: number;
     top: number;
@@ -224,17 +238,17 @@ export function FloatingStatusNotices({
         floating.ref.current = element;
       }}
       style={floating.style}
-      className="absolute top-full right-2 z-[160] mt-1 flex max-w-[95vw] flex-col items-end gap-1"
+      className={`absolute top-full right-2 z-[160] mt-1 flex max-w-[95vw] flex-col gap-1 ${active ? "rounded-lg border-2 border-red-300 bg-white p-1.5 shadow-lg" : ""}`}
     >
       {active && (
-        <header className="flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2 font-bold text-sm shadow-lg">
+        <header className="flex items-center gap-1 pl-1 font-bold text-sm">
           {floating.handle}
-          <span>接続・未送信・印刷</span>
+          <span className="min-w-0 flex-1">接続・未送信・印刷</span>
           <button
             type="button"
             onClick={floating.hide}
             aria-label="接続・未送信・印刷の通知を非表示"
-            className="h-10 w-10"
+            className="h-10 w-10 shrink-0"
           >
             ×
           </button>

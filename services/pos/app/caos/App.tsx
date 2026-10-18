@@ -7,7 +7,10 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
-import { FloatingWindowScope } from "./components/FloatingWindows";
+import {
+  FloatingWindowScope,
+  useRestoreFloatingWindow,
+} from "./components/FloatingWindows";
 import { OperationNotices } from "./components/OperationNotices";
 import { OrderChatPanel } from "./components/OrderChatPanel";
 import {
@@ -17,6 +20,7 @@ import {
   StampReplyContext,
 } from "./components/OrderComments";
 import { OrderSearchPanel } from "./components/OrderSearchPanel";
+import { PastOrdersPanel } from "./components/PastOrdersPanel";
 import {
   AssignPanel,
   AuxiliaryContent,
@@ -46,8 +50,9 @@ import { orderNoLabel } from "./logic/cards";
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
 // 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（選択中と非表示の未完了パネルを保持する）。
 export default function App() {
+  const restoreWindow = useRestoreFloatingWindow();
   const session = useCaosSession();
-  const { lastDeletedOrder } = useOrdersWSContext();
+  const { orders, lastDeletedOrder } = useOrdersWSContext();
   const cancelledOrderNo =
     !session.simulating &&
     lastDeletedOrder &&
@@ -170,7 +175,10 @@ export default function App() {
           followingNow={followingNow}
           testPlaying={testPlay.isActive}
           testProgressLabel={testPlay.remainingLabel}
-          onOpenTestPlay={() => setTestSetupOpen(true)}
+          onOpenTestPlay={() => {
+            restoreWindow("実績でテストプレイ");
+            setTestSetupOpen(true);
+          }}
           onEndTestPlay={() => {
             testPlay.finish();
             selection.openAuxiliary("analytics");
@@ -181,6 +189,7 @@ export default function App() {
           onOpenSearch={() => selection.openSearch("")}
           searchOpen={selection.searchDigits !== null}
           onOpenEmergency={selection.openRebrew}
+          onOpenPastOrders={selection.openPastOrders}
           lastAction={session.lastAction}
         />
 
@@ -256,6 +265,9 @@ export default function App() {
               suspend: () => selection.suspendPanel(saved),
             }}
           >
+            {saved.kind === "pastOrders" && !session.simulating && (
+              <PastOrdersPanel orders={orders} onClose={closeSaved} />
+            )}
             {saved.kind === "auxiliary" && (
               <AuxiliarySheet
                 tab={saved.tab}

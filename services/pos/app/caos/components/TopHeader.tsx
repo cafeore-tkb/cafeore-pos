@@ -99,6 +99,7 @@ interface TopHeaderProps {
   searchOpen: boolean;
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
+  onOpenPastOrders: () => void;
   /** この画面が直前にした操作の名前（しばらくたつと null） */
   lastAction: string | null;
 }
@@ -202,6 +203,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenSearch,
   searchOpen,
   onOpenEmergency,
+  onOpenPastOrders,
   lastAction,
 }) => {
   // 「隠す」は現在の未接続にだけ適用し、接続状態が変わったら解除する。
@@ -224,7 +226,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       : `キャンセル #${orderNoLabel(cancelledOrderNo)}`;
   const notices = [cancellation, shiftReminder].filter(Boolean);
   return (
-    <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
+    <header
+      data-caos-layer
+      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs"
+    >
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
       <FloatingStatusNotices
@@ -418,6 +423,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <VolumeX className="h-4 w-4" />
           )}
         </button>
+        {!simulating && (
+          <button
+            type="button"
+            onClick={onOpenPastOrders}
+            className="h-11 shrink-0 touch-manipulation whitespace-nowrap rounded-lg border border-slate-300 bg-slate-100 px-3 font-bold text-slate-700 text-sm hover:bg-slate-200"
+          >
+            過去の注文
+          </button>
+        )}
         {/* 緊急（入れ直し）。右端に置き、右手で押しても盤面を隠さない */}
         {onOpenEmergency && (
           <button
