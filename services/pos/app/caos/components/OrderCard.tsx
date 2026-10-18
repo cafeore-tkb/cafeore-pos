@@ -246,6 +246,7 @@ export const OrderCard: React.FC<
   return (
     <div
       {...props}
+      data-ticket-label={orderLabel(card)}
       data-merge-tap={mergeTap || undefined}
       style={{ ...surface.style, ...style }}
       className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}

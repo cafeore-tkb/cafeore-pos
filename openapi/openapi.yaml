@@ -932,10 +932,17 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /api/caos/logs/export:
     get:
-      summary: CaOSのDBログをJSONファイルとして書き出す
+      summary: CaOSログを人間のみ・システムのみ・混合で書き出す
       operationId: exportCaosLogs
       tags: [caos]
-      description: クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+      description: format=human（既定）は人間のみ、systemはシステムのみ、mixedは混合。entriesは日本時間・元のイベント名・category付きの時系列。systemとmixedはサーバーの成功履歴operationsとcup履歴cupsも含む。format=rawは従来の監査用全件出力。
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [human, system, mixed, raw]
+            default: human
       responses:
         '200':
           description: ログのJSONファイル
@@ -943,7 +950,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [exportedAt, entries, operations, cups]
+                required: [exportedAt, entries]
                 properties:
                   exportedAt:
                     type: string
@@ -951,7 +958,9 @@ paths:
                   entries:
                     type: array
                     items:
-                      $ref: '#/components/schemas/CaosStoredLogEntry'
+                      oneOf:
+                        - $ref: '#/components/schemas/CaosHumanLogEntry'
+                        - $ref: '#/components/schemas/CaosStoredLogEntry'
                   operations:
                     type: array
                     items:
@@ -962,6 +971,8 @@ paths:
                     items:
                       type: object
                       additionalProperties: true
+        '400':
+          description: format が不正
         '500':
           description: 書き出しに失敗
   /api/caos/logs:
@@ -3165,6 +3176,27 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        details:
+          type: object
+          additionalProperties: true
+    CaosHumanLogEntry:
+      type: object
+      required: [time, action, target, event, details, category]
+      properties:
+        category:
+          type: string
+          enum: [human, system]
+        time:
+          type: string
+          description: 日本時間（例 2026-10-18 02:00:00.000 +09:00）
+        action:
+          type: string
+          description: イベント名をそのまま出力（component.activated等）
+        target:
+          type: string
+          description: 注文番号・コンポーネント名など操作対象
+        event:
+          type: string
         details:
           type: object
           additionalProperties: true

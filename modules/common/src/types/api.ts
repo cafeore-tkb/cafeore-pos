@@ -208,8 +208,8 @@ export interface paths {
   };
   "/api/caos/logs/export": {
     /**
-     * CaOSのDBログをJSONファイルとして書き出す
-     * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+     * CaOSログを人間のみ・システムのみ・混合で書き出す
+     * @description format=human（既定）は人間のみ、systemはシステムのみ、mixedは混合。entriesは日本時間・元のイベント名・category付きの時系列。systemとmixedはサーバーの成功履歴operationsとcup履歴cupsも含む。format=rawは従来の監査用全件出力。
      */
     get: operations["exportCaosLogs"];
   };
@@ -1045,6 +1045,20 @@ export interface components {
       tabId: string;
       /** Format: int64 */
       sequence: number;
+      event: string;
+      details: {
+        [key: string]: unknown;
+      };
+    };
+    CaosHumanLogEntry: {
+      /** @enum {string} */
+      category: "human" | "system";
+      /** @description 日本時間（例 2026-10-18 02:00:00.000 +09:00） */
+      time: string;
+      /** @description イベント名をそのまま出力（component.activated等） */
+      action: string;
+      /** @description 注文番号・コンポーネント名など操作対象 */
+      target: string;
       event: string;
       details: {
         [key: string]: unknown;
@@ -2471,10 +2485,15 @@ export interface operations {
     };
   };
   /**
-   * CaOSのDBログをJSONファイルとして書き出す
-   * @description クライアントログ・成功した操作・cup単位の履歴を同じDBスナップショットで全件取得する。
+   * CaOSログを人間のみ・システムのみ・混合で書き出す
+   * @description format=human（既定）は人間のみ、systemはシステムのみ、mixedは混合。entriesは日本時間・元のイベント名・category付きの時系列。systemとmixedはサーバーの成功履歴operationsとcup履歴cupsも含む。format=rawは従来の監査用全件出力。
    */
   exportCaosLogs: {
+    parameters: {
+      query?: {
+        format?: "human" | "system" | "mixed" | "raw";
+      };
+    };
     responses: {
       /** @description ログのJSONファイル */
       200: {
@@ -2482,15 +2501,22 @@ export interface operations {
           "application/json": {
             /** Format: date-time */
             exportedAt: string;
-            entries: components["schemas"]["CaosStoredLogEntry"][];
-            operations: {
+            entries: (
+              | components["schemas"]["CaosHumanLogEntry"]
+              | components["schemas"]["CaosStoredLogEntry"]
+            )[];
+            operations?: {
               [key: string]: unknown;
             }[];
-            cups: {
+            cups?: {
               [key: string]: unknown;
             }[];
           };
         };
+      };
+      /** @description format が不正 */
+      400: {
+        content: never;
       };
       /** @description 書き出しに失敗 */
       500: {

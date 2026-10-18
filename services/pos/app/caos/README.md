@@ -27,38 +27,15 @@
 
 ## 操作ログ
 
-`/master-sheet` のログは端末に残してから `POST /api/caos/logs` でDBに保存します。コンソールには出しません。通信に失敗したログは残し、接続回復後に再送します。同じ `(tabId, sequence)` の再送はDBで重複保存しません。
+人間が押したカード・ボタン・通知や、検索・返信・割当・統合など、操作対象が分かるイベントと、送信・保存結果・接続障害などのシステムイベントを端末から `POST /api/caos/logs` でDBへ送ります。スクロール、指の座標、pointerdown/up、毎秒の盤面状態や無関係な画面状態の変化は端末ログに保存しません。入力内容は確定した検索番号・返信・緊急理由などの業務操作に限り、入力欄の文字列を一文字ずつ収集しません。
 
-古いコメントキーなどに NUL（`U+0000`）が含まれる場合、DB の `jsonb` が受け付けないため、API は元の details の JSON を文字列として包んで保存します。GET・書き出しでは元の details に復元します。通常のログの保存形式、コメントキー、既読判定は変えません。古い画面から滞留ログが再送されても、1件の特殊文字で後続ログ全体が止まらないようにします。
+「各種データ書き出し」の「ログを保存」（`GET /api/caos/logs/export`）は「人間のみ」「システムのみ」「混合」を選んでJSONに出力します（既定は人間のみ）。APIは `format=human|system|mixed`。各行の `category` で分類を判別できます。`entries` は時系列の操作一覧で、`time`（日本時間）、`action`（イベント名（component.activated等））、`target`（注文番号・操作対象）、`event`、`details`（カードIDや返信内容など）を含みます。過去の座標・スクロールイベントも通常の書き出しから除きます。操作を試みた記録であり、成功の証明とは区別します。
 
-実機の保存容量不足・タブ間の送信停止とログ救出は [2026-10-18の調査記録](./SAVE_INCIDENT_20261018.md) を参照してください。
+サーバーの成功履歴（コメント保存、割当・統合・抽出・緊急・担当者変更とcup単位の前後状態）は引き続き更新と同一トランザクションで保存します。監査用の元データは `GET /api/caos/logs/export?format=raw` で `entries` / `operations` / `cups` を取得できます。既存DBの履歴は消しません。`GET /api/caos/logs` はDBに保存された端末イベントの一覧（limit / offset / event / tab_id）です。
 
-POSトップ画面から開く「各種データ書き出し」の「CaOS 操作ログ」にある「ログを保存」で、DBのログをJSONファイルとしてダウンロードできます。`GET /api/caos/logs/export` は同じDBスナップショットで全件を書き出し、ファイルが完成してから返します。JSONの `entries` は端末イベント、`operations` は成功した盤面操作、`cups` はcup単位の履歴、`exportedAt` は書き出し時刻です。未送信の端末ログは、DBへの送信が済んでからの書き出しに含まれます。
+未送信の操作ログは端末に保持して再送し、`(tabId, sequence)` で重複を除きます。コンソールには出しません。DBへ届く前のログはダウンロードに含まれません。
 
-一覧取得は `GET /api/caos/logs?limit=100&offset=0` です。`event=ui.click` や `tab_id=UUID` で絞り込めます。応答は `{ entries, limit, offset, hasMore }`、新しい時刻順です。`limit` は1〜1000、`hasMore` が true なら `offset` を進めて続きを読みます。
-
-端末イベントの共通項目は `at`（UTCのイベント時刻）、`tabId`（ページ読込ごとのUUID）、`sequence`（読込内の連番）、`event`（イベント名）、`details`（内容）です。取得時には `receivedAt`（サーバーでの保存時刻）も付きます。`details` は次のような内容です。
-
-- `ui.*`：操作対象のタグ・ラベル・ID。入力欄の値は記録しません。
-- `operation.accepted`：操作名 `label` と操作ID `ids`。
-- `outbox.response`：`request`・`pressedAt`・`result`・`durationMs`。
-- `board.changed`：`changed` は追加・変更されたカードの現在値、`removed` は消えたカードのキー。
-
-DBには次の3テーブルを追加します（既存の起動時AutoMigrateで反映）。
-
-- `caos_client_logs`：端末イベント。失敗・テストプレイも含みます。
-- `caos_operations`：成功したPUTの盤面更新・「次へ」・緊急追加/取消・担当者の交代/入れ替え/上級生属性の更新。担当者変更の `details.before` / `details.after` は変更前後の6人、緊急操作の `details` は理由と入れ直しIDです。`occurred_at` は端末時計を補正した押下時刻、`recorded_at` はサーバーでの処理時刻、`context_at` は周囲の杯を観測した処理時点の時刻です。
-- `caos_operation_cups`：`(operation_id, unit_id)` ごとに1行。`cup_id`・親の `order_id`・当時の注文番号と操作前後の状態を持ちます。`assigned_at` は未割当からの割当て・別ドリッパーへの移動時刻（同じドリッパー内の並べ替えは含まない）、`merged_at` は統合時刻です。緊急の行には `added` / `removed` と理由 `emergency_reason` を保存し、取消後も元cup/orderと入れ直しIDを引けます。統合元の行に `merge_target_unit_id`・`merge_target_cup_id`・`merge_target_order_id` を残します。入れ直しは `unit_id` が入れ直しID、`cup_id` が元cupのIDです。
-
-操作履歴は盤面更新と同じトランザクションで保存します。拒否・ロールバックされた操作は成功履歴に残りません。過去の割当て・統合時刻を現在の状態から推測して埋めることはしません。
-
-同時間窓は、その日の注文受付後、まだreadyでないCaOS対象cupです。操作直前のサーバーのスナップショットを `in_window = true` の行として残します。入れ直しは元cupのreadyを基準に窓を判定します。オフラインで遅れて届いた操作では、窓はサーバーで適用した時点のものです。端末が押下時に表示していた盤面そのものの再現ではありません。
-
-親・統合先はUUIDで `orders`・`order_cups` にJOINできます。注文編集でcupを削除・再作成する既存仕様に合わせ、現行表への外部キー制約は張りません。削除後も履歴のIDと注文番号は残ります。取得例は [log-queries.sql](./log-queries.sql) にあります。
-
-操作ごとの確認結果とイベント一覧は [LOGGING_COVERAGE.md](./LOGGING_COVERAGE.md) にまとめています。
-
-StrictModeによるEffectの再実行では、同じ接続状態・キューのログと仮の画面開閉を重複保存しません。1回のタップで生じる `ui.pointerdown` → `ui.pointerup` → `ui.click` は別イベントとして残します。
+cupの親注文・統合先・同時間窓・割当時刻などの監査用取得例は [log-queries.sql](./log-queries.sql)、操作イベントの対応は [LOGGING_COVERAGE.md](./LOGGING_COVERAGE.md) を参照してください。
 
 ## ポップアップの移動・非表示・再表示
 

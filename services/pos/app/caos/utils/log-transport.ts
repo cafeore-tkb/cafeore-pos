@@ -52,6 +52,7 @@ export const flushCaosLogs = async () => {
     size += bytes;
   }
   sending = true;
+  let succeeded = false;
   try {
     const { response } = await apiClient.POST("/api/caos/logs", {
       body: { entries: batch.map((row) => row.entry) },
@@ -61,12 +62,13 @@ export const flushCaosLogs = async () => {
     if (!response.ok) throw new Error(`ログ保存: HTTP ${response.status}`);
     for (const row of batch) store.remove(row.id);
     retryMs = 1000;
+    succeeded = true;
   } catch {
     // 通信失敗で業務操作を止めない。端末に残し、接続回復後にも再送する。
     retryMs = Math.min(retryMs * 2, 30_000);
   } finally {
     sending = false;
-    if (store.read().length) schedule();
+    if (store.read().length) schedule(succeeded ? 0 : retryMs);
   }
 };
 

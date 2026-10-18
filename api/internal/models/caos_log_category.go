@@ -14,9 +14,9 @@ func CaosLogCategory(event string, details json.RawMessage) string {
 		return "system"
 	}
 	switch event {
-	case "ui.click", "ui.change", "ui.input", "ui.pointerdown", "ui.pointerup", "ui.pointercancel", "ui.dragstart", "ui.drop", "ui.keydown",
+	case "component.activated", "component.changed", "ui.click", "ui.change", "ui.input", "ui.pointerdown", "ui.pointerup", "ui.pointercancel", "ui.dragstart", "ui.drop", "ui.keydown",
 		"card.action", "comment.mark.clicked", "comment.notice.clicked", "comment.notices.dismissed",
-		"search.submitted", "search.opened-from-comment", "sound.changed", "printer.retry",
+		"search.performed", "search.submitted", "search.opened-from-comment", "sound.changed", "printer.retry",
 		"outbox.retry", "outbox.discard", "confirmation.confirmed", "notice.dismissed",
 		"device-setting.changed", "water.changed", "practice.reset", "practice.started",
 		"practice.running.changed", "practice.speed.changed", "practice.import.cleared",
