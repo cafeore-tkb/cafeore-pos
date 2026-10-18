@@ -71,3 +71,15 @@ export const refundSections = (order: OrderEntity) => ({
       ? order.payments.some((p) => p.method === "square")
       : order.paymentMethod === "square"),
 });
+
+/** 注文全体の受付から提供完了まで。未提供・不正な時刻は未計測。 */
+export const orderServiceTime = (order: OrderEntity) => {
+  if (!order.servedAt) return { label: "—", overdue: false };
+  const ms = order.servedAt.getTime() - order.createdAt.getTime();
+  if (!Number.isFinite(ms) || ms < 0) return { label: "—", overdue: false };
+  const seconds = Math.floor(ms / 1000);
+  return {
+    label: `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, "0")}秒`,
+    overdue: ms > 15 * 60000,
+  };
+};

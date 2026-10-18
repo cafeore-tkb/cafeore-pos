@@ -4,6 +4,7 @@ import {
   filterOrderRecords,
   normalize,
   orderRecordPage,
+  orderServiceTime,
   refundSections,
 } from "./orderRecords";
 const at = new Date("2026-10-18T01:00:00Z");
@@ -161,5 +162,28 @@ describe("返金欄の表示対象", () => {
         }),
       ),
     ).toEqual({ cash: true, square: true });
+  });
+});
+
+describe("注文一覧の提供時間", () => {
+  test("受付→提供完了を分秒で出し、15分を超えた場合だけ赤字対象にする", () => {
+    expect(
+      orderServiceTime(
+        saved(1, { servedAt: new Date(at.getTime() + 15 * 60000) }),
+      ),
+    ).toEqual({ label: "15分00秒", overdue: false });
+    expect(
+      orderServiceTime(
+        saved(1, { servedAt: new Date(at.getTime() + 15 * 60000 + 1000) }),
+      ),
+    ).toEqual({ label: "15分01秒", overdue: true });
+    expect(orderServiceTime(saved(1, { servedAt: at }))).toEqual({
+      label: "0分00秒",
+      overdue: false,
+    });
+    expect(orderServiceTime(saved(1))).toEqual({ label: "—", overdue: false });
+    expect(
+      orderServiceTime(saved(1, { servedAt: new Date(at.getTime() - 1) })),
+    ).toEqual({ label: "—", overdue: false });
   });
 });

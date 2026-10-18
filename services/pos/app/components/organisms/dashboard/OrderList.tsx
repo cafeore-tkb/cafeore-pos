@@ -6,6 +6,7 @@ import {
   filterOrderRecords,
   orderRecordPage,
   orderRecordStatus,
+  orderServiceTime,
 } from "./orderRecords";
 
 interface OrderListProps {
@@ -86,13 +87,19 @@ export function OrderList({ orders }: OrderListProps) {
               </caption>
               <thead className="sticky top-0 z-10 bg-stone-100">
                 <tr>
-                  {["注文", "状態", "杯数", "請求額", "受付", "提供"].map(
-                    (label) => (
-                      <th key={label} scope="col" className="px-3 py-3">
-                        {label}
-                      </th>
-                    ),
-                  )}
+                  {[
+                    "注文",
+                    "状態",
+                    "杯数",
+                    "請求額",
+                    "受付",
+                    "提供",
+                    "提供時間",
+                  ].map((label) => (
+                    <th key={label} scope="col" className="px-3 py-3">
+                      {label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -122,11 +129,16 @@ export function OrderList({ orders }: OrderListProps) {
                     </td>
                     <td className="px-3 py-2">{recordTime(order.createdAt)}</td>
                     <td className="px-3 py-2">{recordTime(order.servedAt)}</td>
+                    <td
+                      className={`px-3 py-2 tabular-nums ${orderServiceTime(order).overdue ? "font-bold text-red-700" : ""}`}
+                    >
+                      {orderServiceTime(order).label}
+                    </td>
                   </tr>
                 ))}
                 {orders !== undefined && filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-stone-500">
+                    <td colSpan={7} className="p-6 text-center text-stone-500">
                       該当する注文はありません。検索や期間を変えてください。
                     </td>
                   </tr>

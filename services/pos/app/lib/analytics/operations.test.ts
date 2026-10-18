@@ -449,3 +449,135 @@ test("unit CSVの既存8列を保ち、集計間隔だけ末尾に追加する",
   expect(header.at(-1)).toBe("集計間隔(分)");
   expect(row.at(-1)).toBe("60");
 });
+
+describe("時間帯ごとの提供時間", () => {
+  test.each([5, 15, 60] as const)(
+    "%i分枠ごとに受付時刻でまとめ、平均・中央値・実際の最大最小を出す",
+    (interval) => {
+      const step = interval * 60000;
+      const start = T + 2 * 60000;
+      const inputs = [
+        order("1", start, [
+          cup("a", null, start + 60000),
+          cup("b", null, start + 3 * 60000),
+          cup("c", null, start + 100 * 60000),
+        ]),
+        order("2", start + step, [cup("d", null, start + step + 10 * 60000)]),
+      ];
+      const report = operationsReport(
+        inputs,
+        { start, end: start + 4 * step, now: start + 4 * step },
+        interval,
+      );
+      const first = report.durationBuckets[0];
+      // 5分・15分の期間末を越える100分の杯は、まだ観測できない。
+      const expected = interval === 60 ? [1, 3, 100] : [1, 3];
+      expect(first.at).toBe(start);
+      expect(first.count).toBe(expected.length);
+      expect(first.mean).toBe(
+        expected.reduce((a, b) => a + b, 0) / expected.length,
+      );
+      expect(first.median).toBe(interval === 60 ? 3 : 2);
+      expect(first.min).toBe(1);
+      expect(first.max).toBe(interval === 60 ? 100 : 3);
+      expect(report.durationBuckets[1].mean).toBe(10);
+      expect(report.durationBuckets[2]).toMatchObject({
+        count: 0,
+        mean: null,
+        median: null,
+        min: null,
+        max: null,
+      });
+    },
+  );
+  test("未提供・逆転時刻・取消を除き、0分は有効。期間末と現在を越える提供は含めない", () => {
+    const report = operationsReport(
+      [
+        order("1", T, [
+          cup("zero", null, T),
+          cup("pending"),
+          cup("invalid", null, T - 1),
+          cup("future", null, T + 15 * 60000),
+        ]),
+        order("2", T, [cup("cancelled", null, T + 60000)], T + 2 * 60000),
+      ],
+      { start: T, end: T + 30 * 60000, now: T + 15 * 60000 },
+      15,
+    );
+    expect(report.durationBuckets).toEqual([
+      { at: T, complete: true, count: 1, mean: 0, median: 0, min: 0, max: 0 },
+    ]);
+  });
+});
+
+describe("今年の抽出開始時刻による区間分析", () => {
+  test("受付→開始、開始→提供を同じ受付枠に各杯で集計する", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("a", null, T + 10 * 60000), brewStarted: T + 4 * 60000 },
+          { ...cup("b"), brewStarted: T + 6 * 60000 },
+        ]),
+      ],
+      window,
+      15,
+    );
+    expect(r.startWaitBuckets[0]).toMatchObject({
+      count: 2,
+      mean: 5,
+      median: 5,
+      min: 4,
+      max: 6,
+    });
+    expect(r.brewServeBuckets[0]).toMatchObject({
+      count: 1,
+      mean: 6,
+      median: 6,
+      min: 6,
+      max: 6,
+    });
+    expect(r.startWaitBuckets[1]).toMatchObject({ count: 0, mean: null });
+  });
+  test("2025年の開始未計測と、不正・未来の開始を含めない", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          cup("legacy", null, T + 10 * 60000),
+          { ...cup("invalid", null, T + 10 * 60000), brewStarted: T - 1 },
+          { ...cup("future"), brewStarted: window.end },
+        ]),
+      ],
+      window,
+    );
+    expect(r.startWaitBuckets.every((b) => b.count === 0)).toBe(true);
+    expect(r.brewServeBuckets.every((b) => b.count === 0)).toBe(true);
+  });
+  test("開始より前の提供は除外し、ゼロ分は有効。取消も除外する", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("zero", null, T), brewStarted: T },
+          { ...cup("backwards", null, T + 60000), brewStarted: T + 2 * 60000 },
+        ]),
+        order(
+          "2",
+          T,
+          [
+            {
+              ...cup("cancelled", null, T + 10 * 60000),
+              brewStarted: T + 2 * 60000,
+            },
+          ],
+          T + 12 * 60000,
+        ),
+      ],
+      window,
+    );
+    expect(r.brewServeBuckets[0]).toMatchObject({
+      count: 1,
+      mean: 0,
+      min: 0,
+      max: 0,
+    });
+  });
+});
