@@ -18,6 +18,7 @@ import { createContext, useContext, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { useRestoreFloatingWindow } from "../components/FloatingWindows";
 import { LaneChangeDialog, ShiftFeedSettings } from "../components/LaneDialogs";
 import { noNextReason } from "../logic/shiftFeed";
 import { caosLog } from "../utils/log";
@@ -90,6 +91,7 @@ export const CaosLanesProvider = ({
   editable?: boolean;
   children: React.ReactNode;
 }) => {
+  const restoreWindow = useRestoreFloatingWindow();
   const { caosLanes, orders } = useOrdersWSContext();
   const entries = useCaosOutboxEntries();
   // 日が変わったら前の日の担当者は使わない。見出しの「交代」の次の人も、この時計の時刻で決める（枠の変わり目から 10 秒のうちに変わる）
@@ -186,7 +188,10 @@ export const CaosLanesProvider = ({
     lanes,
     editable,
     hasSenior: lanes.some((lane) => lane.senior),
-    openChange: (dripper) => setChanging({ dripper, nowMs: Date.now() }),
+    openChange: (dripper) => {
+      restoreWindow("担当者の交代");
+      setChanging({ dripper, nowMs: Date.now() });
+    },
     nextOf,
     upcomingOf: (dripper) =>
       upcomingLaneCandidate(
@@ -196,7 +201,10 @@ export const CaosLanesProvider = ({
         laneOf(dripper).name,
       ),
     changeToNext,
-    openSettings: () => setSettingsOpen(true),
+    openSettings: () => {
+      restoreWindow("シフトの合言葉");
+      setSettingsOpen(true);
+    },
     shiftFeed,
     syncSeniors: () => {
       const { lanes, feed } = latest.current;
@@ -237,7 +245,7 @@ export const CaosLanesProvider = ({
               },
             );
           }}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={value.openSettings}
           onClose={() => setChanging(null)}
         />
       )}
