@@ -44,6 +44,7 @@
 | 通知音ON/OFF | `sound.changed`、閲覧画面は `device-setting.changed` | `useCaosSession` / `useDeviceSetting` |
 | 閲覧画面・リベロ・未割当欄の開閉 | 3画面とも `page.*` / `ui.*`。`device-setting.changed` | 各route / `useDeviceSetting` |
 | 接続回復・画面開閉・非表示・実行時エラー | `connection.changed` / `page.*`、全イベントに `details.page` | `useLiveBoard` / `useCaosActivityLog` / `log.ts` |
+| 操作タブの重複防止 | `page.editor-acquired` / `page.editor-blocked`（duplicate・legacy・unsupported・error・timeout）/ `page.editor-error`。重複タブは閲覧へ移し、操作用Provider・業務操作の送信を開始しない。閲覧用のpage・入力・盤面ログは通常どおり記録する | `useMasterSheetTab` / `MasterSheetTabGuard` |
 
 UI操作の記録と、業務操作の成功は別です。クリック・`operation.accepted` は端末での操作/受付、サーバーで通ったことは `outbox.response` と業務履歴で確認します。緊急の直接APIには `emergency.api.*` が付きます。APIの失敗を成功として記録しません。
 
