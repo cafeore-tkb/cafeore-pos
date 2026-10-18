@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
+import { flowCsv } from "~/lib/analytics/flowCsv";
 import { historicalOrders, load2025Baseline } from "~/lib/analytics/historical";
 import {
   type AnalysisOrder,
@@ -206,22 +207,7 @@ export function OperationsDashboard({
     }
   };
   const exportFlow = () => {
-    const csv = [
-      "日時(JST),集計間隔(分),受注杯数,提供杯数,未提供杯数,キャンセル未提供杯数,未提供増減,混み合い加速度,枠確定",
-      ...report.buckets.map((b) =>
-        [
-          `${jstDate(b.at)} ${jstClock(b.at)}`,
-          intervalMinutes,
-          b.received,
-          b.served,
-          b.backlog,
-          b.cancelled,
-          b.net,
-          b.acceleration ?? "",
-          b.complete ? "確定" : "途中",
-        ].join(","),
-      ),
-    ].join("\n");
+    const csv = flowCsv(report.buckets, intervalMinutes);
     const url = URL.createObjectURL(
       new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }),
     );

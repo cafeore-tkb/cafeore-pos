@@ -30,6 +30,12 @@ export function PeriodFilter({
       ),
     });
   const [duration, setDuration] = useState<number | null>(null);
+  const [previousPeriod, setPreviousPeriod] = useState<Period | null>(null);
+  const restorePeriod = () => {
+    if (previousPeriod) onChange(previousPeriod);
+    setDuration(null);
+    setPreviousPeriod(null);
+  };
   const timestamp = (date: string, time: string) =>
     dayWindow(date, now).start +
     (Number(time.slice(0, 2)) * 60 + Number(time.slice(3))) * 60000;
@@ -79,6 +85,7 @@ export function PeriodFilter({
           className={SHORTCUT}
           onClick={() => {
             setDuration(null);
+            setPreviousPeriod(null);
             onChange({
               date: jstDate(now),
               throughDate: jstDate(now),
@@ -97,9 +104,10 @@ export function PeriodFilter({
             className={`${SHORTCUT} ${duration === minutes ? "border-teal-700 bg-teal-50 text-teal-900" : ""}`}
             onClick={() => {
               if (duration === minutes) {
-                setDuration(null);
+                restorePeriod();
                 return;
               }
+              if (duration === null) setPreviousPeriod({ ...period });
               setDuration(minutes);
               const start = timestamp(date, startTime);
               setRange(start, start + minutes * 60000);
@@ -108,6 +116,11 @@ export function PeriodFilter({
             {minutes}分間
           </button>
         ))}
+        {previousPeriod && (
+          <button type="button" className={SHORTCUT} onClick={restorePeriod}>
+            元の期間へ戻す
+          </button>
+        )}
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <TimeEndpoint
@@ -144,6 +157,7 @@ export function PeriodFilter({
                 key={hour}
                 aria-pressed={selected}
                 onClick={() => {
+                  if (duration === null) setPreviousPeriod({ ...period });
                   setDuration(60);
                   onChange({
                     date,
@@ -164,8 +178,8 @@ export function PeriodFilter({
         時・分を上下にスクロール。分は5分刻み。24:00は翌日0時。
         <br />
         {duration !== null
-          ? `${duration}分間で連動中。開始を変えると終了、終了を変えると開始も動きます。同じボタンでもう一度押すと解除。`
-          : "15・30・60分間のボタンで、区間の長さを固定できます。"}
+          ? `${duration}分間で連動中。開始を変えると終了、終了を変えると開始も動きます。同じボタンを再度押すか「元の期間へ戻す」で、連動前の期間に戻ります。`
+          : "15・30・60分間のボタンで、開始からその長さに絞ります。解除すると元の期間に戻せます。"}
       </p>
     </fieldset>
   );
