@@ -29,6 +29,7 @@ describe("[unit] pending-prints", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   test("localStorage に 1 件ずつ残し、読み込み直しても古い順に残っている。消したものは消える", async () => {
@@ -83,6 +84,65 @@ describe("[unit] pending-prints", () => {
     addPendingPrint(job, "emergency-2");
 
     expect(readPendingPrints().map((p) => p.id)).toEqual(["emergency-2"]);
+  });
+
+  test("代理印刷の完了で同じIDの未印刷を消し、遅れて直接印刷が失敗しても残し直さない", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const {
+      addPendingPrint,
+      completePendingPrint,
+      readPendingPrints,
+      isPrintSettled,
+    } = await load();
+    addPendingPrint(job, "emergency-1");
+    addPendingPrint(job, "emergency-2");
+    completePendingPrint("emergency-1");
+    addPendingPrint(job, "emergency-1");
+    expect(isPrintSettled("emergency-1")).toBe(true);
+    expect(readPendingPrints().map((p) => p.id)).toEqual(["emergency-2"]);
+  });
+
+  test("別タブでも完了済みIDを読めて、遅れて失敗したシールを残さない", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const first = await load();
+    first.completePendingPrint("emergency-1");
+    vi.resetModules();
+    const other = await load();
+    other.addPendingPrint(job, "emergency-1");
+    expect(other.isPrintSettled("emergency-1")).toBe(true);
+    expect(other.readPendingPrints()).toEqual([]);
+  });
+
+  test("完了記録は1時間で無効になり、次の完了処理で保存先から削除される", async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const prints = await load();
+    prints.completePendingPrint("emergency-1");
+    clock.mockReturnValue(1_000 + prints.COMPLETED_PRINT_TTL_MS - 1);
+    expect(prints.isPrintSettled("emergency-1")).toBe(true);
+    clock.mockReturnValue(1_000 + prints.COMPLETED_PRINT_TTL_MS);
+    expect(prints.isPrintSettled("emergency-1")).toBe(false);
+    prints.completePendingPrint("emergency-2");
+    expect(storage.length).toBe(1);
+  });
+
+  test("ストレージが使えなくても完了記録はメモリに残し、1時間で無効になる", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("SecurityError");
+      },
+      setItem: () => {
+        throw new Error("SecurityError");
+      },
+      removeItem: () => {},
+    });
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const prints = await load();
+    prints.completePendingPrint("emergency-1");
+    expect(prints.isPrintSettled("emergency-1")).toBe(true);
+    clock.mockReturnValue(1_000 + prints.COMPLETED_PRINT_TTL_MS);
+    expect(prints.isPrintSettled("emergency-1")).toBe(false);
   });
 
   test("壊れたもの・ほかのキーは読まない", async () => {
