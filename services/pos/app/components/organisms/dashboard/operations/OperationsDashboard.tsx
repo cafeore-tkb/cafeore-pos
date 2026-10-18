@@ -29,6 +29,7 @@ import { DurationCharts, minutes } from "./DurationCharts";
 import { FlowCharts } from "./FlowCharts";
 import { LogReview } from "./LogReview";
 import { OverviewVisuals, ProductTimeChart } from "./OverviewVisuals";
+import { PeriodFilter } from "./PeriodFilter";
 
 const MODES = [
   { id: "floor", name: "現場を見る" },
@@ -78,11 +79,6 @@ const SHORT_NAMES: Record<string, string> = {
   logs: "記録",
   baseline: "昨年",
 };
-const TIMES = Array.from(
-  { length: 97 },
-  (_, i) =>
-    `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`,
-);
 export type DashboardPanel = { id: string; name: string; content: ReactNode };
 
 export function OperationsDashboard({
@@ -224,6 +220,16 @@ export function OperationsDashboard({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const chooseMode = (next: Mode) => {
+    setMode(next);
+    setView(
+      next === "inventory"
+        ? "availability"
+        : next === "review"
+          ? "histogram"
+          : "summary",
+    );
+  };
   return (
     <div
       className={`space-y-5 rounded-3xl bg-[#f7f5f0] p-3 text-stone-800 sm:p-5 ${compact ? "text-sm" : ""}`}
@@ -249,94 +255,22 @@ export function OperationsDashboard({
             {throughDate !== date ? `${throughDate} ` : ""}
             {endTime}
           </summary>
-          <fieldset className="flex flex-wrap items-end gap-3 rounded-2xl border border-stone-200 bg-white p-3">
-            <legend className="px-1 font-bold text-sm">集計期間（JST）</legend>
-            <label className="flex flex-col gap-1 text-sm">
-              開始日
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="min-h-10 rounded border bg-white p-2"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              開始時刻
-              <select
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="min-h-10 rounded border bg-white p-2"
-              >
-                {TIMES.slice(0, -1).map((time) => (
-                  <option key={time}>{time}</option>
-                ))}
-              </select>
-            </label>
-            <span className="pb-2">〜</span>
-            <label className="flex flex-col gap-1 text-sm">
-              終了日
-              <input
-                type="date"
-                value={throughDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="min-h-10 rounded border bg-white p-2"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              終了時刻
-              <select
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="min-h-10 rounded border bg-white p-2"
-              >
-                {TIMES.slice(1).map((time) => (
-                  <option key={time}>{time}</option>
-                ))}
-              </select>
-            </label>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSelectedDate("");
-                setEndDate("");
-                setStartTime("00:00");
-                setEndTime("24:00");
-              }}
-            >
-              今日・終日
-            </Button>
-            <p className="w-full text-muted-foreground text-xs">
-              日本時間・15分ごと。24:00は翌日0時。まだ来ていない時間は含みません。
-            </p>
-          </fieldset>
+          <PeriodFilter
+            period={{ date, throughDate, startTime, endTime }}
+            now={now}
+            onChange={(period) => {
+              setSelectedDate(period.date);
+              setEndDate(period.throughDate);
+              setStartTime(period.startTime);
+              setEndTime(period.endTime);
+            }}
+          />
         </details>
         {!validPeriod && (
           <p role="alert" className="text-red-700">
             開始日時は現在以前、終了日時は開始日時より後にしてください。
           </p>
         )}
-        <div className="flex flex-wrap gap-2" aria-label="利用場面">
-          {MODES.map((m) => (
-            <Button
-              key={m.id}
-              size="sm"
-              variant={mode === m.id ? "default" : "outline"}
-              aria-pressed={mode === m.id}
-              onClick={() => {
-                setMode(m.id);
-                setView(
-                  m.id === "inventory"
-                    ? "availability"
-                    : m.id === "review"
-                      ? "histogram"
-                      : "summary",
-                );
-              }}
-            >
-              {m.name}
-            </Button>
-          ))}
-        </div>
         <p className="text-muted-foreground text-xs">
           {!isOrdersLoaded
             ? "注文を読込中…"
@@ -350,464 +284,528 @@ export function OperationsDashboard({
           / 現在 {jstClock(now)}
         </p>
       </header>
-      {isOrdersLoaded && validPeriod && (
-        <>
-          <div
-            className={`grid grid-cols-2 gap-3 ${compact ? "" : "xl:grid-cols-4"}`}
-          >
-            <Metric
-              label="注文"
-              tone="blue"
-              icon={Coffee}
-              value={`${report.received}杯`}
-              note="この期間の注文・取消前の分も含む"
-            />
-            <Metric
-              label="お渡し済み"
-              tone="green"
-              icon={CheckCheck}
-              value={`${report.served}杯`}
-              note="この期間にお渡し・前日からの分も含む"
-            />
-            <Metric
-              label="お渡し待ち"
-              tone="orange"
-              icon={Timer}
-              value={`${report.backlog}杯`}
-              note={`期間末の待ち・持越し${report.openingBacklog}杯を含む・取消は除く`}
-            />
-            <Metric
-              label="売上"
-              tone="brown"
-              icon={Banknote}
-              value={money(report.revenue)}
-              note={`${report.orderCount}注文・この期間の注文分・取消は除く`}
-            />
-          </div>
-          <div
-            className={`grid min-w-0 items-start gap-4 ${compact ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[10rem_minmax(0,1fr)]"}`}
-          >
-            <div
-              role="tablist"
-              aria-label="分析グラフ"
-              aria-orientation="vertical"
-              className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-1.5 shadow-sm"
+      <section>
+        <div
+          className="-mb-px relative z-[1] flex overflow-x-auto pt-1"
+          role="tablist"
+          aria-label="利用場面"
+        >
+          {MODES.map((m, index) => (
+            <button
+              key={m.id}
+              type="button"
+              role="tab"
+              id={`${panelId}-mode-${m.id}`}
+              aria-selected={mode === m.id}
+              aria-controls={`${panelId}-mode-content`}
+              tabIndex={mode === m.id ? 0 : -1}
+              onClick={() => chooseMode(m.id)}
+              onKeyDown={(event) => {
+                const next =
+                  event.key === "ArrowRight"
+                    ? (index + 1) % MODES.length
+                    : event.key === "ArrowLeft"
+                      ? (index + MODES.length - 1) % MODES.length
+                      : event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? MODES.length - 1
+                          : null;
+                if (next === null) return;
+                event.preventDefault();
+                chooseMode(MODES[next].id);
+                document
+                  .getElementById(`${panelId}-mode-${MODES[next].id}`)
+                  ?.focus();
+              }}
+              className={`min-h-12 shrink-0 rounded-t-xl border py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-stone-300 border-b-white bg-white text-teal-900" : "border-transparent border-b-stone-300 bg-[#eee9df] text-stone-500 hover:bg-stone-200"}`}
             >
-              {views.map((item, index) => {
-                const Icon = VIEW_ICONS[item.id] ?? BarChart3;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="tab"
-                    title={item.name}
-                    id={`${panelId}-tab-${item.id}`}
-                    aria-controls={`${panelId}-content`}
-                    aria-selected={view === item.id}
-                    tabIndex={view === item.id ? 0 : -1}
-                    onClick={() => setView(item.id)}
-                    onKeyDown={(event) => {
-                      const next =
-                        event.key === "ArrowDown"
-                          ? (index + 1) % views.length
-                          : event.key === "ArrowUp"
-                            ? (index + views.length - 1) % views.length
-                            : event.key === "Home"
-                              ? 0
-                              : event.key === "End"
-                                ? views.length - 1
-                                : null;
-                      if (next === null) return;
-                      event.preventDefault();
-                      setView(views[next].id);
-                      document
-                        .getElementById(`${panelId}-tab-${views[next].id}`)
-                        ?.focus();
-                    }}
-                    className={`flex min-h-12 items-center gap-2 rounded-xl ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "bg-teal-900 font-bold text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span>
-                      {compact
-                        ? (SHORT_NAMES[item.id] ?? item.name)
-                        : item.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div
-              role="tabpanel"
-              id={`${panelId}-content`}
-              aria-labelledby={`${panelId}-tab-${view}`}
-              className="min-w-0 space-y-4"
-            >
-              <h3 className="font-bold text-lg">
-                {views.find((item) => item.id === view)?.name}
-              </h3>
-              {view === "summary" && (
-                <OverviewVisuals
-                  report={report}
-                  onSelect={setView}
-                  compact={compact}
+              {m.name}
+            </button>
+          ))}
+        </div>
+        <div
+          role="tabpanel"
+          id={`${panelId}-mode-content`}
+          aria-labelledby={`${panelId}-mode-${mode}`}
+          className={`space-y-5 border border-stone-300 bg-white ${compact ? "p-2" : "p-4"}`}
+        >
+          {isOrdersLoaded && validPeriod && (
+            <>
+              <div
+                className={`grid grid-cols-2 gap-3 ${compact ? "" : "xl:grid-cols-4"}`}
+              >
+                <Metric
+                  label="注文"
+                  tone="blue"
+                  icon={Coffee}
+                  value={`${report.received}杯`}
+                  note="この期間の注文・取消前の分も含む"
                 />
-              )}
-              {(view === "flow" || view === "acceleration") && (
-                <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                  <h3 className="font-bold">{trend}</h3>
-                  <p className="mt-2 text-sm">
-                    直近15分：待ち {signed(last?.net ?? null)}杯 ／ 増え方の変化{" "}
-                    {signed(last?.acceleration ?? null)}杯
-                  </p>
-                  <details className="mt-2 text-stone-500 text-xs">
-                    <summary className="cursor-pointer">この数字の見方</summary>
-                    <p className="mt-2">
-                      待ちの増減＝注文−お渡し−まだ渡していない取消分。その増減を前の15分と比べた差が「混み合い加速度」です。マイナスでも待ちの杯数そのものは増える場合があります。途中の15分は比較しません。直近枠：
-                      {last
-                        ? `${jstDate(last.at)} ${jstClock(last.at).slice(0, 5)}〜`
-                        : "集計待ち"}
-                    </p>
-                  </details>
-                  <div className="mt-3 flex flex-wrap gap-4 text-sm">
-                    <a className="underline" href="/master-sheet">
-                      管制盤で割当を確認
-                    </a>
-                    <a className="underline" href="/serve">
-                      提供を確認
-                    </a>
-                    <a className="underline" href="/cashier">
-                      レジを確認
-                    </a>
-                    <button
-                      type="button"
-                      className="underline"
-                      onClick={exportFlow}
-                    >
-                      15分集計CSVを保存
-                    </button>
-                  </div>
-                  <FlowCharts
-                    buckets={report.buckets}
-                    chart={view === "acceleration" ? "acceleration" : "flow"}
-                  />
-                  <p className="text-xs">
-                    取消 {report.cancelledOrders}件 / まだ渡す前に取消になった分{" "}
-                    {report.cancelledCups}
-                    杯。「できあがり」だけでは、お渡し待ちは減りません。
-                  </p>
-                </section>
-              )}
-              {view === "summary" && mode !== "owner" && mode !== "handoff" && (
-                <section className="rounded-2xl border border-stone-200 bg-white p-5">
-                  <h3 className="font-bold">長く待っている注文</h3>
-                  <p className="mt-1 text-sm">
-                    期間末の待ち時間が長い順。予想の待ち時間ではありません。
-                  </p>
-                  <ul className="mt-3 space-y-2">
-                    {report.longest.slice(0, 8).map((v, i) => (
-                      <li
-                        key={`${v.number}:${i}`}
-                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${v.minutes >= 20 ? "border-rose-200 bg-rose-50 text-rose-800" : v.minutes >= 15 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-stone-100 bg-stone-50"}`}
+                <Metric
+                  label="お渡し済み"
+                  tone="green"
+                  icon={CheckCheck}
+                  value={`${report.served}杯`}
+                  note="この期間にお渡し・前日からの分も含む"
+                />
+                <Metric
+                  label="お渡し待ち"
+                  tone="orange"
+                  icon={Timer}
+                  value={`${report.backlog}杯`}
+                  note={`期間末の待ち・持越し${report.openingBacklog}杯を含む・取消は除く`}
+                />
+                <Metric
+                  label="売上"
+                  tone="brown"
+                  icon={Banknote}
+                  value={money(report.revenue)}
+                  note={`${report.orderCount}注文・この期間の注文分・取消は除く`}
+                />
+              </div>
+              <div
+                className={`grid min-w-0 items-start gap-4 ${compact ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[10rem_minmax(0,1fr)]"}`}
+              >
+                <div
+                  role="tablist"
+                  aria-label="分析グラフ"
+                  aria-orientation="vertical"
+                  className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-1.5 shadow-sm"
+                >
+                  {views.map((item, index) => {
+                    const Icon = VIEW_ICONS[item.id] ?? BarChart3;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="tab"
+                        title={item.name}
+                        id={`${panelId}-tab-${item.id}`}
+                        aria-controls={`${panelId}-content`}
+                        aria-selected={view === item.id}
+                        tabIndex={view === item.id ? 0 : -1}
+                        onClick={() => setView(item.id)}
+                        onKeyDown={(event) => {
+                          const next =
+                            event.key === "ArrowDown"
+                              ? (index + 1) % views.length
+                              : event.key === "ArrowUp"
+                                ? (index + views.length - 1) % views.length
+                                : event.key === "Home"
+                                  ? 0
+                                  : event.key === "End"
+                                    ? views.length - 1
+                                    : null;
+                          if (next === null) return;
+                          event.preventDefault();
+                          setView(views[next].id);
+                          document
+                            .getElementById(`${panelId}-tab-${views[next].id}`)
+                            ?.focus();
+                        }}
+                        className={`flex min-h-12 items-center gap-2 rounded-xl ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "bg-teal-900 font-bold text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
                       >
-                        <span className="font-bold font-mono">
-                          #{String(v.number).padStart(3, "0")}
+                        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                        <span>
+                          {compact
+                            ? (SHORT_NAMES[item.id] ?? item.name)
+                            : item.name}
                         </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {v.product}
-                        </span>
-                        <strong className="tabular-nums">
-                          {v.minutes.toFixed(1)}分
-                        </strong>
-                      </li>
-                    ))}
-                  </ul>
-                  {!report.longest.length && (
-                    <p className="mt-2">お渡し待ちはありません。</p>
-                  )}
-                </section>
-              )}
-              {view === "summary" && mode === "owner" && (
-                <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
-                  <h3 className="font-bold">売上とお渡しの速さ</h3>
-                  <p>
-                    1注文あたり{" "}
-                    {report.orderCount
-                      ? money(Math.round(report.revenue / report.orderCount))
-                      : "未計測"}{" "}
-                    / 9割を渡すまで {minutes(report.total.p90)}
-                  </p>
-                  <p className="text-sm">
-                    売上は注文時の金額です。利益や手元の現金とは異なります。
-                    <a className="underline" href="/dashboard">
-                      詳細と注文一覧
-                    </a>
-                  </p>
-                </section>
-              )}
-              {view === "summary" && mode === "handoff" && (
-                <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
-                  <h3 className="font-bold">直前1時間の引き継ぎ</h3>
-                  {handoffStart < handoffEnd ? (
-                    <>
-                      <p>
-                        {jstDate(handoffStart)}{" "}
-                        {jstClock(handoffStart).slice(0, 5)}〜
-                        {jstClock(handoffEnd).slice(0, 5)}
-                        （集計が終わった時間）
-                      </p>
-                      <p>
-                        注文 {handoff.received}杯 / お渡し {handoff.served}杯 /
-                        終わりのお渡し待ち {handoff.backlog}杯 / 売上{" "}
-                        {money(handoff.revenue)}
-                      </p>
-                      <p className="text-sm">
-                        いちばん長いお渡し待ち{" "}
-                        {minutes(report.longest[0]?.minutes ?? null)}
-                        。「連絡と操作の記録」と「在庫とメニュー」も確認してください。対応済みかどうかは記録から自動で分かりません。
-                      </p>
-                    </>
-                  ) : (
-                    <p>この期間の1時間分の集計はまだありません。</p>
-                  )}
-                </section>
-              )}
-              {["histogram", "cdf", "box", "products"].includes(view) && (
-                <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
-                  <h3 className="font-bold">お渡しまでにかかった時間</h3>
-                  <p className="text-muted-foreground text-xs">
-                    この期間に注文され、期間末までに渡した分です。まだ渡していない
-                    {report.censored}
-                    杯はグラフに含みません。時刻がおかしい
-                    {report.invalidTimes}
-                    杯も時間の集計から外しています。
-                  </p>
-                  {view !== "products" && (
-                    <DurationCharts
-                      stats={report.total}
-                      chart={
-                        view === "cdf"
-                          ? "cdf"
-                          : view === "box"
-                            ? "box"
-                            : "histogram"
-                      }
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  role="tabpanel"
+                  id={`${panelId}-content`}
+                  aria-labelledby={`${panelId}-tab-${view}`}
+                  className="min-w-0 space-y-4"
+                >
+                  <h3 className="font-bold text-lg">
+                    {views.find((item) => item.id === view)?.name}
+                  </h3>
+                  {view === "summary" && (
+                    <OverviewVisuals
+                      report={report}
+                      onSelect={setView}
+                      compact={compact}
                     />
                   )}
-                  {view === "products" && (
-                    <ProductTimeChart products={report.products} />
-                  )}
-                  {view === "products" && (
-                    <details>
-                      <summary className="cursor-pointer font-bold text-sm">
-                        杯数と時間の詳しい表
-                      </summary>
-                      <p className="text-stone-500 text-xs">
-                        棒は真ん中の時間。下の表は 真ん中 /
-                        9割がここまで終わる時間（杯数）。記録がない時間は「未計測」です。
+                  {(view === "flow" || view === "acceleration") && (
+                    <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                      <h3 className="font-bold">{trend}</h3>
+                      <p className="mt-2 text-sm">
+                        直近15分：待ち {signed(last?.net ?? null)}杯 ／
+                        増え方の変化 {signed(last?.acceleration ?? null)}杯
                       </p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr>
-                              <th>商品</th>
-                              <th>注文/待ち</th>
-                              <th>注文→できあがり</th>
-                              <th>できあがり→お渡し</th>
-                              <th>注文→お渡し</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {report.products.map((p) => (
-                              <tr key={p.name} className="border-t">
-                                <td className="py-2">{p.name}</td>
-                                <td>
-                                  {p.received}/{p.pending}
-                                </td>
-                                {[p.prep, p.handoff, p.total].map((s, i) => (
-                                  <td key={["prep", "handoff", "total"][i]}>
-                                    {minutes(s.p50)} / {minutes(s.p90)}（
-                                    {s.count}）
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <details className="mt-2 text-stone-500 text-xs">
+                        <summary className="cursor-pointer">
+                          この数字の見方
+                        </summary>
+                        <p className="mt-2">
+                          待ちの増減＝注文−お渡し−まだ渡していない取消分。その増減を前の15分と比べた差が「混み合い加速度」です。マイナスでも待ちの杯数そのものは増える場合があります。途中の15分は比較しません。直近枠：
+                          {last
+                            ? `${jstDate(last.at)} ${jstClock(last.at).slice(0, 5)}〜`
+                            : "集計待ち"}
+                        </p>
+                      </details>
+                      <div className="mt-3 flex flex-wrap gap-4 text-sm">
+                        <a className="underline" href="/master-sheet">
+                          管制盤で割当を確認
+                        </a>
+                        <a className="underline" href="/serve">
+                          提供を確認
+                        </a>
+                        <a className="underline" href="/cashier">
+                          レジを確認
+                        </a>
+                        <button
+                          type="button"
+                          className="underline"
+                          onClick={exportFlow}
+                        >
+                          15分集計CSVを保存
+                        </button>
                       </div>
-                    </details>
+                      <FlowCharts
+                        buckets={report.buckets}
+                        chart={
+                          view === "acceleration" ? "acceleration" : "flow"
+                        }
+                      />
+                      <p className="text-xs">
+                        取消 {report.cancelledOrders}件 /
+                        まだ渡す前に取消になった分 {report.cancelledCups}
+                        杯。「できあがり」だけでは、お渡し待ちは減りません。
+                      </p>
+                    </section>
                   )}
-                  {view === "box" && (
-                    <details>
-                      <summary className="cursor-pointer">
-                        特に時間が長い・短い記録（{outlierRecords.length}
-                        杯・全体の集計にも含む）
-                      </summary>
-                      <ul className="max-h-52 overflow-y-auto">
-                        {outlierRecords.map((c, i) => (
+                  {view === "summary" &&
+                    mode !== "owner" &&
+                    mode !== "handoff" && (
+                      <section className="rounded-2xl border border-stone-200 bg-white p-5">
+                        <h3 className="font-bold">長く待っている注文</h3>
+                        <p className="mt-1 text-sm">
+                          期間末の待ち時間が長い順。予想の待ち時間ではありません。
+                        </p>
+                        <ul className="mt-3 space-y-2">
+                          {report.longest.slice(0, 8).map((v, i) => (
+                            <li
+                              key={`${v.number}:${i}`}
+                              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${v.minutes >= 20 ? "border-rose-200 bg-rose-50 text-rose-800" : v.minutes >= 15 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-stone-100 bg-stone-50"}`}
+                            >
+                              <span className="font-bold font-mono">
+                                #{String(v.number).padStart(3, "0")}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">
+                                {v.product}
+                              </span>
+                              <strong className="tabular-nums">
+                                {v.minutes.toFixed(1)}分
+                              </strong>
+                            </li>
+                          ))}
+                        </ul>
+                        {!report.longest.length && (
+                          <p className="mt-2">お渡し待ちはありません。</p>
+                        )}
+                      </section>
+                    )}
+                  {view === "summary" && mode === "owner" && (
+                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                      <h3 className="font-bold">売上とお渡しの速さ</h3>
+                      <p>
+                        1注文あたり{" "}
+                        {report.orderCount
+                          ? money(
+                              Math.round(report.revenue / report.orderCount),
+                            )
+                          : "未計測"}{" "}
+                        / 9割を渡すまで {minutes(report.total.p90)}
+                      </p>
+                      <p className="text-sm">
+                        売上は注文時の金額です。利益や手元の現金とは異なります。
+                        <a className="underline" href="/dashboard">
+                          詳細と注文一覧
+                        </a>
+                      </p>
+                    </section>
+                  )}
+                  {view === "summary" && mode === "handoff" && (
+                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                      <h3 className="font-bold">直前1時間の引き継ぎ</h3>
+                      {handoffStart < handoffEnd ? (
+                        <>
+                          <p>
+                            {jstDate(handoffStart)}{" "}
+                            {jstClock(handoffStart).slice(0, 5)}〜
+                            {jstClock(handoffEnd).slice(0, 5)}
+                            （集計が終わった時間）
+                          </p>
+                          <p>
+                            注文 {handoff.received}杯 / お渡し {handoff.served}
+                            杯 / 終わりのお渡し待ち {handoff.backlog}杯 / 売上{" "}
+                            {money(handoff.revenue)}
+                          </p>
+                          <p className="text-sm">
+                            いちばん長いお渡し待ち{" "}
+                            {minutes(report.longest[0]?.minutes ?? null)}
+                            。「連絡と操作の記録」と「在庫とメニュー」も確認してください。対応済みかどうかは記録から自動で分かりません。
+                          </p>
+                        </>
+                      ) : (
+                        <p>この期間の1時間分の集計はまだありません。</p>
+                      )}
+                    </section>
+                  )}
+                  {["histogram", "cdf", "box", "products"].includes(view) && (
+                    <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                      <h3 className="font-bold">お渡しまでにかかった時間</h3>
+                      <p className="text-muted-foreground text-xs">
+                        この期間に注文され、期間末までに渡した分です。まだ渡していない
+                        {report.censored}
+                        杯はグラフに含みません。時刻がおかしい
+                        {report.invalidTimes}
+                        杯も時間の集計から外しています。
+                      </p>
+                      {view !== "products" && (
+                        <DurationCharts
+                          stats={report.total}
+                          chart={
+                            view === "cdf"
+                              ? "cdf"
+                              : view === "box"
+                                ? "box"
+                                : "histogram"
+                          }
+                        />
+                      )}
+                      {view === "products" && (
+                        <ProductTimeChart products={report.products} />
+                      )}
+                      {view === "products" && (
+                        <details>
+                          <summary className="cursor-pointer font-bold text-sm">
+                            杯数と時間の詳しい表
+                          </summary>
+                          <p className="text-stone-500 text-xs">
+                            棒は真ん中の時間。下の表は 真ん中 /
+                            9割がここまで終わる時間（杯数）。記録がない時間は「未計測」です。
+                          </p>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr>
+                                  <th>商品</th>
+                                  <th>注文/待ち</th>
+                                  <th>注文→できあがり</th>
+                                  <th>できあがり→お渡し</th>
+                                  <th>注文→お渡し</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {report.products.map((p) => (
+                                  <tr key={p.name} className="border-t">
+                                    <td className="py-2">{p.name}</td>
+                                    <td>
+                                      {p.received}/{p.pending}
+                                    </td>
+                                    {[p.prep, p.handoff, p.total].map(
+                                      (s, i) => (
+                                        <td
+                                          key={["prep", "handoff", "total"][i]}
+                                        >
+                                          {minutes(s.p50)} / {minutes(s.p90)}（
+                                          {s.count}）
+                                        </td>
+                                      ),
+                                    )}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
+                      )}
+                      {view === "box" && (
+                        <details>
+                          <summary className="cursor-pointer">
+                            特に時間が長い・短い記録（{outlierRecords.length}
+                            杯・全体の集計にも含む）
+                          </summary>
+                          <ul className="max-h-52 overflow-y-auto">
+                            {outlierRecords.map((c, i) => (
+                              <li
+                                key={`${c.orderNo}:${i}`}
+                                className="mt-1 text-sm"
+                              >
+                                #{String(c.orderNo).padStart(3, "0")} ·{" "}
+                                {c.product} · {minutes(c.minutes)}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </section>
+                  )}
+                  {view === "availability" && (
+                    <AvailabilityReview buckets={report.buckets} />
+                  )}
+                  {view === "logs" && (
+                    <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5">
+                      <h3 className="font-bold">注文ごとの連絡</h3>
+                      <p className="text-muted-foreground text-xs">
+                        レジ・マスター・提供の連絡です。個人の成績表ではありません。
+                      </p>
+                      <ul className="max-h-72 space-y-2 overflow-y-auto">
+                        {report.comments.slice(0, 100).map((c, i) => (
                           <li
-                            key={`${c.orderNo}:${i}`}
-                            className="mt-1 text-sm"
+                            key={`${c.at}:${c.orderNo}:${i}`}
+                            className="rounded-md bg-stone-50 p-2 text-sm"
                           >
-                            #{String(c.orderNo).padStart(3, "0")} · {c.product}{" "}
-                            · {minutes(c.minutes)}
+                            <span className="font-bold">
+                              #{String(c.orderNo).padStart(3, "0")} · {c.author}{" "}
+                              · {jstDate(c.at)} {jstClock(c.at)}
+                            </span>
+                            <p className="whitespace-pre-wrap break-words">
+                              {c.text}
+                            </p>
                           </li>
                         ))}
                       </ul>
-                    </details>
-                  )}
-                </section>
-              )}
-              {view === "availability" && (
-                <AvailabilityReview buckets={report.buckets} />
-              )}
-              {view === "logs" && (
-                <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5">
-                  <h3 className="font-bold">注文ごとの連絡</h3>
-                  <p className="text-muted-foreground text-xs">
-                    レジ・マスター・提供の連絡です。個人の成績表ではありません。
-                  </p>
-                  <ul className="max-h-72 space-y-2 overflow-y-auto">
-                    {report.comments.slice(0, 100).map((c, i) => (
-                      <li
-                        key={`${c.at}:${c.orderNo}:${i}`}
-                        className="rounded-md bg-stone-50 p-2 text-sm"
-                      >
-                        <span className="font-bold">
-                          #{String(c.orderNo).padStart(3, "0")} · {c.author} ·{" "}
-                          {jstDate(c.at)} {jstClock(c.at)}
-                        </span>
-                        <p className="whitespace-pre-wrap break-words">
-                          {c.text}
+                      {!report.comments.length && (
+                        <p className="text-sm">
+                          この期間の注文には連絡がありません。
                         </p>
-                      </li>
-                    ))}
-                  </ul>
-                  {!report.comments.length && (
-                    <p className="text-sm">
-                      この期間の注文には連絡がありません。
-                    </p>
-                  )}
-                  <LogReview
-                    start={window.start}
-                    end={Math.min(window.end, now)}
-                  />
-                </section>
-              )}
-              {view === "baseline" && (
-                <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
-                  <h3 className="font-bold">2025年との比較</h3>
-                  <p className="text-sm">
-                    選択した開始時刻から同じ長さの期間を比較します（2025年の開始日は下で選択）。昨年は注文ごと、今年は1杯ごとの記録です。条件が違うため、目安として比べてください。売上は全商品、杯数は飲み物だけです。
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                      variant="outline"
-                      disabled={loading}
-                      onClick={() => void loadBaseline()}
-                    >
-                      {loading ? "読込中…" : "昨年の記録を開く"}
-                    </Button>
-                    <label className="text-sm">
-                      手元の昨年データ{" "}
-                      <input
-                        type="file"
-                        className="max-w-52"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          try {
-                            const data = historicalOrders(
-                              JSON.parse(await file.text()),
-                            );
-                            if (!data.length)
-                              throw new Error("注文がありません。");
-                            setReference(data);
-                            setReferenceDate(jstDate(data[0].created));
-                            setReferenceInfo(
-                              `2025年の記録（注文ごと） / ${file.name}`,
-                            );
-                            setFailure("");
-                          } catch (error) {
-                            setFailure(
-                              error instanceof Error
-                                ? error.message
-                                : "読み込めませんでした。",
-                            );
-                          }
-                          e.target.value = "";
-                        }}
+                      )}
+                      <LogReview
+                        start={window.start}
+                        end={Math.min(window.end, now)}
                       />
-                    </label>
-                  </div>
-                  {failure && (
-                    <p role="alert" className="text-red-700">
-                      {failure}
-                    </p>
+                    </section>
                   )}
-                  {baseline && (
-                    <>
-                      <p className="text-xs">
-                        {referenceInfo} ·{" "}
-                        <a
-                          className="underline"
-                          href="https://github.com/cafeore-tkb/sohosai-analysis/tree/main/2025/data"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          出典
-                        </a>
+                  {view === "baseline" && (
+                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                      <h3 className="font-bold">2025年との比較</h3>
+                      <p className="text-sm">
+                        選択した開始時刻から同じ長さの期間を比較します（2025年の開始日は下で選択）。昨年は注文ごと、今年は1杯ごとの記録です。条件が違うため、目安として比べてください。売上は全商品、杯数は飲み物だけです。
                       </p>
-                      <select
-                        aria-label="2025年の比較対象日"
-                        className="rounded border p-2"
-                        value={referenceDate}
-                        onChange={(e) => setReferenceDate(e.target.value)}
-                      >
-                        {[...new Set(reference.map((o) => jstDate(o.created)))]
-                          .sort()
-                          .map((d) => (
-                            <option key={d}>{d}</option>
-                          ))}
-                      </select>
-                      <div
-                        className={`grid gap-3 ${compact ? "grid-cols-1" : "grid-cols-2"}`}
-                      >
-                        <Metric
-                          label={`${date} 今年の記録`}
-                          value={money(report.revenue)}
-                          note={`${report.received}杯 / お渡しまでの真ん中${minutes(report.total.p50)}`}
-                        />
-                        <Metric
-                          label={`${referenceDate} 2025年の記録・注文ごと`}
-                          value={money(baseline.revenue)}
-                          note={`${baseline.received}杯 / お渡しまでの真ん中${minutes(baseline.total.p50)}`}
-                        />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          variant="outline"
+                          disabled={loading}
+                          onClick={() => void loadBaseline()}
+                        >
+                          {loading ? "読込中…" : "昨年の記録を開く"}
+                        </Button>
+                        <label className="text-sm">
+                          手元の昨年データ{" "}
+                          <input
+                            type="file"
+                            className="max-w-52"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const data = historicalOrders(
+                                  JSON.parse(await file.text()),
+                                );
+                                if (!data.length)
+                                  throw new Error("注文がありません。");
+                                setReference(data);
+                                setReferenceDate(jstDate(data[0].created));
+                                setReferenceInfo(
+                                  `2025年の記録（注文ごと） / ${file.name}`,
+                                );
+                                setFailure("");
+                              } catch (error) {
+                                setFailure(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "読み込めませんでした。",
+                                );
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
                       </div>
-                      <FlowCharts buckets={baseline.buckets} />
-                      <DurationCharts
-                        stats={baseline.total}
-                        compact={compact}
-                      />
-                    </>
+                      {failure && (
+                        <p role="alert" className="text-red-700">
+                          {failure}
+                        </p>
+                      )}
+                      {baseline && (
+                        <>
+                          <p className="text-xs">
+                            {referenceInfo} ·{" "}
+                            <a
+                              className="underline"
+                              href="https://github.com/cafeore-tkb/sohosai-analysis/tree/main/2025/data"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              出典
+                            </a>
+                          </p>
+                          <select
+                            aria-label="2025年の比較対象日"
+                            className="rounded border p-2"
+                            value={referenceDate}
+                            onChange={(e) => setReferenceDate(e.target.value)}
+                          >
+                            {[
+                              ...new Set(
+                                reference.map((o) => jstDate(o.created)),
+                              ),
+                            ]
+                              .sort()
+                              .map((d) => (
+                                <option key={d}>{d}</option>
+                              ))}
+                          </select>
+                          <div
+                            className={`grid gap-3 ${compact ? "grid-cols-1" : "grid-cols-2"}`}
+                          >
+                            <Metric
+                              label={`${date} 今年の記録`}
+                              value={money(report.revenue)}
+                              note={`${report.received}杯 / お渡しまでの真ん中${minutes(report.total.p50)}`}
+                            />
+                            <Metric
+                              label={`${referenceDate} 2025年の記録・注文ごと`}
+                              value={money(baseline.revenue)}
+                              note={`${baseline.received}杯 / お渡しまでの真ん中${minutes(baseline.total.p50)}`}
+                            />
+                          </div>
+                          <FlowCharts buckets={baseline.buckets} />
+                          <DurationCharts
+                            stats={baseline.total}
+                            compact={compact}
+                          />
+                        </>
+                      )}
+                    </section>
                   )}
-                </section>
-              )}
-              {extraPanels.find((item) => item.id === view)?.content}
-            </div>
-          </div>
-          <details className="rounded-2xl border border-stone-200 bg-white p-5 text-xs">
-            <summary className="cursor-pointer font-bold">
-              数字の見方・分かること／分からないこと
-            </summary>
-            <p className="mt-2">
-              日本時間で15分ごとに数えます。開始時刻ちょうどを含み、終了時刻ちょうどは次の期間に入ります。杯数は飲み物だけ。グッズと入れ直しは新しい杯数に足しません。取消前の注文も注文杯数に残し、まだ渡す前の取消分は待ちから減らします。売上と提供時間は、この期間に受けた注文が対象です。後から注文を直すと数字も変わります。まだ届いていない記録は含みません。
-            </p>
-            <p className="mt-2">
-              この画面だけでは分からないこと：すべてのボタン操作、品切れ・再開の全記録、誰が何時間働いたか、原価や利益。記録忘れもあり得ます。個人の評価や、これから何人来るかの予測はしません。
-            </p>
-          </details>
-        </>
-      )}
+                  {extraPanels.find((item) => item.id === view)?.content}
+                </div>
+              </div>
+              <details className="rounded-2xl border border-stone-200 bg-white p-5 text-xs">
+                <summary className="cursor-pointer font-bold">
+                  数字の見方・分かること／分からないこと
+                </summary>
+                <p className="mt-2">
+                  日本時間で15分ごとに数えます。開始時刻ちょうどを含み、終了時刻ちょうどは次の期間に入ります。杯数は飲み物だけ。グッズと入れ直しは新しい杯数に足しません。取消前の注文も注文杯数に残し、まだ渡す前の取消分は待ちから減らします。売上と提供時間は、この期間に受けた注文が対象です。後から注文を直すと数字も変わります。まだ届いていない記録は含みません。
+                </p>
+                <p className="mt-2">
+                  この画面だけでは分からないこと：すべてのボタン操作、品切れ・再開の全記録、誰が何時間働いたか、原価や利益。記録忘れもあり得ます。個人の評価や、これから何人来るかの予測はしません。
+                </p>
+              </details>
+            </>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

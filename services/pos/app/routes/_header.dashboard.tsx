@@ -48,7 +48,7 @@ export default function Dashboard() {
 
   return (
     <div className="h-full">
-      <div className="sticky top-0 flex justify-between p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4">
         <h1 className="w-auto whitespace-nowrap text-3xl">ダッシュボード</h1>
         <p>お渡し待ち：{unseved}</p>
         <div className="flex items-center gap-2 p-2">
