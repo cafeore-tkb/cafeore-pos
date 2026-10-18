@@ -136,6 +136,10 @@ export const usePrinter = (
       try {
         await withPendingPrintsLock(async () => {
           for (const pending of readPendingPrints()) {
+            if (isPrintSettled(pending.id)) {
+              removePendingPrint(pending.id);
+              continue;
+            }
             // 前のシールを送っている間に消えた（取り消した緊急の）ものは送らない
             if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
             onActivity?.("printer.resend.requested", { pendingId: pending.id });

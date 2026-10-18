@@ -25,7 +25,43 @@ const store = createDeviceStore("cafeore:pending-label-print:", parse);
 
 // このタブで取り消しを知った緊急の id。刷っている間に取り消されたら、刷れなくても残さない
 const cancelled = new Set<string>();
-const completed = new Set<string>();
+// 完了の記録は1時間だけ保持する。別タブの遅れて返る印刷失敗も抑止する。
+export const COMPLETED_PRINT_TTL_MS = 60 * 60 * 1_000;
+const COMPLETED_PREFIX = "cafeore:completed-label-print:";
+// localStorage に書けなかったときだけ、このタブのメモリに残す。
+const completed = new Map<string, number>();
+
+const pruneCompletedPrints = (now: number) => {
+  for (const [id, expiresAt] of completed) {
+    if (expiresAt <= now) completed.delete(id);
+  }
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(COMPLETED_PREFIX)) continue;
+      const expiresAt = Number(localStorage.getItem(key));
+      if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ストレージが使えなくても、メモリの期限切れは削除する。
+  }
+};
+
+const isPrintCompleted = (id: string) => {
+  const now = Date.now();
+  let expiresAt = completed.get(id) ?? 0;
+  try {
+    expiresAt = Math.max(
+      expiresAt,
+      Number(localStorage.getItem(COMPLETED_PREFIX + id)) || 0,
+    );
+  } catch {}
+  if (expiresAt > now) return true;
+  completed.delete(id);
+  return false;
+};
 
 /** 残っているシール（古い順） */
 export const readPendingPrints = store.read;
@@ -46,11 +82,19 @@ export const isPrintCancelled = (id: string) => cancelled.has(id);
 
 /** 直接印刷の結果を待つ間に、代理印刷で完了・取り消しになったシールか。 */
 export const isPrintSettled = (id: string) =>
-  cancelled.has(id) || completed.has(id);
+  cancelled.has(id) || isPrintCompleted(id);
 
 /** 代理印刷で刷れたシールを端末から消し、遅れて来た直接印刷の失敗で残し直さない。 */
 export const completePendingPrint = (id: string) => {
-  completed.add(id);
+  const now = Date.now();
+  pruneCompletedPrints(now);
+  const expiresAt = now + COMPLETED_PRINT_TTL_MS;
+  try {
+    localStorage.setItem(COMPLETED_PREFIX + id, String(expiresAt));
+    completed.delete(id);
+  } catch {
+    completed.set(id, expiresAt);
+  }
   removePendingPrint(id);
 };
 
