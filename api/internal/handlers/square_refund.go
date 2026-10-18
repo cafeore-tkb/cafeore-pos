@@ -411,7 +411,8 @@ func shownRefund(records []*models.SquareCheckout, now time.Time) *models.Square
 }
 
 // finishRefund は返金を頼んだ決済（records。同じ注文のもの）について応答する。全部を Square が受け付けたら、
-// 結び付いた注文（orderID。無ければ nil）を消す。keepOrder なら注文は消さず、返金の状態を載せた注文を配り直す。
+// 結び付いた注文（orderID。無ければ nil）をキャンセルする（消さずに cancelled_at を付ける）。
+// keepOrder ならキャンセルせず、返金の状態を載せた注文を配り直す。
 func (h *SquareHandler) finishRefund(c *gin.Context, records []*models.SquareCheckout, orderID *uuid.UUID, keepOrder bool) {
 	now := h.now()
 	shown := shownRefund(records, now)
@@ -428,18 +429,18 @@ func (h *SquareHandler) finishRefund(c *gin.Context, records []*models.SquareChe
 		return
 	}
 
-	// お金は返したので、注文は消す。消せなくても返金は取り消さない（もう一度呼ぶと注文だけを消す）。
-	// PENDING でも消す。あとで Square で失敗したら、決済は「未登録の Square 決済」に理由付きで出るので、
-	// そこで頼み直すか、注文を登録し直す。COMPLETED まで待つと、注文の付いた返金待ちを誰かが確かめて
-	// 消す仕組みが別に要る。
+	// お金は返したので、注文はキャンセルする（消さずに残し、番号も使ったままにする）。キャンセルできなくても
+	// 返金は取り消さない（もう一度呼ぶとキャンセルだけをする）。
+	// PENDING でもキャンセルする。決済は注文に結び付いたままなので、あとで Square で失敗したら、
+	// keepOrder と同じく注文の square_refund_status が failed になり、注文のカードに出る。
 	if orderID != nil {
-		if err := h.orders.deleteOrder(*orderID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := cancelOrder(h.db, *orderID, now); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "返金は受け付けましたが、注文を消せませんでした。もう一度返金を押すと注文だけを消します: " + err.Error(),
+				"error": "返金は受け付けましたが、注文をキャンセルできませんでした。もう一度返金を押すとキャンセルだけをします: " + err.Error(),
 			})
 			return
 		}
-		shown.OrderID = nil
+		h.publishRefundedOrder(orderID, shown)
 	}
 	c.JSON(http.StatusOK, toSquareCheckoutResponse(shown, now))
 }
@@ -456,7 +457,7 @@ func (h *SquareHandler) publishRefundedOrder(orderID *uuid.UUID, record *models.
 
 // POST /api/square/checkouts/:id/refund
 //
-// 決済依頼を全額返金し、Square が受け付けたら結び付いた注文を消して応答する。
+// 決済依頼を全額返金し、Square が受け付けたら結び付いた注文をキャンセルして応答する。
 func (h *SquareHandler) RefundCheckout(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -489,6 +490,7 @@ func (h *SquareHandler) RefundOrderKeepingOrder(c *gin.Context) {
 
 // refundOrder は注文に使った Square の決済を全部（個別会計では複数）、作った順に返金する。
 // 返金できない決済があればそこで止める（もう一度呼ぶと、受け付け済みの決済は頼み直さずに続きを返金する）。
+// 注文が無ければ 404、注文はあるが Square の決済が無ければ（現金の注文など）409。
 func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -508,7 +510,15 @@ func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 		return
 	}
 	if len(checkoutIDs) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": notFound})
+		err := h.db.WithContext(ctx).Select("id").First(&models.Order{}, "id = ?", id).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		case err != nil:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		default:
+			c.JSON(http.StatusConflict, gin.H{"error": notFound})
+		}
 		return
 	}
 	records := make([]*models.SquareCheckout, 0, len(checkoutIDs))

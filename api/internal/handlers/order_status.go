@@ -231,6 +231,10 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		if err != nil {
 			return err
 		}
+		// キャンセルした注文は作る画面に出さないので、準備完了・提供にもしない（古い画面から押されたとき）
+		if order.CancelledAt != nil {
+			return errOrderCancelled
+		}
 		before = order
 		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
 		// DB に保存される精度にそろえておくと、保存前後で時刻を比べられる
@@ -245,6 +249,9 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	case errors.Is(err, errOrderCupNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order cup not found"})
+		return
+	case errors.Is(err, errOrderCancelled):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	case err != nil:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

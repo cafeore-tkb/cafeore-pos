@@ -74,6 +74,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 		api.PATCH("/orders/:id/cups/:cupId/ready", order.MarkOrderCupReady)
 		api.PATCH("/orders/:id/cups/:cupId/served", order.MarkOrderCupServed)
 		api.POST("/orders/:id/recall", order.RecallOrder)
+		api.POST("/orders/:id/cancel", order.CancelOrder)
+		api.POST("/orders/:id/cash-refund", order.RefundOrderCash)
 
 		api.GET("/orders/:id/comments", comment.GetOrderComments)
 		api.POST("/orders/:id/comments", comment.CreateComment)

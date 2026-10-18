@@ -4,7 +4,9 @@ import { formatYen } from "~/lib/yen";
 import {
   type CashierDraft,
   type CashierPayment,
+  canAssignByDigit,
   canInputCoupon,
+  isAssigningByDigits,
 } from "../../functional/cashierDraft";
 import type { SquarePaymentSelectStatus } from "../../functional/useSquarePaymentSelect";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
@@ -13,10 +15,6 @@ type props = {
   draft: CashierDraft;
   /** 小計。会計の段階は今払う額、入れる段階は注文の残り */
   due: number;
-  /** 個別小計の会計中（小計に「個別」の札を付ける） */
-  itemsSubtotal: boolean;
-  /** 小計分割中なら、あとに回した額（この小計の残り − 今払う額）。分けていなければ null */
-  deferred: number | null;
   /** 確定ボタンに添える説明（「分割 · この小計の残り ¥400」）。無ければ空 */
   note: string;
   /** 出す Square の決済手段。Square を使わないレジでは空 */
@@ -34,6 +32,7 @@ type props = {
   onCash: () => void;
   /** Square の決済手段を押した。押すとすぐ小計の額で端末に送る */
   onSquare: (paymentType: SquarePaymentType) => void;
+  /** テンキーの数字。行を選んでいれば指名、でなければ引換券番号・受取金額（inputPadDigits） */
   onDigits: (digits: string) => void;
   onDeleteDigit: () => void;
   onClearDigits: () => void;
@@ -41,7 +40,6 @@ type props = {
   onExactReceived: () => void;
   onSubmitCash: () => void;
   onOpenSplit: () => void;
-  onCancelPart: () => void;
 };
 
 const QUICK_AMOUNTS = [
@@ -54,25 +52,27 @@ const QUICK_AMOUNTS = [
 type PadKey = {
   label: string;
   column: string;
-  row: string;
+  /** テンキーの何行目か（受取金額に足すボタンの行は数えない）と、何行にまたがるか */
+  row: number;
+  rowSpan?: number;
   kind: "digit" | "back" | "clear" | "exact";
 };
 
 const PAD_KEYS: PadKey[] = [
-  { label: "1", column: "1", row: "1", kind: "digit" },
-  { label: "2", column: "2", row: "1", kind: "digit" },
-  { label: "3", column: "3", row: "1", kind: "digit" },
-  { label: "⌫", column: "4", row: "1", kind: "back" },
-  { label: "4", column: "1", row: "2", kind: "digit" },
-  { label: "5", column: "2", row: "2", kind: "digit" },
-  { label: "6", column: "3", row: "2", kind: "digit" },
-  { label: "C", column: "4", row: "2", kind: "clear" },
-  { label: "7", column: "1", row: "3", kind: "digit" },
-  { label: "8", column: "2", row: "3", kind: "digit" },
-  { label: "9", column: "3", row: "3", kind: "digit" },
-  { label: "ちょうど", column: "4", row: "3 / span 2", kind: "exact" },
-  { label: "0", column: "1 / span 2", row: "4", kind: "digit" },
-  { label: "00", column: "3", row: "4", kind: "digit" },
+  { label: "1", column: "1", row: 1, kind: "digit" },
+  { label: "2", column: "2", row: 1, kind: "digit" },
+  { label: "3", column: "3", row: 1, kind: "digit" },
+  { label: "⌫", column: "4", row: 1, kind: "back" },
+  { label: "4", column: "1", row: 2, kind: "digit" },
+  { label: "5", column: "2", row: 2, kind: "digit" },
+  { label: "6", column: "3", row: 2, kind: "digit" },
+  { label: "C", column: "4", row: 2, kind: "clear" },
+  { label: "7", column: "1", row: 3, kind: "digit" },
+  { label: "8", column: "2", row: 3, kind: "digit" },
+  { label: "9", column: "3", row: 3, kind: "digit" },
+  { label: "ちょうど", column: "4", row: 3, rowSpan: 2, kind: "exact" },
+  { label: "0", column: "1 / span 2", row: 4, kind: "digit" },
+  { label: "00", column: "3", row: 4, kind: "digit" },
 ];
 
 /** 決済手段のボタンの色。現金は橙、Square は theme-primary */
@@ -85,17 +85,17 @@ const methodColor = (payment: CashierPayment) =>
       };
 
 /**
- * レジの右の列。小計、決済手段、受取金額（テンキー）、お釣り、小計分割・確定
+ * レジの右の列。決済手段、受取金額（テンキー）、小計分割・確定
  *
- * テンキーは、入れる段階では引換券番号、会計の段階では受取金額に打つ。
+ * 小計は入れる段階だけここに出す。会計の段階では、小計・受取金額・お釣りは左の列（PayBreakdown）に出す。
+ * テンキーは、入れる段階では引換券番号（行を選んでいればキーボードの数字と同じく指名）、
+ * 会計の段階では受取金額に打つ。受取金額に足すボタン（+1千 など）はテンキーの上に、1 行の半分の高さで並べる。
  * Square の決済手段は押すとすぐ小計の額で端末に送る（↑↓ で選んで Enter でも送る）。
  * Square 端末でお客さんが決済手段を選べる間は、受取金額の欄の右にそう出す。
  */
 export const PayPanel = ({
   draft,
   due,
-  itemsSubtotal,
-  deferred,
   note,
   squarePaymentTypes,
   terminalSelect,
@@ -112,7 +112,6 @@ export const PayPanel = ({
   onExactReceived,
   onSubmitCash,
   onOpenSplit,
-  onCancelPart,
 }: props) => {
   const paying = draft.step === "pay";
   const cash = draft.payment === "cash";
@@ -121,7 +120,20 @@ export const PayPanel = ({
   const cashReady =
     paying && canSubmit && cash && change !== null && change >= 0 && due >= 0;
   const squareReady = paying && !cash && canStartSquare;
-  const padEnabled = paying ? cash : canInputCoupon(draft);
+  // 行を選んでいる間の数字は指名（1〜6・0）。⌫・C はこれまでどおり引換券番号に使う
+  const assigning = isAssigningByDigits(draft);
+  const keyEnabled = (key: PadKey) => {
+    if (paying) return cash;
+    // ちょうど は受取金額にだけ使う
+    if (key.kind === "exact") return false;
+    if (assigning && key.kind === "digit") {
+      return canAssignByDigit(draft, key.label);
+    }
+    return canInputCoupon(draft);
+  };
+  const padEnabled = PAD_KEYS.some(keyEnabled);
+  // 受取金額に足すボタンの行（現金のとき）があれば、テンキーはその下の行から
+  const padRowOffset = cash ? 1 : 0;
   const selected = methodColor(draft.payment);
   const methods: CashierPayment[] = ["cash", ...squarePaymentTypes];
   const squareLabel = cash
@@ -146,47 +158,25 @@ export const PayPanel = ({
 
   return (
     <div className="flex min-h-0 flex-col border-stone-200 border-l px-3.75 py-3">
+      {/* 入れる段階の小計（注文の残り）。会計の段階では左の列に出す */}
+      {!paying && (
+        <div className="flex flex-none flex-col">
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="font-extrabold text-sm">小計</span>
+            <span className="flex-1" />
+            <span className="font-extrabold text-[27px] tabular-nums leading-[1.15] tracking-[-.01em]">
+              {formatYen(due)}
+            </span>
+          </div>
+          <div className="mt-2.25 mb-2.5 h-px bg-stone-200" />
+        </div>
+      )}
       <div
         className={cn(
           "flex flex-none flex-col transition-opacity duration-200",
           !paying && "pointer-events-none opacity-38",
         )}
       >
-        {deferred !== null && (
-          <div className="flex h-5.5 items-center gap-2 font-bold text-prepay text-xs">
-            <span>小計分割</span>
-            <button
-              type="button"
-              onClick={onCancelPart}
-              className="h-5 rounded-[5px] border border-stone-200 bg-white px-1.75 font-bold text-[10.5px] text-stone-600"
-            >
-              やめる
-            </button>
-            <span className="flex-1" />
-            <span className="font-extrabold text-[13px] tabular-nums">
-              {formatYen(-deferred)}
-            </span>
-          </div>
-        )}
-        <div className="mt-1 flex items-baseline gap-1.5">
-          <span className="font-extrabold text-sm">小計</span>
-          {paying && itemsSubtotal && (
-            <span className="self-center rounded-[5px] bg-prepay px-1.75 py-px font-extrabold text-[11px] text-white">
-              個別
-            </span>
-          )}
-          {deferred !== null && (
-            <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
-              分割
-            </span>
-          )}
-          <span className="flex-1" />
-          <span className="font-extrabold text-[27px] tabular-nums leading-[1.15] tracking-[-.01em]">
-            {formatYen(due)}
-          </span>
-        </div>
-        <div className="mt-2.25 mb-2.5 h-px bg-stone-200" />
-
         <div
           className="grid gap-2"
           style={{
@@ -267,34 +257,36 @@ export const PayPanel = ({
             {(cash ? (received ?? 0) : due).toLocaleString("ja-JP")}
           </span>
         </div>
-
-        {cash && (
-          <div className="mt-2 grid grid-cols-4 gap-1.75">
-            {QUICK_AMOUNTS.map(({ label, amount }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={() => onAddReceived(amount)}
-                disabled={!paying}
-                className="h-9 rounded-lg border border-stone-200 bg-white p-0 font-bold text-stone-600 text-xs active:bg-stone-100"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
       <div
         className={cn(
-          "mt-2 grid min-h-0 flex-1 grid-cols-4 grid-rows-[repeat(4,minmax(40px,1fr))] gap-3 transition-opacity duration-200",
+          "mt-2 grid min-h-0 flex-1 grid-cols-4 gap-3",
+          // 受取金額に足すボタンの行は、テンキーの 1 行の半分の高さ
+          cash
+            ? "grid-rows-[minmax(36px,.5fr)_repeat(4,minmax(40px,1fr))]"
+            : "grid-rows-[repeat(4,minmax(40px,1fr))]",
           !padEnabled && "pointer-events-none",
-          !padEnabled && (paying ? "opacity-30" : "opacity-38"),
         )}
       >
+        {cash &&
+          QUICK_AMOUNTS.map(({ label, amount }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onAddReceived(amount)}
+              disabled={!paying}
+              className={cn(
+                "rounded-lg border border-stone-200 bg-white p-0 font-bold text-sm text-stone-600 transition-opacity duration-200 active:bg-stone-100",
+                !paying && "opacity-38",
+              )}
+              style={{ gridRow: 1 }}
+            >
+              {label}
+            </button>
+          ))}
         {PAD_KEYS.map((key) => {
-          // ちょうど は受取金額にだけ使う
-          const off = !padEnabled || (key.kind === "exact" && !paying);
+          const off = !keyEnabled(key);
           return (
             <button
               key={key.label}
@@ -307,8 +299,12 @@ export const PayPanel = ({
                 else onDigits(key.label);
               }}
               className={cn(
-                "flex items-center justify-center rounded-lg border border-stone-200 p-0 tabular-nums",
-                padEnabled && "disabled:opacity-35",
+                "flex items-center justify-center rounded-lg border border-stone-200 p-0 tabular-nums transition-opacity duration-200",
+                padEnabled
+                  ? "disabled:opacity-35"
+                  : paying
+                    ? "opacity-30"
+                    : "opacity-38",
                 // 押せるキーだけ浮かせ、押すと沈める
                 !off &&
                   "shadow-[0_2px_0_var(--color-stone-300),0_3px_6px_rgba(28,25,23,.1)] active:translate-y-0.5 active:shadow-none",
@@ -320,7 +316,10 @@ export const PayPanel = ({
                 key.kind === "exact" &&
                   "bg-white font-extrabold text-base text-stone-900 active:bg-stone-100",
               )}
-              style={{ gridColumn: key.column, gridRow: key.row }}
+              style={{
+                gridColumn: key.column,
+                gridRow: `${key.row + padRowOffset} / span ${key.rowSpan ?? 1}`,
+              }}
             >
               {key.kind === "back" ? <BackspaceIcon /> : key.label}
             </button>
@@ -334,36 +333,17 @@ export const PayPanel = ({
           !paying && "pointer-events-none opacity-38",
         )}
       >
-        <div className="mt-2.5 flex h-6.5 items-center justify-between">
-          <span className="font-medium text-stone-500 text-xs">お釣り</span>
-          <span
-            className={cn(
-              "font-extrabold tabular-nums",
-              cash && change !== null && change >= 0
-                ? "text-[22px] text-stone-900"
-                : "text-lg",
-              cash && change !== null && change < 0 && "text-red-700",
-              (!cash || change === null) && "text-stone-300",
-            )}
-          >
-            {!cash || change === null
-              ? "—"
-              : change < 0
-                ? `不足 ${formatYen(-change)}`
-                : formatYen(change)}
-          </span>
-        </div>
         {paying && !canSubmit && (
-          <p className="font-bold text-red-700 text-xs">
+          <p className="mt-2 font-bold text-red-700 text-xs">
             オフラインです。左上の No. を押して番号を指定すると送信できます
           </p>
         )}
-        <div className="mt-2 grid grid-cols-[104px_minmax(0,1fr)] gap-2">
+        <div className="mt-3 grid grid-cols-[104px_minmax(0,1fr)] gap-2">
           <button
             type="button"
             onClick={onOpenSplit}
             disabled={!canSplit}
-            className="flex h-14 flex-col items-center justify-center rounded-[10px] border border-prepay-line bg-white p-0 font-extrabold text-prepay text-xs leading-[1.35] hover:bg-prepay-tint disabled:opacity-45 disabled:hover:bg-white"
+            className="flex h-20 flex-col items-center justify-center rounded-[10px] border border-prepay-line bg-white p-0 font-extrabold text-prepay text-xs leading-[1.35] hover:bg-prepay-tint disabled:opacity-45 disabled:hover:bg-white"
           >
             <span>小計分割・</span>
             <span>一部金額先払い</span>
@@ -376,7 +356,7 @@ export const PayPanel = ({
               else onSquare(draft.payment as SquarePaymentType);
             }}
             disabled={!primary.ready}
-            className="flex h-14 items-center justify-center gap-2.5 rounded-[10px] px-3 text-white transition-colors duration-150 disabled:cursor-default"
+            className="flex h-20 items-center justify-center gap-2.5 rounded-[10px] px-3 text-white transition-colors duration-150 disabled:cursor-default"
             style={{
               backgroundColor: primary.ready
                 ? primary.background

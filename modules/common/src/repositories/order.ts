@@ -95,6 +95,30 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
+    cancel: async (id: string): Promise<WithId<OrderEntity>> => {
+      const { data, error, response } = await apiClient.POST(
+        "/api/orders/{id}/cancel",
+        { params: { path: { id } } },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to cancel order");
+      }
+      return responseToOrderEntity(data);
+    },
+
+    refundCash: async (id: string): Promise<WithId<OrderEntity>> => {
+      const { data, error, response } = await apiClient.POST(
+        "/api/orders/{id}/cash-refund",
+        { params: { path: { id } } },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to record cash refund");
+      }
+      return responseToOrderEntity(data);
+    },
+
     recall: async (id: string): Promise<void> => {
       const { error, response } = await apiClient.POST(
         "/api/orders/{id}/recall",

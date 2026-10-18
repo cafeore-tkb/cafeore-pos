@@ -55,7 +55,8 @@ import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function Casher() {
   const items = useMenuMaster().items;
-  const { orders } = useOrdersWSContext();
+  // キャンセルした注文の番号も使ったままにする
+  const { allOrders: orders } = useOrdersWSContext();
   const curOrderId =
     orders?.reduce((acc, cur) => Math.max(acc, cur.orderId), 0) ?? 0;
   const nextOrderId = curOrderId + 1;
