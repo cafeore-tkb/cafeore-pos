@@ -1,4 +1,4 @@
-import { type SquarePaymentType, jstClock, jstDate } from "@cafeore/common";
+import { jstClock, jstDate } from "@cafeore/common";
 import {
   Activity,
   Banknote,
@@ -31,7 +31,6 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 import { OrderList } from "./OrderList";
 import { DurationCharts, minutes } from "./operations/DurationCharts";
 import { DurationTrend } from "./operations/DurationTrend";
@@ -67,6 +66,12 @@ const SECTIONS = [
 
 type DashboardSection = (typeof SECTIONS)[number]["id"];
 const yen = (value: number) => `¥${value.toLocaleString("ja-JP")}`;
+const squarePaymentLabel = (type: string) => {
+  if (type === "CARD_PRESENT") return "カード";
+  if (type === "QR_CODE") return "QRコード";
+  if (type === "unknown") return "決済種別の記録なし";
+  return "その他のSquare決済";
+};
 
 export function DashboardWorkspace() {
   const {
@@ -159,11 +164,7 @@ export function DashboardWorkspace() {
       squareDetails: [...squareByType.entries()]
         .map(([type, amount]) => ({
           type,
-          label:
-            type === "unknown"
-              ? "決済種別の記録なし"
-              : (squarePaymentTypeLabel[type as SquarePaymentType] ??
-                "その他のSquare決済"),
+          label: squarePaymentLabel(type),
           amount,
         }))
         .sort((a, b) => b.amount - a.amount),
