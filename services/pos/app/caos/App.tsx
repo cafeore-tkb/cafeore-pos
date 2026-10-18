@@ -7,6 +7,8 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { FloatingWindowScope } from "./components/FloatingWindows";
+import { OperationNotices } from "./components/OperationNotices";
 import { OrderChatPanel } from "./components/OrderChatPanel";
 import {
   CommentDock,
@@ -41,7 +43,7 @@ import { useViewedComments } from "./hooks/useViewedComments";
 import { orderNoLabel } from "./logic/cards";
 
 // CaOS（ドリップ管制）の画面。盤面（cafeore-pos の注文のカップ・実データテストの練習の盤面）・時刻・操作の書き込みは useCaosSession、選んでいるものは useBoardSelection、
-// 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
+// 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（選択中と非表示の未完了パネルを保持する）。
 export default function App() {
   const session = useCaosSession();
   const { lastDeletedOrder } = useOrdersWSContext();
@@ -229,56 +231,105 @@ export default function App() {
             </OpenCommentsContext.Provider>
           </FreshCommentsContext.Provider>
         </main>
-
-        {panel?.kind === "auxiliary" && (
-          <AuxiliarySheet tab={panel.tab} onClose={closeAuxiliary}>
-            <AuxiliaryContent
-              tab={panel.tab}
-              beans={session.beans}
-              lanes={lanes}
-              looks={looks}
-              typeNames={typeNames}
-              liveAnalytics={!session.simulating}
-              {...testPlay.analytics}
-            />
-          </AuxiliarySheet>
-        )}
       </div>
 
-      {selection.scheduled && (
-        <TicketDetailPanel
-          ticket={selection.scheduled.card}
-          look={looks.get(selection.scheduled.card.key)}
-          lane={lanes[selection.scheduled.bayId - 1]}
-          onClose={selection.closeTicket}
-          onMoveTicket={selection.move}
-          onReturnToUnassigned={selection.returnToUnassigned}
-          onSplitCup={selection.split}
-          onCancelEmergency={selection.cancelEmergency}
-        />
-      )}
+      {selection.panels.map((saved) => {
+        const id = selection.panelKey(saved);
+        const closeSaved = () => selection.closePanel(saved);
+        const active = panel !== null && selection.panelKey(panel) === id;
+        const ticket =
+          saved.kind === "detail" || saved.kind === "rebrew"
+            ? session.cards.find((card) => card.key === saved.key)
+            : undefined;
+        return (
+          <FloatingWindowScope
+            key={id}
+            value={{
+              active,
+              activate: () => selection.activatePanel(saved),
+              suspend: () => selection.suspendPanel(saved),
+            }}
+          >
+            {saved.kind === "auxiliary" && (
+              <AuxiliarySheet
+                tab={saved.tab}
+                onClose={() => {
+                  if (active) closeAuxiliary();
+                  else closeSaved();
+                }}
+              >
+                <AuxiliaryContent
+                  tab={saved.tab}
+                  beans={session.beans}
+                  lanes={lanes}
+                  looks={looks}
+                  typeNames={typeNames}
+                  liveAnalytics={!session.simulating}
+                  {...testPlay.analytics}
+                />
+              </AuxiliarySheet>
+            )}
+            {saved.kind === "detail" &&
+              ticket?.status === "queued" &&
+              ticket.dripper && (
+                <TicketDetailPanel
+                  ticket={ticket}
+                  look={looks.get(ticket.key)}
+                  lane={lanes[ticket.dripper - 1]}
+                  onClose={closeSaved}
+                  onMoveTicket={selection.move}
+                  onReturnToUnassigned={selection.returnToUnassigned}
+                  onSplitCup={selection.split}
+                  onCancelEmergency={selection.cancelEmergency}
+                />
+              )}
+            {saved.kind === "rebrew" && (saved.key === null || ticket) && (
+              <RebrewPanel
+                card={ticket}
+                look={ticket && looks.get(ticket.key)}
+                lane={ticket?.dripper ? lanes[ticket.dripper - 1] : undefined}
+                orders={session.emergency.orders}
+                practice={session.simulating}
+                onClose={closeSaved}
+                onAdd={session.emergency.add}
+                move={{
+                  onMoveTicket: selection.move,
+                  onReturnToUnassigned: selection.returnToUnassigned,
+                }}
+              />
+            )}
+            {saved.kind === "lane" && (
+              <LanePanel
+                lane={lanes[saved.bayId - 1]}
+                onClose={closeSaved}
+                onMoveQueue={session.moveQueue}
+              />
+            )}
+            {saved.kind === "assign" && (
+              <AssignPanel
+                bayId={saved.bayId}
+                lanes={lanes}
+                unassignedOrders={session.unassigned}
+                looks={looks}
+                onClose={closeSaved}
+                onAssign={selection.assign}
+              />
+            )}
+            {saved.kind === "search" && (
+              <OrderSearchPanel
+                digits={saved.digits}
+                found={search.found}
+                pending={search.pending}
+                looks={looks}
+                onKey={search.press}
+                onClose={search.finish}
+              />
+            )}
+          </FloatingWindowScope>
+        );
+      })}
 
-      {selection.rebrew && (
-        <RebrewPanel
-          key={selection.rebrew.card?.key ?? "byNumber"}
-          card={selection.rebrew.card}
-          look={selection.rebrew.card && looks.get(selection.rebrew.card.key)}
-          lane={
-            selection.rebrew.card?.dripper
-              ? lanes[selection.rebrew.card.dripper - 1]
-              : undefined
-          }
-          orders={session.emergency.orders}
-          practice={session.simulating}
-          onClose={selection.closeRebrew}
-          onAdd={session.emergency.add}
-          move={{
-            onMoveTicket: selection.move,
-            onReturnToUnassigned: selection.returnToUnassigned,
-          }}
-        />
-      )}
-
+      <OperationNotices />
       <CornerToasts
         toasts={session.cornerToasts}
         onDismiss={session.dismissToast}
@@ -286,8 +337,10 @@ export default function App() {
       />
 
       <CommentDock
+        key={session.simulating ? "practice" : "live"}
         viewing={controlViewMode === "a" ? viewed.viewing : undefined}
         onCloseViewing={viewed.close}
+        onRestoreViewing={viewed.open}
         notices={commentNotices.notices}
         onOpen={(comment) => {
           commentNotices.dismiss([comment], "open");
@@ -296,36 +349,6 @@ export default function App() {
         }}
         onDismiss={(comments) => commentNotices.dismiss(comments)}
       />
-
-      {selection.searchDigits !== null && (
-        <OrderSearchPanel
-          digits={selection.searchDigits}
-          found={search.found}
-          pending={search.pending}
-          looks={looks}
-          onKey={search.press}
-          onClose={search.finish}
-        />
-      )}
-
-      {panel?.kind === "lane" && (
-        <LanePanel
-          lane={lanes[panel.bayId - 1]}
-          onClose={selection.closeLane}
-          onMoveQueue={session.moveQueue}
-        />
-      )}
-
-      {panel?.kind === "assign" && (
-        <AssignPanel
-          bayId={panel.bayId}
-          lanes={lanes}
-          unassignedOrders={session.unassigned}
-          looks={looks}
-          onClose={selection.closeAssignSlot}
-          onAssign={selection.assign}
-        />
-      )}
 
       {testSetupOpen && (
         <TestPlaySetup

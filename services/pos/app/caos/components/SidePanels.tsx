@@ -35,6 +35,7 @@ import { AnalyticsView } from "./AnalyticsView";
 import { BeanQueueView } from "./BeanQueueView";
 import { LaneBadge } from "./BoardParts";
 import type { ControlViewProps } from "./ControlWorkspace";
+import { FloatingWindowScope, useFloatingWindow } from "./FloatingWindows";
 import {
   LaneAbility,
   LaneChangeButton,
@@ -52,25 +53,47 @@ export const SidePanel: React.FC<{
   footer?: React.ReactNode;
   children: React.ReactNode;
 }> = ({ title, onClose, footer, children }) => {
-  const panelRef = useRef<HTMLElement>(null);
-  usePanelOutsidePress(panelRef, onClose);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const floating = useFloatingWindow(
+    typeof title === "string" ? title : "操作パネル",
+  );
+  usePanelOutsidePress(panelRef, floating.hide, !floating.hidden);
   return (
     <aside
-      ref={panelRef}
+      ref={(element) => {
+        panelRef.current = element;
+        floating.ref.current = element;
+      }}
+      data-popup-hidden={floating.hidden}
+      style={floating.style}
       className="fade-in-75 slide-in-from-right caos-side-panel fixed top-[56px] right-0 bottom-0 z-[150] flex w-(--caos-side-panel-width) animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
+        {floating.handle}
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
         <button
           type="button"
           onClick={onClose}
+          className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
+        >
+          終了
+        </button>
+        <button
+          type="button"
+          onClick={floating.hide}
           className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-full hover:bg-black/5"
           aria-label="閉じる"
         >
           <X className="h-5 w-5" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <FloatingWindowScope
+          value={{ active: !floating.hidden, activate: floating.restore }}
+        >
+          {children}
+        </FloatingWindowScope>
+      </div>
       {footer}
     </aside>
   );

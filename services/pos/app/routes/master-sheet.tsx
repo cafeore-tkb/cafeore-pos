@@ -1,5 +1,6 @@
 import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
+import { FloatingWindowsProvider } from "~/caos/components/FloatingWindows";
 import { useCaosActivityLog } from "~/caos/hooks/useCaosActivityLog";
 import "~/caos/caos.css";
 import { CaosLanesProvider } from "~/caos/hooks/useCaosLanes";
@@ -26,11 +27,13 @@ export default function MasterSheet() {
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
       {/* 「直前の操作」（盤面の操作と担当者の交代が同じものに覚える）と、ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}
-      <LastActionProvider>
-        <CaosLanesProvider editable>
-          <CaosApp />
-        </CaosLanesProvider>
-      </LastActionProvider>
+      <FloatingWindowsProvider>
+        <LastActionProvider>
+          <CaosLanesProvider editable>
+            <CaosApp />
+          </CaosLanesProvider>
+        </LastActionProvider>
+      </FloatingWindowsProvider>
     </div>
   );
 }

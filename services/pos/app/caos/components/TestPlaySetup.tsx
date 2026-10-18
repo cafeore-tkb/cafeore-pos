@@ -4,6 +4,7 @@ import type React from "react";
 import { useMemo, useRef, useState } from "react";
 import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import { ordersInPeriod, testPlaySlots } from "../logic/historical";
+import { useFloatingWindow } from "./FloatingWindows";
 
 // 実データテストの始め方。データ（手元の JSON を読み込む）・プレイ時間・開始時間帯を選ぶ。
 // 表示だけ。ファイルの読み込みと、練習に使う項目だけを写す変換は hooks/usePracticeData（@cafeore/common の readPracticeTexts）、
@@ -46,8 +47,9 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   const orders = dataset?.orders ?? [];
   const fileInput = useRef<HTMLInputElement>(null);
   // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ）
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  usePanelOutsidePress(dialogRef, onClose);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const floating = useFloatingWindow("実績でテストプレイ");
+  usePanelOutsidePress(dialogRef, floating.hide, !floating.hidden);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<30 | 60>(30);
   const slots = useMemo(
@@ -72,15 +74,29 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-[2px]"
       data-caos-backdrop
+      data-popup-hidden={floating.hidden}
+      style={floating.hidden ? { display: "none" } : undefined}
     >
       <dialog
-        ref={dialogRef}
+        ref={(element) => {
+          dialogRef.current = element;
+          floating.ref.current = element;
+        }}
+        style={floating.style}
         open
         aria-modal="true"
         aria-label="実績でテストプレイ"
         className="static w-[min(560px,92vw)] rounded-2xl border border-slate-300 bg-white p-5 text-slate-950 shadow-2xl"
       >
         <div className="flex items-start justify-between gap-3">
+          {floating.handle}
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
+          >
+            終了
+          </button>
           <div>
             <h2 className="flex items-center gap-2 font-black text-[20px] text-slate-950">
               <CalendarClock className="h-5 w-5 text-blue-700" />
@@ -92,7 +108,7 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={floating.hide}
             className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100"
             aria-label="閉じる"
           >

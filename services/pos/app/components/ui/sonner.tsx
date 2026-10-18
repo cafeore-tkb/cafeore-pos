@@ -1,15 +1,19 @@
 import { useTheme } from "next-themes";
+import { useLocation } from "react-router";
 import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
+  const managedByCaos = useLocation().pathname === "/master-sheet";
 
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      className={managedByCaos ? "hidden" : "toaster group"}
+      style={managedByCaos ? { display: "none" } : undefined}
+      duration={managedByCaos ? Number.POSITIVE_INFINITY : undefined}
       toastOptions={{
         classNames: {
           toast:

@@ -1,11 +1,10 @@
 import type { CaosCard, CaosLane } from "@cafeore/common";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { caosLog } from "../utils/log";
 import { useCaosStateLog } from "./useCaosStateLog";
 
-// 右上に出しておく秒。何もしなければ消える（確かめはやめる扱いで何も送らず、知らせは読んだ扱い）
-const SHOW_SEC = 8;
+// 未完了の確認は、非表示にしても解決・取消まで保持する。
 
 /**
  * 抽出中のカードを終えたあとに始めるもの。head は待機の先頭（カードの ✓）、none は何も始めない（カードの ✋）、
@@ -31,11 +30,10 @@ export type CornerToast =
   | { kind: "lateMerge"; card: CaosCard; into: CaosCard; elapsedSec: number }
   | { kind: "seniorOnly"; cards: CaosCard[]; lane: CaosLane };
 
-/** 出している確かめ・知らせ（id と、何もしなければ消えるまでの残りの秒つき。ops は知らせのもとになった、端末に残した盤面の操作の id） */
+/** 出している確かめ・知らせ（id と関連操作。ops は知らせのもとになった、端末に残した盤面の操作の id） */
 export type OpenCornerToast = CornerToast & {
   id: string;
   ops: string[];
-  secondsLeft: number;
 };
 
 // 同じものは 1 つ（同じドリッパーの「次へ」・同じカードの統合・同じカードを置いたのをもう一度すれば置き換える）
@@ -46,18 +44,46 @@ const toastId = (toast: CornerToast) => {
 };
 
 // 右上に出す確かめと知らせ。盤面の操作を止めないので、続けてほかのものを出せば種類によらず 1 つの列に並べる。新しいものが先。
-// nowMs は実時間の今（1 秒ごとに変わるので、残りの秒が数え下がる）。SHOW_SEC 秒たったものは出さない。
-export const useCornerToasts = (nowMs: number) => {
+// 明示的な確認・取消、または元の操作の取り消しまで保持する。
+export const useCornerToasts = (
+  cards: readonly CaosCard[],
+  practice: boolean,
+) => {
   const [shown, setShown] = useState<
     (CornerToast & { id: string; ops: string[]; atMs: number })[]
   >([]);
-  const open = shown.flatMap(({ atMs, ...toast }): OpenCornerToast[] => {
-    const secondsLeft = Math.min(
-      SHOW_SEC,
-      Math.ceil(SHOW_SEC - (nowMs - atMs) / 1000),
+  const previousMode = useRef(practice);
+  useEffect(() => {
+    if (previousMode.current === practice) return;
+    previousMode.current = practice;
+    setShown([]);
+  }, [practice]);
+  const valid = (notice: CornerToast) =>
+    notice.kind !== "next" ||
+    cards.some(
+      (card) =>
+        card.key === notice.card.key &&
+        card.status === "brewing" &&
+        card.dripper === notice.bayId,
     );
-    return secondsLeft > 0 ? [{ ...toast, secondsLeft }] : [];
-  });
+  const open: OpenCornerToast[] = shown
+    .filter(valid)
+    .map(({ atMs: _atMs, ...notice }) => notice);
+  useEffect(() => {
+    setShown((old) => {
+      const next = old.filter(
+        (notice) =>
+          notice.kind !== "next" ||
+          cards.some(
+            (card) =>
+              card.key === notice.card.key &&
+              card.status === "brewing" &&
+              card.dripper === notice.bayId,
+          ),
+      );
+      return next.length === old.length ? old : next;
+    });
+  }, [cards]);
   useCaosStateLog("notice.active.changed", {
     notices: open.map(({ id, kind }) => ({ id, kind })),
   });
@@ -65,7 +91,7 @@ export const useCornerToasts = (nowMs: number) => {
     setShown((list) => list.filter((toast) => toast.id !== id));
 
   return {
-    /** 出している確かめ・知らせ（残りの秒つき） */
+    /** 出している確かめ・知らせ */
     open,
     /**
      * 確かめ・知らせを出す（同じものは置き換える。消えたものはここで捨てる）。ops は知らせのもとになった、端末に残した盤面の操作の id
@@ -77,7 +103,7 @@ export const useCornerToasts = (nowMs: number) => {
       const atMs = Date.now();
       setShown((list) => [
         { ...toast, id, ops, atMs },
-        ...list.filter((t) => t.id !== id && atMs - t.atMs < SHOW_SEC * 1000),
+        ...list.filter((t) => t.id !== id),
       ]);
     },
     /** 閉じて、出していたものを返す（もう消えていれば null。確かめを進めるとき） */

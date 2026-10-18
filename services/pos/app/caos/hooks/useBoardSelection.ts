@@ -1,15 +1,15 @@
 import type { CaosCard, CaosPlace } from "@cafeore/common";
-import { useEffect, useState } from "react";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
 import type { AuxiliaryTab } from "../components/SidePanels";
 import { orderLabel } from "../logic/cards";
 import { useCaosStateLog } from "./useCaosStateLog";
 
 /**
- * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
+ * 操作パネル。選択中の1つを表示し、ほかは入力を保って非表示にする。明示的な終了・取消で除く。
  * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
  */
-type OpenPanel =
+export type OpenPanel =
   | { kind: "detail"; key: string }
   | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
@@ -17,6 +17,15 @@ type OpenPanel =
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | { kind: "search"; digits: string }
   | null;
+
+const panelKey = (item: NonNullable<OpenPanel>) =>
+  item.kind === "detail" || item.kind === "rebrew"
+    ? `${item.kind}:${item.key}`
+    : item.kind === "lane" || item.kind === "assign"
+      ? `${item.kind}:${item.bayId}`
+      : item.kind === "auxiliary"
+        ? `${item.kind}:${item.tab}`
+        : item.kind;
 
 // 画面で選んでいるもの（注文・開いているパネル）と、選んだものへの操作。
 // パネルはカードのキーだけを持ち、カードは毎回いまの盤面から読む（開いているあいだに始まった・終わったカードを古いまま扱わない）。
@@ -33,7 +42,20 @@ export const useBoardSelection = (
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<OpenPanel>(null);
+  const [panel, writePanel] = useState<OpenPanel>(null);
+  const [panels, setPanels] = useState<NonNullable<OpenPanel>[]>([]);
+  const setPanel = useCallback(
+    (update: SetStateAction<OpenPanel>) => {
+      const next = typeof update === "function" ? update(panel) : update;
+      writePanel(next);
+      setPanels((old) =>
+        next
+          ? [...old.filter((item) => panelKey(item) !== panelKey(next)), next]
+          : old.filter((item) => !panel || panelKey(item) !== panelKey(panel)),
+      );
+    },
+    [panel],
+  );
   useCaosStateLog("ui.selection.changed", { selectedOrderId, panel });
   // 閉じるのは、そのパネルが開いているときだけ（ほかのパネルに替わっていたら何もしない）
   const close = (kind: NonNullable<OpenPanel>["kind"]) =>
@@ -50,7 +72,7 @@ export const useBoardSelection = (
       : null;
   useEffect(() => {
     if (ticketKey && !scheduled) setPanel(null);
-  }, [ticketKey, scheduled]);
+  }, [ticketKey, scheduled, setPanel]);
   // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
@@ -65,7 +87,7 @@ export const useBoardSelection = (
       setPanel(null);
       setSelectedOrderId(null);
     }
-  }, [rebrewKey, rebrewing]);
+  }, [rebrewKey, rebrewing, setPanel]);
 
   const { emergency } = actions;
   // 動かしたら注文の選択を外す
@@ -80,6 +102,27 @@ export const useBoardSelection = (
     selectOrder: setSelectedOrderId,
     /** 開いているパネル */
     panel,
+    panels,
+    panelKey,
+    activatePanel: (item: NonNullable<OpenPanel>) => writePanel(item),
+    suspendPanel: (item: NonNullable<OpenPanel>) =>
+      writePanel((current) =>
+        current && panelKey(current) === panelKey(item) ? null : current,
+      ),
+    closePanel: (item: NonNullable<OpenPanel>) => {
+      const id = panelKey(item);
+      if (
+        panel &&
+        panelKey(panel) === id &&
+        (item.kind === "detail" ||
+          (item.kind === "rebrew" && item.key !== null))
+      )
+        setSelectedOrderId(null);
+      setPanels((old) => old.filter((saved) => panelKey(saved) !== id));
+      writePanel((current) =>
+        current && panelKey(current) === id ? null : current,
+      );
+    },
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
     /** 緊急の入力を開いていれば、開いたカード（ヘッダーから開いたなら card は無い） */
@@ -130,6 +173,7 @@ export const useBoardSelection = (
     clear: () => {
       setSelectedOrderId(null);
       setPanel(null);
+      setPanels([]);
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
     assign: placeCard,

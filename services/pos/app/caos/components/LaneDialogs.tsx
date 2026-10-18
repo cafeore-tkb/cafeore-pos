@@ -23,6 +23,7 @@ import {
   shiftFeedStatus,
   typedSeniorNote,
 } from "../logic/shiftFeed";
+import { useFloatingWindow } from "./FloatingWindows";
 import { LaneName, SeniorMark } from "./LaneParts";
 
 // ドリッパーの「交代」。sohosai-shift の予定（今の枠・次の枠・オペ練の今と次のラウンド）の、そのドリッパーの番目の人を候補に出す。
@@ -61,8 +62,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
   const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
   // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。名前を打っているあいだは入力を終えるだけ）
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  usePanelOutsidePress(dialogRef, onClose);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const floating = useFloatingWindow("担当者の交代");
+  usePanelOutsidePress(dialogRef, floating.hide, !floating.hidden);
   const ordinal = dripperLabel(lane.dripper);
   const candidates = useMemo(
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
@@ -75,15 +77,29 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/40 p-4"
       data-caos-backdrop
+      data-popup-hidden={floating.hidden}
+      style={floating.hidden ? { display: "none" } : undefined}
     >
       <dialog
-        ref={dialogRef}
+        ref={(element) => {
+          dialogRef.current = element;
+          floating.ref.current = element;
+        }}
+        style={floating.style}
         open
         aria-modal="true"
         aria-label={`${ordinal} の交代`}
         className="static flex max-h-[calc(100vh-32px)] w-[min(600px,100%)] flex-col overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl"
       >
         <header className="flex items-center justify-between border-slate-200 border-b bg-slate-50 px-5 py-3">
+          {floating.handle}
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
+          >
+            終了
+          </button>
           <div className="min-w-0">
             <h2 className="font-black text-[18px] text-slate-950">
               {ordinal} の交代
@@ -95,7 +111,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={floating.hide}
             className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full hover:bg-slate-200"
             aria-label="閉じる"
           >
@@ -269,8 +285,9 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
   const [input, setInput] = useState("");
   const [inputError, setInputError] = useState<string | null>(null);
   // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。合言葉を打っているあいだは入力を終えるだけ）
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  usePanelOutsidePress(dialogRef, onClose);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const floating = useFloatingWindow("シフトの合言葉");
+  usePanelOutsidePress(dialogRef, floating.hide, !floating.hidden);
 
   const status = shiftFeedStatus(shiftFeed);
 
@@ -278,22 +295,36 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
     <div
       className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/40 p-4"
       data-caos-backdrop
+      data-popup-hidden={floating.hidden}
+      style={floating.hidden ? { display: "none" } : undefined}
     >
       <dialog
-        ref={dialogRef}
+        ref={(element) => {
+          dialogRef.current = element;
+          floating.ref.current = element;
+        }}
+        style={floating.style}
         open
         aria-modal="true"
         aria-label="sohosai-shift の合言葉"
         className="static w-[min(520px,100%)] overflow-hidden rounded-2xl border-0 bg-white p-0 shadow-2xl"
       >
         <header className="flex items-center justify-between border-slate-200 border-b bg-slate-50 px-5 py-3">
+          {floating.handle}
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
+          >
+            終了
+          </button>
           <h2 className="flex items-center gap-1.5 font-black text-[18px] text-slate-950">
             <KeyRound className="h-5 w-5" />
             sohosai-shift の合言葉
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={floating.hide}
             className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full hover:bg-slate-200"
             aria-label="閉じる"
           >
