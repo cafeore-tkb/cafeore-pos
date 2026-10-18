@@ -7,7 +7,6 @@ import { OrderList } from "~/components/organisms/dashboard/OrderList";
 import { ServeTimeGraph } from "~/components/organisms/dashboard/ServeTimeGraph";
 import { OperationsDashboard } from "~/components/organisms/dashboard/operations/OperationsDashboard";
 import { Input } from "~/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { useFileUpload } from "~/lib/fileUpload";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -16,7 +15,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Dashboard() {
-  const { orders } = useOrdersWSContext();
+  const { orders, allOrders } = useOrdersWSContext();
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;
@@ -50,34 +49,69 @@ export default function Dashboard() {
           />
         </div>
       </div>
-      <Tabs defaultValue="operations">
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="operations">店舗運営・実績</TabsTrigger>
-          <TabsTrigger value="itemBar">種類別注文数</TabsTrigger>
-          <TabsTrigger value="serveTimeGraph">提供時間推移</TabsTrigger>
-          <TabsTrigger value="orderList">注文一覧</TabsTrigger>
-          <TabsTrigger value="masterState">オーダーストップ記録</TabsTrigger>
-        </TabsList>
-        <TabsContent value="operations" className="p-4">
-          <OperationsDashboard />
-        </TabsContent>
-        <TabsContent value="itemBar" className="p-2">
-          <div className="w-2/3">
-            <ItemBarChart orders={orders} pastOrders={pastOrders} />
-          </div>
-        </TabsContent>
-        <TabsContent value="serveTimeGraph" className="p-2">
-          <div className="w-2/3">
-            <ServeTimeGraph orders={orders} />
-          </div>
-        </TabsContent>
-        <TabsContent value="orderList" className="flex p-2">
-          <OrderList orders={orders} />
-        </TabsContent>
-        <TabsContent value="masterState" className="flex p-2">
-          <OrderStatusList />
-        </TabsContent>
-      </Tabs>
+      <div className="p-4">
+        <OperationsDashboard
+          additionalPanels={(period) => {
+            const cutoff = Math.min(period.end, period.now);
+            const selectedOrders = (allOrders ?? orders)?.filter(
+              (order) =>
+                order.createdAt.getTime() >= period.start &&
+                order.createdAt.getTime() < cutoff,
+            );
+            const selectedPastOrders = pastOrders?.filter(
+              (order) =>
+                order.createdAt.getTime() >= period.start &&
+                order.createdAt.getTime() < cutoff,
+            );
+            return [
+              {
+                id: "itemBar",
+                name: "種類別注文数",
+                content: (
+                  <>
+                    <p className="mb-3 text-sm">
+                      選択期間に受注した注文。読み込んだ過去データも同じ日時で絞り込みます。年をまたいだ時間帯比較は「2025年との比較」で確認できます。
+                    </p>
+                    <ItemBarChart
+                      orders={selectedOrders}
+                      pastOrders={selectedPastOrders}
+                    />
+                  </>
+                ),
+              },
+              {
+                id: "serveTimeGraph",
+                name: "提供時間推移",
+                content: (
+                  <>
+                    <p className="mb-3 text-sm">
+                      選択期間に受注した注文の、現在記録されている提供時間です。
+                    </p>
+                    <ServeTimeGraph orders={selectedOrders} />
+                  </>
+                ),
+              },
+              {
+                id: "orderList",
+                name: "注文一覧",
+                content: <OrderList orders={selectedOrders} />,
+              },
+              {
+                id: "masterState",
+                name: "オーダーストップ記録",
+                content: (
+                  <>
+                    <p className="mb-3 text-sm">
+                      選択期間に記録された停止・再開です。
+                    </p>
+                    <OrderStatusList start={period.start} end={cutoff} />
+                  </>
+                ),
+              },
+            ];
+          }}
+        />
+      </div>
     </div>
   );
 }
