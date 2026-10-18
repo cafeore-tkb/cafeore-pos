@@ -36,6 +36,7 @@ import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
 import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
+import { useServedCardAlert } from "./hooks/useServedCardAlert";
 import { useStampReply } from "./hooks/useStampReply";
 import type { TimelineCommand } from "./hooks/useTimelineScroll";
 import { useUnfinishedTab } from "./hooks/useUnfinishedTab";
@@ -87,6 +88,11 @@ export default function App() {
   });
   // 予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない）を音で知らせる
   useForgottenBrewAlert(lanes, session.nowMs);
+  useServedCardAlert(
+    session.cards,
+    session.emergency.orders !== null,
+    `${session.simulating ? "practice" : "live"}:${jstDate(session.nowMs)}`,
+  );
   // 閲覧中のコメント（Aはポップアップ、C・Dは右側のチャット）：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
   // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
   const viewed = useViewedComments({
