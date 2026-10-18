@@ -9,7 +9,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { caosLog, createCaosStateLog } from "../utils/log";
-import { enqueueCaosOp, useCaosOutboxEntries } from "./useCaosOutbox";
+import { enqueueCaosOps, useCaosOutboxEntries } from "./useCaosOutbox";
 import { usePosOrders } from "./usePosOrders";
 
 /**
@@ -74,7 +74,9 @@ export const useLiveBoard = ({
       toast.error(error);
       return false;
     }
-    enqueued.current = ops.map((op) => enqueueCaosOp(label, op));
+    const ids = enqueueCaosOps(label, ops);
+    if (!ids) return false;
+    enqueued.current = ids;
     return true;
   };
 

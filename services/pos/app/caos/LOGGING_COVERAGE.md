@@ -32,7 +32,7 @@
 | 豆残量確認の棚卸し・入荷 | `inventory.requested` / `succeeded` / `rejected` / `failed`。在庫対象・数量・結果 | `BeanQueueView` → `StockCard` |
 | 緊急シールの印刷・自動再送 | `printer.print.*` / `printer.resend.*`。入れ直しID/未印刷IDと、印刷成功/レジへの代理印刷の依頼（`relayed`）/未印刷キューへの追加 | `useCupEmergency` → `usePrinter` |
 | プリンターの手動再接続・再送・接続状態 | `printer.retry` / `printer.state.changed`（`relayedCount` はレジで印刷待ちの数） | `useCaosSession` |
-| 未送信操作の再送・破棄・拒否 | `outbox.retry` / `discard` / `send` / `response` / `error` / `rejected` | `useCaosOutbox` |
+| 未送信操作の再送・破棄・拒否 | `outbox.retry` / `discard` / `send` / `response` / `error` / `rejected`。端末への永続保存失敗は `outbox.storage-failed`（画面は変更せず拒否） | `useCaosOutbox` |
 | 管制盤A/C/D・補助タブ・テスト設定の開閉 | `ui.workspace.changed` / `ui.selection.changed` | `App` / `useBoardSelection` |
 | 注文選択・番号検索・カードメニュー・Dの選択 | `ui.selection.changed` / `search.result.changed` / `ui.card-menu.changed` / `ui.unassigned-menu.changed` / `ui.sheet-selection.changed` | 各選択フック |
 | ドラッグ・長押し | `gesture.drag.started` / `ended` / `cancelled`、`gesture.hold`。対象とドロップ先・取消を記録 | `useCardDrag` |

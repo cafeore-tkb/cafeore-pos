@@ -142,9 +142,10 @@ export const CaosLanesProvider = ({
     op: CaosOutboxOp,
   ) => {
     caosLog("lanes.operation.requested", { label, op });
-    setChanging(null);
     const warnings = laneChangeWarnings(boardCards(), changes, single);
     const id = enqueueCaosOp(label, op);
+    if (!id) return null;
+    setChanging(null);
     if (warnings.length > 0)
       toast.warning(`${label}：${warnings.join("。")}`, {
         description: "カードに警告の印を付けています",
@@ -176,7 +177,8 @@ export const CaosLanesProvider = ({
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);
-    rememberAction?.(label, [request([after], true, label, laneOp(after))]);
+    const id = request([after], true, label, laneOp(after));
+    if (id) rememberAction?.(label, [id]);
     setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
   };
 

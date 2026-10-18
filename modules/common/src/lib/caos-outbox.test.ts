@@ -365,6 +365,92 @@ describe("unit: caos-outbox 送る", () => {
     vi.useRealTimers();
   });
 
+  test("送信中だけロックし、反映待ち中は別タブに解放する。再送タイマーもロックを取る", async () => {
+    const initial = orders(cup("a"));
+    const { store, items } = memoryStore([entry(place(initial, "a", 1))]);
+    let locked = false;
+    const lock = vi.fn(async (run: () => Promise<void>) => {
+      expect(locked).toBe(false);
+      locked = true;
+      try {
+        await run();
+      } finally {
+        locked = false;
+      }
+    });
+    const send = vi.fn(async () => {
+      expect(locked).toBe(true);
+      return { error: "offline" };
+    });
+    const sender = createCaosOutbox({
+      store,
+      server: () => ({ orders: initial, lanes: null }),
+      send,
+      onRejected: vi.fn(),
+      withLock: lock,
+    });
+    await sender.kick();
+    expect(locked).toBe(false);
+    expect(items()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(lock).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+    sender.stop();
+  });
+
+  test("担当者の再受信待ちでも割当は直ちに送り、交代は担当者が届くまで待つ", async () => {
+    const initial = orders(cup("a"));
+    for (const op of [
+      place(initial, "a", 1),
+      { kind: "lane", dripper: 1, name: "A", senior: false } as const,
+    ]) {
+      const { store } = memoryStore([entry(op)]);
+      const state = { orders: initial, lanes: null, lanesReady: false };
+      const send = vi.fn(async () => ({}));
+      const sender = createCaosOutbox({
+        store,
+        server: () => state,
+        send,
+        onRejected: vi.fn(),
+      });
+      await sender.kick();
+      expect(send).toHaveBeenCalledTimes(op.kind === "cups" ? 1 : 0);
+      state.lanesReady = true;
+      await sender.kick();
+      expect(send).toHaveBeenCalledTimes(1);
+      sender.stop();
+    }
+  });
+
+  test("別タブ・再読込でも送信済み操作の反映待ちを復元し、古い盤面で消さない", async () => {
+    const initial = orders(cup("a"));
+    const { store, items } = memoryStore([entry(place(initial, "a", 1))]);
+    const first = createCaosOutbox({
+      store,
+      server: () => ({ orders: initial, lanes: null }),
+      send: async () => ({}),
+      onRejected: vi.fn(),
+    });
+    await first.kick();
+    first.stop();
+    const stored = items()[0];
+    const { id, ...json } = stored;
+    expect(parseCaosOutboxEntry(id, JSON.parse(JSON.stringify(json)))).toEqual(
+      stored,
+    );
+    const send = vi.fn(async () => ({}));
+    const reopened = createCaosOutbox({
+      store,
+      server: () => ({ orders: initial, lanes: null }),
+      send,
+      onRejected: vi.fn(),
+    });
+    await reopened.kick();
+    expect(items()).toHaveLength(1);
+    expect(send).not.toHaveBeenCalled();
+    reopened.stop();
+  });
+
   test("古い順に 1 つずつ送り、送れたらサーバーの盤面が届くまで次を送らない。次は書く前の値をサーバーの値に差し替えて送る", async () => {
     const server = orders(cup("a"), cup("b"));
     const first = entry(place(server, "a", 1));

@@ -14,9 +14,10 @@ import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 export const UnsentOps: React.FC<{
   entries: readonly CaosOutboxEntry[];
   sending: string | null;
+  failure?: string | null;
   onRetry: () => void;
   onDiscard: (ids: readonly string[]) => void;
-}> = ({ entries, sending, onRetry, onDiscard }) => {
+}> = ({ entries, sending, failure, onRetry, onDiscard }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const shown = open && entries.length > 0;
@@ -41,6 +42,11 @@ export const UnsentOps: React.FC<{
           もう一度送る
         </Button>
       </div>
+      {failure && (
+        <p role="alert" className="max-w-[340px] text-red-700 text-xs">
+          DB未保存：{failure}。操作は端末に残し、自動で再送します。
+        </p>
+      )}
       {shown && (
         <div className="w-[340px]">
           <ul className="max-h-[50vh] overflow-y-auto border-slate-200 border-t">

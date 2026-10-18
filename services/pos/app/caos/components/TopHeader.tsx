@@ -126,7 +126,8 @@ const StatusBadge: React.FC<{
   icon: LucideIcon;
   label: string;
   tone: Tone;
-}> = ({ icon: Icon, label, tone }) => (
+  text?: string;
+}> = ({ icon: Icon, label, tone, text }) => (
   <output
     aria-label={label}
     title={label}
@@ -134,6 +135,7 @@ const StatusBadge: React.FC<{
   >
     <Icon className="h-4 w-4" />
     <span className={`h-2 w-2 rounded-full ${TONES[tone].dot}`} />
+    {text && <span className="whitespace-nowrap">{text}</span>}
   </output>
 );
 
@@ -145,13 +147,15 @@ const POS_STATUS: Record<PosConnectionStatus, { label: string; tone: Tone }> = {
 };
 
 /** 注文の接続の札（閲覧だけの画面（ReadOnlyBoard）でも使う） */
-export const PosStatusBadge: React.FC<{ status: PosConnectionStatus }> = ({
-  status,
-}) => (
+export const PosStatusBadge: React.FC<{
+  status: PosConnectionStatus;
+  pendingCount?: number;
+}> = ({ status, pendingCount = 0 }) => (
   <StatusBadge
     icon={Database}
-    label={`cafeore-posの注文: ${POS_STATUS[status].label}`}
-    tone={POS_STATUS[status].tone}
+    label={`cafeore-posの注文: ${POS_STATUS[status].label}${pendingCount ? `・DB保存待ち ${pendingCount}件` : ""}`}
+    tone={pendingCount ? "waiting" : POS_STATUS[status].tone}
+    text={pendingCount ? `保存待ち ${pendingCount}` : undefined}
   />
 );
 
@@ -251,6 +255,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <UnsentOps
           entries={unsent.entries}
           sending={unsent.sending}
+          failure={unsent.failure}
           onRetry={unsent.retry}
           onDiscard={unsent.discard}
         />
@@ -367,7 +372,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <LaneHeaderStatus />
         {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
         <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
-          <PosStatusBadge status={posStatus} />
+          <PosStatusBadge
+            status={posStatus}
+            pendingCount={unsent.pendingCount}
+          />
           <StatusBadge
             icon={Printer}
             label={`ラベルプリンター: ${PRINTER_STATUS[labelPrinter.status].label}`}

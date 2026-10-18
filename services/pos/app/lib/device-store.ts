@@ -49,25 +49,45 @@ export const createDeviceStore = <T extends { id: string; at: number }>(
     return items;
   };
 
+  const readItems = () =>
+    [
+      ...new Map(
+        [...stored(), ...memory.values()].map((item) => [item.id, item]),
+      ).values(),
+    ].sort((a, b) => a.at - b.at);
+
+  // 業務操作は、再読込で失うメモリへの退避を成功扱いにしない。
+  const putPersisted = (item: T) => {
+    const { id, ...value } = item;
+    localStorage.setItem(prefix + id, JSON.stringify(value));
+    memory.delete(id);
+    changed();
+  };
+
   return {
+    /** 永続保存できなければ例外。以前の保存値は残す。 */
+    putPersisted,
+    /** ロック取得後、ほかのタブが最後に保存したキューを読み直す。 */
+    reload: () => {
+      const next = readItems();
+      if (JSON.stringify(cache) === JSON.stringify(next)) return;
+      cache = next;
+      for (const listener of listeners) listener();
+    },
     /** 残っているもの（古い順） */
     read: () => {
       watch();
-      cache ??= [...stored(), ...memory.values()].sort((a, b) => a.at - b.at);
+      cache ??= readItems();
       return cache;
     },
     /** 置く（同じ id なら置き換える） */
     put: (item: T) => {
-      const { id, ...value } = item;
       try {
-        localStorage.setItem(prefix + id, JSON.stringify(value));
-        memory.delete(id);
+        putPersisted(item);
+        return;
       } catch {
-        // 前に localStorage に置いた同じ id は消し、メモリのものだけにする
-        memory.set(id, item);
-        try {
-          localStorage.removeItem(prefix + id);
-        } catch {}
+        // 更新前の保存値を消さない。再読込時には、その値から再送できる。
+        memory.set(item.id, item);
       }
       changed();
     },
@@ -90,7 +110,23 @@ export const createDeviceStore = <T extends { id: string; at: number }>(
      * run のあいだ、同じ端末のほかのタブには同じ run をさせない（同じものを 2 回送らないように）。
      * Web Locks が無いブラウザでは、そのまま走らせる
      */
-    withLock: <R>(run: () => Promise<R>) =>
-      navigator.locks ? navigator.locks.request(prefix, run) : run(),
+    withLock: async <R>(
+      run: () => Promise<R>,
+      lockName = prefix,
+    ): Promise<R> => {
+      if (!navigator.locks) return run();
+      let started = false;
+      try {
+        return await navigator.locks.request(lockName, async () => {
+          started = true;
+          return await run();
+        });
+      } catch (error) {
+        // APIが存在しても、ブラウザの設定等でロックを取得できないことがある。
+        // 操作は送る。競合はAPIのbefore値とトランザクションで検出する。
+        if (started) throw error;
+        return run();
+      }
+    },
   };
 };
