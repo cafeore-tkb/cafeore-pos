@@ -435,7 +435,8 @@ const prepareCaosOutboxOp = (
       // （ほかの端末が先に進めた列で、前の抽出の終わりまでずれた・端末の時計が進んでいる）なら、捨てずに、始めた時刻のその秒あと
       // （時計の差に 1 秒みておく）に押したことにして、その時刻まで待って送る
       const { brewing } = caosLane(buildCaosCards(server.orders), op.dripper);
-      if (caosCardServed(brewing)) return { request: op };
+      if (brewing?.dripId === op.dripId && caosCardServed(brewing))
+        return { request: op };
       const earliest =
         brewing?.dripId === op.dripId && brewing.startedAt
           ? brewing.startedAt.getTime() + (CAOS_NEXT_COOLDOWN_SEC + 1) * 1000
