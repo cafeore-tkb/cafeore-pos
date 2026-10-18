@@ -40,6 +40,7 @@ const SM = {
   pad: "px-1 py-1",
   no: "text-[16px]",
   cups: "px-0.5 text-[14px]",
+  cupCount: "px-0.5 text-[18px]",
   meta: "text-[12px]",
   item: "text-[14px]",
   emergencyBelow: true,
@@ -51,6 +52,7 @@ const SIZES = {
   lane: {
     ...SM,
     no: "text-[20px]",
+    cupCount: "px-0.5 text-[20px]",
     item: "text-[16px]",
     emergencyBelow: false,
   },
@@ -59,6 +61,7 @@ const SIZES = {
     pad: "px-2.5 py-1.5",
     no: "text-[24px]",
     cups: "px-1.5 text-[20px]",
+    cupCount: "px-1.5 text-[26px]",
     meta: "text-[15px]",
     emergencyBelow: false,
     item: "text-[16px]",
@@ -68,6 +71,7 @@ const SIZES = {
     pad: "px-2 py-1",
     no: "text-[22px]",
     cups: "px-1.5 text-[18px]",
+    cupCount: "px-1.5 text-[24px]",
     meta: "text-[13px]",
     emergencyBelow: false,
     item: "text-[16px]",
@@ -77,6 +81,7 @@ const SIZES = {
     pad: "p-4",
     no: "text-[30px]",
     cups: "px-2 text-[24px]",
+    cupCount: "px-2 text-[30px]",
     meta: "text-[15px]",
     emergencyBelow: false,
     item: "text-[20px]",
@@ -248,7 +253,7 @@ export const OrderCard: React.FC<
       <DropMark side={dropSide} />
       {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
-        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "gap-0.5" : "gap-1"} leading-none ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
@@ -268,7 +273,7 @@ export const OrderCard: React.FC<
             </Check>
           )}
           <span
-            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length, done)}`}
+            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cupCount} ${cupsClass(card.cups.length, done)}`}
           >
             {card.cups.length}杯
           </span>
@@ -285,7 +290,7 @@ export const OrderCard: React.FC<
                 </div>
               )}
               {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右に並べ、番号は字の間を、段は札の間を詰める */}
-              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
+              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-0.5 gap-y-1 leading-none">
                 <span className="flex min-w-0 shrink-0 items-center gap-1">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
@@ -307,7 +312,7 @@ export const OrderCard: React.FC<
                 </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
-                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${numberSize}`}
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.cupCount}`}
                 >
                   {part.cups}杯
                 </span>

@@ -316,7 +316,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
                     size="sm"
                     selected={sharesOrder(card, selectedOrderId)}
                     nowMs={nowMs}
-                    className="h-[50px] w-[150px]"
+                    className="min-h-[60px] w-[150px]"
                   />
                 ))}
               </div>
