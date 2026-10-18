@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 // 呼び出し画面で鳴らす音（チャイム・読み上げ・読み上げのエコー）。マスタ設定の「呼び出し画面の CM」（/callscreen-cm）で切り替える。
+// 呼び出しの読み上げとドリップの案内は、提供画面のヘッダーでも切り替えられる。
 //
 // この端末の localStorage に覚える。読み込み直しても残り、同じ端末のほかのタブで開いている呼び出し画面にもすぐ効く。
 // 書けないときは、このタブの中だけで持つ。
@@ -8,8 +9,10 @@ import { useSyncExternalStore } from "react";
 export interface CallScreenSound {
   /** 呼び出しの前のチャイム */
   chime: boolean;
-  /** 読み上げ（呼び出し・ドリップの案内） */
-  voice: boolean;
+  /** 呼び出し・呼び出し催促の読み上げ。切ってもチャイムは chime のとおり鳴らす */
+  callVoice: boolean;
+  /** ドリップの案内の読み上げ */
+  dripVoice: boolean;
   /** 読み上げにかけるエコー */
   echo: boolean;
   /** エコーの強さ。返す声の大きさ（読み上げの声を 100 として、%） */
@@ -17,7 +20,7 @@ export interface CallScreenSound {
 }
 
 /** あり・なしで切り替えるもの */
-export type CallScreenSoundFlag = "chime" | "voice" | "echo";
+export type CallScreenSoundFlag = "chime" | "callVoice" | "dripVoice" | "echo";
 
 export const ECHO_LEVEL_MIN = 5;
 export const ECHO_LEVEL_MAX = 50;
@@ -27,25 +30,32 @@ const STORAGE_KEY = "cafeore:callscreen-sound";
 
 export const CALL_SCREEN_SOUND_DEFAULT: CallScreenSound = {
   chime: true,
-  voice: true,
+  callVoice: true,
+  dripVoice: true,
   echo: true,
   echoLevel: 10,
 };
 
-/** 覚えたものを読む。無い・形の違う項目は既定のまま。エコーの強さは ECHO_LEVEL_MIN〜MAX の、ECHO_LEVEL_STEP 刻みに丸める */
+/**
+ * 覚えたものを読む。無い・形の違う項目は既定のまま。エコーの強さは ECHO_LEVEL_MIN〜MAX の、ECHO_LEVEL_STEP 刻みに丸める。
+ * 呼び出しとドリップの案内を分ける前は 1 つの voice で両方を切り替えていたので、どちらも無ければ voice を使う
+ */
 export const parseCallScreenSound = (value: unknown): CallScreenSound => {
   const stored: Record<string, unknown> =
     typeof value === "object" && value !== null ? { ...value } : {};
-  const flag = (key: CallScreenSoundFlag) => {
+  const flag = (key: CallScreenSoundFlag, legacyKey?: string) => {
     const flagValue = stored[key];
-    return typeof flagValue === "boolean"
-      ? flagValue
+    if (typeof flagValue === "boolean") return flagValue;
+    const legacyValue = legacyKey === undefined ? undefined : stored[legacyKey];
+    return typeof legacyValue === "boolean"
+      ? legacyValue
       : CALL_SCREEN_SOUND_DEFAULT[key];
   };
   const level = stored.echoLevel;
   return {
     chime: flag("chime"),
-    voice: flag("voice"),
+    callVoice: flag("callVoice", "voice"),
+    dripVoice: flag("dripVoice", "voice"),
     echo: flag("echo"),
     echoLevel:
       typeof level === "number" && Number.isFinite(level)
@@ -114,3 +124,7 @@ export const setCallScreenSound = (next: CallScreenSound) => {
 /** 呼び出し画面の音の設定（変わると描き直す） */
 export const useCallScreenSound = () =>
   useSyncExternalStore(subscribe, getCallScreenSound, getCallScreenSound);
+
+/** 読み上げをどちらか流すか（エコーと、読み上げの音声を先に作らせるかを決める） */
+export const hasCallScreenVoice = (sound: CallScreenSound) =>
+  sound.callVoice || sound.dripVoice;

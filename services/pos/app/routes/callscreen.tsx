@@ -10,7 +10,11 @@ import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
 import { useCmPlaylist } from "~/lib/callscreen-cm";
-import { useCallScreenSound } from "~/lib/callscreen-sound";
+import {
+  getCallScreenSound,
+  hasCallScreenVoice,
+  useCallScreenSound,
+} from "~/lib/callscreen-sound";
 import {
   BOARD_W,
   BrewingIndicator,
@@ -120,6 +124,7 @@ export default function FieldsOfCallScreen() {
           orderId,
           isCallOutOfOrder(ordersRef.current, orderId),
         ),
+        kind: "call",
         chime: true,
         onStart: () => {
           if (reveal(orderId)) startFlash(orderId);
@@ -143,6 +148,7 @@ export default function FieldsOfCallScreen() {
       queuedRecallsRef.current.add(orderNo);
       announce({
         path: recallVoicePath(orderNo),
+        kind: "call",
         chime: true,
         onStart: () => {
           queuedRecallsRef.current.delete(orderNo);
@@ -156,9 +162,11 @@ export default function FieldsOfCallScreen() {
 
   // CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた、積まれていたカードを担当し始めた）に、
   // 「N番のお客様、M番ドリッパーにてドリップいたします。…」を流す。呼び出しと取り違えないよう、チャイムは鳴らさない。
-  // 1 つの注文につき最初の 1 回だけ流し、立て続け（1 分以内）なら「よろしければ…」を省く（@cafeore/common の planDripAnnouncement）
+  // 1 つの注文につき最初の 1 回だけ流し、立て続け（1 分以内）なら「よろしければ…」を省く（@cafeore/common の planDripAnnouncement）。
+  // ドリップの案内を切っている間に淹れ始めたカードは、案内したことにしない（「最初の 1 回」「立て続け」は、実際に流した案内で数える）
   const onBrewStarted = useCallback(
     (key: string) => {
+      if (!getCallScreenSound().dripVoice) return;
       const card = brewingRef.current.find((item) => item.key === key);
       if (!card) return;
       const now = Date.now();
@@ -179,6 +187,7 @@ export default function FieldsOfCallScreen() {
           card.dripper,
           plan.invite,
         ),
+        kind: "drip",
         chime: false,
       });
     },
@@ -191,8 +200,8 @@ export default function FieldsOfCallScreen() {
   useOnAdded(calling, onCalled, isOrdersLoaded);
   useOnAdded(drippingIds, startFlash, isOrdersLoaded);
   useOnAdded(brewingKeys, onBrewStarted, isOrdersLoaded);
-  // 読み上げを切っている間は、読み上げを作らせない
-  useWarmCallVoices(waitingIds, isOrdersLoaded && sound.voice);
+  // 読み上げを両方切っている間は、読み上げを作らせない（番号の片はドリップの案内でも使うので、どちらかを流すなら作らせる）
+  useWarmCallVoices(waitingIds, isOrdersLoaded && hasCallScreenVoice(sound));
 
   const showCall = useCallVisibility(shownCalling.length > 0, RETURN_TO_CM_MS);
   const scale = useStageScale(STAGE_W, STAGE_H);

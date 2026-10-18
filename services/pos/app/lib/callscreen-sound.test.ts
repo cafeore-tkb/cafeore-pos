@@ -11,11 +11,31 @@ describe("[unit] 呼び出し画面の音の設定", () => {
     expect(
       parseCallScreenSound({
         chime: false,
-        voice: true,
+        callVoice: true,
+        dripVoice: false,
         echo: false,
         echoLevel: 35,
       }),
-    ).toEqual({ chime: false, voice: true, echo: false, echoLevel: 35 });
+    ).toEqual({
+      chime: false,
+      callVoice: true,
+      dripVoice: false,
+      echo: false,
+      echoLevel: 35,
+    });
+  });
+
+  test("呼び出しとドリップの案内を分ける前の voice は、どちらも無いときだけ両方に使う", () => {
+    expect(parseCallScreenSound({ voice: false })).toMatchObject({
+      callVoice: false,
+      dripVoice: false,
+    });
+    expect(
+      parseCallScreenSound({ voice: false, dripVoice: true }),
+    ).toMatchObject({ callVoice: false, dripVoice: true });
+    expect(
+      parseCallScreenSound({ voice: "off", callVoice: false }),
+    ).toMatchObject({ callVoice: false, dripVoice: true });
   });
 
   test("無い・形の違う項目は既定（鳴らす）のまま", () => {
@@ -25,7 +45,8 @@ describe("[unit] 呼び出し画面の音の設定", () => {
       parseCallScreenSound({ chime: false, echo: "off", echoLevel: "30" }),
     ).toEqual({
       chime: false,
-      voice: true,
+      callVoice: true,
+      dripVoice: true,
       echo: true,
       echoLevel: CALL_SCREEN_SOUND_DEFAULT.echoLevel,
     });

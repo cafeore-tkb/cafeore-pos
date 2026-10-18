@@ -14,6 +14,13 @@ import { ServeCheck } from "~/components/atoms/ServeCheck";
 import { InputComment } from "~/components/molecules/InputComment";
 import { OrderInfoCard } from "~/components/molecules/OrderInfoCard";
 import { PastOrderSideSheet } from "~/components/molecules/PastOrderSideSheet";
+import { Label } from "~/components/ui/label";
+import { Switch } from "~/components/ui/switch";
+import {
+  type CallScreenSoundFlag,
+  setCallScreenSound,
+  useCallScreenSound,
+} from "~/lib/callscreen-sound";
 import { usePendingStatus } from "~/lib/usePendingStatus";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -36,12 +43,15 @@ export default function Serve() {
       <div className="flex justify-between pb-4">
         <h1 className="text-3xl">提供</h1>
         <p>提供待ちオーダー数：{unserved}</p>
-        <PastOrderSideSheet
-          orders={orders?.filter((order) => order.servedAt !== null)}
-          author="serve"
-          gray
-          cancellable
-        />
+        <div className="flex items-center gap-6">
+          <CallScreenVoiceSwitches />
+          <PastOrderSideSheet
+            orders={orders?.filter((order) => order.servedAt !== null)}
+            author="serve"
+            gray
+            cancellable
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -58,6 +68,38 @@ export default function Serve() {
     </div>
   );
 }
+
+const VOICE_SWITCHES: { key: CallScreenSoundFlag; label: string }[] = [
+  { key: "callVoice", label: "音声呼び出し" },
+  { key: "dripVoice", label: "ドリップ案内" },
+];
+
+// 呼び出し画面の読み上げの切り替え。マスタ設定の「呼び出し画面の CM」と同じ設定（lib/callscreen-sound）で、この端末に覚える。
+// 音声呼び出しを切ってもチャイムは鳴る
+const CallScreenVoiceSwitches = () => {
+  const sound = useCallScreenSound();
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-4">
+        {VOICE_SWITCHES.map(({ key, label }) => (
+          <div key={key} className="flex items-center gap-2">
+            <Switch
+              id={`serve-${key}`}
+              checked={sound[key]}
+              onCheckedChange={(checked) =>
+                setCallScreenSound({ ...sound, [key]: checked })
+              }
+            />
+            <Label htmlFor={`serve-${key}`}>{label}</Label>
+          </div>
+        ))}
+      </div>
+      <p className="text-muted-foreground text-xs">
+        この端末で開いた呼び出し画面に効きます
+      </p>
+    </div>
+  );
+};
 
 // 提供画面の注文カード。カップを1杯ずつ出し、押すと 準備中 → 提供可能 → 提供済み → 準備中 と回す
 const ServeOrderCard = ({ order }: { order: WithId<OrderEntity> }) => {

@@ -19,6 +19,7 @@ import {
   ECHO_LEVEL_MAX,
   ECHO_LEVEL_MIN,
   ECHO_LEVEL_STEP,
+  hasCallScreenVoice,
   setCallScreenSound,
   useCallScreenSound,
 } from "~/lib/callscreen-sound";
@@ -39,10 +40,16 @@ const SOUND_FIELDS: {
     description: "呼び出しの読み上げの前に鳴らします",
   },
   {
-    key: "voice",
-    label: "読み上げ",
+    key: "callVoice",
+    label: "呼び出しの読み上げ",
     description:
-      "呼び出しとドリップの案内を読み上げます。切ると読み上げの音声を作らせません",
+      "呼び出しと呼び出し催促の番号を読み上げます。切ってもチャイムは鳴らします。提供画面のヘッダーの「音声呼び出し」と同じものです",
+  },
+  {
+    key: "dripVoice",
+    label: "ドリップの案内",
+    description:
+      "淹れ始めたときに「〜番のお客様、〜番ドリッパーにてドリップいたします」と読み上げます。提供画面のヘッダーの「ドリップ案内」と同じものです。両方切ると読み上げの音声を作らせません",
   },
   {
     key: "echo",
@@ -216,7 +223,7 @@ export default function CallScreenCmPage() {
               <Switch
                 id={`sound-${key}`}
                 checked={sound[key]}
-                disabled={key === "echo" && !sound.voice}
+                disabled={key === "echo" && !hasCallScreenVoice(sound)}
                 onCheckedChange={(checked) =>
                   setCallScreenSound({ ...sound, [key]: checked })
                 }
@@ -238,7 +245,7 @@ export default function CallScreenCmPage() {
                 max={ECHO_LEVEL_MAX}
                 step={ECHO_LEVEL_STEP}
                 value={sound.echoLevel}
-                disabled={!sound.voice || !sound.echo}
+                disabled={!hasCallScreenVoice(sound) || !sound.echo}
                 onChange={(e) =>
                   setCallScreenSound({
                     ...sound,
@@ -259,10 +266,11 @@ export default function CallScreenCmPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
-            disabled={!sound.chime && !sound.voice}
+            disabled={!sound.chime && !sound.callVoice}
             onClick={() =>
               announce({
                 path: callVoicePath(PREVIEW_ORDER_NO, false),
+                kind: "call",
                 chime: true,
               })
             }

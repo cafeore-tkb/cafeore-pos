@@ -321,6 +321,8 @@ function useEcho(audioRef: React.RefObject<HTMLAudioElement>) {
 export type Announcement = {
   /** 読み上げの音声（callVoicePath・recallVoicePath・dripVoicePath） */
   path: string;
+  /** 呼び出し（催促も）か、ドリップの案内か。設定の callVoice・dripVoice のどちらで読み上げるか決める */
+  kind: "call" | "drip";
   /** 読み上げの前にチャイムを鳴らすか（呼び出しと呼び出し催促だけ鳴らす） */
   chime: boolean;
   /** 鳴らし始めるとき（音声が届いて、チャイムを鳴らす直前）に呼ぶ。呼び出しの番号を音と同時に画面に出したり、催促した番号を目立たせ始めたりするのに使う */
@@ -331,7 +333,7 @@ export type Announcement = {
  * 読み上げる。何件も重なったときは 1 件ずつ順に流す。
  * 音声は頼んだ時点で取りに行き、届いてからチャイムを鳴らして、間を空けずに続けて流す
  * （届く前にチャイムを鳴らすと、作っている間だけチャイムと声の間が空く）。
- * 音声が取れなければ、チャイムだけ鳴らす（チャイムの無い案内は何も鳴らさない）。
+ * 音声が取れない・読み上げを切っているときは、チャイムだけ鳴らす（チャイムの無い案内は何も鳴らさない）。
  * チャイム・読み上げ・エコーは、頼んだ時点の設定（lib/callscreen-sound）で鳴らすか決める
  */
 export function useAnnouncer(
@@ -342,9 +344,10 @@ export function useAnnouncer(
   const echo = useEcho(voiceRef);
 
   return useCallback(
-    ({ path, chime, onStart }: Announcement) => {
+    ({ path, kind, chime, onStart }: Announcement) => {
       const sound = getCallScreenSound();
-      const voice = sound.voice ? loadVoice(path) : Promise.resolve(null);
+      const voiceOn = kind === "drip" ? sound.dripVoice : sound.callVoice;
+      const voice = voiceOn ? loadVoice(path) : Promise.resolve(null);
       const echoLevel = sound.echo ? sound.echoLevel / 100 : 0;
       queueRef.current = queueRef.current.then(async () => {
         const url = await voice;
