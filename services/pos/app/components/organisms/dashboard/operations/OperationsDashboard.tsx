@@ -43,11 +43,11 @@ import { PeriodFilter } from "./PeriodFilter";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const MODES = [
-  { id: "floor", name: "現場を見る" },
-  { id: "owner", name: "全体を見る" },
-  { id: "handoff", name: "引き継ぎ" },
-  { id: "inventory", name: "在庫とメニュー" },
-  { id: "review", name: "振り返り" },
+  { id: "floor", name: "現場を見る", icon: Activity },
+  { id: "owner", name: "全体を見る", icon: LayoutDashboard },
+  { id: "handoff", name: "引き継ぎ", icon: MessageSquareText },
+  { id: "inventory", name: "在庫とメニュー", icon: Coffee },
+  { id: "review", name: "振り返り", icon: History },
 ] as const;
 type Mode = DashboardMode;
 const money = (n: number) => `¥${n.toLocaleString("ja-JP")}`;
@@ -235,13 +235,18 @@ export function OperationsDashboard({
   };
   return (
     <div
-      className={`space-y-5 rounded-3xl bg-[#f7f5f0] p-3 text-stone-800 sm:p-5 ${compact ? "text-sm" : ""}`}
+      className={`min-h-[calc(100vh-4rem)] space-y-5 overflow-hidden rounded-[2rem] border border-stone-200/80 bg-[radial-gradient(circle_at_top_right,_rgba(13,148,136,0.10),_transparent_28rem),linear-gradient(135deg,_#fafaf9_0%,_#f5f2eb_100%)] p-3 text-stone-800 shadow-[0_24px_70px_-42px_rgba(28,25,23,0.45)] sm:p-5 lg:p-7 ${compact ? "text-sm" : ""}`}
     >
-      <header className="space-y-3">
+      <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="font-bold text-xl">お店のダッシュボード</h2>
-            <p className="mt-1 text-muted-foreground text-xs">
+            <p className="mb-1 font-bold text-[11px] text-teal-700 uppercase tracking-[0.22em]">
+              Cafe Operations
+            </p>
+            <h2 className="font-bold text-2xl tracking-tight sm:text-3xl">
+              お店のダッシュボード
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm text-stone-500 leading-relaxed">
               {mode === "inventory"
                 ? "現在の在庫と、選択日のメニューの記録。"
                 : mode === "floor"
@@ -257,12 +262,15 @@ export function OperationsDashboard({
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1 basis-80">
             {mode === "floor" ? (
-              <p className="rounded-xl bg-teal-50 p-3 text-sm">
-                直近1時間 · 5分ごと · 自動更新
-                <br />
-                {jstDate(window.start)} {jstClock(window.start)}〜
-                {jstClock(window.end)}
-              </p>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-2xl border border-teal-100 bg-white/80 p-4 text-sm shadow-sm backdrop-blur">
+                <span className="font-bold text-teal-900">
+                  直近1時間 · 5分ごと
+                </span>
+                <span className="text-stone-500">
+                  {jstDate(window.start)} {jstClock(window.start)}〜
+                  {jstClock(window.end)}
+                </span>
+              </div>
             ) : mode === "review" ? (
               <details>
                 <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
@@ -282,7 +290,7 @@ export function OperationsDashboard({
                 />
               </details>
             ) : (
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-stone-200 bg-white/80 p-3 text-sm shadow-sm">
                 <label>
                   日付{" "}
                   <input
@@ -324,7 +332,7 @@ export function OperationsDashboard({
             )}
           </div>
           {mode !== "inventory" && (
-            <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+            <fieldset className="flex flex-wrap items-center gap-2 rounded-2xl border border-stone-200 bg-white/80 px-3 py-2 shadow-sm">
               <legend className="px-1 font-bold text-xs">
                 時系列グラフの集計間隔
               </legend>
@@ -350,18 +358,33 @@ export function OperationsDashboard({
               : "開始日時は現在以前、終了日時は開始日時より後にしてください。"}
           </p>
         )}
-        <p className="text-muted-foreground text-xs">
-          {!isOrdersLoaded
-            ? "注文を読込中…"
-            : status === "open"
-              ? "● 自動更新中"
-              : "● 接続待ち・最後に届いた記録を表示中"}{" "}
-          更新{" "}
-          {snapshot
-            ? `${jstClock(snapshot.at)} / ${snapshot.orders}注文`
-            : "未受信"}{" "}
-          / 現在 {jstClock(now)}
-        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-bold ${isOrdersLoaded && status === "open" ? "border-teal-200 bg-teal-50 text-teal-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${isOrdersLoaded && status === "open" ? "bg-teal-500" : "bg-amber-500"}`}
+              aria-hidden="true"
+            />
+            {!isOrdersLoaded
+              ? "注文を読込中…"
+              : status === "open"
+                ? "自動更新中"
+                : "接続待ち"}
+          </span>
+          <span className="text-stone-500">
+            最終更新{" "}
+            {snapshot
+              ? `${jstClock(snapshot.at)} · ${snapshot.orders}注文`
+              : "未受信"}
+          </span>
+          <span className="text-stone-400">現在 {jstClock(now)}</span>
+          {isOrdersLoaded && status !== "open" && (
+            <span className="text-amber-800">
+              最後に届いた記録を表示しています
+            </span>
+          )}
+        </div>
       </header>
       <section>
         <div
@@ -369,45 +392,52 @@ export function OperationsDashboard({
           role="tablist"
           aria-label="利用場面"
         >
-          {MODES.map((m, index) => (
-            <button
-              key={m.id}
-              type="button"
-              role="tab"
-              id={`${panelId}-mode-${m.id}`}
-              aria-selected={mode === m.id}
-              aria-controls={`${panelId}-mode-content`}
-              tabIndex={mode === m.id ? 0 : -1}
-              onClick={() => chooseMode(m.id)}
-              onKeyDown={(event) => {
-                const next =
-                  event.key === "ArrowRight"
-                    ? (index + 1) % MODES.length
-                    : event.key === "ArrowLeft"
-                      ? (index + MODES.length - 1) % MODES.length
-                      : event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? MODES.length - 1
-                          : null;
-                if (next === null) return;
-                event.preventDefault();
-                chooseMode(MODES[next].id);
-                document
-                  .getElementById(`${panelId}-mode-${MODES[next].id}`)
-                  ?.focus();
-              }}
-              className={`min-h-12 shrink-0 rounded-t-xl border py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-stone-300 border-b-white bg-white text-teal-900" : "border-transparent border-b-stone-300 bg-[#eee9df] text-stone-500 hover:bg-stone-200"}`}
-            >
-              {m.name}
-            </button>
-          ))}
+          {MODES.map((m, index) => {
+            const Icon = m.icon;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="tab"
+                id={`${panelId}-mode-${m.id}`}
+                aria-selected={mode === m.id}
+                aria-controls={`${panelId}-mode-content`}
+                tabIndex={mode === m.id ? 0 : -1}
+                onClick={() => chooseMode(m.id)}
+                onKeyDown={(event) => {
+                  const next =
+                    event.key === "ArrowRight"
+                      ? (index + 1) % MODES.length
+                      : event.key === "ArrowLeft"
+                        ? (index + MODES.length - 1) % MODES.length
+                        : event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? MODES.length - 1
+                            : null;
+                  if (next === null) return;
+                  event.preventDefault();
+                  chooseMode(MODES[next].id);
+                  document
+                    .getElementById(`${panelId}-mode-${MODES[next].id}`)
+                    ?.focus();
+                }}
+                className={`group flex min-h-14 shrink-0 items-center justify-center gap-2 rounded-t-2xl border py-3 font-bold transition-colors focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs sm:px-5"} ${mode === m.id ? "border-stone-200 border-b-white bg-white text-teal-900 shadow-[0_-6px_20px_-16px_rgba(28,25,23,0.4)]" : "border-transparent border-b-stone-200 bg-stone-200/60 text-stone-500 hover:bg-stone-200 hover:text-stone-800"}`}
+              >
+                <Icon
+                  className={`h-4 w-4 shrink-0 ${mode === m.id ? "text-teal-700" : "text-stone-400 group-hover:text-stone-600"}`}
+                  aria-hidden="true"
+                />
+                {m.name}
+              </button>
+            );
+          })}
         </div>
         <div
           role="tabpanel"
           id={`${panelId}-mode-content`}
           aria-labelledby={`${panelId}-mode-${mode}`}
-          className={`space-y-5 border border-stone-300 bg-white ${compact ? "p-2" : "p-4"}`}
+          className={`space-y-5 rounded-b-3xl border border-stone-200 bg-white shadow-sm ${compact ? "p-2" : "p-4 sm:p-5"}`}
         >
           {isOrdersLoaded && validPeriod && (
             <>
@@ -1017,16 +1047,24 @@ function Metric({
 }) {
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border p-4 shadow-sm ${METRIC_TONES[tone]}`}
+      className={`group hover:-translate-y-0.5 relative overflow-hidden rounded-2xl border p-4 shadow-sm transition duration-200 hover:shadow-md ${METRIC_TONES[tone]}`}
     >
+      <span
+        className="-top-8 -right-8 pointer-events-none absolute h-24 w-24 rounded-full bg-white/35 transition-transform duration-300 group-hover:scale-110"
+        aria-hidden="true"
+      />
       <div className="flex items-center justify-between gap-2">
-        <p className="font-bold text-xs sm:text-sm">{label}</p>
-        <Icon className="h-5 w-5 shrink-0 opacity-60" aria-hidden="true" />
+        <p className="relative font-bold text-xs sm:text-sm">{label}</p>
+        <span className="relative rounded-xl bg-white/60 p-2 shadow-sm ring-1 ring-current/10">
+          <Icon className="h-4 w-4 shrink-0 opacity-70" aria-hidden="true" />
+        </span>
       </div>
-      <p className="mt-3 font-bold text-2xl tabular-nums tracking-tight sm:text-3xl">
+      <p className="relative mt-3 font-bold text-2xl tabular-nums tracking-tight sm:text-3xl">
         {value}
       </p>
-      <p className="mt-2 text-[11px] leading-relaxed opacity-75">{note}</p>
+      <p className="relative mt-2 text-[11px] leading-relaxed opacity-75">
+        {note}
+      </p>
     </div>
   );
 }

@@ -87,29 +87,52 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   }));
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
-        <CardDescription>
-          選択期間の商品ごとの総杯数(濃)と読み込んだ過去データの総杯数(薄)を表示します{" "}
-          <br />
-          読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
-        </CardDescription>
+    <Card className="overflow-hidden rounded-2xl border-stone-200 shadow-sm">
+      <CardHeader className="border-stone-100 border-b bg-gradient-to-r from-stone-50 to-teal-50/50">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <CardTitle className="tracking-tight">商品ごとの杯数</CardTitle>
+            <CardDescription className="mt-2 max-w-3xl leading-relaxed">
+              選択期間の商品ごとの総杯数と、読み込んだ過去データの総杯数を比較します。
+              <br />
+              読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
+            </CardDescription>
+          </div>
+          <div
+            className="flex shrink-0 flex-wrap gap-3 rounded-xl bg-white/80 px-3 py-2 text-xs shadow-sm ring-1 ring-stone-200"
+            aria-label="グラフの凡例"
+          >
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-teal-700" />
+              現在
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-teal-700 opacity-40" />
+              過去
+            </span>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
-        <ChartContainer config={chartConfig}>
+      <CardContent className="p-3 pt-6 sm:p-6">
+        <ChartContainer config={chartConfig} className="min-h-72 w-full">
           <BarChart accessibilityLayer data={chartData}>
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis
               dataKey="name"
               tickLine={false}
               axisLine={false}
+              tickMargin={10}
               tickFormatter={(value) => value.slice(0, 5)}
             />
-            <YAxis />
+            <YAxis axisLine={false} tickLine={false} width={32} />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="realtimeData" radius={1} />
-            <Bar dataKey="pastData" radius={1} style={{ opacity: 0.4 }} />
+            <Bar dataKey="realtimeData" radius={[5, 5, 0, 0]} maxBarSize={36} />
+            <Bar
+              dataKey="pastData"
+              radius={[5, 5, 0, 0]}
+              maxBarSize={36}
+              style={{ opacity: 0.4 }}
+            />
           </BarChart>
         </ChartContainer>
       </CardContent>

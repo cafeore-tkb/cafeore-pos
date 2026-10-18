@@ -1,4 +1,5 @@
 import { type OrderEntity, jstClock, jstDate } from "@cafeore/common";
+import { CalendarRange, Upload } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { ItemBarChart } from "~/components/organisms/dashboard/ItemBarChart";
@@ -38,8 +39,8 @@ export default function Dashboard() {
   );
 
   return (
-    <div className="h-full">
-      <div className="p-4">
+    <div className="min-h-[calc(100vh-0.5rem)] bg-stone-100/80 p-2 sm:p-4 lg:p-6">
+      <div className="mx-auto max-w-[1600px]">
         <OperationsDashboard
           additionalPanels={(period) => {
             const cutoff = Math.min(period.end, period.now);
@@ -72,28 +73,42 @@ export default function Dashboard() {
                 name: "商品ごとの杯数",
                 content: (
                   <>
-                    <label
-                      htmlFor="item-comparison-file"
-                      className="mb-3 flex flex-wrap items-center gap-2 text-sm"
-                    >
-                      比較用の過去データ
-                      <Input
-                        id="item-comparison-file"
-                        className="w-60"
-                        type="file"
-                        accept=".json"
-                        onChange={handleFileUpload}
-                      />
-                    </label>
-                    <p className="mb-3 text-sm">
-                      この期間の注文を表示します。過去側は、下の開始日から同じ時間帯・同じ長さで比べます。
-                    </p>
+                    <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="rounded-xl bg-white p-2 text-teal-800 shadow-sm ring-1 ring-stone-200">
+                          <Upload className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                        <div>
+                          <p className="font-bold text-sm">過去データと比較</p>
+                          <p className="mt-1 text-stone-500 text-xs">
+                            JSONファイルを読み込むと、同じ時間帯・同じ長さで比較します。
+                          </p>
+                        </div>
+                      </div>
+                      <label
+                        htmlFor="item-comparison-file"
+                        className="shrink-0 text-sm"
+                      >
+                        <span className="sr-only">比較用の過去データ</span>
+                        <Input
+                          id="item-comparison-file"
+                          className="w-full cursor-pointer bg-white sm:w-72"
+                          type="file"
+                          accept=".json"
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                    </div>
                     {pastDays.length > 0 && (
-                      <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-                        過去データの比較開始日
+                      <label className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-teal-100 bg-teal-50/70 p-3 text-sm">
+                        <CalendarRange
+                          className="h-5 w-5 text-teal-700"
+                          aria-hidden="true"
+                        />
+                        <span className="font-bold">比較開始日</span>
                         <select
                           aria-label="商品ごとの杯数の過去比較開始日"
-                          className="min-h-10 rounded border bg-white p-2"
+                          className="min-h-10 rounded-lg border border-teal-200 bg-white px-3 py-2"
                           value={referenceDate}
                           onChange={(event) => setPastDate(event.target.value)}
                         >
