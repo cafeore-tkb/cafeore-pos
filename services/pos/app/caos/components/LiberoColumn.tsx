@@ -37,14 +37,14 @@ export function LiberoColumn({
       aria-label={`ドリッパー${lane.id}`}
       className={`grid min-h-0 min-w-0 grid-rows-[minmax(104px,14vh)_minmax(0,3fr)_minmax(0,2fr)] overflow-hidden rounded-xl border border-slate-300 bg-white ${flashing ? "caos-arrival" : ""}`}
     >
-      <header className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] justify-items-center gap-1 border-slate-200 border-b bg-white px-1 py-2 text-center">
+      <header className="grid min-h-0 grid-rows-[auto_minmax(min-content,1fr)] justify-items-center gap-1 overflow-y-auto border-slate-200 border-b bg-white px-1 py-2 text-center">
         <span className="font-black text-[clamp(24px,3vw,56px)] leading-none">
           {lane.id}
         </span>
         <LaneName
           dripper={lane.id}
           wrap
-          className={`justify-center self-center font-black text-[clamp(16px,1.8vw,34px)] leading-tight ${fresh ? "text-red-700" : ""}`}
+          className={`min-w-0 max-w-full justify-center self-center font-black text-[clamp(16px,1.8vw,34px)] leading-tight [overflow-wrap:anywhere] ${fresh ? "text-red-700" : ""}`}
         />
       </header>
       <div
@@ -55,7 +55,7 @@ export function LiberoColumn({
         )}
         <div
           style={{ color: currentText.color }}
-          className="relative z-[1] grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] items-center px-1 py-2"
+          className="relative z-[1] grid min-h-full w-full min-w-0 grid-rows-[minmax(min-content,1fr)_minmax(min-content,1fr)_minmax(min-content,1.4fr)] items-center gap-y-2 px-1 py-2"
         >
           {brew ? (
             <>
@@ -64,7 +64,7 @@ export function LiberoColumn({
                 textStyle={currentText}
                 highlight={fresh}
               />
-              <div className="grid w-full grid-rows-[20px_minmax(48px,5vw)_8px] items-center justify-items-center gap-1 border-current/20 border-t pt-2">
+              <div className="grid w-full grid-rows-[minmax(20px,auto)_minmax(min-content,1fr)_8px] items-center justify-items-center gap-1 border-current/20 border-t pt-2">
                 <p
                   style={remaining > 0 ? currentText : undefined}
                   aria-hidden={remaining === 0}
@@ -106,7 +106,7 @@ export function LiberoColumn({
         {nextColor && <LiberoBackground palette={nextColor} />}
         <div
           style={{ color: nextText?.color }}
-          className="relative z-[1] grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-center px-1 py-2"
+          className="relative z-[1] grid min-h-full w-full min-w-0 grid-rows-[minmax(min-content,0.6fr)_minmax(min-content,1fr)_minmax(min-content,1fr)] items-center gap-y-2 px-1 py-2"
         >
           <p
             style={nextText}
