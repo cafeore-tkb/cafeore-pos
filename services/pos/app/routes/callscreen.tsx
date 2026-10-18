@@ -135,7 +135,8 @@ export default function FieldsOfCallScreen() {
   );
 
   // 提供の画面で「呼び出し催促」を押したとき。お呼び出し中に出している番号だけ、チャイムを鳴らして
-  // 「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」を流し、鳴らし始めたらその番号を目立たせる
+  // 「N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。」を流し、鳴らし始めたらその番号を目立たせる。
+  // チャイム・音声呼び出しを切っていても鳴らす
   const onRecalled = useCallback(
     (id: string) => {
       const orderNo = ordersRef.current.find(
@@ -148,7 +149,7 @@ export default function FieldsOfCallScreen() {
       queuedRecallsRef.current.add(orderNo);
       announce({
         path: recallVoicePath(orderNo),
-        kind: "call",
+        kind: "recall",
         chime: true,
         onStart: () => {
           queuedRecallsRef.current.delete(orderNo);

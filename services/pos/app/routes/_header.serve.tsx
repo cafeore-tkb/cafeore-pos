@@ -75,7 +75,7 @@ const VOICE_SWITCHES: { key: CallScreenSoundFlag; label: string }[] = [
 ];
 
 // 呼び出し画面の読み上げの切り替え。マスタ設定の「呼び出し画面の CM」と同じ設定（lib/callscreen-sound）で、この端末に覚える。
-// 音声呼び出しを切ってもチャイムは鳴る
+// 音声呼び出しを切ってもチャイムは鳴る。呼び出し催促は、どちらを切っていてもチャイムと読み上げを鳴らす
 const CallScreenVoiceSwitches = () => {
   const sound = useCallScreenSound();
   return (

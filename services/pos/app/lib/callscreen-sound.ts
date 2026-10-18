@@ -2,14 +2,15 @@ import { useSyncExternalStore } from "react";
 
 // 呼び出し画面で鳴らす音（チャイム・読み上げ・読み上げのエコー）。マスタ設定の「呼び出し画面の CM」（/callscreen-cm）で切り替える。
 // 呼び出しの読み上げとドリップの案内は、提供画面のヘッダーでも切り替えられる。
+// 呼び出し催促だけは、どの設定でもチャイムと読み上げを鳴らす（announcementSound）。
 //
 // この端末の localStorage に覚える。読み込み直しても残り、同じ端末のほかのタブで開いている呼び出し画面にもすぐ効く。
 // 書けないときは、このタブの中だけで持つ。
 
 export interface CallScreenSound {
-  /** 呼び出しの前のチャイム */
+  /** 呼び出しの前のチャイム（呼び出し催促は切っていても鳴らす） */
   chime: boolean;
-  /** 呼び出し・呼び出し催促の読み上げ。切ってもチャイムは chime のとおり鳴らす */
+  /** 呼び出しの読み上げ。切ってもチャイムは chime のとおり鳴らす（呼び出し催促は切っていても読み上げる） */
   callVoice: boolean;
   /** ドリップの案内の読み上げ */
   dripVoice: boolean;
@@ -124,6 +125,24 @@ export const setCallScreenSound = (next: CallScreenSound) => {
 /** 呼び出し画面の音の設定（変わると描き直す） */
 export const useCallScreenSound = () =>
   useSyncExternalStore(subscribe, getCallScreenSound, getCallScreenSound);
+
+/** 読み上げの種類（呼び出し・呼び出し催促・ドリップの案内） */
+export type AnnouncementKind = "call" | "recall" | "drip";
+
+/**
+ * 今の設定で、その読み上げのチャイムと声を鳴らしてよいか（チャイムは、もともとチャイムを付ける案内のときだけ鳴らす）。
+ * 呼び出し催促は、お客様が呼び出しに気づいていないときに押すものなので、設定に関わらずどちらも鳴らす
+ */
+export const announcementSound = (
+  kind: AnnouncementKind,
+  sound: CallScreenSound,
+): { chime: boolean; voice: boolean } => {
+  if (kind === "recall") return { chime: true, voice: true };
+  return {
+    chime: sound.chime,
+    voice: kind === "drip" ? sound.dripVoice : sound.callVoice,
+  };
+};
 
 /** 読み上げをどちらか流すか（エコーと、読み上げの音声を先に作らせるかを決める） */
 export const hasCallScreenVoice = (sound: CallScreenSound) =>

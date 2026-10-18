@@ -3,6 +3,7 @@ import {
   CALL_SCREEN_SOUND_DEFAULT,
   ECHO_LEVEL_MAX,
   ECHO_LEVEL_MIN,
+  announcementSound,
   parseCallScreenSound,
 } from "./callscreen-sound";
 
@@ -60,5 +61,53 @@ describe("[unit] 呼び出し画面の音の設定", () => {
     expect(level(23)).toBe(25);
     expect(level(32)).toBe(30);
     expect(level(Number.NaN)).toBe(CALL_SCREEN_SOUND_DEFAULT.echoLevel);
+  });
+});
+
+describe("[unit] 読み上げの種類ごとに鳴らすもの", () => {
+  const allOff = {
+    ...CALL_SCREEN_SOUND_DEFAULT,
+    chime: false,
+    callVoice: false,
+    dripVoice: false,
+  };
+
+  test("呼び出しはチャイムと音声呼び出しの設定のとおり", () => {
+    expect(announcementSound("call", CALL_SCREEN_SOUND_DEFAULT)).toEqual({
+      chime: true,
+      voice: true,
+    });
+    expect(
+      announcementSound("call", {
+        ...CALL_SCREEN_SOUND_DEFAULT,
+        callVoice: false,
+      }),
+    ).toEqual({ chime: true, voice: false });
+    expect(announcementSound("call", allOff)).toEqual({
+      chime: false,
+      voice: false,
+    });
+  });
+
+  test("ドリップの案内はドリップ案内の設定で読み上げる", () => {
+    expect(
+      announcementSound("drip", {
+        ...CALL_SCREEN_SOUND_DEFAULT,
+        callVoice: false,
+      }),
+    ).toMatchObject({ voice: true });
+    expect(
+      announcementSound("drip", {
+        ...CALL_SCREEN_SOUND_DEFAULT,
+        dripVoice: false,
+      }),
+    ).toMatchObject({ voice: false });
+  });
+
+  test("呼び出し催促は、どれを切っていてもチャイムと読み上げを鳴らす", () => {
+    expect(announcementSound("recall", allOff)).toEqual({
+      chime: true,
+      voice: true,
+    });
   });
 });
