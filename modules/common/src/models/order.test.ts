@@ -13,6 +13,7 @@ const hotType: ItemType = {
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  serve_with_snack: false,
 };
 const iceType = {
   ...hotType,
@@ -20,6 +21,7 @@ const iceType = {
   name: "ice",
   display_name: "アイス",
   iced_brew: true,
+  serve_with_snack: false,
 };
 const milkType = {
   ...hotType,

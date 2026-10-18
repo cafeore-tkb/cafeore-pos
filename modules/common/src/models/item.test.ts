@@ -22,6 +22,7 @@ describe("[unit] itemTypeSchema", () => {
       needs_brew: false,
       senior_only: true,
       iced_brew: true,
+      serve_with_snack: false,
     };
     expect(itemTypeSchema.parse(itemType)).toEqual(itemType);
   });

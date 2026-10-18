@@ -15,6 +15,8 @@ export const itemTypeSchema = z.object({
   senior_only: z.boolean(),
   /** アイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない） */
   iced_brew: z.boolean(),
+  /** お菓子をつける */
+  serve_with_snack: z.boolean(),
 });
 
 export const itemSchema = z.object({

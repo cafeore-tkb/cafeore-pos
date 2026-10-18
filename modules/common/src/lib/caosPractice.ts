@@ -96,6 +96,7 @@ export const toCaosPracticeOrder = (
           needs_brew: type.needs_brew,
           senior_only: type.senior_only,
           iced_brew: false,
+          serve_with_snack: false,
         },
       },
       readyAt: null,

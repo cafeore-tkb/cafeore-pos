@@ -210,7 +210,8 @@
       "makes_cup",
       "needs_brew",
       "senior_only",
-      "iced_brew"
+      "iced_brew",
+      "serve_with_snack"
     ],
     "properties": {
       "id": {
@@ -238,6 +239,10 @@
       "iced_brew": {
         "type": "boolean",
         "description": "この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false"
+      },
+      "serve_with_snack": {
+        "type": "boolean",
+        "description": "この種類のアイテムにお菓子をつける"
       }
     }
   },
@@ -269,6 +274,11 @@
         "type": "boolean",
         "default": false,
         "description": "省略したら false。needs_brew が false のときに true は 400"
+      },
+      "serve_with_snack": {
+        "type": "boolean",
+        "default": false,
+        "description": "お菓子をつける。省略したら false"
       }
     }
   },
@@ -301,6 +311,10 @@
       "iced_brew": {
         "type": "boolean",
         "description": "省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400"
+      },
+      "serve_with_snack": {
+        "type": "boolean",
+        "description": "お菓子をつける。省略したら今の値のまま"
       }
     }
   },

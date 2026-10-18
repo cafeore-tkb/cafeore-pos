@@ -28,13 +28,14 @@ func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
 	// 抽出しない種類は上級生のみにもアイスにもならない
 	brew := itemType.BrewRequired()
 	return models.ItemTypeResponse{
-		Id:          openapi_types.UUID(itemType.ID),
-		Name:        itemType.Name,
-		DisplayName: itemType.DisplayName,
-		MakesCup:    itemType.CreatesCup(),
-		NeedsBrew:   brew,
-		SeniorOnly:  brew && itemType.SeniorOnly,
-		IcedBrew:    brew && itemType.IcedBrew,
+		Id:            openapi_types.UUID(itemType.ID),
+		Name:          itemType.Name,
+		DisplayName:   itemType.DisplayName,
+		MakesCup:      itemType.CreatesCup(),
+		NeedsBrew:     brew,
+		SeniorOnly:    brew && itemType.SeniorOnly,
+		IcedBrew:      brew && itemType.IcedBrew,
+		ServeWithSnack: itemType.ServeWithSnack,
 	}
 }
 
@@ -107,6 +108,10 @@ func (h *ItemTypeHandler) CreateItemType(c *gin.Context) {
 		return
 	}
 
+	if req.ServeWithSnack != nil {
+		itemType.ServeWithSnack = *req.ServeWithSnack
+	}
+
 	if err := h.db.Create(&itemType).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -174,6 +179,10 @@ func (h *ItemTypeHandler) UpdateItemType(c *gin.Context) {
 	if err := setItemTypeFlags(&itemType, req.MakesCup, req.NeedsBrew, req.SeniorOnly, req.IcedBrew); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if req.ServeWithSnack != nil {
+		itemType.ServeWithSnack = *req.ServeWithSnack
 	}
 
 	if err := h.db.Save(&itemType).Error; err != nil {

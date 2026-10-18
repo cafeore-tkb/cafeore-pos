@@ -56,6 +56,7 @@ const item = {
     needs_brew: true,
     senior_only: false,
     iced_brew: false,
+    serve_with_snack: false,
   },
 } as Cup["item"];
 

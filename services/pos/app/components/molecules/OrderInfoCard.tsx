@@ -12,6 +12,7 @@ import {
 import dayjs from "dayjs";
 import { LuCheck, LuHourglass } from "react-icons/lu";
 import { cn } from "~/lib/utils";
+import { BiscuitIcon } from "../atoms/BiscuitIcon";
 import { PendingSpinner } from "../atoms/PendingSpinner";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { RealtimeElapsedTime } from "./RealtimeElapsedTime";
@@ -112,6 +113,17 @@ export function OrderInfoCard({
                   >
                     <h3 className="text-center font-bold text-3xl">
                       {cup.abbr}
+                      {colorScreen === "serve" &&
+                        cup.item_type.serve_with_snack && (
+                          <span
+                            role="img"
+                            aria-label="お菓子をつける"
+                            title="お菓子をつける"
+                            className="ml-1 inline-flex align-middle"
+                          >
+                            <BiscuitIcon className="h-6 w-auto" />
+                          </span>
+                        )}
                     </h3>
                     {cup.servable && (
                       <p

@@ -7,7 +7,12 @@ import { Switch } from "~/components/ui/switch";
 
 export type ItemTypeFormValues = Omit<ItemType, "id">;
 
-type FlagKey = "makes_cup" | "needs_brew" | "senior_only" | "iced_brew";
+type FlagKey =
+  | "makes_cup"
+  | "needs_brew"
+  | "senior_only"
+  | "iced_brew"
+  | "serve_with_snack";
 
 // 新しい種類の入力の初め（項目は API の列の既定値と同じ）
 export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
@@ -17,6 +22,7 @@ export const EMPTY_ITEM_TYPE: ItemTypeFormValues = {
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  serve_with_snack: false,
 };
 
 // parent が外れているあいだは押せず、外すとこちらも外れる（カップを作らない → 抽出しない → 上級生のみでもアイスでもない）。
@@ -27,6 +33,11 @@ export const FLAG_FIELDS: {
   label: string;
   description: string;
 }[] = [
+  {
+    key: "serve_with_snack",
+    label: "お菓子をつける",
+    description: "この種類の商品を注文するとお菓子がつきます",
+  },
   {
     key: "makes_cup",
     label: "カップを作る",

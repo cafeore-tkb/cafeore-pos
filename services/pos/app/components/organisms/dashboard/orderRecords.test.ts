@@ -67,6 +67,7 @@ describe("注文記録の検索", () => {
                   needs_brew: true,
                   senior_only: false,
                   iced_brew: false,
+                  serve_with_snack: false,
                 },
               },
             },

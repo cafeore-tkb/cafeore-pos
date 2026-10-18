@@ -28,6 +28,8 @@ type ItemType struct {
 	// この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。
 	// NeedsBrew が false なら false にする（API で検査する）。既定値が false なのでポインタにしなくてよい。
 	IcedBrew bool `gorm:"not null;default:false"`
+	// この種類のアイテムにお菓子をつける。
+	ServeWithSnack bool `gorm:"not null;default:false"`
 }
 
 func (item_type *ItemType) BeforeCreate(tx *gorm.DB) error {
