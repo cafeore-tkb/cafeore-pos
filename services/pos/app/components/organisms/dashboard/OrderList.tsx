@@ -88,7 +88,7 @@ export function OrderList({ orders }: OrderListProps) {
               <thead className="sticky top-0 z-10 bg-stone-100">
                 <tr>
                   {[
-                    "注文",
+                    "オーダーNo.",
                     "状態",
                     "杯数",
                     "請求額",
