@@ -22,7 +22,7 @@ import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
 import { DripperIndicator, EmptySlotButton } from "./BoardParts";
 import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
-import { LaneChangeButton } from "./LaneParts";
+import { LaneDripHints, LaneName } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { ScrollArea } from "./ScrollArea";
 
@@ -35,7 +35,7 @@ import { ScrollArea } from "./ScrollArea";
 // 後ろは待機の先頭。同じ列の中の入れ替えにも使う。抽出中のカードを落として統合したら相手を抽出中のカードに入れる）。
 // 指の下のカードには、入れる所の線か統合の枠を出す（DropMark）。
 // タイムラインの横スクロールは下のスクロールバー（ScrollArea。溝は時刻の部分の下だけ）か、カードの無い所をなぞる
-// （左の固定の列はなぞってもスクロールしない。担当者の交代を押して指が滑っても、NOW の追従が外れない）。
+// （左の固定の列はなぞってもスクロールしない）。
 // 手でスクロールすると NOW の追従をやめ、左上の「現在に戻る」（ヘッダーの「現在」と同じ）で戻る。
 // 左へスクロールして隠れたカードの商品・注文番号・杯数は、左の固定の列のすぐ右に寄せて残す（cardInset。カードの右の端まで来たらカードと一緒に流れる）。
 // fill のときは残りの高さを使い、列を高くする（閲覧の画面で未割当をたたんだとき。HEIGHTS）。
@@ -271,7 +271,7 @@ export const DispatchBoard: React.FC<
                   data-bay-target={bay.id}
                   className={`relative flex ${height.lane} touch-manipulation items-center bg-white`}
                 >
-                  {/* ドリッパーの番号（列の状態）と担当者・交代 */}
+                  {/* ドリッパーの番号（列の状態）と担当者 */}
                   <div
                     style={{ width: STICKY_LEFT_WIDTH }}
                     className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
@@ -287,10 +287,12 @@ export const DispatchBoard: React.FC<
                       className="h-[66px] w-[44px]"
                     />
                     <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                      <LaneChangeButton
+                      <LaneName
                         dripper={bay.id}
+                        wrap
                         className="max-w-full font-black text-[18px] text-slate-950 leading-tight"
                       />
+                      <LaneDripHints dripper={bay.id} />
                     </div>
                   </div>
 

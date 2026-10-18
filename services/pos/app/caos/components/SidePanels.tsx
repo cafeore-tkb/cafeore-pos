@@ -40,8 +40,8 @@ import type { ControlViewProps } from "./ControlWorkspace";
 import { FloatingWindowScope, useFloatingWindow } from "./FloatingWindows";
 import {
   LaneAbility,
-  LaneChangeButton,
   LaneChooseButton,
+  LaneDripHints,
   LaneName,
 } from "./LaneParts";
 import { OrderCard, SplitCupButtons } from "./OrderCard";
@@ -411,7 +411,7 @@ export const RebrewPanel: React.FC<
   );
 };
 
-// 列の操作（管制盤 A・C・D のドリッパーの番号を押して開く）。担当者の交代と、この列の待機を全部別のドリッパーへ移す（並びのまま最後へ）。
+// 列の操作（管制盤 A・C・D のドリッパーの番号を押して開く）。この列の待機を全部別のドリッパーへ移す（並びのまま最後へ）。
 // パネルの外を押すと閉じる
 export const LanePanel: React.FC<{
   lane: Lane;
@@ -421,8 +421,9 @@ export const LanePanel: React.FC<{
   <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
       <LaneAbility dripper={lane.id} />
-      <LaneChangeButton dripper={lane.id} className="font-black text-[18px]" />
+      <LaneName dripper={lane.id} className="font-black text-[18px]" />
     </div>
+    <LaneDripHints dripper={lane.id} />
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
       この列の待機 {orderCount(lane.queued)}件を移す
     </h3>
@@ -465,7 +466,7 @@ export const AuxiliaryContent: React.FC<
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：1st〜6thを上から縦1列に並べ、担当者（交代も）と、今の抽出と待ちの件数
+  // ドリッパー：1st〜6thを上から縦1列に並べ、担当者（交代も）と、今の抽出と待ちの件数。「交代」はこのパネルだけに出す
   return (
     <div className="grid grid-cols-1 gap-2">
       {lanes.map((lane) => {
