@@ -32,6 +32,13 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for LabelPrintClaimResponseStatus.
+const (
+	Busy    LabelPrintClaimResponseStatus = "busy"
+	Claimed LabelPrintClaimResponseStatus = "claimed"
+	Printed LabelPrintClaimResponseStatus = "printed"
+)
+
 // Defines values for MasterStateUpdateRequestType.
 const (
 	Operational MasterStateUpdateRequestType = "operational"
@@ -524,6 +531,52 @@ type ItemUpdateRequest struct {
 	Id         openapi_types.UUID `json:"id"`
 	ItemTypeId openapi_types.UUID `json:"item_type_id"`
 	Name       string             `json:"name"`
+}
+
+// LabelPrintClaimResponse defines model for LabelPrintClaimResponse.
+type LabelPrintClaimResponse struct {
+	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
+	// サーバーは labels が空でない配列かだけを確かめ、中身は解釈しない（JSON で 64 KiB まで）
+	Job *LabelPrintJob `json:"job,omitempty"`
+
+	// Status claimed は引き受けた（job を刷る）、busy はほかのレジが引き受けている、printed はもう刷れた
+	Status LabelPrintClaimResponseStatus `json:"status"`
+}
+
+// LabelPrintClaimResponseStatus claimed は引き受けた（job を刷る）、busy はほかのレジが引き受けている、printed はもう刷れた
+type LabelPrintClaimResponseStatus string
+
+// LabelPrintDeviceRequest defines model for LabelPrintDeviceRequest.
+type LabelPrintDeviceRequest struct {
+	// DeviceId 刷るレジ（ページを開くたびに画面が作る id）
+	DeviceId string `json:"device_id"`
+}
+
+// LabelPrintJob シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
+// サーバーは labels が空でない配列かだけを確かめ、中身は解釈しない（JSON で 64 KiB まで）
+type LabelPrintJob struct {
+	Labels []map[string]interface{} `json:"labels"`
+}
+
+// LabelPrintRequestCreateRequest defines model for LabelPrintRequestCreateRequest.
+type LabelPrintRequestCreateRequest struct {
+	// Id 頼みの id（入れ直しの id）
+	Id openapi_types.UUID `json:"id"`
+
+	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
+	// サーバーは labels が空でない配列かだけを確かめ、中身は解釈しない（JSON で 64 KiB まで）
+	Job LabelPrintJob `json:"job"`
+}
+
+// LabelPrintRequestResponse defines model for LabelPrintRequestResponse.
+type LabelPrintRequestResponse struct {
+	// CreatedAt 頼まれた時刻
+	CreatedAt time.Time          `json:"created_at"`
+	Id        openapi_types.UUID `json:"id"`
+
+	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
+	// サーバーは labels が空でない配列かだけを確かめ、中身は解釈しない（JSON で 64 KiB まで）
+	Job LabelPrintJob `json:"job"`
 }
 
 // MasterStateResponse defines model for MasterStateResponse.
@@ -1205,6 +1258,18 @@ type CreateItemJSONRequestBody = ItemCreateRequest
 
 // UpdateItemJSONRequestBody defines body for UpdateItem for application/json ContentType.
 type UpdateItemJSONRequestBody = ItemUpdateRequest
+
+// CreateLabelPrintRequestJSONRequestBody defines body for CreateLabelPrintRequest for application/json ContentType.
+type CreateLabelPrintRequestJSONRequestBody = LabelPrintRequestCreateRequest
+
+// ClaimLabelPrintRequestJSONRequestBody defines body for ClaimLabelPrintRequest for application/json ContentType.
+type ClaimLabelPrintRequestJSONRequestBody = LabelPrintDeviceRequest
+
+// MarkLabelPrintRequestPrintedJSONRequestBody defines body for MarkLabelPrintRequestPrinted for application/json ContentType.
+type MarkLabelPrintRequestPrintedJSONRequestBody = LabelPrintDeviceRequest
+
+// ReleaseLabelPrintRequestJSONRequestBody defines body for ReleaseLabelPrintRequest for application/json ContentType.
+type ReleaseLabelPrintRequestJSONRequestBody = LabelPrintDeviceRequest
 
 // UpdateMasterStateJSONRequestBody defines body for UpdateMasterState for application/json ContentType.
 type UpdateMasterStateJSONRequestBody = MasterStateUpdateRequest

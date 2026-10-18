@@ -1,5 +1,5 @@
 import { createDeviceStore } from "~/lib/device-store";
-import type { PrintJob } from "./document";
+import { type PrintJob, toPrintJob } from "./document";
 
 /**
  * 刷れなかったシール。刷れるまでこの端末に残し、送り直す（print-util の usePrinter）。
@@ -8,18 +8,18 @@ import type { PrintJob } from "./document";
 export type PendingPrint = { id: string; at: number; job: PrintJob };
 
 // 置いたものの形か（壊れたもの・ほかが書いたものは送らない）
-const parse = (id: string, value: unknown): PendingPrint | null =>
-  typeof value === "object" &&
-  value !== null &&
-  "at" in value &&
-  typeof value.at === "number" &&
-  "job" in value &&
-  typeof value.job === "object" &&
-  value.job !== null &&
-  "labels" in value.job &&
-  Array.isArray(value.job.labels)
-    ? { id, at: value.at, job: value.job as PrintJob }
-    : null;
+const parse = (id: string, value: unknown): PendingPrint | null => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("at" in value) ||
+    typeof value.at !== "number" ||
+    !("job" in value)
+  )
+    return null;
+  const job = toPrintJob(value.job);
+  return job ? { id, at: value.at, job } : null;
+};
 
 const store = createDeviceStore("cafeore:pending-label-print:", parse);
 
@@ -39,6 +39,9 @@ export const addPendingPrint = (
 };
 
 export const removePendingPrint = store.remove;
+
+/** このタブで取り消しを知った緊急（入れ直し）の id か。そのシールはレジにも頼まない */
+export const isPrintCancelled = (id: string) => cancelled.has(id);
 
 /**
  * 緊急（入れ直し）が取り消された（サーバーから取り消したと知らせが来た・この端末で取り消せた）。そのシールを消し、このあと残そうとしても残さない。

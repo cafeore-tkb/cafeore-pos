@@ -28,6 +28,10 @@ const (
 	WSMessageTypeCupEmergencyCancelled WSMessageType = "cup_emergency_cancelled"
 	// 呼び出し催促した注文の ID（order_recall.go）。注文は変わらない。呼び出し画面は、この知らせを受けたらその番号をもう一度読み上げ、しばらく目立たせる
 	WSMessageTypeOrderRecalled WSMessageType = "order_recalled"
+	// 代理印刷の頼み（label_print.go）。代理印刷をオンにしたレジが引き受けて刷る。頼まれたときと、刷れなかったレジが引き受けをやめたときに届く
+	WSMessageTypeLabelPrintRequested WSMessageType = "label_print_requested"
+	// 刷れた代理印刷の ID（label_print.go）。頼んだ端末はレジで印刷待ちの数から外す
+	WSMessageTypeLabelPrintDone WSMessageType = "label_print_done"
 )
 
 type WSMessage struct {
@@ -41,6 +45,9 @@ type WSMessage struct {
 	CashierState   *models.CashierStateResponse `json:"cashier_state,omitempty"`
 	CaosLanes      *models.CaosLanes            `json:"caos_lanes,omitempty"`
 	CupEmergencyID *uuid.UUID                   `json:"cup_emergency_id,omitempty"`
+	// 代理印刷の頼み（label_print_requested）と、刷れた代理印刷の ID（label_print_done）
+	LabelPrintRequest   *models.LabelPrintRequestResponse `json:"label_print_request,omitempty"`
+	LabelPrintRequestID *uuid.UUID                        `json:"label_print_request_id,omitempty"`
 }
 
 func (h *OrderHandler) WSHandler(c *gin.Context) {

@@ -357,6 +357,74 @@ func TestListenChangesPublishesOrderRecalls(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
+// 代理印刷の頼みは、ほかのインスタンスから知らせが来たら DB から読み直し、まだ刷れていなければ配る。
+// 刷れたという知らせは、そのまま配る
+func TestListenChangesPublishesLabelPrints(t *testing.T) {
+	db, dsn := openListenTestDB(t)
+	other := listenAsOtherInstance(t, dsn, labelPrintRequestedChannel, labelPrintDoneChannel)
+	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
+	h := NewOrderHandler(db, hub, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go h.ListenChanges(ctx, dsn)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrders {
+		t.Fatalf("first broadcast = %s, want orders", msg.Type)
+	}
+	create := func() uuid.UUID {
+		t.Helper()
+		row := models.LabelPrintRequest{ID: uuid.New(), Job: models.JSONB(`{"labels":[{"type":"flow","lines":[]}]}`), CreatedAt: time.Now()}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		return row.ID
+	}
+	requested := func(id uuid.UUID) {
+		t.Helper()
+		if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeLabelPrintRequested || msg.LabelPrintRequest == nil || msg.LabelPrintRequest.Id != id || len(msg.LabelPrintRequest.Job.Labels) != 1 {
+			t.Fatalf("broadcast = %+v, want label_print_requested %s", msg, id)
+		}
+	}
+
+	// このインスタンスで頼まれたときは、その場で 1 回だけ配り（自分の通知では配り直さない）、ほかのインスタンスへ知らせる
+	mine := create()
+	publishLabelPrintRequested(db, hub, mine)
+	requested(mine)
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelWait()
+	if n, err := other.WaitForNotification(waitCtx); err != nil || n.Channel != labelPrintRequestedChannel || n.Payload != instanceID+" "+mine.String() {
+		t.Fatalf("notification = %+v, %v", n, err)
+	}
+	publishLabelPrintDone(db, hub, mine)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeLabelPrintDone || msg.LabelPrintRequestID == nil || *msg.LabelPrintRequestID != mine {
+		t.Fatalf("broadcast = %+v, want label_print_done %s", msg, mine)
+	}
+	if n, err := other.WaitForNotification(waitCtx); err != nil || n.Channel != labelPrintDoneChannel || n.Payload != instanceID+" "+mine.String() {
+		t.Fatalf("notification = %+v, %v", n, err)
+	}
+	noBroadcast(t, hub)
+
+	// ほかのインスタンスで頼まれたら、DB から読み直して配る
+	theirs := create()
+	sendNotify(t, db, labelPrintRequestedChannel, uuid.NewString()+" "+theirs.String())
+	requested(theirs)
+
+	// 刷れた・無い頼みは配らない。形の分からない知らせも配らない
+	if err := db.Model(&models.LabelPrintRequest{}).Where("id = ?", theirs).Update("printed_at", time.Now()).Error; err != nil {
+		t.Fatal(err)
+	}
+	sendNotify(t, db, labelPrintRequestedChannel, uuid.NewString()+" "+theirs.String())
+	sendNotify(t, db, labelPrintRequestedChannel, uuid.NewString()+" "+uuid.NewString())
+	sendNotify(t, db, labelPrintRequestedChannel, uuid.NewString()+" x")
+	sendNotify(t, db, labelPrintDoneChannel, uuid.NewString()+" x")
+	noBroadcast(t, hub)
+
+	// ほかのインスタンスで刷れたら、そのまま配る
+	sendNotify(t, db, labelPrintDoneChannel, uuid.NewString()+" "+theirs.String())
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeLabelPrintDone || msg.LabelPrintRequestID == nil || *msg.LabelPrintRequestID != theirs {
+		t.Fatalf("broadcast = %+v, want label_print_done %s", msg, theirs)
+	}
+}
+
 func TestListenChangesRepublishesStatesWhenListening(t *testing.T) {
 	db, dsn := openListenTestDB(t)
 	if err := db.Create(&models.MasterState{Type: "stop", CreatedAt: time.Now()}).Error; err != nil {

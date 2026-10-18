@@ -369,6 +369,174 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/label-print-requests:
+    post:
+      summary: シールをレジに代わりに刷ってもらう（代理印刷）
+      description: |
+        端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（入れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
+        受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
+        （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
+        刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
+        id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+        緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+        job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
+      operationId: createLabelPrintRequest
+      tags:
+        - printer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelPrintRequestCreateRequest'
+      responses:
+        '204':
+          description: 受け取った（もう受け取っていた・刷り終えていたときも）
+        '400':
+          description: 形の違うリクエスト・印刷データが大きすぎる
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 入れ直しが無い（取り消した）。頼みは作らない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: まだ刷れていない代理印刷
+      description: |
+        今日（日本時間）頼まれて、まだ刷れていない代理印刷（古い順）。レジが刷っている途中のものも入る。
+        代理印刷をオンにしたレジが、つないだとき・配信を受け損ねたときのために読む。頼んだ端末は、レジで印刷待ちの数を出すのに読む。
+      operationId: getLabelPrintRequests
+      tags:
+        - printer
+      responses:
+        '200':
+          description: まだ刷れていない代理印刷（古い順）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LabelPrintRequestResponse'
+  /api/label-print-requests/{id}/claim:
+    post:
+      summary: 代理印刷を引き受ける
+      description: |
+        代理印刷をオンにしたレジが、刷る前に引き受ける。引き受けたレジだけが刷る（ほかのレジと 2 枚刷らないように）。
+        引き受けは 60 秒で切れる（刷っている途中にレジを閉じても、ほかのレジが引き受け直せる）。同じ device_id なら引き受け直せる。
+        刷れたら /printed、刷れなかったら /release を呼ぶ。
+      operationId: claimLabelPrintRequest
+      tags:
+        - printer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelPrintDeviceRequest'
+      responses:
+        '200':
+          description: 引き受けた（claimed。job を刷る）・ほかのレジが刷っている（busy）・もう刷れた（printed）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LabelPrintClaimResponse'
+        '400':
+          description: 形の違うリクエスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 頼みが無い（緊急を取り消した）。刷らない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/label-print-requests/{id}/printed:
+    post:
+      summary: 代理印刷を刷れた
+      description: |
+        引き受けたレジが、プリンターが刷れたと返したら呼ぶ。刷れたことにして、/api/ws/orders の {"type":"label_print_done"} で全部の画面に知らせる。
+        何度呼んでもよい（引き受けが切れた後でも、刷れたことにする）。
+      operationId: markLabelPrintRequestPrinted
+      tags:
+        - printer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelPrintDeviceRequest'
+      responses:
+        '204':
+          description: 刷れたことにした
+        '400':
+          description: 形の違うリクエスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 頼みが無い（緊急を取り消した）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/label-print-requests/{id}/release:
+    post:
+      summary: 代理印刷を刷れなかった（引き受けをやめる）
+      description: |
+        引き受けたレジが、刷れなかったときに呼ぶ。その device_id が引き受けていれば引き受けをやめ、label_print_requested を配り直す
+        （ほかの代理印刷のレジが引き受けられる）。引き受けていなければ何もしない。
+      operationId: releaseLabelPrintRequest
+      tags:
+        - printer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelPrintDeviceRequest'
+      responses:
+        '204':
+          description: 引き受けをやめた（引き受けていなければ何もしない）
+        '400':
+          description: 形の違うリクエスト
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 頼みが無い（緊急を取り消した）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -1018,6 +1186,7 @@ paths:
         入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
         取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
         画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
+        レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
       operationId: deleteCupEmergency
       tags:
         - caos
@@ -3151,6 +3320,61 @@ components:
           type: string
           maxLength: 100
           description: 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+    LabelPrintJob:
+      type: object
+      description: |
+        シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
+        サーバーは labels が空でない配列かだけを確かめ、中身は解釈しない（JSON で 64 KiB まで）
+      required: [labels]
+      properties:
+        labels:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: true
+    LabelPrintRequestCreateRequest:
+      type: object
+      required: [id, job]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 頼みの id（入れ直しの id）
+        job:
+          $ref: '#/components/schemas/LabelPrintJob'
+    LabelPrintRequestResponse:
+      type: object
+      required: [id, job, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        job:
+          $ref: '#/components/schemas/LabelPrintJob'
+        created_at:
+          type: string
+          format: date-time
+          description: 頼まれた時刻
+    LabelPrintDeviceRequest:
+      type: object
+      required: [device_id]
+      properties:
+        device_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: 刷るレジ（ページを開くたびに画面が作る id）
+    LabelPrintClaimResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [claimed, busy, printed]
+          description: claimed は引き受けた（job を刷る）、busy はほかのレジが引き受けている、printed はもう刷れた
+        job:
+          $ref: '#/components/schemas/LabelPrintJob'
     CupEmergencyCreateResponse:
       type: object
       required: [ids]

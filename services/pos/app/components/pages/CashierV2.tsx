@@ -21,6 +21,10 @@ import {
   eposPrinterAt,
 } from "~/label/infra/epos";
 import { labelPrintableWidth, receiptPrintableWidth } from "~/label/paper";
+import {
+  useLabelPrintProxy,
+  useLabelPrintProxySetting,
+} from "~/label/print-relay";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
 import type { ReceiptPayment } from "~/label/receipt";
 import { isModifierKey } from "~/lib/menuKey";
@@ -116,6 +120,7 @@ import {
 import { SquareUnlinkedNotice } from "../organisms/SquareUnlinkedNotice";
 import { AssignDialog } from "../organisms/cashier/AssignDialog";
 import { ConfirmDialog } from "../organisms/cashier/ConfirmDialog";
+import { LabelPrintProxySwitch } from "../organisms/cashier/LabelPrintProxySwitch";
 import { MemoDialog } from "../organisms/cashier/MemoDialog";
 import {
   MenuPanel,
@@ -355,6 +360,9 @@ const CashierV2 = ({
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
     labelPrintableWidth(printerAddresses),
   );
+  // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る
+  const [labelPrintProxy, setLabelPrintProxy] = useLabelPrintProxySetting();
+  const labelPrintRelay = useLabelPrintProxy(labelPrintProxy, printer);
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
   // 機種・用紙が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;
@@ -1392,6 +1400,11 @@ const CashierV2 = ({
               <PendingPrints
                 count={printer.pendingCount}
                 onRetry={printer.retry}
+              />
+              <LabelPrintProxySwitch
+                checked={labelPrintProxy}
+                onCheckedChange={setLabelPrintProxy}
+                waiting={labelPrintRelay.waiting}
               />
               {squareEnabled && (
                 <SquareUnlinkedNotice

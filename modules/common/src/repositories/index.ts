@@ -10,3 +10,4 @@ export * from "./masterTransfer";
 export * from "./caos";
 export * from "./square";
 export * from "./printerSetting";
+export * from "./labelPrint";
