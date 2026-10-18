@@ -20,10 +20,10 @@ export const SeniorMark: React.FC<{ className?: string }> = ({
   </span>
 );
 
-// 4文字以内の名前は折り返さず、隣の印・交代アイコンのほうを次行へ送る。
+// 4文字以内は1行を優先し、枠自体より狭い場合だけ省略する。
 const nameClass = (name: string, wrap: boolean) =>
   [...name].length <= 4
-    ? "shrink-0 whitespace-nowrap"
+    ? "max-w-full shrink-0 truncate"
     : wrap
       ? "line-clamp-2 break-all"
       : "truncate";
@@ -40,7 +40,7 @@ export const LaneName: React.FC<{
     <span
       data-lane-name={dripper}
       title={lane.senior ? `${lane.name}（上級生）` : lane.name}
-      className={`inline-flex min-w-0 max-w-full flex-wrap items-center gap-0.5 ${className}`}
+      className={`inline-flex min-w-0 max-w-full items-center gap-0.5 ${[...lane.name].length <= 4 ? "flex-wrap" : "flex-nowrap"} ${className}`}
     >
       <span className={nameClass(lane.name, wrap)}>{lane.name}</span>
       {lane.senior && <SeniorMark />}
