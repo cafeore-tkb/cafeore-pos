@@ -149,6 +149,18 @@ export const replaceLabelPrintRequests = (
     .reduce(addLabelPrintRequest, [...list].sort(byCreatedAt))
     .filter((r) => !gone.has(r.id));
 
+/** 1 分以上印刷待ちなら、キューに届いていても代理印刷が利用可能とは扱わない。 */
+export const RELAY_STALL_MS = 60_000;
+
+export const isLabelPrintQueueStalled = (
+  requests: readonly Pick<LabelPrintRequest, "created_at">[],
+  now: number,
+) =>
+  requests.some((request) => {
+    const createdAt = Date.parse(request.created_at);
+    return !Number.isFinite(createdAt) || now - createdAt >= RELAY_STALL_MS;
+  });
+
 /**
  * まだ刷れていない代理印刷の頼み（今日の分。古い順）
  *
@@ -159,6 +171,14 @@ export const useLabelPrintQueue = (enabled = true) => {
   const { status } = useOrdersWSContext();
   const [requests, setRequests] = useState(EMPTY);
   const [queueAvailable, setQueueAvailable] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  // API の応答がなくても、待ち時間が閾値を超えたら判定し直す。
+  useEffect(() => {
+    if (!enabled || requests.length === 0) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [enabled, requests.length]);
   // 刷れた・取り消したと知ったもの。読み直した一覧が知らせより古くても足さない
   const gone = useRef(new Set<string>());
   // 読み直している間に配信で届いた頼み。読み直した一覧に無くても消さない
@@ -213,8 +233,12 @@ export const useLabelPrintQueue = (enabled = true) => {
   return {
     requests: enabled ? requests : EMPTY,
     remove,
-    // キューへのアクセス成功と共有セッションの接続を確認（レジでの印刷完了とは別）。
-    relayAvailable: enabled && status === "open" && queueAvailable,
+    // 接続だけでなく、印刷待ちが滞留していないことも確認する。
+    relayAvailable:
+      enabled &&
+      status === "open" &&
+      queueAvailable &&
+      !isLabelPrintQueueStalled(requests, now),
   };
 };
 

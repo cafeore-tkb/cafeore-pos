@@ -4,8 +4,10 @@ import type { PrintJob } from "./document";
 import {
   PROXY_RETRY_MS,
   type ProxyDeps,
+  RELAY_STALL_MS,
   addLabelPrintRequest,
   createProxyState,
+  isLabelPrintQueueStalled,
   replaceLabelPrintRequests,
   runLabelPrintProxy,
 } from "./print-relay";
@@ -223,5 +225,36 @@ describe("[unit] 代理印刷の頼みの一覧", () => {
     );
 
     expect(next.map((r) => r.id)).toEqual(["b", "c", "d"]);
+  });
+});
+
+describe("[unit] 代理印刷の滞留判定", () => {
+  const start = Date.parse("2026-10-18T03:00:00Z");
+  const pending = request("a", "2026-10-18T03:00:00Z");
+
+  test("未印刷の依頼が1分残ったら、APIに届いていても利用可能としない", () => {
+    expect(
+      isLabelPrintQueueStalled([pending], start + RELAY_STALL_MS - 1),
+    ).toBe(false);
+    expect(isLabelPrintQueueStalled([pending], start + RELAY_STALL_MS)).toBe(
+      true,
+    );
+    expect(isLabelPrintQueueStalled([], start + RELAY_STALL_MS)).toBe(false);
+  });
+
+  test("新しい依頼が届いても、古い未印刷が残っていれば滞留とする", () => {
+    const recent = request("b", "2026-10-18T03:01:00Z");
+    expect(
+      isLabelPrintQueueStalled([recent, pending], start + RELAY_STALL_MS),
+    ).toBe(true);
+    expect(isLabelPrintQueueStalled([recent], start + RELAY_STALL_MS)).toBe(
+      false,
+    );
+  });
+
+  test("作成時刻が不正な依頼も利用可能とは判定しない", () => {
+    expect(isLabelPrintQueueStalled([request("a", "invalid")], start)).toBe(
+      true,
+    );
   });
 });
