@@ -135,6 +135,27 @@ export interface paths {
      */
     post: operations["recallOrder"];
   };
+  "/api/orders/{id}/cancel": {
+    /**
+     * 注文をキャンセルする（返金はしない）
+     * @description 注文は消さずに cancelled_at を付けて残す（レジの「過去の注文」に「キャンセル」として出す）。
+     * 番号は使ったまま（次の注文は次の番号）、使った在庫も戻さない。マスター・提供・CaOS・呼び出しの画面には出さない。
+     * 返金はしない。Square で払った分は POST /api/orders/{id}/square-refund-keep-order、
+     * 現金で払った分は手で返して POST /api/orders/{id}/cash-refund で記録する。
+     * キャンセル済みなら、キャンセルした時刻を変えずに注文を返す。
+     */
+    post: operations["cancelOrder"];
+  };
+  "/api/orders/{id}/cash-refund": {
+    /**
+     * 現金で受け取った分を返したことを記録する
+     * @description お金はレジが手で返す。ここでは返したこと（cash_refunded_at）を残すだけで、注文はキャンセルしない
+     * （キャンセルもするときは POST /api/orders/{id}/cancel も呼ぶ）。
+     * 返金した分は売上に数えず、返金した注文の番号は引換券の割引に使えない。
+     * 個別会計では、現金で受け取った分を全部返したことにする。記録済みなら、記録した時刻を変えずに注文を返す。
+     */
+    post: operations["refundOrderCash"];
+  };
   "/api/orders/{id}/comments": {
     /** 特定オーダーのコメント一覧取得 */
     get: operations["getOrderComments"];
@@ -446,9 +467,9 @@ export interface paths {
     /**
      * 支払い済みの決済を全額返金する
      * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
-     * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
-     * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
-     * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+     * 注文と結び付いていれば、Square が返金を受け付けた時点（refund_status が pending）でその注文をキャンセルする
+     * （消さずに cancelled_at を付ける）。決済は注文に結び付いたままなので、あとで Square で失敗したら、
+     * その注文の square_refund_status が failed になる。
      * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
      * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
      * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
@@ -459,9 +480,11 @@ export interface paths {
   };
   "/api/orders/{id}/square-refund": {
     /**
-     * 注文に使った Square の決済を全額返金し、注文を消す
+     * 注文に使った Square の決済を全額返金し、注文をキャンセルする
      * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
-     * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+     * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文をキャンセルする
+     * （消さずに cancelled_at を付ける。番号は使ったまま、在庫も戻さない）。現金で払った分は返さない
+     * （手で返して POST /api/orders/{id}/cash-refund で記録する）。
      * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
      * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
      */
@@ -474,7 +497,7 @@ export interface paths {
      * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
      * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
      * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
-     * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+     * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずにキャンセルだけをする。
      * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
      */
     post: operations["refundOrderSquarePaymentKeepingOrder"];
@@ -483,7 +506,8 @@ export interface paths {
     /**
      * Square Terminal にお客さんが決済手段を選ぶ画面を出す
      * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
-     * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+     * お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘）が選ばれたら、
+     * レジが分け方（個別小計・小計分割）を選ぶウィンドウを出す。スタッフがレジで決済手段を選んだら取り消す。
      * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
      * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
      * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。
@@ -748,6 +772,16 @@ export interface components {
       ready_at?: string | null;
       /** Format: date-time */
       served_at?: string | null;
+      /**
+       * Format: date-time
+       * @description キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない
+       */
+      cancelled_at?: string | null;
+      /**
+       * Format: date-time
+       * @description 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
+       */
+      cash_refunded_at?: string | null;
       billing_amount: number;
       received: number;
       discount_order_id?: number | null;
@@ -1417,16 +1451,22 @@ export interface components {
       checkout: components["schemas"]["SquareCheckoutResponse"];
     };
     /**
-     * @description 決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+     * @description 決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、
+     * スタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
      * 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
      *
      * @enum {string}
      */
-    SquareActionOption: "CASH" | "CARD_PRESENT" | "FELICA_ALL" | "QR_CODE";
+    SquareActionOption:
+      | "CASH"
+      | "CARD_PRESENT"
+      | "FELICA_ALL"
+      | "QR_CODE"
+      | "SPLIT";
     /**
      * @description レジが次に何をすべきかをサーバーが判定したもの。
      *   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
-     *   - selected: お客さんが選んだ。selected の決済手段で会計する
+     *   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
      *   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
      *
      * @enum {string}
@@ -1439,7 +1479,7 @@ export interface components {
       idempotency_key: string;
       /** @description 今払う額（円）。画面に出す */
       amount: number;
-      /** @description 端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個 */
+      /** @description 端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個 */
       options: components["schemas"]["SquareActionOption"][];
     };
     SquareActionResponse: {
@@ -1456,7 +1496,7 @@ export interface components {
       cancel_reason?: string | null;
       amount: number;
       options: components["schemas"]["SquareActionOption"][];
-      /** @description お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る */
+      /** @description お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る */
       selected?: string | null;
       error_message?: string | null;
       /** Format: date-time */
@@ -2053,6 +2093,83 @@ export interface operations {
         };
       };
       /** @description 呼び出し中ではない（まだ呼んでいない・提供済み。ほかの端末で提供したか、呼び出しを取り消したかもしれない）。error を画面にそのまま出す */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 注文をキャンセルする（返金はしない）
+   * @description 注文は消さずに cancelled_at を付けて残す（レジの「過去の注文」に「キャンセル」として出す）。
+   * 番号は使ったまま（次の注文は次の番号）、使った在庫も戻さない。マスター・提供・CaOS・呼び出しの画面には出さない。
+   * 返金はしない。Square で払った分は POST /api/orders/{id}/square-refund-keep-order、
+   * 現金で払った分は手で返して POST /api/orders/{id}/cash-refund で記録する。
+   * キャンセル済みなら、キャンセルした時刻を変えずに注文を返す。
+   */
+  cancelOrder: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+      };
+    };
+    responses: {
+      /** @description キャンセルした注文 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 現金で受け取った分を返したことを記録する
+   * @description お金はレジが手で返す。ここでは返したこと（cash_refunded_at）を残すだけで、注文はキャンセルしない
+   * （キャンセルもするときは POST /api/orders/{id}/cancel も呼ぶ）。
+   * 返金した分は売上に数えず、返金した注文の番号は引換券の割引に使えない。
+   * 個別会計では、現金で受け取った分を全部返したことにする。記録済みなら、記録した時刻を変えずに注文を返す。
+   */
+  refundOrderCash: {
+    parameters: {
+      path: {
+        /** @description オーダーID */
+        id: string;
+      };
+    };
+    responses: {
+      /** @description 現金の返金を記録した注文 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["OrderResponse"];
+        };
+      };
+      /** @description IDの形式が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description オーダーが見つかりません */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description その注文に現金の支払いが無い（Square だけで払った注文） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -3036,9 +3153,9 @@ export interface operations {
   /**
    * 支払い済みの決済を全額返金する
    * @description Refunds API で、元の決済手段（カード・電子マネー・QR）へ全額を返す（Terminal API の返金はカナダの Interac 専用で、日本では使えない）。
-   * 注文と結び付いていれば、Square が返金を受け付けた時点でその注文を消す。
-   * Square が受け付けた時点（refund_status が pending）で注文を消す。あとで Square で失敗したら、決済は
-   * GET /api/square/checkouts/unlinked に refund_status が failed で出るので、頼み直すか注文を登録し直す。
+   * 注文と結び付いていれば、Square が返金を受け付けた時点（refund_status が pending）でその注文をキャンセルする
+   * （消さずに cancelled_at を付ける）。決済は注文に結び付いたままなので、あとで Square で失敗したら、
+   * その注文の square_refund_status が failed になる。
    * 交通系 IC の決済は Square でも返金できないので、Square が断ったときは 502 で refund_status が failed の決済依頼を返す。
    * 応答が無かったときは 502 で refund_status が unknown の決済依頼を返す。
    * 返金の結果は Square で後から決まることがある（refund_status が pending）。GET /api/square/checkouts/{id} と
@@ -3052,7 +3169,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文は消した */
+      /** @description Square が返金を受け付けた（refund_status が pending か refunded）。結び付いていた注文はキャンセルした */
       200: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
@@ -3070,7 +3187,7 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
         };
       };
-      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      /** @description 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする */
       500: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -3091,9 +3208,11 @@ export interface operations {
     };
   };
   /**
-   * 注文に使った Square の決済を全額返金し、注文を消す
+   * 注文に使った Square の決済を全額返金し、注文をキャンセルする
    * @description その注文に結び付いた決済依頼で POST /api/square/checkouts/{id}/refund と同じことをする。
-   * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 個別会計で Square の決済が複数あれば、全部を返金し、全部を受け付けたときだけ注文をキャンセルする
+   * （消さずに cancelled_at を付ける。番号は使ったまま、在庫も戻さない）。現金で払った分は返さない
+   * （手で返して POST /api/orders/{id}/cash-refund で記録する）。
    * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
    * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
    */
@@ -3104,25 +3223,30 @@ export interface operations {
       };
     };
     responses: {
-      /** @description Square が返金を受け付け、注文を消した */
+      /** @description Square が返金を受け付け、注文をキャンセルした */
       200: {
         content: {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
         };
       };
-      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      /** @description 注文が無い */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      /**
+       * @description 支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+       * 注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
+       */
       409: {
         content: {
-          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+          "application/json":
+            | components["schemas"]["SquareCheckoutConflictResponse"]
+            | components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 返金は受け付けたが、注文を消せなかった。もう一度呼ぶと注文だけを消す */
+      /** @description 返金は受け付けたが、注文をキャンセルできなかった。もう一度呼ぶとキャンセルだけをする */
       500: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -3148,7 +3272,7 @@ export interface operations {
    * （カップの提供も続き、請求額・支払い方法もそのまま）。返金の状態は注文の square_refund_status で配る。
    * あとで Square で返金が失敗したら、その注文の square_refund_status が failed になる（「未登録の Square 決済」には出ない）。
    * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
-   * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずに注文だけを消す。
+   * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずにキャンセルだけをする。
    * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
    */
   refundOrderSquarePaymentKeepingOrder: {
@@ -3164,16 +3288,21 @@ export interface operations {
           "application/json": components["schemas"]["SquareCheckoutResponse"];
         };
       };
-      /** @description 注文が無い、またはその注文に Square の決済が無い（現金の注文など） */
+      /** @description 注文が無い */
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 支払いを確かめられていない、または返金を頼んでいる途中 */
+      /**
+       * @description 支払いを確かめられていない、または返金を頼んでいる途中（checkout にその決済依頼を付ける）。
+       * 注文はあるが Square の決済が無い（現金の注文など）ときも 409 で、error だけを返す
+       */
       409: {
         content: {
-          "application/json": components["schemas"]["SquareCheckoutConflictResponse"];
+          "application/json":
+            | components["schemas"]["SquareCheckoutConflictResponse"]
+            | components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Square が返金を断った、または応答が無かった */
@@ -3193,7 +3322,8 @@ export interface operations {
   /**
    * Square Terminal にお客さんが決済手段を選ぶ画面を出す
    * @description Terminal API の action（SELECT）で、options の決済手段を端末に並べる。レジは会計の段階に入ったら出し、
-   * お客さんが選んだら（outcome が selected）その決済手段で会計する。スタッフがレジで決済手段を選んだら取り消す。
+   * お客さんが選んだら（outcome が selected）その決済手段で会計する。SPLIT（割り勘）が選ばれたら、
+   * レジが分け方（個別小計・小計分割）を選ぶウィンドウを出す。スタッフがレジで決済手段を選んだら取り消す。
    * 同じ idempotency_key で再送したときは、新しく作らずに同じものを返す。
    * 端末への依頼は 1 件ずつ順に出るので、その端末に出したままの別の画面（この API で出したもの）は取り消してから出す。
    * 同じ端末で決済依頼が進行中なら出さずに 409 を返す（決済画面の後ろに並んでしまうため）。

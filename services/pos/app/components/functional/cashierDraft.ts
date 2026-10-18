@@ -233,6 +233,25 @@ const dripperFromKey = (key: string): number | null | undefined => {
   return DRIPPER_NUMBERS.find((dripper) => String(dripper) === key);
 };
 
+/** 数字を指名に使うか（入れる段階で行を選んでいる）。打った数字は引換券番号に入れない */
+export const isAssigningByDigits = (draft: CashierDraft): boolean =>
+  draft.step === "entry" && draft.selected !== null;
+
+/** 数字のキー（1 つ）で、選んでいる行を指名できるか。1〜6・0 で、指名できる行（抽出が要る）のときだけ */
+export const canAssignByDigit = (draft: CashierDraft, key: string): boolean =>
+  canEditLines(draft) &&
+  canAssignSelected(draft) &&
+  dripperFromKey(key) !== undefined;
+
+/** 数字のキー（1 つ）で、選んでいる行を指名する。1〜6 は 1st〜6th、0 は指名なし。ほかの数字では何もしない */
+export const assignByDigit = (
+  draft: CashierDraft,
+  key: string,
+): CashierDraft => {
+  const dripper = dripperFromKey(key);
+  return dripper === undefined ? draft : assignSelectedDripper(draft, dripper);
+};
+
 /**
  * 行の指名を決めて、選んでいた行を外す。
  * 指名はドリッパーの番号が必須で、番号が無ければ自由記述も消す（MenuEntity.assign）
@@ -287,7 +306,9 @@ export type CouponStatus =
   /** 割引できる。order は引換券の注文 */
   | { kind: "available"; order: WithId<OrderEntity> }
   | { kind: "already_used" }
-  | { kind: "unserved" };
+  | { kind: "unserved" }
+  /** 返金した注文の番号 */
+  | { kind: "refunded" };
 
 /** 引換券番号を過去の注文と照らし合わせる */
 export const couponStatus = (
@@ -302,12 +323,14 @@ export const couponStatus = (
   const status = getDiscountOrderStatus(orderId, [...orders]);
   const order = orders.find((candidate) => candidate.orderId === orderId);
   if (status === "available" && order) return { kind: "available", order };
-  return { kind: status === "already_used" ? "already_used" : "unserved" };
+  return { kind: status === "available" ? "unserved" : status };
 };
 
-/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない番号） */
+/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない・返金した番号） */
 export const isCouponRejected = (status: CouponStatus): boolean =>
-  status.kind === "already_used" || status.kind === "unserved";
+  status.kind === "already_used" ||
+  status.kind === "unserved" ||
+  status.kind === "refunded";
 
 /** 引換券番号の欄を選ぶ */
 export const focusCoupon = (draft: CashierDraft): CashierDraft =>
@@ -384,6 +407,19 @@ export const inputDigits = (
   }
   return { ...draft, received, payment: "cash" };
 };
+
+/**
+ * テンキー（画面）の数字。キーボードの数字と同じく、入れる段階で行を選んでいれば指名
+ * （assignByDigit）、でなければ引換券番号・受取金額に打つ（inputDigits）
+ */
+export const inputPadDigits = (
+  draft: CashierDraft,
+  digits: string,
+  checkCoupon?: (coupon: string) => CouponStatus,
+): CashierDraft =>
+  isAssigningByDigits(draft)
+    ? assignByDigit(draft, digits)
+    : inputDigits(draft, digits, checkCoupon);
 
 /** 1 桁消す（入れる段階は引換券番号の欄に移る） */
 export const deleteDigit = (draft: CashierDraft): CashierDraft => {
@@ -548,11 +584,10 @@ export const cashierKeyIntent = (
     return draft.step === "entry" ? update(addLine(draft, menu)) : NONE;
   }
   if (/^[0-9]$/.test(key)) {
-    if (draft.step === "entry" && draft.selected !== null) {
+    if (isAssigningByDigits(draft)) {
       // 行を選んでいる間の数字は指名。指名できない行（グッズなど）では何もしない
-      const dripper = dripperFromKey(key);
-      return dripper !== undefined && canAssignSelected(draft)
-        ? update(assignSelectedDripper(draft, dripper))
+      return canAssignByDigit(draft, key)
+        ? update(assignByDigit(draft, key))
         : NONE;
     }
     return update(inputDigits(draft, key, checkCoupon));

@@ -1,9 +1,15 @@
 import { type Order, orderRepository } from "@cafeore/common";
 import { Button } from "../ui/button";
 
-export async function getOrders() {
+/** 書き出す注文。キャンセルした注文も入れ（cancelledAt）、売上に数える額（返金した分を引いた額）を足す */
+type ExportedOrder = Order & { salesAmount: number };
+
+export async function getOrders(): Promise<ExportedOrder[]> {
   const orderEntities = await orderRepository.findAll();
-  return orderEntities.map((order) => order.toOrder());
+  return orderEntities.map((order) => ({
+    ...order.toOrder(),
+    salesAmount: order.getSalesAmount(),
+  }));
 }
 
 export function DownloadButton() {
@@ -29,7 +35,7 @@ export function DownloadButton() {
   // ordersからCSVを生成してダウンロード
   const downloadOrdersCsv = async () => {
     const orders = await getOrders();
-    const headers = Object.keys(orders[0]) as (keyof Order)[];
+    const headers = Object.keys(orders[0]) as (keyof ExportedOrder)[];
 
     console.log(headers);
 

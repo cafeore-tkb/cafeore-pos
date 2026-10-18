@@ -7,18 +7,19 @@ import {
   orderRepository,
   readableTextColor,
   resolveItemColor,
-  squareRepository,
   useColorSettings,
 } from "@cafeore/common";
 import { ChevronLeftIcon } from "@radix-ui/react-icons";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { hasCancelLabel } from "~/label/cancel-label";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import type { ConnectionIssue } from "../../functional/connectionIssues";
 import { useCurrentTime } from "../../functional/useCurrentTime";
-import { SquareRefundButton } from "../../molecules/SquareRefundButton";
+import { CancelOrderButton } from "../../molecules/CancelOrderButton";
+import { RefundOrderButton } from "../../molecules/RefundOrderButton";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 import { ConnectionIssueDot } from "./PrinterStatusDot";
 
@@ -27,10 +28,12 @@ type props = {
   orders: WithId<OrderEntity>[] | undefined;
   /** つながっていないもの。見出しの右に出す */
   connectionIssues: ConnectionIssue[];
-  /** Square で払った注文に返金のボタン（注文を消す・残す）と返金の状態を出す */
+  /** Square で払った分を返金できる（このレジで Square 連携が有効）。現金で払った分はいつでも返金できる */
   squareRefundable: boolean;
   /** 領収書を刷る。プリンターに送れたら true */
   onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
+  /** キャンセルした注文のシールを刷る。刷れたら（刷るシールが無ければ）true */
+  onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
   /** レジに戻る */
   onBack: () => void;
 };
@@ -52,6 +55,14 @@ const REFUND_TAG: Partial<
   failed: "・返金失敗",
   unknown: "・返金確認中",
 };
+
+/** キャンセルした注文に、提供の状態の代わりに出す */
+const CANCELLED = { text: "キャンセル", className: "bg-red-100 text-red-700" };
+
+/** 一覧に出す返金の状態。Square は決済の状態、なければ現金を返したと記録したか */
+const refundTagOf = (order: OrderEntity) =>
+  (order.squareRefundStatus && REFUND_TAG[order.squareRefundStatus]) ??
+  (order.cashRefundedAt !== null ? REFUND_TAG.refunded : undefined);
 
 const paymentText = (order: OrderEntity) =>
   order.payments.length > 0
@@ -80,7 +91,10 @@ const discountNote = (order: OrderEntity) => {
 
 /**
  * レジの「過去の注文」の画面。左に一覧（番号で探せる）、右に選んだ注文の詳細
- * （商品・コメント・会計・領収書・Square の返金）
+ * （商品・コメント・会計・領収書・Square の返金・キャンセル）
+ *
+ * キャンセルした注文も消さずに「キャンセル」として出す。
+ * キャンセルしたら、カップのシールを刷った注文ならラベル用のプリンターでキャンセルのシール（黒地）を刷る。
  *
  * ↑↓ で選び、Esc でレジに戻る。
  */
@@ -89,6 +103,7 @@ export const PastOrdersView = ({
   connectionIssues,
   squareRefundable,
   onPrintFormalReceipt,
+  onPrintCancelLabel,
   onBack,
 }: props) => {
   const [query, setQuery] = useState("");
@@ -233,6 +248,7 @@ export const PastOrdersView = ({
             order={selected}
             squareRefundable={squareRefundable}
             onPrintFormalReceipt={onPrintFormalReceipt}
+            onPrintCancelLabel={onPrintCancelLabel}
           />
         ) : (
           <div className="flex items-center justify-center text-[15px] text-stone-400">
@@ -253,9 +269,8 @@ const OrderRow = ({
   selected: boolean;
   onSelect: () => void;
 }) => {
-  const status = STATUS[order.status];
-  const refundTag =
-    order.squareRefundStatus && REFUND_TAG[order.squareRefundStatus];
+  const status = order.isCancelled() ? CANCELLED : STATUS[order.status];
+  const refundTag = refundTagOf(order);
   return (
     <button
       type="button"
@@ -311,14 +326,21 @@ const OrderRow = ({
   );
 };
 
+const OUTLINE_BUTTON =
+  "h-12 rounded-[10px] border-red-700 px-4.5 font-bold text-red-700 text-sm hover:bg-red-50 hover:text-red-700";
+const SOLID_BUTTON =
+  "h-12 rounded-[10px] border-0 bg-red-500 px-5.5 font-bold text-[15px] text-white hover:bg-red-600 hover:text-white";
+
 const OrderDetail = ({
   order,
   squareRefundable,
   onPrintFormalReceipt,
+  onPrintCancelLabel,
 }: {
   order: WithId<OrderEntity>;
   squareRefundable: boolean;
   onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
+  onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
 }) => {
   const { colorSettings } = useColorSettings();
   const [comment, setComment] = useState("");
@@ -327,21 +349,6 @@ const OrderDetail = ({
   const status = STATUS[order.status];
   const elapsed = orderElapsedTime(order, now);
   const refundStatus = order.squareRefundStatus;
-  const canRefund =
-    squareRefundable &&
-    order.paymentMethod === "square" &&
-    refundStatus !== "pending" &&
-    refundStatus !== "refunded";
-  // 分けて会計した注文で返金するのは Square で払った分だけ（現金で払った分は手で返す）
-  const squarePayments = order.payments.filter(
-    (payment) => payment.method === "square",
-  );
-  const label =
-    order.payments.length > 0
-      ? `No.${order.orderId} の Square の支払い ${squarePayments.length}件（${formatYen(
-          squarePayments.reduce((acc, payment) => acc + payment.amount, 0),
-        )}）`
-      : `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
 
   const addComment = () => {
     const text = comment.trim();
@@ -365,6 +372,18 @@ const OrderDetail = ({
     }
   };
 
+  /** キャンセルのシール（黒地）を刷る。キャンセルしたときと、刷り直すときに呼ぶ */
+  const printCancelLabel = async (reprint = false) => {
+    if (await onPrintCancelLabel(order)) {
+      if (reprint)
+        toast(`No.${order.orderId} のキャンセルのシールを印刷しました`);
+    } else {
+      toast.error(
+        `No.${order.orderId} のキャンセルのシールを印刷できませんでした。ラベル用のプリンターを確かめて「キャンセルのシールを印刷」で刷り直してください`,
+      );
+    }
+  };
+
   return (
     <div className="flex min-h-0 min-w-0 flex-col">
       <div className="flex flex-none items-end gap-4.5 border-stone-200 border-b px-6 pt-3.5 pb-3">
@@ -379,6 +398,16 @@ const OrderDetail = ({
           <span className="font-bold">{order.getCups().length}杯</span>
         </span>
         <span className="ml-auto flex items-center gap-2 pb-1.5">
+          {order.isCancelled() && (
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-1.25 font-bold text-[13px]",
+                CANCELLED.className,
+              )}
+            >
+              {CANCELLED.text}
+            </span>
+          )}
           <span
             className={cn(
               "rounded-full px-2.5 py-1.25 font-bold text-[13px]",
@@ -387,18 +416,21 @@ const OrderDetail = ({
           >
             {status.text}
           </span>
-          <span
-            className={cn(
-              "rounded-lg px-2.5 py-1.25 font-bold text-sm tabular-nums",
-              elapsed.overdue
-                ? "bg-red-500 text-white"
-                : "bg-slate-100 text-slate-700",
-            )}
-          >
-            {order.servedAt === null
-              ? "未提供"
-              : `${elapsed.m}分${elapsed.ss}秒`}
-          </span>
+          {/* キャンセルした注文はもう作らないので、提供までの時間（遅れの赤）は出さない */}
+          {!order.isCancelled() && (
+            <span
+              className={cn(
+                "rounded-lg px-2.5 py-1.25 font-bold text-sm tabular-nums",
+                elapsed.overdue
+                  ? "bg-red-500 text-white"
+                  : "bg-slate-100 text-slate-700",
+              )}
+            >
+              {order.servedAt === null
+                ? "未提供"
+                : `${elapsed.m}分${elapsed.ss}秒`}
+            </span>
+          )}
         </span>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_280px] content-start gap-6 overflow-auto px-6 py-4">
@@ -533,6 +565,11 @@ const OrderDetail = ({
           {order.paymentMethod === "square" && (
             <RefundNote status={refundStatus} />
           )}
+          {order.cashRefundedAt !== null && (
+            <p className="mt-1.5 font-bold text-stone-600 text-xs">
+              現金は返金済み
+            </p>
+          )}
         </div>
       </div>
       <div className="flex flex-none items-center gap-2.5 border-stone-200 border-t px-6 py-3">
@@ -543,24 +580,49 @@ const OrderDetail = ({
         >
           領収書を印刷
         </button>
-        {canRefund && (
-          <div className="ml-auto flex gap-2.5">
-            <SquareRefundButton
-              label={label}
-              orderOnRefund="keep"
-              refund={() => squareRepository.refundOrderKeepingOrder(order.id)}
-              triggerClassName="h-12 rounded-[10px] border-red-700 px-4.5 font-bold text-red-700 text-sm hover:bg-red-50 hover:text-red-700"
-            >
-              返金（キャンセルしない）
-            </SquareRefundButton>
-            <SquareRefundButton
-              label={label}
-              orderOnRefund="delete"
-              refund={() => squareRepository.refundOrder(order.id)}
-              triggerClassName="h-12 rounded-[10px] border-0 bg-red-500 px-5.5 font-bold text-[15px] text-white hover:bg-red-600 hover:text-white"
-            />
-          </div>
+        {/* カップのシールを刷った注文だけ（キャンセルしたときに刷れなかったら、ここで刷り直す） */}
+        {order.isCancelled() && hasCancelLabel(order) && (
+          <button
+            type="button"
+            onClick={() => void printCancelLabel(true)}
+            className="h-12 rounded-[10px] border border-stone-400 bg-white px-5 font-bold text-[15px] hover:bg-stone-50"
+          >
+            キャンセルのシールを印刷
+          </button>
         )}
+        <div className="ml-auto flex gap-2.5">
+          {/* 返す分（Square・現金）が無ければ、返金のボタンは出ない */}
+          {order.isCancelled() ? (
+            <RefundOrderButton
+              order={order}
+              mode="cancelled"
+              squareRefundable={squareRefundable}
+              triggerClassName={SOLID_BUTTON}
+            />
+          ) : (
+            <>
+              <RefundOrderButton
+                order={order}
+                mode="keep"
+                squareRefundable={squareRefundable}
+                triggerClassName={OUTLINE_BUTTON}
+              />
+              <RefundOrderButton
+                order={order}
+                mode="cancel"
+                squareRefundable={squareRefundable}
+                triggerClassName={SOLID_BUTTON}
+                onCancelled={() => void printCancelLabel()}
+              />
+              {/* 返金せずにキャンセルする。現金・返金済みの注文もキャンセルできる */}
+              <CancelOrderButton
+                order={order}
+                triggerClassName={OUTLINE_BUTTON}
+                onCancelled={() => void printCancelLabel()}
+              />
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

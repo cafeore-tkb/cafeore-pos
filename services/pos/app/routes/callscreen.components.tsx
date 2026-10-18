@@ -18,6 +18,18 @@ const STAGE_PADDING = 40;
 const SECTION_GAP = 28;
 /** プレート同士のすき間 */
 const GAP = 20;
+/**
+ * 番号の数字 1 文字の幅（文字の大きさに対する比）。明朝（Zen Old Mincho）の数字はいちばん広い 0 で 0.61 ほど。
+ * 番号は 4 桁まで出るので、桁数ぶんの幅から文字の大きさを決める
+ */
+const DIGIT_EM = 0.62;
+/** 番号に使ってよいプレートの幅の割合 */
+const NUMBER_FILL = 0.8;
+/** 補足（「1st ドリッパー」）に使ってよいプレートの幅の割合と、文字の大きさの下限 */
+const CAPTION_FILL = 0.88;
+const CAPTION_MIN = 20;
+/** 番号と補足のすき間 */
+const CAPTION_GAP = 4;
 const HEADING_H = 56;
 /** 見出しと下のプレート領域を合わせた高さ */
 const HEADING_BLOCK = HEADING_H + 16;
@@ -37,6 +49,15 @@ const BAND_BOARD_W = STAGE_W - DRIP_BAND_PADDING_X * 2;
 
 /** 準備中バーに並べる最大件数。あふれた分は件数だけ出す */
 const PREP_BAR_CAP = 10;
+/** 準備中バーの見出し（準備中・Preparing）の幅 */
+const PREP_LABEL_W = 136;
+/** 準備中バーの左右の余白（px-10）と、見出し・区切り線・番号の間（gap-8） */
+const PREP_BAR_PADDING_X = 40;
+const PREP_BAR_GAP = 32;
+/** 準備中の番号札の文字の大きさ（text-5xl）、左右の余白と枠線（px-5・border）、札どうしのすき間（gap-4） */
+const PREP_FONT = 48;
+const PREP_CHIP_EDGE = 20 * 2 + 2;
+const PREP_CHIP_GAP = 16;
 
 // 色は tailwind.css のテーマカラーから取る（年度でテーマカラーが変わっても追従する）。
 // テーマカラーの深い青の地に、撫子色の光と金の差し色を置く（cashier-mini と同じ組み合わせ）
@@ -83,6 +104,27 @@ const rowsFor = (count: number): number[] => {
   return overflowed;
 };
 
+/**
+ * 件数を rowCount 行に、行ごとの件数がそろうように分ける。余りは下の行に回す（7 件を 2 行なら [3, 4]）
+ */
+const evenRows = (count: number, rowCount: number): number[] => {
+  const base = Math.floor(count / rowCount);
+  const extra = count % rowCount;
+  return Array.from(
+    { length: rowCount },
+    (_, row) => base + (row >= rowCount - extra ? 1 : 0),
+  );
+};
+
+/**
+ * 補足の幅（文字の大きさに対する比）。英数字は 0.6、かなと記号は 1 に字間（tracking 0.08em）を足し、多めに見積もる
+ */
+const captionEm = (caption: string) =>
+  [...caption].reduce(
+    (sum, char) => sum + (char.charCodeAt(0) < 0x80 ? 0.6 : 1) + 0.08,
+    0,
+  );
+
 export type PlateItem = {
   id: number;
   /** 番号の下に出す補足。ドリップ中なら「1st ドリッパー」 */
@@ -95,25 +137,33 @@ export type PlateRect = PlateItem & {
   w: number;
   h: number;
   fontSize: number;
+  /** 補足の文字の大きさ。補足が無ければ 0 */
+  captionFontSize: number;
   /** 上から何段目か */
   row: number;
 };
 
 /**
  * 与えられた枠に全件を可能な限り大きく敷き詰める。
- * 先頭のものほど上の行に来るので、呼び出しの新しいものが大きく残る。
+ * 行割りを渡さなければ件数ごとの行割り（ROWS）を使い、先頭のものほど上の行に来るので、呼び出しの新しいものが大きく残る。
+ * 番号は桁数ぶんの幅がプレートに入る大きさにする（4 桁でもはみ出さない）
  */
 export const layoutPlates = (
   items: PlateItem[],
   width: number,
   height: number,
   maxFontSize: number,
+  rows: number[] = rowsFor(items.length),
 ): PlateRect[] => {
   if (items.length === 0 || height <= 0) return [];
 
-  const rows = rowsFor(items.length);
-  // 列数が少ない行ほど大きく取れるよう、1/列数 で高さを配分する
-  const weights = rows.map((columns) => 1 / columns);
+  // 列数が少ない行ほど大きく取れるよう、1/列数 で高さを配分する。
+  // ただし上の行より高くはしない（13 件以上で最後の行の件数が少なくても、古い番号を大きくしない）
+  let widest = 0;
+  const weights = rows.map((columns) => {
+    widest = Math.max(widest, columns);
+    return 1 / widest;
+  });
   const weightSum = weights.reduce((acc, cur) => acc + cur, 0);
   const usableH = height - GAP * (rows.length - 1);
 
@@ -129,15 +179,32 @@ export const layoutPlates = (
       const item = items[index];
       // 補足を出す分だけ番号の取り分を減らす
       const box = item.caption ? h * 0.62 : h * 0.72;
+      let fontSize = Math.min(
+        box,
+        (w * NUMBER_FILL) / (String(item.id).length * DIGIT_EM),
+        maxFontSize,
+      );
+      let captionFontSize = 0;
+      if (item.caption) {
+        // 補足は番号の 0.24 倍（下限あり）。プレートの幅に入らなければ縮める
+        captionFontSize = Math.min(
+          Math.max(CAPTION_MIN, fontSize * 0.24),
+          (w * CAPTION_FILL) / captionEm(item.caption),
+        );
+        // 補足が下限に掛かって大きくなった分は、番号を縮めて高さの 9 割に収める（補足は 1.25 行の高さ）
+        fontSize = Math.min(
+          fontSize,
+          h * 0.9 - CAPTION_GAP - captionFontSize * 1.25,
+        );
+      }
       rects.push({
         ...item,
         x: column * (w + GAP),
         y,
         w,
         h,
-        fontSize: Math.round(
-          Math.min(box, (w * 0.82) / String(item.id).length, maxFontSize),
-        ),
+        fontSize: Math.round(fontSize),
+        captionFontSize: Math.floor(captionFontSize),
         row: rowIndex,
       });
       index++;
@@ -147,6 +214,36 @@ export const layoutPlates = (
   });
 
   return rects;
+};
+
+/**
+ * ドリップ中のプレートを並べる。行数は、いちばん小さく出る番号がいちばん大きくなるものを選ぶ（同じなら行の少ないほう）。
+ * ドリップ中の欄は横長なので、ドリッパーの台数（6）ほどまでは 1 行に並び、ドリッパーの番号順に左から読める。
+ * お呼び出し中と違って新しいものを大きく残す理由が無いので、行ごとの件数はそろえる
+ */
+export const layoutDripPlates = (
+  items: PlateItem[],
+  width: number,
+  height: number,
+  maxFontSize: number,
+): PlateRect[] => {
+  let best: PlateRect[] = [];
+  let bestSize = Number.NEGATIVE_INFINITY;
+  for (let rowCount = 1; rowCount <= items.length; rowCount++) {
+    const plates = layoutPlates(
+      items,
+      width,
+      height,
+      maxFontSize,
+      evenRows(items.length, rowCount),
+    );
+    const size = Math.min(...plates.map((plate) => plate.fontSize));
+    if (size > bestSize) {
+      best = plates;
+      bestSize = size;
+    }
+  }
+  return best;
 };
 
 /**
@@ -464,7 +561,7 @@ export function PlateBoard({
               top: `${plate.y}px`,
               width: `${plate.w}px`,
               height: `${plate.h}px`,
-              gap: plate.caption ? "4px" : 0,
+              gap: plate.caption ? `${CAPTION_GAP}px` : 0,
               boxShadow: hurried ? URGENT_HALO : undefined,
               transition: `left ${SLIDE_MS}ms ${EASE}, top ${SLIDE_MS}ms ${EASE}, width ${SLIDE_MS}ms ${EASE}, height ${SLIDE_MS}ms ${EASE}, border-color ${litTransition}, box-shadow ${litTransition}`,
               // 出てきたときだけ流れる（作り直さない限り、二度は流れない）
@@ -501,7 +598,7 @@ export function PlateBoard({
                   lit ? "text-white" : "text-theme-gold",
                 )}
                 style={{
-                  fontSize: `${Math.max(20, Math.round(plate.fontSize * 0.24))}px`,
+                  fontSize: `${plate.captionFontSize}px`,
                   transition: `font-size ${SLIDE_MS}ms ${EASE}, color ${litTransition}`,
                 }}
               >
@@ -515,6 +612,38 @@ export function PlateBoard({
   );
 }
 
+/** 準備中の番号札の幅 */
+const prepChipWidth = (orderId: number) =>
+  String(orderId).length * DIGIT_EM * PREP_FONT + PREP_CHIP_EDGE;
+
+/** 「他 N件」の幅（text-2xl の太字。「他」「件」と空白に、数字 1 桁あたり 0.6em を多めに見積もる） */
+const prepRestWidth = (rest: number) => 24 * (2.3 + 0.6 * String(rest).length);
+
+/**
+ * 準備中バーに出す件数。番号札の幅を桁数から出し、入るだけ（PREP_BAR_CAP まで）出す。
+ * 入りきらないときは「他 N件」の分を空ける（4 桁の番号でも、札が途中で切れたり「他 N件」が隠れたりしないように）
+ */
+const preparingShownCount = (orderIds: number[], overlay: boolean) => {
+  // 呼び出し画面では額縁の内側に枠線つきで置き、CM の上では端から端まで敷く
+  const barW = overlay ? STAGE_W : BOARD_W - 2;
+  const listW =
+    barW - PREP_BAR_PADDING_X * 2 - PREP_LABEL_W - PREP_BAR_GAP * 2 - 1;
+  const widthOf = (count: number) => {
+    const chips = orderIds
+      .slice(0, count)
+      .reduce(
+        (sum, orderId) => sum + prepChipWidth(orderId) + PREP_CHIP_GAP,
+        0,
+      );
+    const rest = orderIds.length - count;
+    return rest > 0 ? chips + prepRestWidth(rest) : chips - PREP_CHIP_GAP;
+  };
+
+  let count = Math.min(orderIds.length, PREP_BAR_CAP);
+  while (count > 0 && widthOf(count) > listW) count--;
+  return count;
+};
+
 /**
  * 準備中の番号を並べる帯。呼び出し画面でも CM の上でも同じものを使う。
  * overlay（CM の上）では端から端まで深い青の地を敷く
@@ -526,7 +655,7 @@ export function PreparingBar({
   orderIds: number[];
   overlay?: boolean;
 }) {
-  const shown = orderIds.slice(0, PREP_BAR_CAP);
+  const shown = orderIds.slice(0, preparingShownCount(orderIds, overlay));
   const rest = orderIds.length - shown.length;
 
   return (
@@ -542,7 +671,10 @@ export function PreparingBar({
         backgroundImage: overlay ? GRAD_DEEP : undefined,
       }}
     >
-      <div className="flex shrink-0 flex-col gap-1">
+      <div
+        className="flex shrink-0 flex-col gap-1"
+        style={{ width: `${PREP_LABEL_W}px` }}
+      >
         <span className="font-zen text-3xl text-white tracking-[0.2em]">
           準備中
         </span>
@@ -614,4 +746,4 @@ export function DripBand({ plates, flashesOf, preparingCount }: DripBandProps) {
 }
 
 export const dripBandLayout = (items: PlateItem[]) =>
-  layoutPlates(items, BAND_BOARD_W, DRIP_BAND_BOARD_H, 200);
+  layoutDripPlates(items, BAND_BOARD_W, DRIP_BAND_BOARD_H, 200);

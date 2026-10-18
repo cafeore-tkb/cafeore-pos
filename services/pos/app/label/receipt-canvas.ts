@@ -50,6 +50,8 @@ export type TextStyle = {
   size: number;
   weight: number;
   align?: CanvasTextAlign;
+  /** y をどこに合わせるか。省いたら文字の縦の中心 */
+  baseline?: CanvasTextBaseline;
   color?: string;
 };
 
@@ -120,7 +122,7 @@ const createDesignCanvas = (width: number, height: number, scale: number) => {
   return created;
 };
 
-/** y を文字の縦の中心にして書く */
+/** y を文字の縦の中心（style.baseline があればそこ）にして書く */
 export const drawText = (
   ctx: Ctx,
   text: string,
@@ -130,7 +132,7 @@ export const drawText = (
 ) => {
   ctx.font = font(style);
   ctx.textAlign = style.align ?? "left";
-  ctx.textBaseline = "middle";
+  ctx.textBaseline = style.baseline ?? "middle";
   ctx.fillStyle = style.color ?? "#000";
   ctx.fillText(text, x, y);
 };

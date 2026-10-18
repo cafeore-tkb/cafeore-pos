@@ -23,6 +23,7 @@ import (
 // お客さんが Square Terminal で決済手段を選ぶ画面（Terminal action の SELECT）。
 //
 // レジは会計の段階に入ったらこれを出し、お客さんが選んだらその決済手段で会計する。
+// 「割り勘」（SPLIT）が選ばれたら、レジはスタッフに分け方（個別小計・小計分割）を選ばせる。
 // スタッフがレジで決済手段を選んだとき・会計を終えたときは取り消す。
 // お金は動かないので、決済依頼（square.go）と違って照合や返金は無い。
 //
@@ -39,12 +40,13 @@ const (
 	squareActionMaxOptions = 5
 )
 
-// squareActionOptionTitle は端末のボタンに出す文字。レジのボタンと揃える。
+// squareActionOptionTitle は端末のボタンに出す文字。決済手段はレジのボタンと揃える。
 var squareActionOptionTitle = map[models.SquareActionOption]string{
 	models.OptionCash:        "現金",
 	models.OptionCardPresent: "カード",
 	models.OptionFelicaAll:   "電子マネー",
 	models.OptionQrCode:      "QR コード",
+	models.OptionSplit:       "割り勘",
 }
 
 // --------------------------------------------------

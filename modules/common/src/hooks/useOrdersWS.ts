@@ -1,5 +1,5 @@
 // hooks/useOrdersWS.ts
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiWebSocketUrl } from "../api/client";
 import {
   type OrderResponse,
@@ -99,6 +99,13 @@ export const useOrdersWS = ({
           case "order": {
             // 変わった注文だけ作り直し、他の注文はそのまま使う
             const order = responseToOrderEntity(data.order);
+            const previous = knownOrdersRef.current.get(order.id);
+            if (previous && !previous.isCancelled() && order.isCancelled())
+              setLastDeletedOrder({
+                id: order.id,
+                orderNo: order.orderId,
+                receivedAtMs: Date.now(),
+              });
             knownOrdersRef.current.set(order.id, order);
             setOrders((prev) => {
               // 全件より先には届かないが、届いても全件を待つ
@@ -165,10 +172,23 @@ export const useOrdersWS = ({
     };
   }, []);
 
+  // キャンセルした注文は、注文を消したときと同じく作る画面（マスター・提供・CaOS・呼び出し）や集計に出さない。
+  // キャンセルが無ければ受け取った配列をそのまま返し、参照を変えない（参照で比べる側が無駄に動かないように）
+  const activeOrders = useMemo(
+    () =>
+      orders?.some((order) => order.isCancelled())
+        ? orders.filter((order) => !order.isCancelled())
+        : orders,
+    [orders],
+  );
+
   return {
-    /** 一覧の差分ではなく削除イベントで受けた直近のキャンセル。未受信ならnull */
+    /** 削除またはキャンセルへの状態変更で受けた直近のキャンセル。未受信ならnull */
     lastDeletedOrder,
-    orders: orders ?? EMPTY_ORDERS,
+    /** キャンセルしていない注文 */
+    orders: activeOrders ?? EMPTY_ORDERS,
+    /** キャンセルした注文も含む全部の注文（レジの番号・引換券・過去の注文に使う） */
+    allOrders: orders ?? EMPTY_ORDERS,
     /** WebSocket から一度でも orders を受信したか */
     isOrdersLoaded: orders !== undefined,
     masterState,

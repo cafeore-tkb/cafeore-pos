@@ -47,4 +47,8 @@ export type OrderRepository = Omit<BaseRepository<OrderEntity>, "save"> & {
   readyCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
   serveCup(id: string, cupId: string): Promise<WithId<OrderEntity>>;
   addComment(id: string, author: string, text: string): Promise<OrderComment>;
+  // 注文をキャンセルする（返金はしない）。消さずに残し、キャンセルした注文を返す
+  cancel(id: string): Promise<WithId<OrderEntity>>;
+  // 現金で受け取った分を返したことを記録する（お金は手で返す）。記録した注文を返す
+  refundCash(id: string): Promise<WithId<OrderEntity>>;
 };

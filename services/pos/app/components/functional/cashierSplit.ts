@@ -346,6 +346,57 @@ export const cancelPart = (draft: CashierDraft): CashierDraft =>
       };
 
 /**
+ * 小計分割の途中か（先に払う額を入れた・この小計を途中まで払った）。
+ * この間は、端末に「割り勘」を並べない
+ */
+export const isSplittingSubtotal = (draft: CashierDraft): boolean => {
+  const subtotal = currentSubtotal(draft);
+  return (
+    draft.split.part !== null ||
+    (subtotal !== null && subtotalPaid(draft.split, subtotal.id) > 0)
+  );
+};
+
+/** 割り勘の分け方ごとの、選べない理由。選べれば null */
+export type SplitChoices = {
+  /** 個別小計（会計の段階を抜けて、先に払う商品を選ぶ） */
+  items: string | null;
+  /** 小計分割・一部金額先払い（いまの小計を金額で分ける） */
+  part: string | null;
+};
+
+/**
+ * どの分け方に進めるか（会計欄の「小計分割・一部金額先払い」と、端末で「割り勘」を選んだときのウィンドウ）。
+ * 個別小計は会計取消（leavePayment）と同じく小計を途中まで払っていなければ、
+ * 小計分割は先に払う額を 1 円以上残せれば（checkPart）選べる。Square で決済中はどちらも選べない
+ */
+export const splitChoices = (
+  draft: CashierDraft,
+  squarePaymentActive: boolean,
+): SplitChoices => {
+  const subtotal = currentSubtotal(draft);
+  if (draft.step !== "pay" || subtotal === null) {
+    const reason = "会計中ではありません";
+    return { items: reason, part: reason };
+  }
+  if (squarePaymentActive) {
+    const reason = "端末で決済中です";
+    return { items: reason, part: reason };
+  }
+  return {
+    items: !canLeavePayment(draft)
+      ? "この小計を途中まで払ったので、払い終えてから選べます"
+      : unpaidLines(draft).length < 2
+        ? "まだ払っていない商品が 1 点だけです"
+        : null,
+    part:
+      subtotalRemaining(draft.split, subtotal) > 1
+        ? null
+        : "残りが 1 円なので分けられません",
+  };
+};
+
+/**
  * 受け取った分を覚える。小計分割をやめ、受取金額を空にする。小計を払い終えたら入れる段階に戻る
  * （払い終えた小計の商品は「会計済」になる）
  */

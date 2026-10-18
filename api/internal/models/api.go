@@ -68,6 +68,7 @@ const (
 	OptionCash        SquareActionOption = "CASH"
 	OptionFelicaAll   SquareActionOption = "FELICA_ALL"
 	OptionQrCode      SquareActionOption = "QR_CODE"
+	OptionSplit       SquareActionOption = "SPLIT"
 )
 
 // Defines values for SquareActionOutcome.
@@ -741,9 +742,15 @@ type OrderPaymentResponse struct {
 
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount int                `json:"billing_amount"`
-	Comments      *[]CommentResponse `json:"comments,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
+	BillingAmount int `json:"billing_amount"`
+
+	// CancelledAt キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない
+	CancelledAt *time.Time `json:"cancelled_at"`
+
+	// CashRefundedAt 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
+	CashRefundedAt *time.Time         `json:"cash_refunded_at"`
+	Comments       *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
 
 	// Cups 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
 	Cups              []OrderCupResponse `json:"cups"`
@@ -863,17 +870,18 @@ type SquareActionCreateRequest struct {
 	// IdempotencyKey レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする
 	IdempotencyKey string `json:"idempotency_key"`
 
-	// Options 端末に並べる決済手段（並べる順）。Square の SELECT は 2〜5 個
+	// Options 端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個
 	Options []SquareActionOption `json:"options"`
 }
 
-// SquareActionOption 決済手段を選ぶ画面に出す選択肢。CASH は現金、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+// SquareActionOption 決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、
+// スタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
 // 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
 type SquareActionOption string
 
 // SquareActionOutcome レジが次に何をすべきかをサーバーが判定したもの。
 //   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
-//   - selected: お客さんが選んだ。selected の決済手段で会計する
+//   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
 //   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
 type SquareActionOutcome string
 
@@ -895,11 +903,11 @@ type SquareActionResponse struct {
 
 	// Outcome レジが次に何をすべきかをサーバーが判定したもの。
 	//   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
-	//   - selected: お客さんが選んだ。selected の決済手段で会計する
+	//   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
 	//   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
 	Outcome SquareActionOutcome `json:"outcome"`
 
-	// Selected お客さんが選んだ決済手段（SquareActionOption の値）。outcome が selected のときだけ入る
+	// Selected お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る
 	Selected *string `json:"selected"`
 
 	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
