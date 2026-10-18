@@ -17,6 +17,7 @@ import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import dripperIcon from "../icons/dripper.svg";
+import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
@@ -61,6 +62,8 @@ interface TopHeaderProps {
   onSelectTab: (tab: NavTab) => void;
   onSelectControlViewMode: (mode: ControlViewMode) => void;
   timeStr: string;
+  /** 今日届いた直近の注文キャンセル（練習中・未受信時はnull） */
+  cancelledOrderNo: number | null;
   soundEnabled: boolean;
   onToggleSound: () => void;
   /** 実データテストの盤面を出している（「テスト」の色を変える。時計の操作は盤面の上の帯 TestBoardBanner） */
@@ -171,6 +174,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSelectTab,
   onSelectControlViewMode,
   timeStr,
+  cancelledOrderNo,
   soundEnabled,
   onToggleSound,
   simulating,
@@ -291,6 +295,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           )}
         </div>
       </div>
+
+      <output
+        aria-live="polite"
+        aria-atomic="true"
+        title={
+          cancelledOrderNo === null
+            ? undefined
+            : `キャンセル #${orderNoLabel(cancelledOrderNo)}`
+        }
+        className="min-w-0 flex-1 truncate px-2 text-center font-black text-[16px] text-red-600"
+      >
+        {cancelledOrderNo !== null &&
+          `キャンセル #${orderNoLabel(cancelledOrderNo)}`}
+      </output>
 
       <div className="flex shrink-0 items-center gap-1">
         {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
