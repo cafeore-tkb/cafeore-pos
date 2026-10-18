@@ -13,9 +13,9 @@ const MAX_DIGITS = 4;
 /** 番号を押し終えてから探すまで（ms）。「12」を打つ途中の「1」で選んだりスクロールしたりしない */
 const SEARCH_DELAY_MS = 500;
 
-// 番号に数字を 1 つ足す（頭の 0 は入れない。MAX_DIGITS 桁まで）
+// 右に数字を足し、4桁を超えたら左端を押し出す（頭の0は入れない）。
 const appendDigit = (value: string, digit: string) =>
-  value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
+  `${value}${digit}`.slice(-MAX_DIGITS).replace(/^0+/, "");
 
 // 番号を押す前にフォーカスしていたボタン（指で押したヘッダーのボタンなど）を、あとの Enter で押さないように外す
 const blurFocus = () => {
