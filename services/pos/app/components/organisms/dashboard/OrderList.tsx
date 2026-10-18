@@ -12,6 +12,20 @@ import {
 interface OrderListProps {
   orders: WithId<OrderEntity>[] | undefined;
 }
+
+const orderRowTone = (order: OrderEntity) => {
+  switch (orderRecordStatus(order)) {
+    case "キャンセル":
+      return "bg-red-50 hover:bg-red-100";
+    case "提供済み":
+      return "bg-emerald-50 hover:bg-emerald-100";
+    case "お渡し待ち":
+      return "bg-amber-50 hover:bg-amber-100";
+    default:
+      return "bg-sky-50 hover:bg-sky-100";
+  }
+};
+
 /** 選択期間の注文記録。記録の参照のみで、注文や提供状態は変更しない。 */
 export function OrderList({ orders }: OrderListProps) {
   const searchId = useId();
@@ -78,12 +92,12 @@ export function OrderList({ orders }: OrderListProps) {
           ? "注文を読み込んでいます…"
           : `${filtered.length}件 / 期間内 ${orders.length}件`}
       </p>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,0.9fr)]">
         <div className="min-w-0 space-y-3">
           <div className="max-h-[65vh] overflow-auto rounded-xl border bg-white">
             <table className="w-full whitespace-nowrap text-left text-sm">
               <caption className="sr-only">
-                注文を選ぶと詳細を表示します
+                注文の行を選ぶと詳細を表示します
               </caption>
               <thead className="sticky top-0 z-10 bg-stone-100">
                 <tr>
@@ -106,17 +120,18 @@ export function OrderList({ orders }: OrderListProps) {
                 {shown.map((order) => (
                   <tr
                     key={order.id}
-                    className={`border-t ${selected?.id === order.id ? "bg-amber-50" : ""}`}
+                    tabIndex={0}
+                    aria-selected={selected?.id === order.id}
+                    className={`cursor-pointer border-t transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${orderRowTone(order)} ${selected?.id === order.id ? "ring-2 ring-stone-700 ring-inset" : ""}`}
+                    onClick={() => setSelectedId(order.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      setSelectedId(order.id);
+                    }}
                   >
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        aria-pressed={selected?.id === order.id}
-                        className="min-h-11 rounded px-2 font-bold text-amber-900 underline underline-offset-4"
-                        onClick={() => setSelectedId(order.id)}
-                      >
-                        #{String(order.orderId).padStart(3, "0")}
-                      </button>
+                    <td className="px-5 py-3 font-bold text-stone-900">
+                      #{String(order.orderId).padStart(3, "0")}
                     </td>
                     <td
                       className={`px-3 py-2 ${order.isCancelled() ? "text-red-700" : ""}`}
@@ -179,7 +194,7 @@ export function OrderList({ orders }: OrderListProps) {
             <OrderDetail order={selected} />
           ) : (
             <div className="rounded-xl border border-dashed p-8 text-center text-stone-500">
-              注文番号を押すと詳細が表示されます。
+              注文の行を選ぶと詳細が表示されます。
             </div>
           )}
         </div>
