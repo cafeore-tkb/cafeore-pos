@@ -11,7 +11,7 @@ import {
 } from "../logic/libero-colors";
 import { LaneName } from "./LaneParts";
 
-/** リベロの縦1列。上が抽出中、下が待機先頭。時間は共通の抽出予定に基づく目安。 */
+/** リベロの固定グリッド。背景の右から左への進み具合とバーは同じprogressを使う。 */
 export function LiberoColumn({
   row: { lane, brew },
   flashing,
@@ -19,88 +19,110 @@ export function LiberoColumn({
 }: { row: LiberoLane; flashing: boolean; nextIntensity?: number }) {
   const next = lane.queued[0];
   const progress = brew?.progress ?? 0;
+  const fresh = justStarted(brew?.elapsedSec);
   const currentColor = brew
     ? liberoColor(brew.card, brewIntensity(progress))
     : undefined;
   const nextColor = next ? liberoColor(next, nextIntensity) : undefined;
+  // 色面の境界が文字を横切っても読めるよう、文字の周囲だけ白くする。
+  const currentText: CSSProperties = {
+    color: fresh ? "#b91c1c" : "#0f172a",
+    backgroundColor: "#ffffff",
+  };
+  const nextText = fresh ? currentText : nextColor?.textStyle;
   const remaining = brew ? Math.max(0, brew.plannedSec - brew.elapsedSec) : 0;
   return (
     <section
       data-libero-dripper={lane.id}
       aria-label={`ドリッパー${lane.id}`}
-      className={`flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-300 bg-white ${flashing ? "caos-arrival" : ""}`}
+      className={`grid min-h-0 min-w-0 grid-rows-[minmax(104px,14vh)_minmax(0,3fr)_minmax(0,2fr)] overflow-hidden rounded-xl border border-slate-300 bg-white ${flashing ? "caos-arrival" : ""}`}
     >
-      <header className="flex min-h-[13vh] shrink-0 flex-col items-center justify-center gap-1 border-slate-200 border-b bg-white px-1 py-2 text-center">
+      <header className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] justify-items-center gap-1 border-slate-200 border-b bg-white px-1 py-2 text-center">
         <span className="font-black text-[clamp(24px,3vw,56px)] leading-none">
           {lane.id}
         </span>
         <LaneName
           dripper={lane.id}
           wrap
-          className={`justify-center font-black text-[clamp(16px,1.8vw,34px)] leading-tight ${justStarted(brew?.elapsedSec) ? "text-red-700" : ""}`}
+          className={`justify-center self-center font-black text-[clamp(16px,1.8vw,34px)] leading-tight ${fresh ? "text-red-700" : ""}`}
         />
       </header>
-      <div className="relative isolate flex min-h-0 flex-[3] flex-col items-center justify-center overflow-y-auto bg-slate-100 px-1.5 py-3 text-center">
-        {currentColor && <LiberoBackground palette={currentColor} />}
+      <div
+        className={`relative isolate min-h-0 overflow-y-auto px-1.5 py-3 text-center ${brew ? "bg-white" : "bg-slate-100"}`}
+      >
+        {currentColor && (
+          <LiberoBackground palette={currentColor} progress={progress} />
+        )}
         <div
-          style={{ color: currentColor?.textStyle.color }}
-          className="relative z-[1] flex w-full min-w-0 flex-col items-center gap-[2vh] rounded-xl px-1 py-2"
+          style={{ color: currentText.color }}
+          className="relative z-[1] grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)] items-center px-1 py-2"
         >
           {brew ? (
             <>
-              <CupDetail card={brew.card} textStyle={currentColor?.textStyle} />
-              <div className="w-full border-current/20 border-t pt-[2vh]">
-                {remaining > 0 && (
-                  <p
-                    style={currentColor?.textStyle}
-                    className="mx-auto mb-1 w-fit rounded px-1 font-bold text-[clamp(12px,1.1vw,20px)]"
-                  >
-                    あと
-                  </p>
-                )}
+              <CupDetail
+                card={brew.card}
+                textStyle={currentText}
+                highlight={fresh}
+              />
+              <div className="grid w-full grid-rows-[20px_minmax(48px,5vw)_8px] items-center justify-items-center gap-1 border-current/20 border-t pt-2">
                 <p
-                  style={currentColor?.textStyle}
-                  className={`mx-auto w-fit max-w-full rounded-md px-1 font-black tabular-nums leading-tight ${remaining > 0 ? "text-[clamp(22px,3.2vw,62px)]" : "whitespace-nowrap text-[clamp(18px,2vw,38px)]"}`}
+                  style={remaining > 0 ? currentText : undefined}
+                  aria-hidden={remaining === 0}
+                  className="w-fit rounded px-1 font-bold text-[clamp(12px,1.1vw,20px)]"
+                >
+                  {remaining > 0 ? "あと" : "\u00a0"}
+                </p>
+                <p
+                  style={currentText}
+                  className={`w-fit max-w-full rounded-md px-1 font-black tabular-nums leading-tight ${remaining > 0 ? "text-[clamp(22px,3.2vw,62px)]" : "whitespace-nowrap text-[clamp(18px,2vw,38px)]"}`}
                 >
                   {remaining > 0 ? clockLabel(remaining) : "あとちょっと"}
                 </p>
+                <progress
+                  className="sr-only"
+                  aria-label="抽出の進み具合"
+                  value={progress}
+                  max={1}
+                />
                 <div
-                  style={{
-                    backgroundColor: currentColor?.textStyle.backgroundColor,
-                  }}
-                  className="mx-auto mt-3 h-2 w-[85%] overflow-hidden rounded-full bg-current/15"
-                  aria-label={`残り時間の目安 ${Math.round((1 - progress) * 100)}%`}
+                  aria-hidden="true"
+                  className="relative h-2 w-[85%] overflow-hidden rounded-full bg-slate-300"
                 >
                   <div
-                    className="h-full rounded-full bg-current/70 transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
-                    style={{ width: `${(1 - progress) * 100}%` }}
+                    className="absolute inset-y-0 right-0 rounded-full bg-current/70 transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
+                    style={{ width: `${progress * 100}%` }}
                   />
                 </div>
               </div>
             </>
           ) : (
-            <p className="font-bold text-[clamp(18px,2vw,38px)] text-slate-500">
+            <p className="row-span-3 font-bold text-[clamp(18px,2vw,38px)] text-slate-500">
               {next ? "開始待ち" : "空き"}
             </p>
           )}
         </div>
       </div>
-      <div className="relative isolate flex min-h-0 flex-[2] flex-col items-center justify-center overflow-y-auto border-slate-300 border-t-2 bg-white px-1.5 py-3 text-center">
+      <div className="relative isolate min-h-0 overflow-y-auto border-slate-300 border-t-2 bg-white px-1.5 py-3 text-center">
         {nextColor && <LiberoBackground palette={nextColor} />}
         <div
-          style={{ color: nextColor?.textStyle.color }}
-          className="relative z-[1] flex w-full min-w-0 flex-col items-center gap-[1.5vh] rounded-xl px-1 py-2"
+          style={{ color: nextText?.color }}
+          className="relative z-[1] grid h-full min-h-0 w-full min-w-0 grid-rows-[minmax(0,0.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-center px-1 py-2"
         >
           <p
-            style={nextColor?.textStyle}
-            className="w-fit rounded px-1 font-bold text-[clamp(12px,1.2vw,22px)]"
+            style={nextText}
+            className="w-fit justify-self-center rounded px-1 font-bold text-[clamp(12px,1.2vw,22px)]"
           >
             NEXT
           </p>
           {next ? (
-            <CupDetail card={next} small textStyle={nextColor?.textStyle} />
+            <CupDetail
+              card={next}
+              small
+              textStyle={nextText}
+              highlight={fresh}
+            />
           ) : (
-            <p className="font-bold text-[clamp(16px,1.5vw,28px)] text-slate-400">
+            <p className="row-span-2 font-bold text-[clamp(16px,1.5vw,28px)] text-slate-400">
               予定なし
             </p>
           )}
@@ -110,25 +132,31 @@ export function LiberoColumn({
   );
 }
 
-/** 背景面だけを1秒で補間する。文字の白黒は補間せず可読性を保つ。 */
+/** 色面は右寄せで増やす。混在の杯数比は色面の中で維持し、各色も1秒で補間する。 */
 function LiberoBackground({
   palette,
-}: { palette: ReturnType<typeof liberoColor> }) {
+  progress = 1,
+}: { palette: ReturnType<typeof liberoColor>; progress?: number }) {
   return (
     <div
       aria-hidden="true"
-      className="-z-[1] pointer-events-none absolute inset-0 flex"
+      className="-z-[1] pointer-events-none absolute inset-0 flex justify-end"
     >
-      {palette.parts.map((part) => (
-        <div
-          key={part.kind}
-          className="h-full shrink-0 transition-colors duration-1000 ease-linear motion-reduce:transition-none"
-          style={{
-            flexBasis: `${part.fraction * 100}%`,
-            backgroundColor: part.backgroundColor,
-          }}
-        />
-      ))}
+      <div
+        className="flex h-full overflow-hidden transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
+        style={{ width: `${progress * 100}%` }}
+      >
+        {palette.parts.map((part) => (
+          <div
+            key={part.kind}
+            className="h-full shrink-0 transition-colors duration-1000 ease-linear motion-reduce:transition-none"
+            style={{
+              flexBasis: `${part.fraction * 100}%`,
+              backgroundColor: part.backgroundColor,
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -137,7 +165,13 @@ function CupDetail({
   card,
   small = false,
   textStyle,
-}: { card: CaosCard; small?: boolean; textStyle?: CSSProperties }) {
+  highlight = false,
+}: {
+  card: CaosCard;
+  small?: boolean;
+  textStyle?: CSSProperties;
+  highlight?: boolean;
+}) {
   const { hot, iced } = liberoCupCounts(card);
   const mixed = hot > 0 && iced > 0;
   return (
@@ -164,7 +198,7 @@ function CupDetail({
         {mixed ? (
           <>
             <span
-              className={`rounded-lg border border-red-300 bg-red-50 px-2 text-red-950 ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
+              className={`rounded-lg border border-red-300 bg-red-50 px-2 ${highlight ? "text-red-700" : "text-red-950"} ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
             >
               {hot}杯
             </span>
@@ -176,7 +210,7 @@ function CupDetail({
               ＋
             </span>
             <span
-              className={`rounded-lg border border-blue-300 bg-blue-50 px-2 text-blue-950 ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
+              className={`rounded-lg border border-blue-300 bg-blue-50 px-2 ${highlight ? "text-red-700" : "text-blue-950"} ${small ? "text-[clamp(16px,1.5vw,28px)]" : "text-[clamp(20px,2vw,38px)]"} font-black`}
             >
               {iced}杯
             </span>
