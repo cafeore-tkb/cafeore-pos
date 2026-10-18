@@ -345,6 +345,18 @@ export const cancelPart = (draft: CashierDraft): CashierDraft =>
         split: { ...draft.split, part: null },
       };
 
+/**
+ * 小計分割の途中か（先に払う額を入れた・この小計を途中まで払った）。
+ * この間は、端末に「割り勘」を並べない
+ */
+export const isSplittingSubtotal = (draft: CashierDraft): boolean => {
+  const subtotal = currentSubtotal(draft);
+  return (
+    draft.split.part !== null ||
+    (subtotal !== null && subtotalPaid(draft.split, subtotal.id) > 0)
+  );
+};
+
 /** 割り勘の分け方ごとの、選べない理由。選べれば null */
 export type SplitChoices = {
   /** 個別小計（会計の段階を抜けて、先に払う商品を選ぶ） */

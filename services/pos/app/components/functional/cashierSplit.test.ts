@@ -21,6 +21,7 @@ import {
   currentSubtotal,
   displayOrder,
   dueAmount,
+  isSplittingSubtotal,
   leavePayment,
   paidLineKeys,
   preferDiscount,
@@ -221,6 +222,32 @@ describe("[unit] cashierSplit の割り勘の分け方", () => {
     expect(splitChoices(almost, false).part).toBe(
       "残りが 1 円なので分けられません",
     );
+  });
+
+  test("小計分割の途中は、先に払う額を入れたあとも途中まで払ったあとも分割中とみなす", () => {
+    const paying = beginRest(withLines(blend, latte), 0, 100);
+    expect(isSplittingSubtotal(paying)).toBe(false);
+    const parted = setPart(paying, 300);
+    expect(isSplittingSubtotal(parted)).toBe(true);
+    expect(isSplittingSubtotal(cancelPart(parted))).toBe(false);
+    // 受け取ったあと「残りを全て会計」に進んだ（先に払う額は消える）
+    const partlyPaid = recordTender(parted, cash(300));
+    expect(partlyPaid.split.part).toBeNull();
+    expect(isSplittingSubtotal(partlyPaid)).toBe(true);
+    // 小計を払い終えたら分割中ではない
+    expect(isSplittingSubtotal(recordTender(partlyPaid, cash(800)))).toBe(
+      false,
+    );
+  });
+
+  test("個別小計を払い終えたあとの残りの会計は分割中ではない", () => {
+    const start = withLines(blend, latte, cookie);
+    const [b] = keysOf(start);
+    const done = recordTender(
+      beginSubtotal(start, "items", [b], 0, 100),
+      cash(500),
+    );
+    expect(isSplittingSubtotal(beginRest(done, 0, 100))).toBe(false);
   });
 
   test("個別小計を払い終えたあとの残りの会計でも選べる", () => {

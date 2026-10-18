@@ -27,7 +27,7 @@ func (h *OrderHandler) RecallOrder(c *gin.Context) {
 		return
 	}
 	// 画面の「お呼び出し中」（OrderEntity の status が calling）と同じ決め方
-	if err == nil && (order.ReadyAt == nil || order.ServedAt != nil) {
+	if err == nil && (order.ReadyAt == nil || order.ServedAt != nil || order.CancelledAt != nil) {
 		err = conflictErrorf("呼び出し中ではありません（ほかの端末で提供したか、呼び出しを取り消したかもしれません）")
 	}
 	if respondError(c, err) {

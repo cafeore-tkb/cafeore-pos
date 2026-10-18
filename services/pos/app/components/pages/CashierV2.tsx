@@ -49,7 +49,7 @@ import {
   focusCoupon,
   focusMemo,
   hasDraftInput,
-  inputDigits,
+  inputPadDigits,
   removeAllLines,
   removeLine,
   selectLine,
@@ -70,6 +70,7 @@ import {
   displayOrder,
   dueAmount,
   hasTenders,
+  isSplittingSubtotal,
   leavePayment,
   paidLineKeys,
   preferDiscount,
@@ -144,11 +145,13 @@ import {
   ConnectionIssueDot,
   PrinterStatusDot,
 } from "../organisms/cashier/PrinterStatusDot";
+import { RegisterStrip } from "../organisms/cashier/RegisterStrip";
 import { tenderDot, tenderLabel } from "../organisms/cashier/tenderStyle";
 import { Label } from "../ui/label";
 
 type props = {
   items: WithId<MenuEntity>[] | undefined; // itemMasterを渡す
+  /** キャンセルした注文も含む全部の注文（番号・引換券・過去の注文に使う） */
   orders: WithId<OrderEntity>[] | undefined;
   wsStatus: "connecting" | "open" | "closed" | "error";
   /** つながっていないもの（バックエンド・データベースなど）。ヘッダーのプリンターの左に出す */
@@ -193,7 +196,12 @@ const isOutsideRegister = (target: EventTarget | null) =>
     "input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog']",
   ) !== null;
 
-type CashierDialogKind = "assign" | "memo" | "removeAll" | "reset";
+type CashierDialogKind =
+  | "assign"
+  | "memo"
+  | "removeAll"
+  | "reset"
+  | "cancelPayment";
 
 /** 先払い（個別小計・小計分割）のダイアログ */
 type PrepayDialogState =
@@ -287,8 +295,13 @@ const CashierV2 = ({
     null,
   );
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  // 作る量の見込みには、キャンセルした注文を入れない（orders はキャンセルした注文も含む）
+  const activeOrders = useMemo(
+    () => orders?.filter((order) => !order.isCancelled()),
+    [orders],
+  );
   const { nextOrderId, manualOrderId, setOrderIdOverride, markOrderIdIssued } =
-    useLatestOrderId(orders);
+    useLatestOrderId(orders, canSaveNow);
   // 確定できるのは番号が決まっているとき：つながっていれば自動の番号、オフラインなら手で付けた番号。
   // オフラインの注文はこの端末に溜まり、つながったらまとめて送る（submitPayload）
   const canSubmitOrder = canSaveNow || manualOrderId !== null;
@@ -482,9 +495,10 @@ const CashierV2 = ({
 
   /** 注文を送った後、次の注文を入力できるようにする */
   const afterSubmit = useCallback(() => {
-    // オフライン時（手動番号指定時）は次の番号を自動設定
-    if (manualOrderId !== null && !canSaveNow) {
-      setOrderIdOverride(manualOrderId + 1);
+    // 手動番号指定時、オフラインなら次の番号を手動のまま進める。
+    // オンラインなら自動に戻し、届いている注文と手元の最大 + 1 にする（同じ番号を続けて付けない）
+    if (manualOrderId !== null) {
+      setOrderIdOverride(canSaveNow ? null : manualOrderId + 1);
     }
     resetAll();
     playSound();
@@ -663,6 +677,7 @@ const CashierV2 = ({
       const submitOne = prepareSubmit(order);
       submitOne.received = submitOne.billingAmount;
       const savedOrder = await submitSquarePayload(submitOne, checkout.id);
+      markOrderIdIssued(submitOne.orderId);
       if (autoSquareRefund) {
         void refundSquareOrderAutomatically(savedOrder);
       }
@@ -681,6 +696,7 @@ const CashierV2 = ({
       canSaveNow,
       prepareSubmit,
       submitSquarePayload,
+      markOrderIdIssued,
       autoSquareRefund,
       printOrderLabel,
       receiptPrinter,
@@ -718,10 +734,12 @@ const CashierV2 = ({
   });
   const squarePaymentActive = squarePayment.active;
 
-  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる（小計分割の途中は並べない）
+  // 割り勘の分け方。端末の「割り勘」は、どちらかに進めるときだけ並べる
+  // （小計分割の途中は、受け取ったあとの「残りを全て会計」を含めて並べない）
   const choices = splitChoices(draft, squarePaymentActive);
   const offerSplit =
-    split.part === null && (choices.items === null || choices.part === null);
+    !isSplittingSubtotal(draft) &&
+    (choices.items === null || choices.part === null);
 
   /**
    * お客さんが Square 端末で決済手段を選べるようにする（会計の段階で、スタッフがまだ選んでいない間）。
@@ -952,6 +970,20 @@ const CashierV2 = ({
     updateDraft(leavePayment);
     resyncDisplay();
   }, [draft, updateDraft, resyncDisplay]);
+
+  /**
+   * 会計の段階で、薄くしたメニューを押した。会計を取り消すか尋ねる。
+   * 小計を途中まで払ったら戻れないので、尋ねずに知らせる
+   */
+  const confirmCancelPayment = useCallback(() => {
+    if (!canLeavePayment(draft)) {
+      toast.warning(
+        "この小計を途中まで払ったので、払い終えるか取り消すまで戻れません",
+      );
+      return;
+    }
+    setDialog("cancelPayment");
+  }, [draft]);
 
   /**
    * 割り勘の分け方で個別小計を選んだ。会計の段階を抜けて（会計取消と同じ）、先に払う商品を選ぶ。
@@ -1286,6 +1318,35 @@ const CashierV2 = ({
     paying && current?.kind === "items" ? current.lineKeys : [],
   );
 
+  // 商品の列。入れる段階は真ん中、会計の段階は左に押し出す（RegisterStrip）
+  const orderPanel = (
+    <OrderPanel
+      draft={viewDraft}
+      couponStatus={coupon}
+      discount={newOrder.discount}
+      coffeeCups={newOrder.getCoffeeCups().length}
+      needsSplit={shouldSplitOrder(newOrder.menus)}
+      paidKeys={paidKeys}
+      currentItemKeys={currentItemKeys}
+      prepaid={prepaid}
+      canOpenItems={canOpenItems}
+      canCancelPayment={canLeavePayment(draft)}
+      onSelect={(index) => updateDraft((current) => selectLine(current, index))}
+      onRemove={(index) => updateDraft((current) => removeLine(current, index))}
+      onOpenAssign={openAssign}
+      onRemoveAll={openRemoveAll}
+      onFocusCoupon={() => updateDraft(focusCoupon)}
+      onToggleSpecial={() =>
+        updateDraft((current) => toggleSpecial(current, couponApplied))
+      }
+      onOpenMemo={openMemo}
+      onOpenItems={openItems}
+      onGoPay={startPayment}
+      onCancelPayment={cancelPayment}
+      onRefundAll={() => openRefund()}
+    />
+  );
+
   return (
     <div className="relative flex h-[calc(100dvh-0.5rem)] min-h-[600px] flex-col overflow-hidden bg-white font-noto text-stone-900">
       {view === "register" ? (
@@ -1299,7 +1360,7 @@ const CashierV2 = ({
                 onOrderIdOverride={overrideOrderId}
               />
               <ReadyTimeEstimate
-                orders={orders}
+                orders={activeOrders}
                 drinkCups={newOrder.getDrinkCups().length}
               />
               {locked && (
@@ -1390,70 +1451,54 @@ const CashierV2 = ({
           {/* 会計の列は 432px 以上にし、余った幅をメニューと 4:3 で分ける（メニューだけが広がらないように）。
               1280px より狭い画面（iPad など）では、メニューが細くなりすぎないよう会計の列を 392px にする */}
           <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_384px_392px] xl:grid-cols-[minmax(0,1fr)_384px_minmax(432px,0.75fr)]">
-            {paying ? (
-              <PayBreakdown
-                itemCount={itemCount}
-                total={newOrder.total}
-                discount={newOrder.discount}
-                discountNote={discountNote}
-                prepaid={prepaid}
-                tenders={split.tenders}
-                context={context}
-                bar={bar}
-                onRefundSubtotal={(subtotalId) => openRefund(subtotalId)}
-                hints={
-                  <RegisterKeyHints
-                    exampleKeys={exampleMenuKeys(items ?? [])}
-                  />
-                }
-              />
-            ) : (
-              <MenuPanel
-                menus={items ?? []}
-                disabled={locked}
-                onAdd={(menu) =>
-                  updateDraft((current) => addLine(current, menu))
-                }
-              />
-            )}
-            <OrderPanel
-              draft={viewDraft}
-              couponStatus={coupon}
-              discount={newOrder.discount}
-              coffeeCups={newOrder.getCoffeeCups().length}
-              needsSplit={shouldSplitOrder(newOrder.menus)}
-              paidKeys={paidKeys}
-              currentItemKeys={currentItemKeys}
-              prepaid={prepaid}
-              canOpenItems={canOpenItems}
-              canCancelPayment={canLeavePayment(draft)}
-              onSelect={(index) =>
-                updateDraft((current) => selectLine(current, index))
+            {/* 会計の段階では、商品の列を左に押し出し、空いた真ん中に内訳（小計・受取金額・お釣り）を入れる。
+                メニューは薄くして左端に残し、押したら会計を取り消すか尋ねる */}
+            <RegisterStrip
+              paying={paying}
+              onMenuWhilePaying={confirmCancelPayment}
+              menu={
+                <MenuPanel
+                  menus={items ?? []}
+                  disabled={locked}
+                  onAdd={(menu) =>
+                    updateDraft((current) => addLine(current, menu))
+                  }
+                />
               }
-              onRemove={(index) =>
-                updateDraft((current) => removeLine(current, index))
+              order={orderPanel}
+              breakdown={
+                <PayBreakdown
+                  itemCount={itemCount}
+                  total={newOrder.total}
+                  discount={newOrder.discount}
+                  discountNote={discountNote}
+                  prepaid={prepaid}
+                  tenders={split.tenders}
+                  context={context}
+                  bar={bar}
+                  due={due}
+                  itemsSubtotal={current?.kind === "items"}
+                  deferred={
+                    split.part !== null ? currentRemaining - split.part : null
+                  }
+                  cash={viewDraft.payment === "cash"}
+                  received={viewDraft.received}
+                  onRefundSubtotal={(subtotalId) => openRefund(subtotalId)}
+                  onCancelPart={() => {
+                    updateDraft(cancelPart);
+                    resyncDisplay();
+                  }}
+                  hints={
+                    <RegisterKeyHints
+                      exampleKeys={exampleMenuKeys(items ?? [])}
+                    />
+                  }
+                />
               }
-              onOpenAssign={openAssign}
-              onRemoveAll={openRemoveAll}
-              onFocusCoupon={() => updateDraft(focusCoupon)}
-              onToggleSpecial={() =>
-                updateDraft((current) => toggleSpecial(current, couponApplied))
-              }
-              onOpenMemo={openMemo}
-              onOpenItems={openItems}
-              onGoPay={startPayment}
-              onCancelPayment={cancelPayment}
-              onRefundAll={() => openRefund()}
             />
             <PayPanel
               draft={viewDraft}
               due={due}
-              itemsSubtotal={paying && current?.kind === "items"}
-              deferred={
-                paying && split.part !== null
-                  ? currentRemaining - split.part
-                  : null
-              }
               note={payNote}
               squarePaymentTypes={squarePaymentTypes}
               terminalSelect={squareSelect.status}
@@ -1467,7 +1512,7 @@ const CashierV2 = ({
               onSquare={startSquarePayment}
               onDigits={(digits) =>
                 updatePayment((current) =>
-                  inputDigits(current, digits, checkCoupon),
+                  inputPadDigits(current, digits, checkCoupon),
                 )
               }
               onDeleteDigit={() => updatePayment(deleteDigit)}
@@ -1480,10 +1525,6 @@ const CashierV2 = ({
               }
               onSubmitCash={() => submitCash(false)}
               onOpenSplit={openPart}
-              onCancelPart={() => {
-                updateDraft(cancelPart);
-                resyncDisplay();
-              }}
             />
           </div>
         </>
@@ -1493,6 +1534,7 @@ const CashierV2 = ({
           connectionIssues={connectionIssues}
           squareRefundable={squareEnabled}
           onPrintFormalReceipt={receiptPrinter.printFormalReceipt}
+          onPrintCancelLabel={printer.printCancelLabel}
           onBack={() => setView("register")}
         />
       )}
@@ -1539,6 +1581,22 @@ const CashierV2 = ({
         onConfirm={() => {
           updateDraft(removeAllLines);
           setDialog(null);
+        }}
+        onClose={() => setDialog(null)}
+      />
+      <ConfirmDialog
+        open={dialog === "cancelPayment"}
+        title="会計取消"
+        sub={`No.${newOrder.orderId}`}
+        question="会計を取り消しますか？"
+        note="商品の入力に戻ります。入れた受取金額は消えますが、商品・割引・備考はそのまま残ります。"
+        hint="Enter でやめる ・ 取り消すときは「会計を取り消す」を押す（Tab で移って Enter）"
+        confirmLabel="会計を取り消す"
+        // メニューを押し間違えたあとの Enter（確定のつもり）で取り消さない
+        focus="cancel"
+        onConfirm={() => {
+          setDialog(null);
+          cancelPayment();
         }}
         onClose={() => setDialog(null)}
       />

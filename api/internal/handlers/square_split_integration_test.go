@@ -97,25 +97,31 @@ func TestSquareIntegrationSplitOrder(t *testing.T) {
 		t.Fatalf("published after declined: %s", got)
 	}
 
-	// もう一度押すと、受け付け済みの 1 つ目は頼み直さず、2 つ目だけを頼んで注文を消す
+	// もう一度押すと、受け付け済みの 1 つ目は頼み直さず、2 つ目だけを頼んで注文をキャンセルする
 	env.fake.declinePayments[second.PaymentIds[0]] = false
+	var paymentsBefore int64
+	env.db.Model(&models.OrderPayment{}).Where("order_id = ?", orderID).Count(&paymentsBefore)
 	code, refunded, raw := env.refundOrder(orderID)
-	if code != http.StatusOK || refunded.RefundStatus != models.RefundPending || refunded.OrderId != nil {
+	if code != http.StatusOK || refunded.RefundStatus != models.RefundPending ||
+		refunded.OrderId == nil || refunded.OrderId.String() != orderID {
 		t.Fatalf("refund: %d %v", code, raw)
 	}
 	if len(env.fake.refundRequests) != 3 || env.fake.refundRequests[2]["payment_id"] != second.PaymentIds[0] {
 		t.Fatalf("refund requests: %v", env.fake.refundRequests)
 	}
-	if count := env.orderCount(); count != 0 {
-		t.Fatalf("order must be deleted, %d left", count)
+	// 注文は消さずにキャンセルし、支払いも残す。決済は注文に結び付いたままなので照合の一覧には出ない
+	if !env.cancelled(orderID) {
+		t.Fatal("order must be cancelled")
 	}
 	var payments int64
-	env.db.Model(&models.OrderPayment{}).Count(&payments)
-	if payments != 0 {
-		t.Fatalf("payments must be deleted, %d left", payments)
+	env.db.Model(&models.OrderPayment{}).Where("order_id = ?", orderID).Count(&payments)
+	if payments == 0 || payments != paymentsBefore {
+		t.Fatalf("payments must stay, %d of %d left", payments, paymentsBefore)
 	}
-	// 2 つの決済は返金待ちとして照合の一覧に戻る
-	if unlinked := env.unlinked(); len(unlinked) != 2 {
-		t.Fatalf("unlinked after refund: %+v", unlinked)
+	if unlinked := env.unlinked(); len(unlinked) != 0 {
+		t.Fatalf("cancelled order's checkouts must not be listed: %+v", unlinked)
+	}
+	if got := refundStatusOf(published(orderID)); got != string(models.RefundPending) {
+		t.Fatalf("published after refund: %s", got)
 	}
 }

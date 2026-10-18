@@ -1,4 +1,6 @@
+import { jstDate } from "@cafeore/common";
 import { useState } from "react";
+import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { CornerToasts, TestBoardBanner } from "./components/BoardParts";
 import {
   CONTROL_VIEWS,
@@ -42,6 +44,13 @@ import { orderNoLabel } from "./logic/cards";
 // 見せ方は components の部品。ここはどの管制盤を出すかだけを持ち、フックの値と操作を部品に渡す（右のパネルは selection.panel の 1 つだけ出す）。
 export default function App() {
   const session = useCaosSession();
+  const { lastDeletedOrder } = useOrdersWSContext();
+  const cancelledOrderNo =
+    !session.simulating &&
+    lastDeletedOrder &&
+    jstDate(lastDeletedOrder.receivedAtMs) === jstDate(session.nowMs)
+      ? lastDeletedOrder.orderNo
+      : null;
   const selection = useBoardSelection(session.cards, session);
   const typeNames = useItemTypeNames();
   useSeniorRefresh(session.simulating);
@@ -141,6 +150,7 @@ export default function App() {
           }
           onSelectControlViewMode={setControlViewMode}
           timeStr={session.timeLabel}
+          cancelledOrderNo={cancelledOrderNo}
           soundEnabled={session.soundEnabled}
           onToggleSound={session.toggleSound}
           simulating={session.simulating}
