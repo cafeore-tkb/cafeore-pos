@@ -1,4 +1,4 @@
-import type { CaosCard, ShiftFeed } from "@cafeore/common";
+import { type CaosCard, type ShiftFeed, cupNeedsBrew } from "@cafeore/common";
 const normalize = (name: string) => name.normalize("NFKC").trim();
 
 /** 未登録と対応なしを分ける。名前の推測や学年からの能力推定はしない。 */
@@ -32,8 +32,11 @@ export const unsupportedDrip = (
 ) => {
   const drips = memberDrips(feed, name);
   if (!drips) return false;
-  const iced = card.cups.filter((cup) => cup.item.item_type.iced_brew).length;
-  const hot = card.cups.length - iced;
+  const cups = card.cups.filter(cupNeedsBrew);
+  // 盤面は最大2杯。不正なカードから存在しない「3杯」の能力を推測しない。
+  if (cups.length > 2) return false;
+  const iced = cups.filter((cup) => cup.item.item_type.iced_brew).length;
+  const hot = cups.length - iced;
   return (
     (hot > 0 && !drips.includes(`${hot}杯ホット`)) ||
     (iced > 0 && !drips.includes(`${iced}杯アイス`))

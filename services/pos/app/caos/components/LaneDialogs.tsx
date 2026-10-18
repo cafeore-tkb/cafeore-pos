@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type React from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
 import { gradeMembers } from "../logic/dripSupport";
@@ -77,6 +77,10 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
       position(a) - position(b) || a.localeCompare(b, "ja", { numeric: true })
     );
   });
+  const selectedGrade = grade !== null && grades.includes(grade) ? grade : null;
+  useEffect(() => {
+    if (grade !== selectedGrade) setGrade(selectedGrade);
+  }, [grade, selectedGrade]);
   // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。名前を打っているあいだは入力を終えるだけ）
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const floating = useFloatingWindow("担当者の交代");
@@ -87,10 +91,10 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
     [feed, lane.dripper, nowMs, lane.name],
   );
   const shownCandidates =
-    grade === null
+    selectedGrade === null
       ? candidates
       : members
-          .filter((member) => member.grade === grade)
+          .filter((member) => member.grade === selectedGrade)
           .map((member) => ({
             name: member.name,
             senior: isSeniorName(feed, member.name),
@@ -149,7 +153,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="font-black text-[13px] text-slate-700">
-                {grade === null ? "シフトの予定から" : `${grade}の候補`}
+                {selectedGrade === null
+                  ? "シフトの予定から"
+                  : `${selectedGrade}の候補`}
               </h3>
               <button
                 type="button"
@@ -168,9 +174,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                 <button
                   key={value ?? "schedule"}
                   type="button"
-                  aria-pressed={grade === value}
+                  aria-pressed={selectedGrade === value}
                   onClick={() => setGrade(value)}
-                  className={`min-h-10 touch-manipulation rounded-lg border-2 px-3 font-bold text-xs ${grade === value ? "border-blue-700 bg-blue-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                  className={`min-h-10 touch-manipulation rounded-lg border-2 px-3 font-bold text-xs ${selectedGrade === value ? "border-blue-700 bg-blue-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
                 >
                   {value ?? "予定の候補"}
                 </button>
@@ -204,7 +210,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
               </div>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-bold text-[12px] text-slate-500">
-                {grade === null
+                {selectedGrade === null
                   ? noCandidateReason(shiftFeed)
                   : "この学年の候補者はいません。"}
               </p>
