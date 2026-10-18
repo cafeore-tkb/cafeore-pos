@@ -14,6 +14,7 @@ import { useViewBoard } from "./hooks/useViewBoard";
 import { cardLooks } from "./logic/cards";
 import { boardLanes } from "./logic/lanes";
 import { nextAvailableBays } from "./logic/queue";
+import { timelineArrivals } from "./logic/timeline";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
 // 管制盤 A・C・Dを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
@@ -23,7 +24,10 @@ const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, status, sound, flashKeys } = useViewBoard(nowMs);
+  const { cards, status, sound, flashKeys } = useViewBoard(
+    nowMs,
+    timelineArrivals,
+  );
   const [folded, setFolded] = useDeviceSetting(
     "caos-view-unassigned-folded",
     false,

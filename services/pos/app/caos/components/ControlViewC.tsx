@@ -13,7 +13,7 @@ import { laneStatus } from "../logic/queue";
 import { DripperIndicator, EmptySlotButton, PanelHeader } from "./BoardParts";
 import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
-import { LaneAbility, LaneChangeButton, LaneName } from "./LaneParts";
+import { LaneAbility, LaneChangeButton } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
 import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
@@ -79,18 +79,11 @@ const ControlViewCBoard: React.FC<
               />
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <div className="flex min-w-0 items-center gap-1.5">
-                  <LaneName
+                  <LaneChangeButton
                     dripper={bay.id}
                     className="font-black text-[20px] text-slate-950"
                   />
                   <LaneAbility dripper={bay.id} />
-                  {!readOnly && (
-                    <LaneChangeButton
-                      dripper={bay.id}
-                      layout="inline"
-                      className="ml-auto h-6"
-                    />
-                  )}
                 </div>
                 <div className="grid min-h-0 flex-1 grid-cols-[156px_minmax(0,1fr)] items-stretch gap-1.5">
                   {current ? (

@@ -43,7 +43,6 @@
 | テスト中の割当・統合・次へ・緊急 | `practice.operation.*` / `practice.board.changed` と緊急のmode=practice。実データ用の業務履歴テーブルには混ぜない | `useTestPlay` / `useCaosSession` |
 | 通知音ON/OFF | `sound.changed`、閲覧画面は `device-setting.changed` | `useCaosSession` / `useDeviceSetting` |
 | 閲覧画面・リベロ・未割当欄の開閉・並び順 | 3画面とも `page.*` / `ui.*`。`device-setting.changed` / `ui.libero-order.changed` | 各route / `useDeviceSetting` / `LiberoBoard` |
-| リベロのお湯を渡した印・取消 | `water.changed`。ドリッパー・抽出カード・印の状態 | `useHandedWater` |
 | 接続回復・画面開閉・非表示・実行時エラー | `connection.changed` / `page.*`、全イベントに `details.page` | `useLiveBoard` / `useCaosActivityLog` / `log.ts` |
 
 UI操作の記録と、業務操作の成功は別です。クリック・`operation.accepted` は端末での操作/受付、サーバーで通ったことは `outbox.response` と業務履歴で確認します。緊急の直接APIには `emergency.api.*` が付きます。APIの失敗を成功として記録しません。

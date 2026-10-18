@@ -105,18 +105,23 @@ export const DripperIndicator: React.FC<{
 }> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
   const phase = status.forgotten ? FORGOTTEN : PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
+  const countsUp = status.phase === "overtime" && !status.forgotten;
+  const elapsed = clockLabel(Math.max(0, Math.floor(status.elapsedMs / 1000)));
+  const label = countsUp ? elapsed : phase.label;
   return (
     <button
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
       data-lane-phase={status.forgotten ? "forgotten" : status.phase}
-      aria-label={`${dripperLabel(bayId)} ${phase.label}`}
+      aria-label={`${dripperLabel(bayId)} ${countsUp ? `抽出開始から ${elapsed}` : phase.label}`}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[24px]">{bayId}</span>
-      <span className="mt-0.5 whitespace-nowrap font-black text-[11px] tracking-tighter">
-        {phase.label}
+      <span
+        className={`mt-0.5 whitespace-nowrap font-black ${countsUp ? "font-mono text-[14px] tabular-nums" : "text-[11px] tracking-tighter"}`}
+      >
+        {label}
       </span>
       {showsRemaining && (
         <span className="mt-0.5 font-black font-mono text-[14px] tabular-nums">

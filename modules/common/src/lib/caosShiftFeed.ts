@@ -331,3 +331,54 @@ export const nextLaneCandidate = (
     ) ?? null
   );
 };
+
+/** 実際の開始時刻の10分前から出す次の担当者（自動交代はしない）。 */
+export const upcomingLaneCandidate = (
+  feed: ShiftFeed | null,
+  dripper: number,
+  nowMs: number,
+  current: string,
+): LaneCandidate | null => {
+  if (!feed) return null;
+  const today = jstDate(nowMs);
+  const periods = [
+    ...Object.entries(feed.drippers).flatMap(([key, names]) => {
+      const [date = "", time = ""] = key.trim().split(/\s+/);
+      return date === today
+        ? [
+            {
+              startMs: jstMs(date, time),
+              names,
+            },
+          ]
+        : [];
+    }),
+    ...feed.drills
+      .filter((drill) => drill.date === today)
+      .flatMap((drill) =>
+        Array.from({ length: Math.max(0, drill.rounds) }, (_, i) => ({
+          startMs:
+            jstMs(drill.date, drill.start) +
+            i * (drill.minutes + drill.gap) * MINUTE_MS,
+          names: drill.drippers[String(i + 1)] ?? [],
+        })),
+      ),
+  ]
+    .filter(
+      (period) =>
+        period.startMs > nowMs &&
+        period.startMs - nowMs <= 10 * MINUTE_MS &&
+        Boolean(period.names[dripper - 1]?.trim()) &&
+        normalizeName(period.names[dripper - 1] ?? "") !==
+          normalizeName(current),
+    )
+    .sort((a, b) => a.startMs - b.startMs);
+  const period = periods[0];
+  const name = period?.names[dripper - 1]?.trim();
+  if (!name || normalizeName(name) === normalizeName(current)) return null;
+  return {
+    name,
+    senior: isSeniorName(feed, name),
+    reasons: [`次のシフト ${clockOf(period.startMs)}開始`],
+  };
+};
