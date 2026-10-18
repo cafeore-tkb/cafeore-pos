@@ -88,6 +88,7 @@ interface TopHeaderProps {
     pendingCount: number;
     retry: () => void;
     relayedCount: number;
+    relayAvailable?: boolean;
   };
   /** この端末のまだ送れていない盤面の操作と、送り直し・消す */
   unsent: ReturnType<typeof useCaosOutboxSender>;
@@ -212,18 +213,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
       <FloatingStatusNotices
         active={
-          labelPrinter.status === "disconnected" ||
+          (labelPrinter.status === "disconnected" &&
+            !labelPrinter.relayAvailable) ||
           unsent.entries.length > 0 ||
-          labelPrinter.pendingCount > 0
+          labelPrinter.pendingCount > 0 ||
+          labelPrinter.relayedCount > 0
         }
       >
-        {labelPrinter.status === "disconnected" && (
-          <PrinterStatus
-            name="ラベル"
-            status={labelPrinter.status}
-            certificateUrl={labelPrinter.certificateUrl}
-          />
-        )}
+        {labelPrinter.status === "disconnected" &&
+          !labelPrinter.relayAvailable && (
+            <PrinterStatus
+              name="ラベル"
+              status={labelPrinter.status}
+              certificateUrl={labelPrinter.certificateUrl}
+            />
+          )}
         <UnsentOps
           entries={unsent.entries}
           sending={unsent.sending}

@@ -51,7 +51,7 @@ export const useCupEmergency = (
   );
   const { printCupLabel } = printer;
   // レジに頼んで、まだ刷れていないシール（ほかの端末が頼んだものも）
-  const { requests: relayed } = useLabelPrintQueue();
+  const { requests: relayed, relayAvailable } = useLabelPrintQueue();
 
   /** 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
@@ -101,6 +101,7 @@ export const useCupEmergency = (
       ...printer,
       certificateUrl: eposCertificateUrl(label_printer_ip),
       relayedCount: relayed.length,
+      relayAvailable,
     },
     addEmergency,
     cancelEmergency,

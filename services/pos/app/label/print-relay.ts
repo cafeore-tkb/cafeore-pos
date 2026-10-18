@@ -158,14 +158,17 @@ export const replaceLabelPrintRequests = (
 export const useLabelPrintQueue = (enabled = true) => {
   const { status } = useOrdersWSContext();
   const [requests, setRequests] = useState(EMPTY);
+  const [queueAvailable, setQueueAvailable] = useState(false);
   // 刷れた・取り消したと知ったもの。読み直した一覧が知らせより古くても足さない
   const gone = useRef(new Set<string>());
   // 読み直している間に配信で届いた頼み。読み直した一覧に無くても消さない
   const arrived = useRef(new Set<string>());
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isActive: () => boolean) => {
     arrived.current.clear();
     const list = await getLabelPrintRequests();
+    if (!isActive()) return;
+    setQueueAvailable(list !== null);
     if (list)
       setRequests((prev) =>
         replaceLabelPrintRequests(list, prev, arrived.current, gone.current),
@@ -173,10 +176,16 @@ export const useLabelPrintQueue = (enabled = true) => {
   }, []);
 
   useEffect(() => {
+    setQueueAvailable(false);
     if (!enabled || status !== "open") return;
-    void refresh();
-    const timer = setInterval(refresh, QUEUE_REFRESH_MS);
-    return () => clearInterval(timer);
+    let active = true;
+    const reload = () => refresh(() => active);
+    void reload();
+    const timer = setInterval(reload, QUEUE_REFRESH_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [enabled, status, refresh]);
 
   const remove = useCallback((ids: readonly string[]) => {
@@ -201,7 +210,12 @@ export const useLabelPrintQueue = (enabled = true) => {
     ),
   );
 
-  return { requests: enabled ? requests : EMPTY, remove };
+  return {
+    requests: enabled ? requests : EMPTY,
+    remove,
+    // キューへのアクセス成功と共有セッションの接続を確認（レジでの印刷完了とは別）。
+    relayAvailable: enabled && status === "open" && queueAvailable,
+  };
 };
 
 /**
