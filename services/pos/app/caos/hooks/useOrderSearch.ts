@@ -13,9 +13,12 @@ const MAX_DIGITS = 4;
 /** 番号を押し終えてから探すまで（ms）。「12」を打つ途中の「1」で選んだりスクロールしたりしない */
 const SEARCH_DELAY_MS = 500;
 
-// 右に数字を足し、4桁を超えたら左端を押し出す（頭の0は入れない）。
-const appendDigit = (value: string, digit: string) =>
-  `${value}${digit}`.slice(-MAX_DIGITS).replace(/^0+/, "");
+// 押し出したあとの0は保持する。全部0になった場合だけ未入力に戻す。
+const appendDigit = (value: string, digit: string) => {
+  if (!value && digit === "0") return "";
+  const next = `${value}${digit}`.slice(-MAX_DIGITS);
+  return /^0+$/.test(next) ? "" : next;
+};
 
 // 番号を押す前にフォーカスしていたボタン（指で押したヘッダーのボタンなど）を、あとの Enter で押さないように外す
 const blurFocus = () => {
@@ -96,7 +99,11 @@ export const useOrderSearch = ({
   const press = (key: string) => {
     blurFocus();
     if (key === "clear") setDigits(() => "");
-    else if (key === "back") setDigits((value) => value.slice(0, -1));
+    else if (key === "back")
+      setDigits((value) => {
+        const next = value.slice(0, -1);
+        return /^0+$/.test(next) ? "" : next;
+      });
     else setDigits((value) => appendDigit(value, key));
   };
   /** 待たずに今の番号で探して閉じる（Enter・×・パネルの外。閉じても選んだまま、番号が空なら外す） */
