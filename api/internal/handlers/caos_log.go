@@ -42,7 +42,7 @@ func (h *CaosHandler) CreateCaosLogs(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "ログの項目が不正です"})
 			return
 		}
-		details, err := json.Marshal(entry.Details)
+		details, err := models.EncodeCaosClientLogDetails(entry.Details)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "details が不正です"})
 			return

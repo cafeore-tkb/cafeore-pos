@@ -32,7 +32,7 @@
 | 豆残量確認の棚卸し・入荷 | `inventory.requested` / `succeeded` / `rejected` / `failed`。在庫対象・数量・結果 | `BeanQueueView` → `StockCard` |
 | 緊急シールの印刷・自動再送 | `printer.print.*` / `printer.resend.*`。入れ直しID/未印刷IDと、印刷成功/レジへの代理印刷の依頼（`relayed`）/未印刷キューへの追加 | `useCupEmergency` → `usePrinter` |
 | プリンターの手動再接続・再送・接続状態 | `printer.retry` / `printer.state.changed`（`relayedCount` はレジで印刷待ちの数） | `useCaosSession` |
-| 未送信操作の再送・破棄・拒否 | `outbox.retry` / `discard` / `send` / `response` / `error` / `rejected` | `useCaosOutbox` |
+| 未送信操作の再送・破棄・拒否 | `outbox.retry` / `discard` / `send` / `response` / `error` / `rejected`。端末への永続保存失敗は `outbox.storage-failed`（画面は変更せず拒否） | `useCaosOutbox` |
 | 管制盤A/C/D・補助タブ・テスト設定の開閉 | `ui.workspace.changed` / `ui.selection.changed` | `App` / `useBoardSelection` |
 | 注文選択・番号検索・カードメニュー・Dの選択 | `ui.selection.changed` / `search.result.changed` / `ui.card-menu.changed` / `ui.unassigned-menu.changed` / `ui.sheet-selection.changed` | 各選択フック |
 | ドラッグ・長押し | `gesture.drag.started` / `ended` / `cancelled`、`gesture.hold`。対象とドロップ先・取消を記録 | `useCardDrag` |
@@ -44,6 +44,7 @@
 | 通知音ON/OFF | `sound.changed`、閲覧画面は `device-setting.changed` | `useCaosSession` / `useDeviceSetting` |
 | 閲覧画面・リベロ・未割当欄の開閉 | 3画面とも `page.*` / `ui.*`。`device-setting.changed` | 各route / `useDeviceSetting` |
 | 接続回復・画面開閉・非表示・実行時エラー | `connection.changed` / `page.*`、全イベントに `details.page` | `useLiveBoard` / `useCaosActivityLog` / `log.ts` |
+| 操作タブの重複防止 | `page.editor-acquired` / `page.editor-blocked`（duplicate・legacy・unsupported・error・timeout）/ `page.editor-error`。重複タブは閲覧へ移し、操作用Provider・業務操作の送信を開始しない。閲覧用のpage・入力・盤面ログは通常どおり記録する | `useMasterSheetTab` / `utils/master-sheet-tab` / `MasterSheetTabGuard` |
 
 UI操作の記録と、業務操作の成功は別です。クリック・`operation.accepted` は端末での操作/受付、サーバーで通ったことは `outbox.response` と業務履歴で確認します。緊急の直接APIには `emergency.api.*` が付きます。APIの失敗を成功として記録しません。
 
@@ -52,6 +53,8 @@ UI操作の記録と、業務操作の成功は別です。クリック・`opera
 ## 保存・取得
 
 コンソール出力はありません。端末に残してからDBに送り、`GET /api/caos/logs` と「各種データ書き出し」ページの「ログを保存」（`GET /api/caos/logs/export`）で取得できます。通信不能や保存容量超過、ブラウザデータの消去などでは端末ログが完全には届かない可能性があります。サーバーの成功履歴は盤面/緊急/担当者の更新と同じトランザクションで保存します。
+
+NUL を含む旧コメントキーのログは、元の details の JSON を `_caos_original_details_json_v1` の文字列に包んで `jsonb` に保存します。GET・書き出しは1回だけ復元してから分類するため、元のキー・練習モード・内容を保持します。通常のログは従来形式のままです。同名の項目だけを持つ通常の details も二重に包み、読み出し時に内部形式と取り違えないようにします。
 
 同時間窓のcupはサーバー適用直前のスナップショットです。オフライン中に端末が見ていた盤面の完全な再現とは区別します。
 

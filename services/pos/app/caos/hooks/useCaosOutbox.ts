@@ -24,9 +24,11 @@ import { caosLog } from "../utils/log";
 
 // CaOS の送れていない操作（@cafeore/common の lib/caos-outbox.ts）。押した操作はまずこの端末に残し（~/lib/device-store。
 // 再読み込み・タブを閉じても残り、同じ端末のタブどうしで共有する）、画面はサーバーの盤面にこれを重ねて出す（useLiveBoard・CaosLanesProvider）。
-// 送るのは操作の画面（/master-sheet）の 1 つのタブだけ（Web Locks で決める。閉じたらほかのタブが引き継ぐ）で、古い順に 1 つずつ。
+// 操作の画面（/master-sheet）から、送信中だけ Web Locks で排他し、古い順に 1 つずつ送る。
 const store = createDeviceStore("cafeore:caos-outbox:", parseCaosOutboxEntry);
 
+// 旧版がページを開いている間ずっと持つロックとは分け、古いタブが残っても新しい画面から送れるようにする。
+const SENDER_LOCK = "cafeore:caos-sender:v2";
 const NO_ENTRIES: readonly CaosOutboxEntry[] = [];
 
 /** 残っている操作（古い順。送れて盤面が届くのを待っているものも） */
@@ -36,14 +38,32 @@ export const useCaosOutboxEntries = () =>
 // 押した順に送るので、同じミリ秒に押しても順が入れ替わらないようにする
 let lastAt = 0;
 
-/** 操作を端末に残す（後ろで送る）。label は「直前の操作」と同じ操作の名前（通らなかったときの知らせに出す）。残した操作の id を返す */
-export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
-  lastAt = Math.max(Date.now(), lastAt + 1);
-  const id = crypto.randomUUID();
-  store.put({ id, at: lastAt, label, op });
-  caosLog("outbox.enqueued", { id, at: lastAt, label, op });
-  return id;
+/** 一連の操作を永続保存してから受け付ける。保存失敗時は画面を変えない。 */
+export const enqueueCaosOps = (label: string, ops: readonly CaosOutboxOp[]) => {
+  const entries: CaosOutboxEntry[] = [];
+  try {
+    for (const op of ops) {
+      lastAt = Math.max(Date.now(), lastAt + 1);
+      const entry = { id: crypto.randomUUID(), at: lastAt, label, op };
+      store.putPersisted(entry);
+      entries.push(entry);
+    }
+  } catch (error) {
+    for (const { id } of entries) store.remove(id);
+    caosLog("outbox.storage-failed", { label, error: String(error) });
+    toast.error(`「${label}」を受け付けられませんでした`, {
+      description:
+        "この端末に操作を保存できません。空き容量やブラウザの保存設定を確認して、もう一度操作してください。",
+    });
+    return null;
+  }
+  for (const entry of entries) caosLog("outbox.enqueued", entry);
+  return entries.map(({ id }) => id);
 };
+
+/** 担当者など単独の操作。永続保存に失敗した場合は null。 */
+export const enqueueCaosOp = (label: string, op: CaosOutboxOp) =>
+  enqueueCaosOps(label, [op])?.[0] ?? null;
 
 // つなぎ直して注文が届いてから、今日の担当者が届き直すのを待つ長さ（担当者は注文のすぐあとに届く。届かなくても、これを過ぎたら送る）
 const LANES_WAIT_MS = 3_000;
@@ -83,14 +103,25 @@ export const useCaosOutboxSender = (
   // 今日の担当者がまだ無ければサーバーは何も送らないので、そのときも LANES_WAIT_MS で待つのをやめる
   const lanesFresh =
     lanes !== stale.current?.lanes ||
-    nowMs - (stale.current.ordersAt ?? nowMs) >= LANES_WAIT_MS;
+    nowMs - (stale.current?.ordersAt ?? nowMs) >= LANES_WAIT_MS;
   const server = useRef<CaosServerState | null>(null);
-  server.current = ordersFresh && lanesFresh ? { orders: todays, lanes } : null;
+  server.current = ordersFresh
+    ? { orders: todays, lanes, lanesReady: lanesFresh }
+    : null;
   const rejected = useRef(onRejected);
   rejected.current = onRejected;
+  const [failure, setFailure] = useState<{ id: string; reason: string } | null>(
+    null,
+  );
   const [outbox] = useState(() =>
     createCaosOutbox({
       store,
+      withLock: async (run) => {
+        await store.withLock(async () => {
+          store.reload();
+          await run();
+        }, SENDER_LOCK);
+      },
       server: () => server.current,
       send: async (request, pressedAt) => {
         const started = performance.now();
@@ -114,6 +145,11 @@ export const useCaosOutboxSender = (
           throw error;
         }
       },
+      onRetry: (entry, result) =>
+        setFailure({
+          id: entry.id,
+          reason: `${result.error ?? "保存できませんでした"}${result.status ? `（HTTP ${result.status}）` : ""}`,
+        }),
       // 取り消せた緊急の、この端末に残っているシールを消す
       onSent: ({ op, id }) => {
         caosLog("outbox.sent", { id, op });
@@ -129,65 +165,56 @@ export const useCaosOutboxSender = (
       },
     }),
   );
-  // 同じ端末で送るのは 1 つのタブだけ。開いているあいだロックを持ち、閉じたら次のタブが送る
-  const [leader, setLeader] = useState(false);
+  // 操作を送る間だけ排他する。別タブを開いたまま・停止中でも送信権を占有しない。
+  useEffect(() => () => outbox.stop(), [outbox]);
   useEffect(() => {
-    let release = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let active = true;
-    let acquired = false;
-    void store.withLock(async () => {
-      if (!active) return;
-      acquired = true;
-      caosLog("outbox.leader-acquired");
-      setLeader(true);
-      await held;
-    });
+    if (entries.length > 0) void outbox.kick();
+  });
+  useEffect(() => {
+    const retry = () => void outbox.retryNow();
+    const visible = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+    window.addEventListener("online", retry);
+    window.addEventListener("pageshow", retry);
+    document.addEventListener("visibilitychange", visible);
     return () => {
-      active = false;
-      release();
-      setLeader(false);
-      if (acquired) caosLog("outbox.sender-stopped");
-      outbox.stop();
+      window.removeEventListener("online", retry);
+      window.removeEventListener("pageshow", retry);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [outbox]);
 
-  // 描き直すたび（残りが変わった・サーバーの盤面が届いた・つながった・時計が進んだ）に、送れるものがあれば送る
-  useEffect(() => {
-    if (leader && entries.length > 0) void outbox.kick();
-  });
-  // 端末がネットワークに戻ったら、送り直しの間隔を待たずに送る
-  useEffect(() => {
-    if (!leader) return;
-    const retry = () => void outbox.retryNow();
-    window.addEventListener("online", retry);
-    return () => window.removeEventListener("online", retry);
-  }, [leader, outbox]);
-
   const unsent = entries.filter((entry) => !entry.sent);
   return {
+    pendingCount: unsent.length,
+    failure:
+      failure && unsent.some((entry) => entry.id === failure.id)
+        ? failure.reason
+        : null,
     entries: unsent.some((entry) => nowMs - entry.at >= UNSENT_AFTER_MS)
       ? unsent
       : NO_ENTRIES,
-    sending: leader ? outbox.inFlight() : null,
+    sending: outbox.inFlight(),
     retry: () => {
-      caosLog("outbox.retry", { leader });
-      if (leader) void outbox.retryNow();
+      caosLog("outbox.retry");
+      void outbox.retryNow();
     },
     /**
      * 送らずに消す（盤面はサーバーの今に戻る。同じ端末のほかのタブからも消える）。消した操作は onRejected にも渡す（「直前の操作」から忘れる）。
      * 送っている途中のもの（sending。もうサーバーに届いているかもしれない）は消さない
      */
     discard: (ids: readonly string[]) => {
-      const sending = outbox.inFlight();
-      for (const entry of unsent) {
-        if (!ids.includes(entry.id) || entry.id === sending) continue;
-        caosLog("outbox.discard", { entry });
-        store.remove(entry.id);
-        rejected.current(entry);
-      }
+      void store.withLock(async () => {
+        store.reload();
+        // 送信中の別タブがロックを解放してから確認する。保存済みになった操作は消さない。
+        for (const entry of store.read()) {
+          if (entry.sent || !ids.includes(entry.id)) continue;
+          caosLog("outbox.discard", { entry });
+          store.remove(entry.id);
+          rejected.current(entry);
+        }
+      }, SENDER_LOCK);
     },
   };
 };

@@ -7,6 +7,7 @@ import {
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
+import { ReadOnlyTabNotice } from "./components/ReadOnlyTabNotice";
 import { SEGMENTS, ViewHeader, segmentClass } from "./components/ViewHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { useDeviceSetting } from "./hooks/useDeviceSetting";
@@ -76,6 +77,7 @@ export default function ReadOnlyBoard() {
           </span>
         </span>
       </ViewHeader>
+      <ReadOnlyTabNotice />
       <div className="min-h-0 flex-1">
         <ControlWorkspace
           mode={mode}

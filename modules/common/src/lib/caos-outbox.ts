@@ -79,6 +79,9 @@ export interface CaosOutboxEntry {
   op: CaosOutboxOp;
   /** 送れて、サーバーの盤面が届くのを待っている */
   sent?: true;
+  /** DB保存の応答時刻と、操作前の盤面。別タブ・再読込でも反映待ちを引き継ぐ。 */
+  sentAt?: number;
+  sentSnapshot?: Snapshot;
 }
 
 /** 送った結果（@cafeore/common の repositories/caos の結果。status は HTTP のステータス、つながらなければ無い） */
@@ -89,6 +92,8 @@ export interface CaosServerState {
   /** 今日の注文（caosDayOrders） */
   orders: readonly CaosOrderInput[];
   lanes: CaosLanes | null;
+  /** 再接続後の担当者の再受信待ち。盤面操作は待たずに送れる。 */
+  lanesReady?: boolean;
 }
 
 // 操作の形（kind ごとの欠かせない項目）。壊れたもの・形の違うものは読まない（重ねるときに落ちないように）
@@ -118,7 +123,10 @@ export const parseCaosOutboxEntry = (
   value: unknown,
 ): CaosOutboxEntry | null => {
   if (typeof value !== "object" || value === null) return null;
-  const { at, label, op, sent } = value as Record<string, unknown>;
+  const { at, label, op, sent, sentAt, sentSnapshot } = value as Record<
+    string,
+    unknown
+  >;
   if (typeof at !== "number" || typeof label !== "string") return null;
   if (typeof op !== "object" || op === null) return null;
   const kind = (op as { kind?: unknown }).kind;
@@ -134,6 +142,8 @@ export const parseCaosOutboxEntry = (
     label,
     op: op as CaosOutboxOp,
     ...(sent === true && { sent }),
+    ...(typeof sentAt === "number" && { sentAt }),
+    ...(validSnapshot(sentSnapshot) && { sentSnapshot }),
   };
 };
 
@@ -457,10 +467,31 @@ const prepareCaosOutboxOp = (
   }
 };
 
-// 送ったものの結果が届いたかを見るため、送る前のサーバーの値。WebSocket で変わった注文・担当者は新しいものに置き換わるので、置き換わったら届いた
-type Snapshot =
-  | { orders: (readonly [string, CaosOrderInput])[] }
-  | { lanes: CaosLanes | null };
+// オブジェクト参照ではなく、保存値を比べる。別タブや再読込でも反映待ちを引き継ぐ。
+type Snapshot = { orders: (readonly [string, string])[] } | { lanes: string };
+
+const validSnapshot = (value: unknown): value is Snapshot => {
+  if (!value || typeof value !== "object") return false;
+  if ("lanes" in value) return typeof value.lanes === "string";
+  return (
+    "orders" in value &&
+    Array.isArray(value.orders) &&
+    value.orders.every(
+      (row: unknown) =>
+        Array.isArray(row) &&
+        row.length === 2 &&
+        row.every((part) => typeof part === "string"),
+    )
+  );
+};
+const orderVersion = (order: CaosOrderInput) =>
+  JSON.stringify(
+    order.cups.map((cup) => [
+      cup.id,
+      caosStateJSON(cup),
+      cup.emergencies.map((row) => [row.id, caosStateJSON(row)]),
+    ]),
+  );
 
 // 書くカップ（入れ直しも）の ID
 const cupIdsOf = (request: CaosOutboxOp, server: CaosServerState) => {
@@ -486,7 +517,7 @@ const snapshotOf = (
   server: CaosServerState,
 ): Snapshot => {
   const ids = cupIdsOf(request, server);
-  if (!ids) return { lanes: server.lanes };
+  if (!ids) return { lanes: JSON.stringify(server.lanes) };
   const rows = new Set(ids);
   return {
     orders: server.orders
@@ -496,16 +527,17 @@ const snapshotOf = (
             rows.has(cup.id) || cup.emergencies.some((e) => rows.has(e.id)),
         ),
       )
-      .map((order) => [order.id, order] as const),
+      .map((order) => [order.id, orderVersion(order)] as const),
   };
 };
 
 const arrived = (snapshot: Snapshot, server: CaosServerState) =>
   "lanes" in snapshot
-    ? snapshot.lanes !== server.lanes
-    : snapshot.orders.every(
-        ([id, order]) => server.orders.find((o) => o.id === id) !== order,
-      );
+    ? snapshot.lanes !== JSON.stringify(server.lanes)
+    : snapshot.orders.every(([id, version]) => {
+        const current = server.orders.find((order) => order.id === id);
+        return !current || orderVersion(current) !== version;
+      });
 
 // 返事を CAOS_OUTBOX_TIMEOUT_MS まで待つ
 const withTimeout = (sending: Promise<CaosOutboxResult>) => {
@@ -560,16 +592,21 @@ export const createCaosOutbox = ({
   send,
   onSent,
   onRejected,
+  onRetry,
   now = Date.now,
+  withLock = (run) => run(),
 }: {
   store: CaosOutboxStore;
   server: () => CaosServerState | null;
   send: (request: CaosOutboxOp, pressedAt: number) => Promise<CaosOutboxResult>;
   onSent?: (entry: CaosOutboxEntry) => void;
   onRejected: (entry: CaosOutboxEntry, reason: string) => void;
+  onRetry?: (entry: CaosOutboxEntry, result: CaosOutboxResult) => void;
   now?: () => number;
+  /** 送信処理中だけタブ間で排他する。待機中に送信権を占有しない。 */
+  withLock?: (run: () => Promise<void>) => Promise<void>;
 }) => {
-  // 操作ごとの送り方（このタブのメモリ。再読み込みしたら、送れて待っていたものは消し、ほかは初めから）
+  // 再試行の回数と時刻はこのタブのメモリ。送信成功後の反映待ちは端末の保存値でも引き継ぐ。
   const memo = new Map<
     string,
     {
@@ -619,15 +656,22 @@ export const createCaosOutbox = ({
       const head = store.read()[0];
       const state = server();
       if (stopped || !head || !state) return;
+      if (
+        state.lanesReady === false &&
+        ["lane", "swap", "seniors"].includes(head.op.kind)
+      )
+        return;
       const m = memoOf(head.id);
       if (head.sent) {
         // 送れたもの。その結果のサーバーの盤面が届くまで（ECHO_MS まで）は重ねたままにし、次を送らない。
-        // 届いたかは、書いた注文・担当者が新しくなり（並べ替えは場所が変わらないので）、中身もそのとおりか（つなぎ直して全部届き直しただけでないか）で見る
-        const waitMs = (m.sentAt ?? 0) + CAOS_OUTBOX_ECHO_MS - now();
+        // 届いたかは、操作前の保存値から変わり（並べ替えの順番も比べる）、中身もそのとおりかで見る
+        const snapshot = head.sentSnapshot ?? m.snapshot;
+        const waitMs =
+          (head.sentAt ?? m.sentAt ?? 0) + CAOS_OUTBOX_ECHO_MS - now();
         if (
-          m.snapshot &&
+          snapshot &&
           waitMs > 0 &&
-          !(arrived(m.snapshot, state) && reflected(head.op, state))
+          !(arrived(snapshot, state) && reflected(head.op, state))
         )
           return later(waitMs);
         finish(head);
@@ -664,10 +708,16 @@ export const createCaosOutbox = ({
         case "ok":
           m.sentAt = now();
           m.snapshot = snapshot;
-          store.put({ ...head, sent: true });
+          store.put({
+            ...head,
+            sent: true,
+            sentAt: m.sentAt,
+            sentSnapshot: snapshot,
+          });
           onSent?.(head);
           break;
         case "retry":
+          onRetry?.(head, result);
           m.failures += 1;
           m.retryAt = now() + retryDelay(m.failures);
           break;
@@ -692,7 +742,7 @@ export const createCaosOutbox = ({
       try {
         do {
           again = false;
-          await drain();
+          await withLock(drain);
         } while (again);
       } finally {
         running = null;
