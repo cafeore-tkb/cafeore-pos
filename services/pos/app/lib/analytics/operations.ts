@@ -1,4 +1,4 @@
-import { type OrderEntity, jstDate } from "@cafeore/common";
+import { type OrderEntity, cupNeedsBrew, jstDate } from "@cafeore/common";
 
 export type BucketMinutes = 5 | 15 | 60;
 export const QUARTER_MS = 15 * 60_000;
@@ -6,6 +6,8 @@ export interface AnalysisCup {
   id: string;
   product: string;
   ready: number | null;
+  /** 今年のCaOSの初回抽出開始。過去データにはない。 */
+  brewStarted?: number | null;
   served: number | null;
   /** 過去年の注文単位の打刻を各杯に展開した参考値 */
   orderTiming: boolean;
@@ -36,6 +38,7 @@ export const liveAnalysisOrders = (
       id: cup.id,
       product: cup.item.name,
       ready: time(cup.readyAt),
+      brewStarted: cupNeedsBrew(cup) ? time(cup.brewStartedAt) : null,
       served: time(cup.servedAt),
       orderTiming: false,
     })),
@@ -207,6 +210,36 @@ export const operationsReport = (
     if (complete) previousNet = net;
   }
   const durationValues = new Map<number, number[]>();
+  const startWaitValues = new Map<number, number[]>();
+  const brewServeValues = new Map<number, number[]>();
+  const addDuration = (
+    values: Map<number, number[]>,
+    created: number,
+    duration: number | null,
+  ) => {
+    if (duration === null) return;
+    const at =
+      window.start +
+      Math.floor((created - window.start) / intervalMs) * intervalMs;
+    const group = values.get(at) ?? [];
+    group.push(duration);
+    values.set(at, group);
+  };
+  const durationBuckets = (values: Map<number, number[]>) =>
+    buckets.map(({ at, complete }) => {
+      const group = (values.get(at) ?? []).sort((a, b) => a - b);
+      return {
+        at,
+        complete,
+        count: group.length,
+        mean: group.length
+          ? group.reduce((a, b) => a + b, 0) / group.length
+          : null,
+        median: quantile(group, 0.5),
+        min: group[0] ?? null,
+        max: group.at(-1) ?? null,
+      };
+    });
   const productMap = new Map<
     string,
     {
@@ -236,6 +269,22 @@ export const operationsReport = (
       const prep = minutesBetween(cup.ready, order.created, cutoff);
       const handoff = minutesBetween(cup.served, cup.ready, cutoff);
       const total = minutesBetween(cup.served, order.created, cutoff);
+      const started = cup.brewStarted ?? null;
+      const validStart =
+        started !== null && started >= order.created && Number.isFinite(started)
+          ? started
+          : null;
+      addDuration(
+        startWaitValues,
+        order.created,
+        minutesBetween(validStart, order.created, cutoff),
+      );
+      if (validStart !== null && validStart < cutoff)
+        addDuration(
+          brewServeValues,
+          order.created,
+          minutesBetween(cup.served, validStart, cutoff),
+        );
       if (prep !== null) product.prep.push(prep);
       if (handoff !== null) product.handoff.push(handoff);
       if (total !== null) {
@@ -288,20 +337,9 @@ export const operationsReport = (
   return {
     intervalMinutes,
     buckets,
-    durationBuckets: buckets.map(({ at, complete }) => {
-      const values = (durationValues.get(at) ?? []).sort((a, b) => a - b);
-      return {
-        at,
-        complete,
-        count: values.length,
-        mean: values.length
-          ? values.reduce((sum, value) => sum + value, 0) / values.length
-          : null,
-        median: quantile(values, 0.5),
-        min: values[0] ?? null,
-        max: values.at(-1) ?? null,
-      };
-    }),
+    durationBuckets: durationBuckets(durationValues),
+    startWaitBuckets: durationBuckets(startWaitValues),
+    brewServeBuckets: durationBuckets(brewServeValues),
     openingBacklog,
     latest,
     products,

@@ -223,7 +223,7 @@ export function OverviewVisuals({
           )}
           <button
             type="button"
-            onClick={() => onSelect("products")}
+            onClick={() => onSelect("duration")}
             className="mt-3 min-h-10 font-bold text-sm text-teal-800"
           >
             商品ごとの待ち時間を見る →

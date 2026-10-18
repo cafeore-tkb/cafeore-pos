@@ -509,3 +509,75 @@ describe("時間帯ごとの提供時間", () => {
     ]);
   });
 });
+
+describe("今年の抽出開始時刻による区間分析", () => {
+  test("受付→開始、開始→提供を同じ受付枠に各杯で集計する", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("a", null, T + 10 * 60000), brewStarted: T + 4 * 60000 },
+          { ...cup("b"), brewStarted: T + 6 * 60000 },
+        ]),
+      ],
+      window,
+      15,
+    );
+    expect(r.startWaitBuckets[0]).toMatchObject({
+      count: 2,
+      mean: 5,
+      median: 5,
+      min: 4,
+      max: 6,
+    });
+    expect(r.brewServeBuckets[0]).toMatchObject({
+      count: 1,
+      mean: 6,
+      median: 6,
+      min: 6,
+      max: 6,
+    });
+    expect(r.startWaitBuckets[1]).toMatchObject({ count: 0, mean: null });
+  });
+  test("2025年の開始未計測と、不正・未来の開始を含めない", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          cup("legacy", null, T + 10 * 60000),
+          { ...cup("invalid", null, T + 10 * 60000), brewStarted: T - 1 },
+          { ...cup("future"), brewStarted: window.end },
+        ]),
+      ],
+      window,
+    );
+    expect(r.startWaitBuckets.every((b) => b.count === 0)).toBe(true);
+    expect(r.brewServeBuckets.every((b) => b.count === 0)).toBe(true);
+  });
+  test("開始より前の提供は除外し、ゼロ分は有効。取消も除外する", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("zero", null, T), brewStarted: T },
+          { ...cup("backwards", null, T + 60000), brewStarted: T + 2 * 60000 },
+        ]),
+        order(
+          "2",
+          T,
+          [
+            {
+              ...cup("cancelled", null, T + 10 * 60000),
+              brewStarted: T + 2 * 60000,
+            },
+          ],
+          T + 12 * 60000,
+        ),
+      ],
+      window,
+    );
+    expect(r.brewServeBuckets[0]).toMatchObject({
+      count: 1,
+      mean: 0,
+      min: 0,
+      max: 0,
+    });
+  });
+});

@@ -1,7 +1,6 @@
 import { jstClock, jstDate } from "@cafeore/common";
 import {
   Activity,
-  Archive,
   Banknote,
   BarChart3,
   CheckCheck,
@@ -23,6 +22,7 @@ import {
 import { Button } from "~/components/ui/button";
 import { flowCsv } from "~/lib/analytics/flowCsv";
 import { historicalOrders, load2025Baseline } from "~/lib/analytics/historical";
+import { type DashboardMode, modePeriod } from "~/lib/analytics/modePeriod";
 import {
   type AnalysisOrder,
   type BucketMinutes,
@@ -40,14 +40,15 @@ import { LogReview } from "./LogReview";
 import { OverviewVisuals, ProductTimeChart } from "./OverviewVisuals";
 import { PeriodFilter } from "./PeriodFilter";
 
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const MODES = [
   { id: "floor", name: "現場を見る" },
   { id: "owner", name: "全体を見る" },
   { id: "handoff", name: "引き継ぎ" },
-  { id: "inventory", name: "在庫を見る" },
+  { id: "inventory", name: "在庫とメニュー" },
   { id: "review", name: "振り返り" },
 ] as const;
-type Mode = (typeof MODES)[number]["id"];
+type Mode = DashboardMode;
 const money = (n: number) => `¥${n.toLocaleString("ja-JP")}`;
 const signed = (n: number | null) =>
   n === null ? "比較待ち" : `${n > 0 ? "+" : ""}${n}`;
@@ -57,7 +58,6 @@ const VIEWS = [
   { id: "flow", name: "注文とお渡し" },
   { id: "acceleration", name: "混み具合の変化" },
   { id: "duration", name: "提供時間" },
-  { id: "availability", name: "在庫とメニュー" },
   { id: "logs", name: "連絡と操作の記録" },
   { id: "baseline", name: "2025年との比較" },
 ] as const;
@@ -66,7 +66,6 @@ const VIEW_ICONS: Record<string, LucideIcon> = {
   flow: Coffee,
   acceleration: Activity,
   duration: Timer,
-  availability: Archive,
   logs: MessageSquareText,
   baseline: History,
 };
@@ -75,7 +74,6 @@ const SHORT_NAMES: Record<string, string> = {
   flow: "流れ",
   acceleration: "混雑",
   duration: "時間",
-  availability: "在庫",
   logs: "記録",
   baseline: "昨年",
 };
@@ -105,7 +103,10 @@ export function OperationsDashboard({
   const [endTime, setEndTime] = useState("24:00");
   const [view, setView] = useState("summary");
   const panelId = useId();
-  const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
+  const [selectedInterval, setIntervalMinutes] = useState<BucketMinutes>(15);
+  const [handoffHour, setHandoffHour] = useState(() =>
+    Math.max(0, Number(jstClock(Date.now()).slice(0, 2)) - 1),
+  );
   const [mode, setMode] = useState<Mode>("floor");
   const [durationSource, setDurationSource] = useState("live");
   const [reference, setReference] = useState<AnalysisOrder[]>([]);
@@ -121,9 +122,9 @@ export function OperationsDashboard({
     () => liveAnalysisOrders(allOrders ?? activeOrders),
     [allOrders, activeOrders],
   );
-  const date = selectedDate || jstDate(now);
+  const date = mode === "floor" ? jstDate(now) : selectedDate || jstDate(now);
   const throughDate = endDate || date;
-  const window = useMemo(() => {
+  const reviewWindow = useMemo(() => {
     const start =
       dayWindow(date, now).start +
       (Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3))) *
@@ -133,6 +134,10 @@ export function OperationsDashboard({
       (Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3))) * 60_000;
     return { start, end, now };
   }, [date, throughDate, startTime, endTime, now]);
+  const { window, intervalMinutes } = useMemo(
+    () => modePeriod(mode, date, handoffHour, reviewWindow, selectedInterval),
+    [mode, date, handoffHour, reviewWindow, selectedInterval],
+  );
   const validPeriod =
     Number.isFinite(window.start) &&
     Number.isFinite(window.end) &&
@@ -144,18 +149,9 @@ export function OperationsDashboard({
     () => operationsReport(orders, window, intervalMinutes),
     [orders, window, intervalMinutes],
   );
-  const handoffEnd =
-    Math.floor(Math.min(window.end, now) / 3_600_000) * 3_600_000;
-  const handoffStart = Math.max(window.start, handoffEnd - 3_600_000);
-  const handoff = useMemo(
-    () =>
-      operationsReport(
-        orders,
-        { start: handoffStart, end: handoffEnd, now },
-        intervalMinutes,
-      ),
-    [orders, handoffStart, handoffEnd, now, intervalMinutes],
-  );
+  const handoffStart = window.start;
+  const handoffEnd = window.end;
+  const handoff = report;
   const baseline = useMemo(
     () =>
       referenceDate
@@ -244,30 +240,88 @@ export function OperationsDashboard({
           <div>
             <h2 className="font-bold text-xl">お店のダッシュボード</h2>
             <p className="mt-1 text-muted-foreground text-xs">
-              注文・お渡しの記録から、営業の様子を{intervalMinutes}分ごとに。
+              {mode === "inventory"
+                ? "現在の在庫と、選択日のメニューの記録。"
+                : mode === "floor"
+                  ? "直近1時間の営業の様子を、5分ごとに。"
+                  : mode === "owner"
+                    ? "選択した1日の営業全体を確認。"
+                    : mode === "handoff"
+                      ? "引き継ぐ1時間帯の注文・提供・連絡を確認。"
+                      : `選んだ期間の記録を、${intervalMinutes}分ごとに。`}
             </p>
           </div>
         </div>
-        <details>
-          <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
-            期間を変える：{date} {startTime}〜
-            {throughDate !== date ? `${throughDate} ` : ""}
-            {endTime}
-          </summary>
-          <PeriodFilter
-            period={{ date, throughDate, startTime, endTime }}
-            now={now}
-            onChange={(period) => {
-              setSelectedDate(period.date);
-              setEndDate(period.throughDate);
-              setStartTime(period.startTime);
-              setEndTime(period.endTime);
-            }}
-          />
-        </details>
+        {mode === "floor" ? (
+          <p className="rounded-xl bg-teal-50 p-3 text-sm">
+            直近1時間 · 5分ごと · 自動更新
+            <br />
+            {jstDate(window.start)} {jstClock(window.start)}〜
+            {jstClock(window.end)}
+          </p>
+        ) : mode === "review" ? (
+          <details>
+            <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
+              期間を変える：{date} {startTime}〜
+              {throughDate !== date ? `${throughDate} ` : ""}
+              {endTime}
+            </summary>
+            <PeriodFilter
+              period={{ date, throughDate, startTime, endTime }}
+              now={now}
+              onChange={(period) => {
+                setSelectedDate(period.date);
+                setEndDate(period.throughDate);
+                setStartTime(period.startTime);
+                setEndTime(period.endTime);
+              }}
+            />
+          </details>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 text-sm">
+            <label>
+              日付{" "}
+              <input
+                type="date"
+                className="ml-2 min-h-10 rounded border p-2"
+                value={date}
+                max={jstDate(now)}
+                onChange={(event) => {
+                  if (event.target.value) setSelectedDate(event.target.value);
+                }}
+              />
+            </label>
+            {mode === "handoff" ? (
+              <label>
+                引き継ぐ時間帯{" "}
+                <select
+                  className="ml-2 min-h-10 rounded border p-2"
+                  value={handoffHour}
+                  onChange={(event) =>
+                    setHandoffHour(Number(event.target.value))
+                  }
+                >
+                  {HOURS.map((hour) => (
+                    <option key={`${hour}:00`} value={hour}>
+                      {hour}時〜{hour + 1}時
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span>
+                {mode === "inventory"
+                  ? "在庫は現在値・メニュー比較は選択日の1日分"
+                  : "選択日の0時〜24時（今日の実績は現在まで）"}
+              </span>
+            )}
+          </div>
+        )}
         {!validPeriod && (
           <p role="alert" className="text-red-700">
-            開始日時は現在以前、終了日時は開始日時より後にしてください。
+            {mode === "handoff"
+              ? "まだ始まっていない時間帯です。別の時間帯を選んでください。"
+              : "開始日時は現在以前、終了日時は開始日時より後にしてください。"}
           </p>
         )}
         <p className="text-muted-foreground text-xs">
@@ -283,25 +337,28 @@ export function OperationsDashboard({
           / 現在 {jstClock(now)}
         </p>
       </header>
-      <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
-        <legend className="px-1 font-bold text-xs">
-          時系列グラフの集計間隔
-        </legend>
-        {([5, 15, 60] as const).map((minutes) => (
-          <button
-            key={minutes}
-            type="button"
-            aria-pressed={intervalMinutes === minutes}
-            onClick={() => setIntervalMinutes(minutes)}
-            className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
-          >
-            {minutes === 60 ? "1時間" : `${minutes}分`}
-          </button>
-        ))}
-        <span className="text-stone-500 text-xs">
-          注文・お渡し・混雑・提供時間の推移・メニュー比較に反映。提供時間の分布は変わりません。
-        </span>
-      </fieldset>
+      {mode !== "inventory" && (
+        <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+          <legend className="px-1 font-bold text-xs">
+            時系列グラフの集計間隔
+          </legend>
+          {([5, 15, 60] as const).map((minutes) => (
+            <button
+              key={minutes}
+              type="button"
+              aria-pressed={intervalMinutes === minutes}
+              disabled={mode === "floor"}
+              onClick={() => setIntervalMinutes(minutes)}
+              className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
+            >
+              {minutes === 60 ? "1時間" : `${minutes}分`}
+            </button>
+          ))}
+          <span className="text-stone-500 text-xs">
+            注文・お渡し・混雑・提供時間の推移・メニュー比較に反映。提供時間の分布は変わりません。
+          </span>
+        </fieldset>
+      )}
       <section>
         <div
           className="-mb-px relative z-[1] flex overflow-x-auto pt-1"
@@ -350,98 +407,114 @@ export function OperationsDashboard({
         >
           {isOrdersLoaded && validPeriod && (
             <>
-              <div
-                className={`grid grid-cols-2 gap-3 ${compact ? "" : "xl:grid-cols-4"}`}
-              >
-                <Metric
-                  label="注文"
-                  tone="blue"
-                  icon={Coffee}
-                  value={`${report.received}杯`}
-                  note="この期間の注文・取消前の分も含む"
-                />
-                <Metric
-                  label="お渡し済み"
-                  tone="green"
-                  icon={CheckCheck}
-                  value={`${report.served}杯`}
-                  note="この期間にお渡し・前日からの分も含む"
-                />
-                <Metric
-                  label="お渡し待ち"
-                  tone="orange"
-                  icon={Timer}
-                  value={`${report.backlog}杯`}
-                  note={`期間末の待ち・持越し${report.openingBacklog}杯を含む・取消は除く`}
-                />
-                <Metric
-                  label="売上"
-                  tone="brown"
-                  icon={Banknote}
-                  value={money(report.revenue)}
-                  note={`${report.orderCount}注文・この期間の注文分・取消は除く`}
-                />
-              </div>
-              <div
-                className={`grid min-w-0 items-start gap-4 ${compact ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[10rem_minmax(0,1fr)]"}`}
-              >
+              {mode !== "inventory" && (
                 <div
-                  role="tablist"
-                  aria-label="分析グラフ"
-                  aria-orientation="vertical"
-                  className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-1.5 shadow-sm"
+                  className={`grid grid-cols-2 gap-3 ${compact ? "" : "xl:grid-cols-4"}`}
                 >
-                  {views.map((item, index) => {
-                    const Icon = VIEW_ICONS[item.id] ?? BarChart3;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        role="tab"
-                        title={item.name}
-                        id={`${panelId}-tab-${item.id}`}
-                        aria-controls={`${panelId}-content`}
-                        aria-selected={view === item.id}
-                        tabIndex={view === item.id ? 0 : -1}
-                        onClick={() => setView(item.id)}
-                        onKeyDown={(event) => {
-                          const next =
-                            event.key === "ArrowDown"
-                              ? (index + 1) % views.length
-                              : event.key === "ArrowUp"
-                                ? (index + views.length - 1) % views.length
-                                : event.key === "Home"
-                                  ? 0
-                                  : event.key === "End"
-                                    ? views.length - 1
-                                    : null;
-                          if (next === null) return;
-                          event.preventDefault();
-                          setView(views[next].id);
-                          document
-                            .getElementById(`${panelId}-tab-${views[next].id}`)
-                            ?.focus();
-                        }}
-                        className={`flex min-h-12 items-center gap-2 rounded-xl ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "bg-teal-900 font-bold text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
-                      >
-                        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span>
-                          {compact
-                            ? (SHORT_NAMES[item.id] ?? item.name)
-                            : item.name}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  <Metric
+                    label="注文"
+                    tone="blue"
+                    icon={Coffee}
+                    value={`${report.received}杯`}
+                    note="この期間の注文・取消前の分も含む"
+                  />
+                  <Metric
+                    label="お渡し済み"
+                    tone="green"
+                    icon={CheckCheck}
+                    value={`${report.served}杯`}
+                    note="この期間にお渡し・前日からの分も含む"
+                  />
+                  <Metric
+                    label="お渡し待ち"
+                    tone="orange"
+                    icon={Timer}
+                    value={`${report.backlog}杯`}
+                    note={`期間末の待ち・持越し${report.openingBacklog}杯を含む・取消は除く`}
+                  />
+                  <Metric
+                    label="売上"
+                    tone="brown"
+                    icon={Banknote}
+                    value={money(report.revenue)}
+                    note={`${report.orderCount}注文・この期間の注文分・取消は除く`}
+                  />
                 </div>
+              )}
+              <div
+                className={`grid min-w-0 items-start gap-4 ${mode === "inventory" ? "grid-cols-1" : compact ? "grid-cols-[3.5rem_minmax(0,1fr)]" : "grid-cols-[10rem_minmax(0,1fr)]"}`}
+              >
+                {mode !== "inventory" && (
+                  <div
+                    role="tablist"
+                    aria-label="分析グラフ"
+                    aria-orientation="vertical"
+                    className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-1.5 shadow-sm"
+                  >
+                    {views.map((item, index) => {
+                      const Icon = VIEW_ICONS[item.id] ?? BarChart3;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          role="tab"
+                          title={item.name}
+                          id={`${panelId}-tab-${item.id}`}
+                          aria-controls={`${panelId}-content`}
+                          aria-selected={view === item.id}
+                          tabIndex={view === item.id ? 0 : -1}
+                          onClick={() => setView(item.id)}
+                          onKeyDown={(event) => {
+                            const next =
+                              event.key === "ArrowDown"
+                                ? (index + 1) % views.length
+                                : event.key === "ArrowUp"
+                                  ? (index + views.length - 1) % views.length
+                                  : event.key === "Home"
+                                    ? 0
+                                    : event.key === "End"
+                                      ? views.length - 1
+                                      : null;
+                            if (next === null) return;
+                            event.preventDefault();
+                            setView(views[next].id);
+                            document
+                              .getElementById(
+                                `${panelId}-tab-${views[next].id}`,
+                              )
+                              ?.focus();
+                          }}
+                          className={`flex min-h-12 items-center gap-2 rounded-xl ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "bg-teal-900 font-bold text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
+                        >
+                          <Icon
+                            className="h-4 w-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span>
+                            {compact
+                              ? (SHORT_NAMES[item.id] ?? item.name)
+                              : item.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div
-                  role="tabpanel"
+                  role={mode === "inventory" ? "region" : "tabpanel"}
                   id={`${panelId}-content`}
-                  aria-labelledby={`${panelId}-tab-${view}`}
+                  aria-label={
+                    mode === "inventory" ? "在庫とメニュー" : undefined
+                  }
+                  aria-labelledby={
+                    mode === "inventory" ? undefined : `${panelId}-tab-${view}`
+                  }
                   className="min-w-0 space-y-4"
                 >
                   <h3 className="font-bold text-lg">
-                    {views.find((item) => item.id === view)?.name}
+                    {mode === "inventory"
+                      ? "在庫とメニュー"
+                      : views.find((item) => item.id === view)?.name}
                   </h3>
                   {view === "summary" && (
                     <OverviewVisuals
@@ -557,14 +630,16 @@ export function OperationsDashboard({
                   )}
                   {view === "summary" && mode === "handoff" && (
                     <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
-                      <h3 className="font-bold">直前1時間の引き継ぎ</h3>
+                      <h3 className="font-bold">この時間帯の引き継ぎ</h3>
                       {handoffStart < handoffEnd ? (
                         <>
                           <p>
                             {jstDate(handoffStart)}{" "}
                             {jstClock(handoffStart).slice(0, 5)}〜
                             {jstClock(handoffEnd).slice(0, 5)}
-                            （集計が終わった時間）
+                            {handoffEnd <= now
+                              ? "（集計済み）"
+                              : "（この時間帯は進行中）"}
                           </p>
                           <p>
                             注文 {handoff.received}杯 / お渡し {handoff.served}
@@ -578,7 +653,7 @@ export function OperationsDashboard({
                           </p>
                         </>
                       ) : (
-                        <p>この期間の1時間分の集計はまだありません。</p>
+                        <p>この時間帯の記録はまだありません。</p>
                       )}
                     </section>
                   )}
@@ -647,6 +722,30 @@ export function OperationsDashboard({
                         buckets={durationReport.durationBuckets}
                         intervalMinutes={intervalMinutes}
                       />
+                      {durationSource === "live" ? (
+                        <div className="space-y-5 border-stone-200 border-t pt-5">
+                          <h4 className="font-bold">今年の管制盤の記録</h4>
+                          <DurationTrend
+                            buckets={report.startWaitBuckets}
+                            intervalMinutes={intervalMinutes}
+                            title="受注→抽出開始"
+                            description="その時間帯に受けた杯の、受付から抽出を始めるまで。開始時刻のある杯だけを集計します。"
+                          />
+                          <DurationTrend
+                            buckets={report.brewServeBuckets}
+                            intervalMinutes={intervalMinutes}
+                            title="抽出開始→提供"
+                            description="その時間帯に受けた杯の、抽出開始から提供まで（抽出とお渡し待ちを含む）。開始・提供の両時刻がある杯だけを集計します。"
+                          />
+                          <p className="text-stone-500 text-xs">
+                            元のカップの抽出開始記録を使用。入れ直しは別の抽出として合算しません。抽出しないミルク・その他や、開始未記録の杯を0分で補いません。
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="rounded-lg bg-amber-50 p-3 text-sm">
+                          2025年には抽出開始の記録がないため、「受注→抽出開始」「抽出開始→提供」は今年の記録だけで確認できます。
+                        </p>
+                      )}
                       <h4 className="font-bold">期間全体の分布・ばらつき</h4>
                       <DurationCharts stats={durationReport.total} />
                       <h4 className="font-bold">商品ごとの時間</h4>
