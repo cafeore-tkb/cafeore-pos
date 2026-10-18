@@ -104,18 +104,23 @@ export const DripperIndicator: React.FC<{
 }> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
   const phase = status.forgotten ? FORGOTTEN : PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
+  const countsUp = status.phase === "overtime" && !status.forgotten;
+  const elapsed = clockLabel(Math.max(0, Math.floor(status.elapsedMs / 1000)));
+  const label = countsUp ? elapsed : phase.label;
   return (
     <button
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
       data-lane-phase={status.forgotten ? "forgotten" : status.phase}
-      aria-label={`${dripperLabel(bayId)} ${phase.label}`}
+      aria-label={`${dripperLabel(bayId)} ${countsUp ? `抽出開始から ${elapsed}` : phase.label}`}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[24px]">{bayId}</span>
-      <span className="mt-0.5 whitespace-nowrap font-black text-[10px] tracking-tighter">
-        {phase.label}
+      <span
+        className={`mt-0.5 whitespace-nowrap font-black ${countsUp ? "font-mono text-[12px] tabular-nums" : "text-[10px] tracking-tighter"}`}
+      >
+        {label}
       </span>
       {showsRemaining && (
         <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
@@ -249,7 +254,7 @@ export const EmptySlotButton: React.FC<{
           ? "選択中のコーヒーをこの担当者の列の最後に割り当て"
           : "タップして未割当オーダーをこのドリッパーに割り当て"
     }
-    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[12px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:hover:border-blue-400 enabled:hover:text-blue-600 enabled:active:bg-blue-100/70"} ${className}`}
+    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[12px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:active:bg-blue-100/70 enabled:hover:border-blue-400 enabled:hover:text-blue-600"} ${className}`}
   >
     <Plus className="h-4 w-4 shrink-0" />
     {assigning ? "ここに割当" : "空きスロット"}
