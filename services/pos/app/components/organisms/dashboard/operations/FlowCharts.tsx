@@ -18,10 +18,12 @@ export function FlowCharts({
   buckets,
   chart = "all",
   intervalMinutes = 15,
+  flowStyle = "bar",
 }: {
   buckets: FlowBucket[];
   chart?: "flow" | "acceleration" | "all";
   intervalMinutes?: BucketMinutes;
+  flowStyle?: "bar" | "line";
 }) {
   // 深夜の空の枠は省略するが、営業中のゼロの枠は残す。
   const first = buckets.findIndex((b) => b.received || b.served || b.backlog);
@@ -38,8 +40,12 @@ export function FlowCharts({
       {chart !== "acceleration" && (
         <>
           <p className="mt-3 flex flex-wrap gap-4 text-xs">
-            <span className="font-bold text-sky-700">■ 注文</span>
-            <span className="font-bold text-emerald-700">■ お渡し</span>
+            <span className="font-bold text-sky-700">
+              {flowStyle === "line" ? "─" : "■"} 注文
+            </span>
+            <span className="font-bold text-emerald-700">
+              {flowStyle === "line" ? "─" : "■"} お渡し
+            </span>
             <span className="font-bold text-amber-700">─ お渡し待ち</span>
           </p>
           <div
@@ -59,24 +65,50 @@ export function FlowCharts({
                     `${payload[0]?.payload.clock ?? ""}〜 / ${payload[0]?.payload.period ?? ""}`
                   }
                 />
-                <Bar
-                  dataKey="received"
-                  name="注文（杯）"
-                  fill="#38bdf8"
-                  isAnimationActive={false}
-                />
-                <Bar
-                  dataKey="served"
-                  name="お渡し（杯）"
-                  fill="#0d9488"
-                  isAnimationActive={false}
-                />
+                {flowStyle === "line" ? (
+                  <>
+                    <Line
+                      type="linear"
+                      dataKey="received"
+                      name="注文（杯）"
+                      stroke="#0284c7"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                    <Line
+                      type="linear"
+                      dataKey="served"
+                      name="お渡し（杯）"
+                      stroke="#0d9488"
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                      isAnimationActive={false}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Bar
+                      dataKey="received"
+                      name="注文（杯）"
+                      fill="#38bdf8"
+                      isAnimationActive={false}
+                    />
+                    <Bar
+                      dataKey="served"
+                      name="お渡し（杯）"
+                      fill="#0d9488"
+                      isAnimationActive={false}
+                    />
+                  </>
+                )}
                 <Line
+                  type="linear"
                   dataKey="backlog"
                   name={`${intervalMinutes}分の終わりのお渡し待ち（杯）`}
                   stroke="#f59e0b"
                   strokeWidth={2}
-                  dot={false}
+                  dot={flowStyle === "line" ? { r: 3 } : false}
                   isAnimationActive={false}
                 />
               </ComposedChart>

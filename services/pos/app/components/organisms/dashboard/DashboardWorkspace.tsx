@@ -609,6 +609,7 @@ function AnalysisSection({
             buckets={report.buckets}
             chart="flow"
             intervalMinutes={intervalMinutes}
+            flowStyle="line"
           />
         </div>
       </section>
