@@ -1,11 +1,6 @@
 import type { CaosCard } from "@cafeore/common";
 import { useEffect, useState } from "react";
-import {
-  type CardLooks,
-  labelHasOrder,
-  selectedComments,
-} from "../logic/cards";
-import type { CommentsByOrder } from "../logic/comments";
+import { type CardLooks, selectedComments } from "../logic/cards";
 import type { CommentAnchor } from "./useCommentPopupPosition";
 
 /**
@@ -18,14 +13,12 @@ export const useViewedComments = ({
   cards,
   looks,
   hidden,
-  allComments,
 }: {
   selectedOrderId: string | null;
   selectOrder: (orderId: string | null) => void;
   cards: readonly CaosCard[];
   looks: CardLooks;
   hidden: boolean;
-  allComments?: CommentsByOrder | null;
 }) => {
   const [pinned, setPinned] = useState<{
     label: string;
@@ -37,14 +30,7 @@ export const useViewedComments = ({
   }, [selectedOrderId]);
   const label = pinned?.label ?? selectedOrderId;
   const comments =
-    label && !hidden
-      ? allComments
-        ? [...allComments.values()]
-            .flat()
-            .filter((comment) => labelHasOrder(label, comment.orderNo))
-            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-        : selectedComments(cards, looks, label)
-      : [];
+    label && !hidden ? selectedComments(cards, looks, label) : [];
   return {
     /** 見ている注文（パネルで見ているときも） */
     label,

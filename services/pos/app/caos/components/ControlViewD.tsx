@@ -483,7 +483,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         </ScrollArea>
       </section>
 
-      {commentsPanel ? (
+      {commentsPanel && dragSource?.kind !== "ticket" ? (
         <aside className="min-h-0 min-w-0">{commentsPanel}</aside>
       ) : (
         <aside

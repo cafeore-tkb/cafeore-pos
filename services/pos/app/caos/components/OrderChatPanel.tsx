@@ -1,5 +1,5 @@
 import { jstClock } from "@cafeore/common";
-import { MessageSquareText, X } from "lucide-react";
+import { ArrowLeft, MessageSquareText } from "lucide-react";
 import { useLayoutEffect, useRef } from "react";
 import { orderNoLabel } from "../logic/cards";
 import {
@@ -60,9 +60,10 @@ export const OrderChatPanel = ({
           aria-label="コメントを閉じて注文一覧へ戻る"
           title="注文一覧へ戻る"
           onClick={onClose}
-          className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-md text-slate-600 hover:bg-slate-100"
+          className="flex h-10 shrink-0 touch-manipulation items-center justify-center gap-1 rounded-md px-2 text-slate-600 hover:bg-slate-100"
         >
-          <X aria-hidden="true" className="h-5 w-5" />
+          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+          <span className="font-bold text-xs">注文一覧へ</span>
         </button>
       </header>
       <div

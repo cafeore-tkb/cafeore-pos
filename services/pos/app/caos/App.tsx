@@ -83,7 +83,6 @@ export default function App() {
     selectOrder: selection.selectOrder,
     cards: session.cards,
     looks,
-    allComments: session.comments,
     hidden:
       selection.searchDigits !== null ||
       Boolean(selection.rebrew?.card) ||
