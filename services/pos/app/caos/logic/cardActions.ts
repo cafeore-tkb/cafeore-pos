@@ -1,4 +1,8 @@
-import { type CaosCard, caosDripperAllowed } from "@cafeore/common";
+import {
+  type CaosCard,
+  caosCardServed,
+  caosDripperAllowed,
+} from "@cafeore/common";
 import { type Lane, moveTargets } from "./lanes";
 
 // カードの操作は列の順番と開始時刻から決める。着手後60秒未満は取り消し、以降は緊急・完了。
@@ -34,6 +38,7 @@ export const cardActions = (
   { nowMs, comments }: { nowMs: number; comments: boolean },
 ): { action: CardAction; disabled: boolean }[] => {
   const stage = cardStage(card, lane);
+  const served = caosCardServed(card);
   const own: CardAction[] = [];
   if (stage === "queued" || stage === "ready") {
     own.push(
@@ -51,8 +56,7 @@ export const cardActions = (
   if (comments) own.push("comment");
   if (
     stage === "brewing" &&
-    card.startedAt &&
-    nowMs - card.startedAt.getTime() >= 60_000
+    (served || (card.startedAt && nowMs - card.startedAt.getTime() >= 60_000))
   )
     own.push("finish");
   return own.map((action) => ({
