@@ -17,6 +17,7 @@ import type React from "react";
 import { useMemo, useRef, useState } from "react";
 import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import type { ShiftFeedState } from "../hooks/useShiftFeed";
+import { gradeMembers } from "../logic/dripSupport";
 import {
   type ShiftFeedTone,
   noCandidateReason,
@@ -61,6 +62,21 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
 }) => {
   const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
+  const [grade, setGrade] = useState<string | null>(null);
+  const members = useMemo(
+    () => gradeMembers(feed, lane.name),
+    [feed, lane.name],
+  );
+  const gradeOrder = ["B1", "B2", "B3", "B4", "M1", "M2", "D1", "D2", "D3"];
+  const grades = [
+    ...new Set(gradeMembers(feed, "").map((member) => member.grade)),
+  ].sort((a, b) => {
+    const position = (grade: string) =>
+      gradeOrder.includes(grade) ? gradeOrder.indexOf(grade) : 100;
+    return (
+      position(a) - position(b) || a.localeCompare(b, "ja", { numeric: true })
+    );
+  });
   // 後ろの幕を押すと閉じる（その 1 回は閉じるだけ。名前を打っているあいだは入力を終えるだけ）
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const floating = useFloatingWindow("担当者の交代");
@@ -70,6 +86,16 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
     [feed, lane.dripper, nowMs, lane.name],
   );
+  const shownCandidates =
+    grade === null
+      ? candidates
+      : members
+          .filter((member) => member.grade === grade)
+          .map((member) => ({
+            name: member.name,
+            senior: isSeniorName(feed, member.name),
+            reasons: [member.grade],
+          }));
   const typedName = typed.trim();
   const typedSenior = isSeniorName(feed, typedName);
 
@@ -123,7 +149,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="font-black text-[13px] text-slate-700">
-                sohosai-shift の予定から
+                {grade === null ? "シフトの予定から" : `${grade}の候補`}
               </h3>
               <button
                 type="button"
@@ -134,9 +160,30 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                 合言葉
               </button>
             </div>
-            {candidates.length > 0 ? (
+            <div
+              className="mb-3 flex flex-wrap gap-2"
+              aria-label="候補者の学年"
+            >
+              {[null, ...grades].map((value) => (
+                <button
+                  key={value ?? "schedule"}
+                  type="button"
+                  aria-pressed={grade === value}
+                  onClick={() => setGrade(value)}
+                  className={`min-h-10 touch-manipulation rounded-lg border-2 px-3 font-bold text-xs ${grade === value ? "border-blue-700 bg-blue-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
+                >
+                  {value ?? "予定の候補"}
+                </button>
+              ))}
+            </div>
+            {!feed?.members && (
+              <p className="mb-2 text-slate-500 text-xs">
+                学年はシフト側で名簿を配信すると表示されます。
+              </p>
+            )}
+            {shownCandidates.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
-                {candidates.map((candidate) => (
+                {shownCandidates.map((candidate) => (
                   <button
                     key={candidate.name}
                     type="button"
@@ -157,7 +204,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
               </div>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-bold text-[12px] text-slate-500">
-                {noCandidateReason(shiftFeed)}
+                {grade === null
+                  ? noCandidateReason(shiftFeed)
+                  : "この学年の候補者はいません。"}
               </p>
             )}
           </section>

@@ -4,6 +4,7 @@ import type React from "react";
 import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
+import { useCaosLanes } from "../hooks/useCaosLanes";
 import {
   type CardLook,
   cardItemName,
@@ -16,6 +17,7 @@ import {
   orderNoLabel,
 } from "../logic/cards";
 import { commentKey } from "../logic/comments";
+import { unsupportedDrip } from "../logic/dripSupport";
 import { type DropSide, moveTargets } from "../logic/lanes";
 import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
@@ -396,6 +398,13 @@ export const BayPad: React.FC<{
   onPick: (bayId: number) => void;
 }> = ({ card, hoveredBay, onPick }) => {
   const targets = moveTargets(card, null);
+  const { lanes, shiftFeed } = useCaosLanes();
+  const unsupported = (bayId: number) =>
+    unsupportedDrip(
+      shiftFeed.feed,
+      lanes.find((lane) => lane.dripper === bayId)?.name ?? "",
+      card,
+    );
   const half = Math.ceil(targets.length / 2);
   // 段の位置と高さは useBayPadPlacement が決める
   const placement = useBayPadPlacement();
@@ -413,13 +422,22 @@ export const BayPad: React.FC<{
               type="button"
               disabled={disabled}
               data-bay-target={bayId}
+              title={
+                !disabled && unsupported(bayId)
+                  ? "担当者の対応ドリップ外です（割り当ては可能）"
+                  : undefined
+              }
               onClick={(event) => {
                 event.stopPropagation();
                 onPick(bayId);
               }}
               className={`h-full touch-none rounded-md border font-black font-mono text-[17px] transition-colors ${padTone(bayId, hoveredBay)}`}
             >
-              {bayId}
+              <span
+                className={unsupported(bayId) ? "text-slate-400" : undefined}
+              >
+                {bayId}
+              </span>
             </button>
           ))}
         </div>

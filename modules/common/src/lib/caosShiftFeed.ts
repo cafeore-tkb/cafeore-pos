@@ -44,6 +44,10 @@ export interface ShiftFeed {
   drippers: Record<string, string[]>;
   drills: ShiftDrill[];
   seniors: string[];
+  /** 配信名簿。学年は配信元の表記（B1〜D3など）。古い配信には無い */
+  members?: { name: string; grade: string }[];
+  /** 氏名→対応できるドリップ。欠落は未登録、空配列は対応なし */
+  drips?: Record<string, string[]>;
   /** ドキュメントを最後に書いた時刻（Firestore の updateTime）。分からなければ null */
   updatedAt: string | null;
 }
@@ -137,6 +141,29 @@ export const parseShiftFeed = (doc: unknown): ShiftFeed => {
     drippers: asNameTable(fields.drippers),
     drills,
     seniors,
+    ...(Array.isArray(fields.members)
+      ? {
+          members: fields.members.flatMap((value) => {
+            const member = asRecord(value);
+            const name = asString(member.name).trim();
+            return name ? [{ name, grade: asString(member.grade).trim() }] : [];
+          }),
+        }
+      : {}),
+    ...(fields.drips &&
+    typeof fields.drips === "object" &&
+    !Array.isArray(fields.drips)
+      ? {
+          drips: Object.fromEntries(
+            Object.entries(asRecord(fields.drips)).flatMap(([name, values]) =>
+              Array.isArray(values) &&
+              values.every((value) => typeof value === "string")
+                ? [[name.trim(), values as string[]]]
+                : [],
+            ),
+          ),
+        }
+      : {}),
     updatedAt: asString(record.updateTime) || null,
   };
 };

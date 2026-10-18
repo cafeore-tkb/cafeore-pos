@@ -16,6 +16,7 @@ import {
   type EmergencyFormProps,
 } from "~/components/molecules/EmergencyForm";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
+import { useCaosLanes } from "../hooks/useCaosLanes";
 import { usePanelOutsidePress } from "../hooks/useOutsidePress";
 import {
   type CardLook,
@@ -24,6 +25,7 @@ import {
   orderCount,
   orderLabel,
 } from "../logic/cards";
+import { unsupportedDrip } from "../logic/dripSupport";
 import { clockLabel } from "../logic/format";
 import {
   type Lane,
@@ -130,6 +132,7 @@ export const AssignPanel: React.FC<{
     unassignedOrders[0]?.key ?? "",
   );
   const [selectedBayId, setSelectedBayId] = useState(bayId);
+  const { lanes: assignees, shiftFeed } = useCaosLanes();
   const selectedOrder = unassignedOrders.find(
     (order) => order.key === selectedOrderUid,
   );
@@ -198,7 +201,19 @@ export const AssignPanel: React.FC<{
                 : "border-slate-200 hover:bg-slate-50"
             }`}
           >
-            <LaneBadge bayId={lane.id} />
+            <LaneBadge
+              bayId={lane.id}
+              muted={
+                selectedOrder
+                  ? unsupportedDrip(
+                      shiftFeed.feed,
+                      assignees.find((person) => person.dripper === lane.id)
+                        ?.name ?? "",
+                      selectedOrder,
+                    )
+                  : false
+              }
+            />
             <span className="text-[10px] text-slate-500">
               待機 {orderCount(lane.queued)}件
             </span>
