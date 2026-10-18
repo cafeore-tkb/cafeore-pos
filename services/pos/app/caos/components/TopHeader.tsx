@@ -11,7 +11,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
@@ -200,8 +200,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenEmergency,
   lastAction,
 }) => {
-  // 手動で隠した警告は、この画面を開いている間は再表示しない。
+  // 「隠す」は現在の未接続にだけ適用し、接続状態が変わったら解除する。
   const [printerWarningHidden, setPrinterWarningHidden] = useState(false);
+  useEffect(() => {
+    if (labelPrinter.status !== "disconnected") {
+      setPrinterWarningHidden(false);
+    }
+  }, [labelPrinter.status]);
   const showPrinterWarning =
     labelPrinter.status === "disconnected" &&
     !labelPrinter.relayAvailable &&
