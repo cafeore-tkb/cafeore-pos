@@ -37,11 +37,11 @@ import { CommentMark, FreshCommentsContext } from "./OrderComments";
 // no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生など）。
 // emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
-  pad: "px-1.5 py-1",
-  no: "text-[14px]",
-  cups: "px-0.5 text-[13px]",
-  meta: "text-[11px]",
-  item: "text-[12px]",
+  pad: "px-1 py-1",
+  no: "text-[16px]",
+  cups: "px-0.5 text-[14px]",
+  meta: "text-[12px]",
+  item: "text-[14px]",
   emergencyBelow: true,
 };
 const SIZES = {
@@ -50,36 +50,36 @@ const SIZES = {
   // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
   lane: {
     ...SM,
-    no: "text-[17px]",
-    item: "text-[14px]",
+    no: "text-[20px]",
+    item: "text-[16px]",
     emergencyBelow: false,
   },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
-    no: "text-[21px]",
-    cups: "px-1.5 text-[18px]",
+    no: "text-[24px]",
+    cups: "px-1.5 text-[20px]",
     meta: "text-[15px]",
     emergencyBelow: false,
-    item: "text-[15px]",
+    item: "text-[16px]",
   },
   // 管制盤 A のタイムライン
   md: {
     pad: "px-2 py-1",
-    no: "text-[19px]",
-    cups: "px-1.5 text-[17px]",
-    meta: "text-[12px]",
+    no: "text-[22px]",
+    cups: "px-1.5 text-[18px]",
+    meta: "text-[13px]",
     emergencyBelow: false,
-    item: "text-[15px]",
+    item: "text-[16px]",
   },
   // 詳細のパネル
   xl: {
     pad: "p-4",
-    no: "text-[26px]",
-    cups: "px-2 text-[22px]",
+    no: "text-[30px]",
+    cups: "px-2 text-[24px]",
     meta: "text-[15px]",
     emergencyBelow: false,
-    item: "text-[18px]",
+    item: "text-[20px]",
   },
 };
 
@@ -180,12 +180,16 @@ export const OrderCard: React.FC<
   const merged = cardOrderNos(card).length > 1;
   // 注文ごとの段（byOrder の統合したカード）。1 行目に商品、注文番号と緊急の理由は段に出す
   const parts = byOrder && merged ? cardOrderParts(card, look) : null;
+  // Dの狭い列は統合2注文・4桁番号・新着コメントも収める。単独の3桁番号を優先して拡大。
+  const compactNumber =
+    size === "sm" && (Boolean(parts) || orderLabel(card).length > 4);
+  const numberSize = compactNumber ? "text-[14px]" : text.no;
   const reasons = parts ? "" : emergencyReasons(card);
   const served = cardServedLabel(card);
   // 注文番号の札と、商品の略称
-  const noTag = (label: string, size: string) => (
+  const noTag = (label: string, fontSize: string) => (
     <span
-      className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      className={`rounded bg-black/10 ${size === "sm" ? "px-0.5" : "px-1"} py-0.5 font-black font-mono ${fontSize}`}
       title={label}
     >
       {label}
@@ -228,7 +232,7 @@ export const OrderCard: React.FC<
         orderNo(
           merged
             ? `min-w-0 truncate tracking-tighter ${text.cups}`
-            : `shrink-0 ${text.no}`,
+            : `shrink-0 ${numberSize}`,
         ),
         itemName(`max-w-full shrink-0 ${text.item}`),
       ];
@@ -244,7 +248,7 @@ export const OrderCard: React.FC<
       <DropMark side={dropSide} />
       {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
-        className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "gap-0.5" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
@@ -252,7 +256,7 @@ export const OrderCard: React.FC<
           <CommentMark
             count={badgeComments.length}
             label={orderLabel(card)}
-            className="h-5 w-5 shrink-0"
+            className={size === "sm" ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"}
           />
         )}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
@@ -285,7 +289,7 @@ export const OrderCard: React.FC<
                 <span className="flex min-w-0 shrink-0 items-center gap-1">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
-                    `tracking-tighter ${text.no}`,
+                    `tracking-tighter ${numberSize}`,
                   )}
                   {badgeComments.some(
                     (comment) => comment.orderNo === part.orderNo,
@@ -303,7 +307,7 @@ export const OrderCard: React.FC<
                 </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
-                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.no}`}
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${numberSize}`}
                 >
                   {part.cups}杯
                 </span>

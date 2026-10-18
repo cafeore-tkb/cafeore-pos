@@ -81,7 +81,7 @@ const ControlViewCBoard: React.FC<
                 <div className="flex min-w-0 items-center gap-1.5">
                   <LaneName
                     dripper={bay.id}
-                    className="font-black text-[18px] text-slate-950"
+                    className="font-black text-[20px] text-slate-950"
                   />
                   <LaneAbility dripper={bay.id} />
                   {!readOnly && (

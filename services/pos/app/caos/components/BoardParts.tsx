@@ -53,7 +53,7 @@ export const OrderCountLabel: React.FC<{ cards: readonly CaosCard[] }> = ({
 
 /** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
-  <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
+  <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[15px] text-slate-600">
     {dripperLabel(bayId)}
   </span>
 );
@@ -114,11 +114,11 @@ export const DripperIndicator: React.FC<{
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[24px]">{bayId}</span>
-      <span className="mt-0.5 whitespace-nowrap font-black text-[10px] tracking-tighter">
+      <span className="mt-0.5 whitespace-nowrap font-black text-[11px] tracking-tighter">
         {phase.label}
       </span>
       {showsRemaining && (
-        <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
+        <span className="mt-0.5 font-black font-mono text-[14px] tabular-nums">
           {clockLabel(status.remainingSec)}
         </span>
       )}
@@ -249,7 +249,7 @@ export const EmptySlotButton: React.FC<{
           ? "選択中のコーヒーをこの担当者の列の最後に割り当て"
           : "タップして未割当オーダーをこのドリッパーに割り当て"
     }
-    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[12px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:hover:border-blue-400 enabled:hover:text-blue-600 enabled:active:bg-blue-100/70"} ${className}`}
+    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[14px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:active:bg-blue-100/70 enabled:hover:border-blue-400 enabled:hover:text-blue-600"} ${className}`}
   >
     <Plus className="h-4 w-4 shrink-0" />
     {assigning ? "ここに割当" : "空きスロット"}
@@ -281,7 +281,7 @@ export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
 /** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 D の表） */
 export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
   label && (
-    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[11px] text-white leading-none shadow-xs">
+    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[12px] text-white leading-none shadow-xs">
       {label}
     </span>
   );
