@@ -20,6 +20,14 @@ export const SeniorMark: React.FC<{ className?: string }> = ({
   </span>
 );
 
+// 4文字以内は1行を優先し、枠自体より狭い場合だけ省略する。
+const nameClass = (name: string, wrap: boolean) =>
+  [...name].length <= 4
+    ? "max-w-full shrink-0 truncate"
+    : wrap
+      ? "line-clamp-2 break-all"
+      : "truncate";
+
 /** そのドリッパーの担当者の名前と上級生の印。担当者がいなければ何も出さない。wrap なら入らない名前を 2 行まで折り返す（列の見出し） */
 export const LaneName: React.FC<{
   dripper: number;
@@ -32,11 +40,9 @@ export const LaneName: React.FC<{
     <span
       data-lane-name={dripper}
       title={lane.senior ? `${lane.name}（上級生）` : lane.name}
-      className={`inline-flex min-w-0 items-center gap-0.5 ${className}`}
+      className={`inline-flex min-w-0 max-w-full items-center gap-0.5 ${[...lane.name].length <= 4 ? "flex-wrap" : "flex-nowrap"} ${className}`}
     >
-      <span className={wrap ? "line-clamp-2 break-all" : "truncate"}>
-        {lane.name}
-      </span>
+      <span className={nameClass(lane.name, wrap)}>{lane.name}</span>
       {lane.senior && <SeniorMark />}
     </span>
   );
@@ -124,12 +130,14 @@ export const LaneChangeButton: React.FC<{
           if (upcoming) changeToNext(dripper, upcoming);
           else openChange(dripper);
         }}
-        className={`flex min-h-11 flex-col items-start justify-center px-2 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
+        className={`flex min-h-11 flex-col items-start justify-center px-1 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
       >
-        <span className="flex min-w-0 max-w-full items-center gap-1 leading-tight">
-          <span className="line-clamp-2 break-all">{label}</span>
-          {lane?.senior && <SeniorMark />}
-          <ChangeIcon />
+        <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1 leading-tight">
+          <span className={nameClass(label, true)}>{label}</span>
+          <span className="inline-flex shrink-0 items-center gap-1">
+            {lane?.senior && <SeniorMark />}
+            <ChangeIcon />
+          </span>
         </span>
         {upcoming && (
           <span className="mt-0.5 flex min-w-0 max-w-full items-center gap-0.5 text-[12px] leading-tight">
