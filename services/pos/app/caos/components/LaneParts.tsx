@@ -97,7 +97,6 @@ const CHANGE_TONE =
 /** 現在の名前そのものが交代ボタン。次の名前の予告は実際の開始10分前から。 */
 export const LaneChangeButton: React.FC<{
   dripper: number;
-  layout?: "stacked" | "inline";
   className?: string;
 }> = ({ dripper, className = "" }) => {
   const { editable, lanes, nextOf, upcomingOf, changeToNext } = useCaosLanes();

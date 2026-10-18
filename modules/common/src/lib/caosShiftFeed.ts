@@ -348,7 +348,6 @@ export const upcomingLaneCandidate = (
         ? [
             {
               startMs: jstMs(date, time),
-              endMs: jstMs(date, time) + SHIFT_SLOT_MINUTES * MINUTE_MS,
               names,
             },
           ]
@@ -361,17 +360,13 @@ export const upcomingLaneCandidate = (
           startMs:
             jstMs(drill.date, drill.start) +
             i * (drill.minutes + drill.gap) * MINUTE_MS,
-          endMs:
-            jstMs(drill.date, drill.start) +
-            i * (drill.minutes + drill.gap) * MINUTE_MS +
-            drill.minutes * MINUTE_MS,
           names: drill.drippers[String(i + 1)] ?? [],
         })),
       ),
   ]
     .filter(
       (period) =>
-        period.endMs > nowMs &&
+        period.startMs > nowMs &&
         period.startMs - nowMs <= 10 * MINUTE_MS &&
         Boolean(period.names[dripper - 1]?.trim()) &&
         normalizeName(period.names[dripper - 1] ?? "") !==

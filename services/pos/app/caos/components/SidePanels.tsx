@@ -383,11 +383,7 @@ export const LanePanel: React.FC<{
   <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
       <LaneAbility dripper={lane.id} />
-      <LaneChangeButton
-        dripper={lane.id}
-        layout="inline"
-        className="font-black text-[18px]"
-      />
+      <LaneChangeButton dripper={lane.id} className="font-black text-[18px]" />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
       この列の待機 {orderCount(lane.queued)}件を移す
