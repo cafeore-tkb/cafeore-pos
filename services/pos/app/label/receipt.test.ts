@@ -1,6 +1,6 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import { formalReceipt, orderReceipt, yen } from "./receipt";
+import { claimReceipt, formalReceipt, orderReceipt, yen } from "./receipt";
 
 const hotType: ItemType = {
   id: "1",
@@ -92,6 +92,62 @@ describe("[unit] orderReceipt", () => {
       ).toEqual([{ label: "キャッシュレス決済", amount: "￥1,250" }]);
     }
   });
+
+  test("小計を金額で分けたら、先に払った分とあとで払う分を引いた額を合計にし、お釣りもその額から出す", () => {
+    const order = createOrder();
+    order.applyServiceOneCupDiscount();
+    order.received = 500;
+    const receipt = orderReceipt(
+      order,
+      { method: "cash" },
+      { prepaid: 300, deferred: 400 },
+    );
+
+    expect(receipt.adjustments).toEqual([
+      { label: "小計", amount: "￥1,250" },
+      { label: "割引", amount: "-￥100" },
+      { label: "先にお支払い済み", amount: "-￥300" },
+      { label: "あとでお支払い", amount: "-￥400" },
+    ]);
+    expect(receipt.total).toBe("￥450");
+    expect(receipt.payments).toEqual([
+      { label: "お預り", amount: "￥500" },
+      { label: "お釣り", amount: "￥50" },
+    ]);
+    expect(
+      orderReceipt(
+        order,
+        { method: "square", paymentType: "FELICA_ALL" },
+        { prepaid: 0, deferred: 850 },
+      ).payments,
+    ).toEqual([{ label: "電子マネー", amount: "￥300" }]);
+  });
+
+  test("一括で払うときは引換券番号を載せ、何回かに分けて払う 1 回分（split）には載せない", () => {
+    const order = createOrder();
+    order.received = order.billingAmount;
+
+    expect(orderReceipt(order, { method: "cash" }).claimNumber).toBe("123");
+    // 個別小計（金額では分けていない）でも載せない
+    for (const split of [
+      { prepaid: 0, deferred: 0 },
+      { prepaid: 300, deferred: 400 },
+    ]) {
+      expect(orderReceipt(order, { method: "cash" }, split)).not.toHaveProperty(
+        "claimNumber",
+      );
+    }
+  });
+});
+
+describe("[unit] claimReceipt", () => {
+  test("日時・注文番号と、引換券番号を載せる", () => {
+    expect(claimReceipt(createOrder())).toEqual({
+      dateTime: "2026/11/07 10:23",
+      orderNo: "No.123",
+      claimNumber: "123",
+    });
+  });
 });
 
 describe("[unit] formalReceipt", () => {
@@ -104,6 +160,16 @@ describe("[unit] formalReceipt", () => {
       amount: "￥1,150-",
       note: "但し 飲食代として",
       date: "2026年11月7日",
+    });
+  });
+
+  test("店舗控は同じ中身に店舗控の印を付ける", () => {
+    const order = createOrder();
+    order.applyServiceOneCupDiscount();
+
+    expect(formalReceipt(order, { storeCopy: true })).toEqual({
+      ...formalReceipt(order),
+      copyMark: "店舗控",
     });
   });
 });

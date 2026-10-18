@@ -373,14 +373,14 @@ func TestMigrateRenamesTables(t *testing.T) {
 		t.Errorf("next id = %d, want 2", maxID)
 	}
 
-	// 表・索引・制約・連番に前の名前が残らない
+	// 担当者の表・索引・制約・連番に前の名前が残らない（新しいCaOSログ表は対象外）
 	var left []string
 	if err := db.Raw(`
 		SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relname LIKE '%caos%'
+		WHERE n.nspname = 'public' AND c.relname LIKE '%caos_lane%'
 		UNION ALL
 		SELECT conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-		WHERE n.nspname = 'public' AND conname LIKE '%caos%'`).Scan(&left).Error; err != nil {
+		WHERE n.nspname = 'public' AND conname LIKE '%caos_lane%'`).Scan(&left).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(left) > 0 {
@@ -459,6 +459,63 @@ func menuKeyIndexDef(t *testing.T, db *gorm.DB) string {
 	return def
 }
 
+func squareCheckoutOrderIndexDef(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	var def string
+	if err := db.Raw("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'idx_square_checkouts_order_id'").Scan(&def).Error; err != nil {
+		t.Fatal(err)
+	}
+	return def
+}
+
+// 前の形（一意）の square_checkouts.order_id の索引は一意でない索引に変わり、1 つの注文に決済を
+// 2 つ結び付けられる（個別会計）。2 回目は何もせず、モデルともずれない
+func TestMigrateSquareCheckoutOrderIndexAllowsSplitPayments(t *testing.T) {
+	rec := &ddlRecorder{}
+	db := testdb.NewDatabase(t, rec)
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	const plain = "CREATE INDEX idx_square_checkouts_order_id ON public.square_checkouts USING btree (order_id)"
+	if def := squareCheckoutOrderIndexDef(t, db); def != plain {
+		t.Fatalf("空の DB に作った索引 = %s", def)
+	}
+	mustExec(t, db, "DROP INDEX idx_square_checkouts_order_id")
+	mustExec(t, db, `CREATE UNIQUE INDEX "idx_square_checkouts_order_id" ON "square_checkouts" ("order_id")`)
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if def := squareCheckoutOrderIndexDef(t, db); def != plain {
+		t.Fatalf("索引 = %s, want %s", def, plain)
+	}
+	orderID := uuid.New()
+	for i := range 2 {
+		checkout := models.SquareCheckout{
+			IdempotencyKey: uuid.NewString(), DeviceID: "device-1", Amount: 600, PaymentType: "CARD_PRESENT",
+			Status: "COMPLETED", OrderID: &orderID, OrderNumber: &i,
+		}
+		if err := db.Create(&checkout).Error; err != nil {
+			t.Fatalf("同じ注文に 2 つ目の決済を結び付けられない: %v", err)
+		}
+	}
+
+	rec.ddl = nil
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if ddl := rec.ddl; len(ddl) > 0 {
+		t.Errorf("2 回目の migrate がスキーマを変えた:\n%s", strings.Join(ddl, "\n"))
+	}
+	drift, err := findSchemaDrift(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drift) > 0 {
+		t.Errorf("索引を作り直したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
 // 前の形（消したメニューも数える）のメニューのキーの索引は、消していないメニューだけの部分索引に変わり、
 // 消したメニューのキーを使える。2 回目は何もせず、モデルともずれない
 func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {
@@ -504,5 +561,59 @@ func TestMigrateMenuKeyIndexIgnoresDeletedMenus(t *testing.T) {
 	}
 	if len(drift) > 0 {
 		t.Errorf("索引を作り直したあとの DB がモデルとずれている:\n%s", strings.Join(drift, "\n"))
+	}
+}
+
+// item_id が既にある DB に旧使用量の表だけが残っていても回収する。
+// 既に記録された注文時の量は、現在の旧設定から計算した値で上書きしない。
+func TestMigrateLegacyStockUsagesWithCurrentSchema(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(migrate(db))
+	must(db.AutoMigrate(&oldItemStockUsage{}))
+	kind := models.ItemType{Name: "hot", DisplayName: "ホット"}
+	must(db.Create(&kind).Error)
+	item := models.Item{Name: "ブレンド", Abbr: "ブ", ItemTypeID: kind.ID}
+	must(db.Create(&item).Error)
+	stock := models.NewItemStockResource(item.ID)
+	must(db.Create(&stock).Error)
+	cup := models.StockResource{Kind: "cup", Name: "カップ", Unit: "個", PerServing: 1}
+	must(db.Create(&cup).Error)
+	must(db.Create(&[]oldItemStockUsage{{ItemID: item.ID, ResourceID: cup.ID, Amount: 1}, {ItemID: item.ID, ResourceID: stock.ID, Amount: 1}}).Error)
+	menu := models.Menu{Name: "ブレンド2杯", Abbr: "ブ2", Price: 1000, Key: "b2", MenuItems: []models.MenuItem{{ItemID: item.ID, Quantity: 2}}}
+	must(db.Create(&menu).Error)
+	line := models.OrderMenu{ID: uuid.New(), MenuID: menu.ID, MenuName: menu.Name, UnitPrice: menu.Price}
+	order := models.Order{CreatedAt: time.Now(), BillingAmount: 1000, Received: 1000, OrderMenus: []models.OrderMenu{line}}
+	must(db.Create(&order).Error)
+	existing := models.OrderStockUsage{OrderMenuID: line.ID, ResourceID: cup.ID, OrderID: order.ID, Servings: 3, Amount: 7}
+	must(db.Create(&existing).Error)
+	for range 2 {
+		must(migrate(db))
+		var resources int64
+		must(db.Model(&models.StockResource{}).Count(&resources).Error)
+		if resources != 2 {
+			t.Fatalf("在庫対象が重複した: %d", resources)
+		}
+		var usages []models.OrderStockUsage
+		must(db.Order("amount").Find(&usages).Error)
+		if len(usages) != 2 {
+			t.Fatalf("使用履歴 = %+v", usages)
+		}
+		if usages[0].ResourceID != stock.ID || usages[0].Amount != 2 || usages[0].Servings != 2 || usages[1] != existing {
+			t.Fatalf("補完または既存履歴の維持に失敗: %+v", usages)
+		}
+		if db.Migrator().HasTable("item_stock_usages") {
+			t.Fatal("旧使用量の表が残っている")
+		}
+		drift, err := findSchemaDrift(db)
+		must(err)
+		if len(drift) != 0 {
+			t.Fatalf("schema drift: %v", drift)
+		}
 	}
 }

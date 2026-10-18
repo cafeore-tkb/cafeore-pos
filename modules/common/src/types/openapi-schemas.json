@@ -124,7 +124,7 @@
   },
   "MenuResponse": {
     "type": "object",
-    "required": ["id", "name", "abbr", "price", "key", "items"],
+    "required": ["id", "name", "abbr", "price", "key", "priority", "items"],
     "properties": {
       "id": {
         "type": "string",
@@ -141,6 +141,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ"
       },
       "items": {
         "type": "array",
@@ -166,6 +170,10 @@
       },
       "key": {
         "type": "string"
+      },
+      "priority": {
+        "type": "integer",
+        "description": "レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま"
       },
       "items": {
         "type": "array",
@@ -382,7 +390,7 @@
         "nullable": true,
         "minimum": 1,
         "maximum": 6,
-        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない"
+        "description": "CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）"
       },
       "dripper_position": {
         "type": "integer",
@@ -505,6 +513,7 @@
       "billing_amount",
       "received",
       "payment_method",
+      "payments",
       "menus",
       "cups"
     ],
@@ -530,6 +539,18 @@
         "format": "date-time",
         "nullable": true
       },
+      "cancelled_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない"
+      },
+      "cash_refunded_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）"
+      },
       "billing_amount": {
         "type": "integer"
       },
@@ -548,6 +569,13 @@
       },
       "square_refund_status": {
         "$ref": "#/components/schemas/SquareRefundStatus"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。一括で払った注文では空",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentResponse"
+        }
       },
       "menus": {
         "type": "array",
@@ -603,6 +631,13 @@
         "format": "uuid",
         "nullable": true,
         "description": "payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      },
+      "payments": {
+        "type": "array",
+        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は\nSquare の支払いを含めば square、含まなければ cash になる。\n",
+        "items": {
+          "$ref": "#/components/schemas/OrderPaymentCreate"
+        }
       },
       "menu_ids": {
         "type": "array",
@@ -756,7 +791,8 @@
     "required": ["type"],
     "properties": {
       "type": {
-        "type": "string"
+        "type": "string",
+        "enum": ["stop", "operational"]
       }
     }
   },
@@ -833,9 +869,41 @@
       }
     }
   },
+  "ReceiptPrinterModel": {
+    "type": "string",
+    "description": "レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。\n58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット\n",
+    "enum": ["tm_l90", "tm_m30"],
+    "x-enum-varnames": ["ReceiptPrinterModelTmL90", "ReceiptPrinterModelTmM30"],
+    "x-enum-descriptions": ["TM-L90", "TM-m30"]
+  },
+  "PrinterPaperWidth": {
+    "type": "string",
+    "description": "プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる\n",
+    "enum": ["58mm", "80mm"],
+    "x-enum-varnames": ["PrinterPaperWidth58mm", "PrinterPaperWidth80mm"],
+    "x-enum-descriptions": ["58mm", "80mm"]
+  },
+  "PrinterPaperType": {
+    "type": "string",
+    "description": "プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。\nreceipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）\n",
+    "enum": ["receipt", "die_cut_label"],
+    "x-enum-varnames": [
+      "PrinterPaperTypeReceipt",
+      "PrinterPaperTypeDieCutLabel"
+    ],
+    "x-enum-descriptions": ["レシート紙", "ダイカットラベル"]
+  },
   "PrinterSettingsResponse": {
     "type": "object",
-    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model",
+      "label_printer_paper_width",
+      "receipt_printer_paper_width",
+      "label_printer_paper_type",
+      "receipt_printer_paper_type"
+    ],
     "properties": {
       "label_printer_ip": {
         "type": "string",
@@ -846,12 +914,35 @@
         "type": "string",
         "description": "レシート・領収書用のプリンターの IPv4 アドレス",
         "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
+      },
+      "label_printer_paper_width": {
+        "$ref": "#/components/schemas/PrinterPaperWidth"
+      },
+      "receipt_printer_paper_width": {
+        "$ref": "#/components/schemas/PrinterPaperWidth"
+      },
+      "label_printer_paper_type": {
+        "$ref": "#/components/schemas/PrinterPaperType"
+      },
+      "receipt_printer_paper_type": {
+        "$ref": "#/components/schemas/PrinterPaperType"
       }
     }
   },
   "PrinterSettingsUpdateRequest": {
     "type": "object",
-    "required": ["label_printer_ip", "receipt_printer_ip"],
+    "required": [
+      "label_printer_ip",
+      "receipt_printer_ip",
+      "receipt_printer_model",
+      "label_printer_paper_width",
+      "receipt_printer_paper_width",
+      "label_printer_paper_type",
+      "receipt_printer_paper_type"
+    ],
     "properties": {
       "label_printer_ip": {
         "type": "string",
@@ -862,6 +953,21 @@
         "type": "string",
         "description": "レシート・領収書用のプリンターの IPv4 アドレス",
         "example": "192.168.77.3"
+      },
+      "receipt_printer_model": {
+        "$ref": "#/components/schemas/ReceiptPrinterModel"
+      },
+      "label_printer_paper_width": {
+        "$ref": "#/components/schemas/PrinterPaperWidth"
+      },
+      "receipt_printer_paper_width": {
+        "$ref": "#/components/schemas/PrinterPaperWidth"
+      },
+      "label_printer_paper_type": {
+        "$ref": "#/components/schemas/PrinterPaperType"
+      },
+      "receipt_printer_paper_type": {
+        "$ref": "#/components/schemas/PrinterPaperType"
       }
     }
   },
@@ -898,6 +1004,86 @@
         "type": "string",
         "format": "uuid",
         "nullable": true
+      }
+    }
+  },
+  "CaosLogEntry": {
+    "type": "object",
+    "required": ["at", "tabId", "sequence", "event", "details"],
+    "properties": {
+      "at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "tabId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "sequence": {
+        "type": "integer",
+        "format": "int64",
+        "minimum": 1
+      },
+      "event": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "details": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "CaosStoredLogEntry": {
+    "allOf": [
+      {
+        "$ref": "#/components/schemas/CaosLogEntry"
+      },
+      {
+        "type": "object",
+        "required": ["receivedAt"],
+        "properties": {
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    ]
+  },
+  "CaosLogPage": {
+    "type": "object",
+    "required": ["entries", "limit", "offset", "hasMore"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosStoredLogEntry"
+        }
+      },
+      "limit": {
+        "type": "integer"
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "hasMore": {
+        "type": "boolean"
+      }
+    }
+  },
+  "CaosLogBatch": {
+    "type": "object",
+    "required": ["entries"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 100,
+        "items": {
+          "$ref": "#/components/schemas/CaosLogEntry"
+        }
       }
     }
   },
@@ -972,6 +1158,11 @@
     "description": "カップの組を before から after にする。before はカップの今の値（注文の応答の値をそのまま送り返す。時刻はミリ秒までで比べる）。\n終わったカードのカップは書けない（終えるのは「次へ」）。抽出中のカードは、カップを全部いっしょに書く\n",
     "required": ["cup_ids", "before", "after"],
     "properties": {
+      "merge_into": {
+        "type": "string",
+        "format": "uuid",
+        "description": "統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。"
+      },
       "cup_ids": {
         "type": "array",
         "minItems": 1,
@@ -1477,6 +1668,83 @@
     "default": "cash",
     "description": "支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）"
   },
+  "OrderPaymentCreate": {
+    "type": "object",
+    "required": ["method", "amount", "received"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）"
+      },
+      "received": {
+        "type": "integer",
+        "description": "お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）"
+      },
+      "discount": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "この支払いで引いた割引（円）"
+      },
+      "menu_indexes": {
+        "type": "array",
+        "description": "この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。"
+      }
+    }
+  },
+  "OrderPaymentResponse": {
+    "type": "object",
+    "required": ["method", "amount", "received", "discount", "order_menu_ids"],
+    "properties": {
+      "method": {
+        "$ref": "#/components/schemas/PaymentMethod"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "received": {
+        "type": "integer"
+      },
+      "discount": {
+        "type": "integer"
+      },
+      "order_menu_ids": {
+        "type": "array",
+        "description": "この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "square_checkout_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true
+      },
+      "square_payment_type": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square で払ったときの決済画面の種類（SquarePaymentType の値）"
+      },
+      "square_refund_status": {
+        "$ref": "#/components/schemas/SquareRefundStatus"
+      }
+    }
+  },
   "SquarePaymentType": {
     "type": "string",
     "enum": ["CARD_PRESENT", "FELICA_ALL", "QR_CODE"],
@@ -1716,6 +1984,122 @@
       },
       "checkout": {
         "$ref": "#/components/schemas/SquareCheckoutResponse"
+      }
+    }
+  },
+  "SquareActionOption": {
+    "type": "string",
+    "enum": ["CASH", "CARD_PRESENT", "FELICA_ALL", "QR_CODE", "SPLIT"],
+    "x-enum-varnames": [
+      "OptionCash",
+      "OptionCardPresent",
+      "OptionFelicaAll",
+      "OptionQrCode",
+      "OptionSplit"
+    ],
+    "description": "決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、\nスタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。\n端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。\n"
+  },
+  "SquareActionOutcome": {
+    "type": "string",
+    "enum": ["pending", "selected", "closed"],
+    "x-enum-varnames": ["ActionPending", "ActionSelected", "ActionClosed"],
+    "description": "レジが次に何をすべきかをサーバーが判定したもの。\n  - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ\n  - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）\n  - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ\n"
+  },
+  "SquareActionCreateRequest": {
+    "type": "object",
+    "required": ["idempotency_key", "device_id", "amount", "options"],
+    "properties": {
+      "device_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "画面を出す端末。GET /api/square/devices で PAIRED の行の device_id"
+      },
+      "idempotency_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする"
+      },
+      "amount": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "今払う額（円）。画面に出す"
+      },
+      "options": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 5,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/components/schemas/SquareActionOption"
+        },
+        "description": "端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個"
+      }
+    }
+  },
+  "SquareActionResponse": {
+    "type": "object",
+    "required": [
+      "id",
+      "device_id",
+      "status",
+      "outcome",
+      "amount",
+      "options",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "device_id": {
+        "type": "string",
+        "description": "画面を出した端末"
+      },
+      "action_id": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の TerminalAction の id"
+      },
+      "status": {
+        "type": "string",
+        "description": "Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR"
+      },
+      "outcome": {
+        "$ref": "#/components/schemas/SquareActionOutcome"
+      },
+      "cancel_reason": {
+        "type": "string",
+        "nullable": true,
+        "description": "Square の cancel_reason（BUYER_CANCELED / SELLER_CANCELED / TIMED_OUT）"
+      },
+      "amount": {
+        "type": "integer"
+      },
+      "options": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/SquareActionOption"
+        }
+      },
+      "selected": {
+        "type": "string",
+        "nullable": true,
+        "description": "お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る"
+      },
+      "error_message": {
+        "type": "string",
+        "nullable": true
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
       }
     }
   }

@@ -52,6 +52,7 @@ const snapshot: MasterSnapshot = {
       abbr: "旧",
       price: 400,
       key: "old",
+      priority: 0,
       items: [],
     },
   ],
@@ -99,7 +100,7 @@ describe("[unit] openapi-schemas.json", () => {
         "iced_brew",
       ],
       items: ["name", "abbr", "item_type"],
-      menus: ["name", "abbr", "price", "key"],
+      menus: ["name", "abbr", "price", "key", "priority"],
       menu_items: ["menu", "item", "quantity"],
       color_settings: ["target_type", "target", "screen", "color"],
     });

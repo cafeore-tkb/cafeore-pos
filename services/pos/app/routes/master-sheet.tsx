@@ -1,5 +1,6 @@
 import type { MetaFunction } from "react-router";
 import CaosApp from "~/caos/App";
+import { useCaosActivityLog } from "~/caos/hooks/useCaosActivityLog";
 import "~/caos/caos.css";
 import { CaosLanesProvider } from "~/caos/hooks/useCaosLanes";
 import { useFixedViewport } from "~/caos/hooks/useFixedViewport";
@@ -21,6 +22,7 @@ export const meta: MetaFunction = () => {
 // スタイルは caos.css で .caos-root の中に閉じている。
 export default function MasterSheet() {
   useFixedViewport();
+  useCaosActivityLog();
   return (
     <div className="caos-root antialiased selection:bg-blue-100">
       {/* 「直前の操作」（盤面の操作と担当者の交代が同じものに覚える）と、ドリッパーの担当者（サーバーの今日の担当者。この画面から交代できる） */}

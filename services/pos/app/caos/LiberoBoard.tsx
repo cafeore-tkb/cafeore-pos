@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { LiberoRow } from "./components/LiberoRow";
 import { SEGMENTS, ViewHeader, segmentClass } from "./components/ViewHeader";
+import { useCaosStateLog } from "./hooks/useCaosStateLog";
 import { useViewBoard } from "./hooks/useViewBoard";
 import { cardColor } from "./logic/cards";
 import { boardLanes } from "./logic/lanes";
@@ -29,6 +30,7 @@ export default function LiberoBoard() {
   const [params, setParams] = useSearchParams();
   const order =
     ORDERS.find(({ id }) => id === params.get("order")) ?? ORDERS[0];
+  useCaosStateLog("ui.libero-order.changed", { order: order.id ?? "dripper" });
   const lanes = useMemo(() => boardLanes(cards), [cards]);
   const rows = liberoLanes(lanes, nowMs);
 

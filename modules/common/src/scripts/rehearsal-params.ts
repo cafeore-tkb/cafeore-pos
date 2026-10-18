@@ -3,6 +3,7 @@
 //   pnpm common rehearsal-params <出力.json> <注文.json>...
 //
 // 注文 JSON は `{ orders: [...] }`（トップの「オーダーデータ書き出し」の JSON と同じ形）。祭 4 日ぶんを渡す。
+// 品目の種類（items[].type）で注文の組を数えるので、type の入った JSON を渡す。
 // 例（sohosai-analysis のデータ）：
 //
 //   pnpm common rehearsal-params rehearsal-params.json \
@@ -14,11 +15,12 @@
 // **出力はコミットしない。** 注文間隔そのものが入っており、注文データをオープンにしない
 // sohosai-analysis の方針に合わせる（.gitignore 済み）。
 //
-// 確かめるための要約を標準出力に出す。sohosai-analysis の docs/python-track.md §12 の表と
-// 同じ数値になるはず。
+// 確かめるための要約を標準出力に出す。到着（層の境界・間隔）は sohosai-analysis の
+// docs/python-track.md §12 の表と同じ数値になるはず。中身は種類で数えるので、向こうの
+// 役割カテゴリの組の数とは合わない。
 
 import * as fs from "node:fs";
-import { type RawOrder, basketKey, fitParams } from "../rehearsal/params";
+import { type RawOrder, fitParams } from "../rehearsal/params";
 
 /** 祭の開催日。練習・リハーサルは本番の代表性が無いので入れない */
 const FESTIVAL_DATES = ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"];
@@ -64,13 +66,8 @@ console.table(
     cv: round(cv(gaps), 3),
   })),
 );
-const drinkKinds = new Set(
-  params.baskets
-    .filter((b) => Object.keys(b.roles).length > 0)
-    .map((b) => basketKey(b.roles, 0)),
-);
 console.log(
-  `ドリンクの組 ${drinkKinds.size} 種類（物販を含めた組 ${params.baskets.length} 種類）`,
+  `注文の組 ${params.baskets.length} 種類（種類: ${[...new Set(params.items.map((i) => i.type))].join(", ")}）`,
 );
 console.table(
   params.days.map((day) => ({

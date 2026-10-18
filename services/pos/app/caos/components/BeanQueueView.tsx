@@ -1,7 +1,9 @@
 import { INVENTORY_REFRESH_MS, type InventoryStatus } from "@cafeore/common";
-import { Coffee } from "lucide-react";
+import { Bean } from "lucide-react";
 import type React from "react";
 import { StockCard } from "~/components/organisms/inventory/StockCard";
+
+import { caosLog } from "../utils/log";
 
 interface BeanQueueViewProps {
   /** POS の在庫のうち、抽出が要るアイテムの在庫の残量。API の値をそのまま出す */
@@ -21,8 +23,8 @@ export const BeanQueueView: React.FC<BeanQueueViewProps> = (props) => (
   <div className="space-y-3">
     <div className="border-slate-200 border-b pb-3">
       <h2 className="flex items-center gap-2 font-black text-[16px] text-slate-900 tracking-tight">
-        <Coffee className="h-5 w-5 text-[#006c4a]" />
-        <span>豆キュー</span>
+        <Bean className="h-5 w-5 text-[#006c4a]" />
+        <span>豆残量確認</span>
       </h2>
       <p className="mt-0.5 text-slate-500 text-xs">
         POS の在庫の豆の残量（{INVENTORY_REFRESH_MS / 1000}秒ごとに更新）
@@ -54,6 +56,9 @@ const BeanStockList: React.FC<BeanQueueViewProps> = ({
             key={status.resource.id}
             status={status}
             onRecorded={onRecorded}
+            onRecordActivity={(phase, details) =>
+              caosLog(`inventory.${phase}`, details)
+            }
           >
             {waitingCups && (
               <div className="text-sm tabular-nums">

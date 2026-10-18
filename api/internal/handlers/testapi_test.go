@@ -101,6 +101,9 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.PATCH("/orders/:id/served", orderHandler.MarkOrderServed)
 	api.PATCH("/orders/:id/cups/:cupId/ready", orderHandler.MarkOrderCupReady)
 	api.PATCH("/orders/:id/cups/:cupId/served", orderHandler.MarkOrderCupServed)
+	api.POST("/orders/:id/recall", orderHandler.RecallOrder)
+	api.POST("/orders/:id/cancel", orderHandler.CancelOrder)
+	api.POST("/orders/:id/cash-refund", orderHandler.RefundOrderCash)
 
 	api.GET("/orders/:id/comments", commentHandler.GetOrderComments)
 	api.POST("/orders/:id/comments", commentHandler.CreateComment)

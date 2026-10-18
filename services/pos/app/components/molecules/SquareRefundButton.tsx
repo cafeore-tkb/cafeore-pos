@@ -17,12 +17,14 @@ import { Button, buttonVariants } from "../ui/button";
 type Props = {
   /** 確認に出す決済（「No.12（¥600）」など） */
   label: string;
-  /** 結び付いた注文を、返金したら消すか残すか。注文の無い決済なら渡さない */
-  orderOnRefund?: "delete" | "keep";
+  /** 結び付いた注文を、返金したらキャンセルするか（消さずに残す）、キャンセルしないか。注文の無い決済なら渡さない */
+  orderOnRefund?: "cancel" | "keep";
   /** 返金を頼む */
   refund: () => Promise<SquareCheckout>;
   /** Square が返金を受け付けたあと */
   onRefunded?: (checkout: SquareCheckout) => void;
+  /** 押すボタンの見た目を変える */
+  triggerClassName?: string;
   children?: ReactNode;
 };
 
@@ -36,6 +38,7 @@ export const SquareRefundButton = ({
   orderOnRefund,
   refund,
   onRefunded,
+  triggerClassName,
   children = "返金",
 }: Props) => {
   const [open, setOpen] = useState(false);
@@ -57,7 +60,12 @@ export const SquareRefundButton = ({
         );
         return;
       }
-      const kept = orderOnRefund === "keep" ? "（注文は残しています）" : "";
+      const kept =
+        orderOnRefund === "keep"
+          ? "（注文は残しています）"
+          : orderOnRefund === "cancel"
+            ? "。注文はキャンセルしました"
+            : "";
       toast.success(
         checkout.refund_status === "refunded"
           ? `${label} を返金しました${kept}`
@@ -82,7 +90,7 @@ export const SquareRefundButton = ({
       }}
     >
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline">
+        <Button size="sm" variant="outline" className={triggerClassName}>
           {children}
         </Button>
       </AlertDialogTrigger>
@@ -94,24 +102,19 @@ export const SquareRefundButton = ({
           <AlertDialogTitle>
             {label} を返金しますか？
             {orderOnRefund === "keep" && "（注文は残します）"}
+            {orderOnRefund === "cancel" && "（注文はキャンセルします）"}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-1">
               <p>
                 支払いに使ったカード・電子マネー・QR
                 コードへ全額を返します。取り消せません。
-                {orderOnRefund === "delete" &&
-                  "Square が受け付けたら注文は消えます。"}
+                {orderOnRefund === "cancel" &&
+                  "Square が受け付けたら注文をキャンセルします（作る画面から消えます。番号は使ったままです）。"}
                 {orderOnRefund === "keep" &&
                   "注文は消さずに残します（提供もそのまま続きます）。"}
               </p>
-              {orderOnRefund === "delete" && (
-                <p>
-                  あとで Square で返金が失敗したときは「未登録の Square
-                  決済」に理由付きで出ます。そこでもう一度返金するか、注文を登録し直してください。
-                </p>
-              )}
-              {orderOnRefund === "keep" && (
+              {orderOnRefund !== undefined && (
                 <p>
                   あとで Square
                   で返金が失敗したときは、過去の注文のこの注文のカードに出ます。そこでもう一度返金してください。
@@ -122,7 +125,7 @@ export const SquareRefundButton = ({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={refunding}>キャンセル</AlertDialogCancel>
+          <AlertDialogCancel disabled={refunding}>やめる</AlertDialogCancel>
           <AlertDialogAction
             className={buttonVariants({ variant: "destructive" })}
             disabled={refunding}
@@ -132,7 +135,11 @@ export const SquareRefundButton = ({
               void run();
             }}
           >
-            {refunding ? "返金中..." : "返金する"}
+            {refunding
+              ? "返金中..."
+              : orderOnRefund === "cancel"
+                ? "返金＆キャンセルする"
+                : "返金する"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

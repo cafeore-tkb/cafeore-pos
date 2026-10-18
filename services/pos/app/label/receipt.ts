@@ -29,6 +29,12 @@ const SQUARE_PAYMENT_LABEL: Partial<Record<string, string>> = {
   QR_CODE: "QRコード決済",
 } satisfies Record<SquarePaymentType, string>;
 
+/**
+ * 注文を何回かに分けて払うとき（個別小計・小計分割・一部金額先払い）の、この支払いの前後。
+ * prepaid はこの小計で先に払った額、deferred はこの小計でこのあとに払う額（分けていなければどちらも 0）
+ */
+export type ReceiptSplit = { prepaid: number; deferred: number };
+
 /** 左に名前（と個数）、右に金額を置く 1 行 */
 export type ReceiptRow = {
   label: string;
@@ -51,6 +57,19 @@ export type OrderReceipt = {
   total: string;
   /** 現金ならお預り・お釣り、Square なら決済手段 */
   payments: ReceiptRow[];
+  /**
+   * 引換券番号として大きく載せる注文番号。注文を何回かに分けて払うときは載せず、
+   * 払い終えたら引換券番号だけのレシート（ClaimReceipt）を別に刷る
+   */
+  claimNumber?: string;
+};
+
+/** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの中身 */
+export type ClaimReceipt = {
+  /** 2026/11/07 10:23 */
+  dateTime: string;
+  /** No.123 */
+  orderNo: string;
   /** 引換券番号として大きく載せる注文番号 */
   claimNumber: string;
 };
@@ -65,13 +84,26 @@ export type FormalReceipt = {
   note: string;
   /** 2026年11月7日 */
   date: string;
+  /** 店に残す控えなら、そうと分かる印（「店舗控」）。お客さんに渡すものには無い */
+  copyMark?: string;
 };
+
+/** 店に残す領収書の控えに付ける印 */
+const STORE_COPY_MARK = "店舗控";
 
 /** ￥1,234。全角の円記号はシールと同じ */
 export const yen = (amount: number) =>
   `${amount < 0 ? "-" : ""}￥${Math.abs(amount).toLocaleString("ja-JP")}`;
 
 const orderNo = (order: OrderEntity) => `No.${order.orderId}`;
+
+/** 2026/11/07 10:23。注文を確定した時刻（日本時間） */
+const receiptDateTime = (order: OrderEntity) => {
+  const createdAt = order.createdAt.getTime();
+  const date = jstDate(createdAt).replaceAll("-", "/");
+  const time = jstClock(createdAt).slice(0, 5);
+  return `${date} ${time}`;
+};
 
 /** 同じ名前・値段の商品をまとめた明細 */
 const receiptItems = (order: OrderEntity): ReceiptRow[] => {
@@ -100,20 +132,33 @@ const receiptItems = (order: OrderEntity): ReceiptRow[] => {
  *
  * 商品ごとの金額・割引・合計と、現金ならお預り・お釣り、Square なら決済手段を載せる。
  * 日時は注文を確定した時刻（日本時間）。
+ *
+ * 注文を何回かに分けて払うとき（split）は、order はその小計の商品だけの注文。
+ * 小計から先に払った額とあとで払う額を引いた残りを、この支払いの合計にする。
+ * 引換券番号は載せない（払い終えたら claimReceipt を別に刷る）。
  */
 export const orderReceipt = (
   order: OrderEntity,
   payment: ReceiptPayment,
+  split?: ReceiptSplit,
 ): OrderReceipt => {
-  const createdAt = order.createdAt.getTime();
-  const date = jstDate(createdAt).replaceAll("-", "/");
-  const time = jstClock(createdAt).slice(0, 5);
+  const prepaid = split?.prepaid ?? 0;
+  const deferred = split?.deferred ?? 0;
+  const total = order.billingAmount - prepaid - deferred;
 
   const adjustments =
-    order.discount > 0
+    order.discount > 0 || prepaid > 0 || deferred > 0
       ? [
           { label: "小計", amount: yen(order.total) },
-          { label: "割引", amount: yen(-order.discount) },
+          ...(order.discount > 0
+            ? [{ label: "割引", amount: yen(-order.discount) }]
+            : []),
+          ...(prepaid > 0
+            ? [{ label: "先にお支払い済み", amount: yen(-prepaid) }]
+            : []),
+          ...(deferred > 0
+            ? [{ label: "あとでお支払い", amount: yen(-deferred) }]
+            : []),
         ]
       : [];
 
@@ -121,7 +166,7 @@ export const orderReceipt = (
     payment.method === "cash"
       ? [
           { label: "お預り", amount: yen(order.received) },
-          { label: "お釣り", amount: yen(order.getCharge()) },
+          { label: "お釣り", amount: yen(order.received - total) },
         ]
       : [
           {
@@ -129,20 +174,32 @@ export const orderReceipt = (
               (payment.paymentType &&
                 SQUARE_PAYMENT_LABEL[payment.paymentType]) ??
               "キャッシュレス決済",
-            amount: yen(order.billingAmount),
+            amount: yen(total),
           },
         ];
 
   return {
-    dateTime: `${date} ${time}`,
+    dateTime: receiptDateTime(order),
     orderNo: orderNo(order),
     items: receiptItems(order),
     adjustments,
-    total: yen(order.billingAmount),
+    total: yen(total),
     payments,
-    claimNumber: `${order.orderId}`,
+    ...(split === undefined && { claimNumber: `${order.orderId}` }),
   };
 };
+
+/**
+ * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート
+ *
+ * 支払いごとのレシートには引換券番号を載せないので、注文に 1 枚だけ刷る。
+ * 日時は注文を確定した時刻（日本時間）。
+ */
+export const claimReceipt = (order: OrderEntity): ClaimReceipt => ({
+  dateTime: receiptDateTime(order),
+  orderNo: orderNo(order),
+  claimNumber: `${order.orderId}`,
+});
 
 /** 2026年11月7日 */
 const jaDate = (ms: number) => {
@@ -154,10 +211,15 @@ const jaDate = (ms: number) => {
  * 求められたときだけ刷る領収書
  *
  * 宛名は手で書けるよう空けておく。日付は注文を受けた日、金額は請求額（割引後）。
+ * storeCopy なら、同じ中身に店舗控の印を付ける。
  */
-export const formalReceipt = (order: OrderEntity): FormalReceipt => ({
+export const formalReceipt = (
+  order: OrderEntity,
+  { storeCopy = false }: { storeCopy?: boolean } = {},
+): FormalReceipt => ({
   orderNo: orderNo(order),
   amount: `${yen(order.billingAmount)}-`,
   note: "但し 飲食代として",
   date: jaDate(order.createdAt.getTime()),
+  ...(storeCopy && { copyMark: STORE_COPY_MARK }),
 });

@@ -35,6 +35,32 @@ export const commentSchema = z.object({
   createdAt: z.date(),
 });
 
+/**
+ * 個別会計の支払い 1 回分（openapi.yaml の OrderPaymentResponse・OrderPaymentCreate）
+ *
+ * 保存した注文ではサーバーが返したもの。一括で払った注文には無い（空）。
+ * レジで入力中の注文では、個別会計で払った分を入れ、注文を作るときに一緒に送る。
+ */
+export const splitPaymentSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  /** 払った額（この支払いの明細の値段の合計 − この支払いで引いた割引） */
+  amount: z.number(),
+  /** お預かり。Square なら amount と同じ */
+  received: z.number(),
+  /** この支払いで引いた割引 */
+  discount: z.number(),
+  /** この支払いで払った明細の、menus の中の位置 */
+  menuIndexes: z.array(z.number()),
+  /** Square の決済依頼の ID。Square で払ったときだけ */
+  squareCheckoutId: z.string().optional(),
+  /** Square の決済画面の種類（SquarePaymentType）。保存した注文の Square の支払いだけ */
+  squarePaymentType: z.string().optional(),
+  /** Square の決済の返金の状態。保存した注文の Square の支払いだけ */
+  squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+});
+
+export type SplitPayment = z.infer<typeof splitPaymentSchema>;
+
 export const orderSchema = z.object({
   id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
@@ -57,6 +83,12 @@ export const orderSchema = z.object({
   paymentMethod: z.enum(PAYMENT_METHODS).optional(),
   // Square で払った注文の、その決済の返金の状態。現金の注文と保存前の注文には無い
   squareRefundStatus: z.enum(SQUARE_REFUND_STATUSES).optional(),
+  // 個別会計の支払い（払った順）。一括で払う注文には無い（空）
+  payments: z.array(splitPaymentSchema).optional(),
+  // キャンセルした時刻。キャンセルしても注文は消さずに残す（番号は使ったまま）。保存前の注文には無い
+  cancelledAt: z.date().nullable().optional(),
+  // 現金で受け取った分を返した時刻。保存前の注文には無い
+  cashRefundedAt: z.date().nullable().optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -140,6 +172,9 @@ export class OrderEntity implements Order {
     private readonly _cups: Cup[],
     private readonly _paymentMethod: PaymentMethod | undefined,
     private readonly _squareRefundStatus: Order["squareRefundStatus"],
+    private _payments: SplitPayment[],
+    private readonly _cancelledAt: Date | null,
+    private readonly _cashRefundedAt: Date | null,
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -162,6 +197,9 @@ export class OrderEntity implements Order {
       [],
       undefined,
       undefined,
+      [],
+      null,
+      null,
     );
   }
 
@@ -189,6 +227,9 @@ export class OrderEntity implements Order {
       order.cups ?? [],
       order.paymentMethod,
       order.squareRefundStatus,
+      order.payments ?? [],
+      order.cancelledAt ?? null,
+      order.cashRefundedAt ?? null,
     );
   }
 
@@ -286,6 +327,24 @@ export class OrderEntity implements Order {
 
   get squareRefundStatus() {
     return this._squareRefundStatus;
+  }
+
+  /** 個別会計の支払い（払った順）。一括で払う注文では空 */
+  get payments() {
+    return this._payments;
+  }
+  set payments(payments: SplitPayment[]) {
+    this._payments = payments;
+  }
+
+  /** キャンセルした時刻。キャンセルしていなければ null */
+  get cancelledAt() {
+    return this._cancelledAt;
+  }
+
+  /** 現金で受け取った分を返した時刻。返していなければ null */
+  get cashRefundedAt() {
+    return this._cashRefundedAt;
   }
 
   // --------------------------------------------------
@@ -448,6 +507,70 @@ export class OrderEntity implements Order {
     return this.received - this.billingAmount;
   }
 
+  /** キャンセルしたか。キャンセルしても注文は残り、番号は使ったまま */
+  isCancelled() {
+    return this._cancelledAt !== null;
+  }
+
+  /**
+   * 支払いごとの返金の状態（個別会計でなければ注文全体を 1 つの支払いとする）。
+   * Square は返金を受け付けた（結果待ち・返金済み）もの、現金は返したと記録したものを返金したとする
+   */
+  private refundParts(): {
+    method: PaymentMethod;
+    amount: number;
+    refunded: boolean;
+  }[] {
+    const squareRefunded = (status: Order["squareRefundStatus"]) =>
+      status === "pending" || status === "refunded";
+    const cashRefunded = this._cashRefundedAt !== null;
+    if (this._payments.length > 0) {
+      return this._payments.map((payment) => ({
+        method: payment.method,
+        amount: payment.amount,
+        refunded:
+          payment.method === "cash"
+            ? cashRefunded
+            : squareRefunded(payment.squareRefundStatus),
+      }));
+    }
+    const method = this._paymentMethod ?? "cash";
+    return [
+      {
+        method,
+        amount: this._billingAmount,
+        refunded:
+          method === "cash"
+            ? cashRefunded
+            : squareRefunded(this._squareRefundStatus),
+      },
+    ];
+  }
+
+  /** 返金したか（一部でも）。返金した注文の番号は引換券の割引に使えない */
+  isRefunded() {
+    return this.refundParts().some((part) => part.refunded);
+  }
+
+  /** まだ返していない支払いの決済手段ごとの額。返金のボタンで返す分 */
+  getUnrefundedAmounts(): Partial<Record<PaymentMethod, number>> {
+    const amounts: Partial<Record<PaymentMethod, number>> = {};
+    for (const part of this.refundParts()) {
+      if (!part.refunded) {
+        amounts[part.method] = (amounts[part.method] ?? 0) + part.amount;
+      }
+    }
+    return amounts;
+  }
+
+  /** 売上に数える額（請求額から返金した額を引く）。キャンセルしても、返金していなければ売上に数える */
+  getSalesAmount() {
+    return this.refundParts().reduce(
+      (acc, part) => (part.refunded ? acc : acc + part.amount),
+      0,
+    );
+  }
+
   /**
    * statusを取得する
    * @returns status
@@ -488,6 +611,9 @@ export class OrderEntity implements Order {
       cups: this.cups,
       paymentMethod: this.paymentMethod,
       squareRefundStatus: this.squareRefundStatus,
+      payments: this.payments,
+      cancelledAt: this.cancelledAt,
+      cashRefundedAt: this.cashRefundedAt,
     };
   }
 

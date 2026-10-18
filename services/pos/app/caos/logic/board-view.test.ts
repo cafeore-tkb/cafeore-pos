@@ -4,8 +4,9 @@ import {
   type Cup,
   buildCaosCards,
 } from "@cafeore/common";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { LATE_ORDER_SEC, longWaitMinutes, orderBacklog } from "./alerts";
+import { cardActions, cardStage } from "./cardActions";
 import {
   type CardLook,
   cardLooks,
@@ -18,6 +19,7 @@ import {
   sharesOrder,
   unassignedRows,
 } from "./cards";
+import { isStampReply } from "./comments";
 import {
   DROP_EDGE,
   boardLanes,
@@ -26,12 +28,20 @@ import {
   frontTargets,
   moveTargets,
   pendingNominatedCups,
+  staysInLane,
 } from "./lanes";
 import { byElapsed, liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
+import { runCardAction } from "./runCardAction";
 import { findOrder, focusCard } from "./search";
 import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
 import { brewStarts, timelineArrivals } from "./timeline";
+import {
+  markSeen,
+  unfinishedOrders,
+  unfinishedStates,
+  unseenAlerts,
+} from "./unfinished";
 
 // 作りものの注文（本物のデータは入れない）
 const T0 = new Date("2025-11-02T03:00:00.000Z");
@@ -147,9 +157,10 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       waitSec: LATE_ORDER_SEC + 60,
       late: true,
     });
-    // 抽出中の #1 は数えない
+    // 未割当・待機の待ち情報。提供超過アイコンは未提供の一覧で判定する。
     expect(backlog.late.map((o) => o.orderNo)).toEqual([2, 3]);
     expect(orderBacklog([], T0.getTime())).toEqual({
+      smallestUnassigned: null,
       oldestUnassigned: null,
       late: [],
     });
@@ -247,6 +258,25 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       [false, ""],
       [false, ""],
     ]);
+    // 自分の列の空いた所（待機の最後）に落としたとき：もう最後なら何もしない。抽出中も、ひとりでなければ最後へ下がる
+    const stays = (dripId: string) => {
+      const c = cards.find((x) => x.dripId === dripId);
+      if (!c?.dripper) throw new Error("no card");
+      return staysInLane(cards, c, c.dripper);
+    };
+    expect(["b", "q1", "q2", "w1", "w2"].map(stays)).toEqual([
+      false,
+      false,
+      true,
+      false,
+      true,
+    ]);
+    const [alone] = buildCaosCards([
+      order(50, [
+        { dripper: 4, dripId: "a", dripperPosition: 1, brewStartedAt: T0 },
+      ]),
+    ]);
+    expect(staysInLane([alone], alone, 4)).toBe(true);
   });
 
   test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
@@ -405,14 +435,123 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(longWaitMinutes(lanes[0].brewing ?? card, at(999))).toBeNull();
   });
 
-  test("「次へ」は始めてから 10 秒は押せず、抽出時間の半分までは押し間違いかを確かめる", () => {
+  test("カードの操作は60秒で切り替わり、未着手は再割当・未割当へ戻せる", () => {
     const at = (sec: number) => T0.getTime() + sec * 1000;
-    expect(laneStatus(lanes[0], at(9)).nextLocked).toBe(true);
-    expect(laneStatus(lanes[0], at(10)).nextLocked).toBe(false);
+    const actions = (card: CaosCard, lane: (typeof lanes)[number], sec = 60) =>
+      cardActions(card, lane, { nowMs: at(sec), comments: false })
+        .map(({ action, disabled }) => (disabled ? `(${action})` : action))
+        .join(" ");
+    const [first] = lanes;
+    if (!first.brewing) throw new Error("no brewing");
+    expect(cardStage(first.brewing, first)).toBe("brewing");
+    expect(actions(first.brewing, first)).toBe("emergency finish");
+    expect(actions(first.brewing, first, 9)).toBe("unstart");
+    expect(actions(first.brewing, first, 59.999)).toBe("unstart");
+    expect(actions(first.brewing, first, 60)).toBe("emergency finish");
+    expect(
+      cardActions(first.brewing, first, { nowMs: at(60), comments: true }).map(
+        ({ action }) => action,
+      ),
+    ).toEqual(["emergency", "comment", "finish"]);
+    expect(
+      cardActions(first.brewing, first, { nowMs: at(59), comments: true }).map(
+        ({ action }) => action,
+      ),
+    ).toEqual(["unstart", "comment"]);
+    // 抽出中のある列の待機も1〜6で再割当できる。
+    expect(cardStage(first.queued[0], first)).toBe("queued");
+    expect(
+      cardActions(first.queued[0], first, {
+        nowMs: at(60),
+        comments: true,
+      }).map(({ action }) => action),
+    ).toEqual([
+      "assign:2",
+      "assign:3",
+      "assign:4",
+      "assign:5",
+      "assign:6",
+      "unassign",
+      "comment",
+    ]);
+    // 抽出中の無い列の待機の先頭は未着手（▶）、その後ろは待機
+    const idle = { ...first, brewing: undefined };
+    expect(cardStage(first.queued[0], idle)).toBe("ready");
+    expect(actions(first.queued[0], idle)).toBe(
+      "assign:2 assign:3 assign:4 assign:5 assign:6 start unassign",
+    );
+    // 待機の有無で完了の操作は変わらない。終わったカードは入れ直しだけ
+    const alone = { ...first, queued: [] };
+    expect(actions(first.brewing, alone)).toBe("emergency finish");
+    const done = { ...first.brewing, status: "done" as const };
+    expect(actions(done, alone)).toBe("emergency");
     // 1 杯は 300 秒なので、149 秒までは確かめる
     expect(earlyNext(lanes[0], at(149))?.elapsedSec).toBe(149);
     expect(earlyNext(lanes[0], at(150))).toBeNull();
     expect(earlyNext(lanes[2], at(0))).toBeNull();
+  });
+
+  test("再割当は他列だけ成功し、自列・指名違反・状態変更は書き込まない。未割当に戻す", () => {
+    const queuedOrders = [
+      order(1, [{ dripper: 1, dripId: "q", dripperPosition: 1 }]),
+      order(2, [{ dripper: 1, dripId: "q2", dripperPosition: 2 }]),
+    ];
+    const cards = buildCaosCards(queuedOrders);
+    const card = cards.find((card) => card.orderNo === 1);
+    if (!card) throw new Error("no queued card");
+    const ops = {
+      write: vi.fn(
+        (_result: import("@cafeore/common").CaosWritesResult, _label: string) =>
+          true,
+      ),
+      fail: vi.fn(() => false),
+      newId: () => "new",
+      onAssigned: vi.fn(),
+      start: vi.fn(),
+      finish: vi.fn(),
+    };
+    expect(runCardAction(cards, card, "assign:2", T0.getTime(), ops)).toBe(
+      true,
+    );
+    expect(ops.write.mock.calls[0][0]).toMatchObject({
+      writes: [{ after: { dripper: 2, start_brew: true } }],
+    });
+    expect(ops.onAssigned).toHaveBeenCalledWith(card, 2);
+    ops.write.mockClear();
+    ops.onAssigned.mockClear();
+    expect(runCardAction(cards, card, "assign:1", T0.getTime(), ops)).toBe(
+      false,
+    );
+    expect(ops.write).not.toHaveBeenCalled();
+    const nominated = { ...card, nominatedDripper: 1 };
+    expect(
+      runCardAction([nominated], nominated, "assign:2", T0.getTime(), ops),
+    ).toBe(false);
+    const brewing = { ...card, status: "brewing" as const, startedAt: T0 };
+    expect(runCardAction([brewing], card, "assign:2", T0.getTime(), ops)).toBe(
+      false,
+    );
+    expect(ops.write).not.toHaveBeenCalled();
+    expect(ops.onAssigned).not.toHaveBeenCalled();
+    expect(runCardAction(cards, card, "unassign", T0.getTime(), ops)).toBe(
+      true,
+    );
+    expect(ops.write.mock.calls[0][0]).toMatchObject({
+      writes: [{ after: { dripper: null, drip_id: null, start_brew: false } }],
+    });
+    expect(ops.start).not.toHaveBeenCalled();
+    expect(ops.finish).not.toHaveBeenCalled();
+  });
+
+  test("未割当の最長時間と最小番号を別々に求める", () => {
+    const cards = buildCaosCards([
+      { ...order(9, [{}]), createdAt: new Date(T0.getTime() - 600_000) },
+      order(2, [{}]),
+    ]);
+    expect(orderBacklog(cards, T0.getTime())).toMatchObject({
+      smallestUnassigned: 2,
+      oldestUnassigned: { orderNo: 9, waitSec: 600 },
+    });
   });
 
   test("予定の時刻は 1 杯 5 分・2 杯 6 分の抽出と、15 秒の入れ替え", () => {
@@ -549,6 +688,7 @@ describe("[unit] CaOS の注文番号の検索とコメント", () => {
     text: "氷少なめ",
     createdAt: T0,
     orderNo: 3,
+    orderId: "order-3",
   };
   const comments = new Map([["order-3", [comment]]]);
   const find = (orderNo: number) =>
@@ -651,5 +791,130 @@ describe("[unit] CaOS の終わったカードと提供済みのカード", () =
       isPast: true,
       cups: 1,
     });
+  });
+});
+
+describe("[unit] CaOS の未完了の注文とタブの印", () => {
+  const at = (orderId: number, minutesAgo: number, cups: CupPlace[]) => ({
+    ...order(orderId, cups),
+    createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
+  });
+  // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
+  // #6：提供済みのカップを入れ直した（入れ直しが未割当）。#7 は下に
+  const rebrew = {
+    id: "e6",
+    createdAt: T0,
+    reason: "こぼした",
+    dripper: null,
+    dripperPosition: null,
+    dripId: null,
+    brewStartedAt: null,
+    brewFinishedAt: null,
+  };
+  const orders = [
+    at(1, 20, [
+      { dripper: 1, dripId: "d1", dripperPosition: 1, brewStartedAt: T0 },
+    ]),
+    at(2, 10, [{}]),
+    at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
+    at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
+    // #7：「次へ」を押し忘れたまま提供済みにした（入れ直しではないので出さない）
+    at(7, 40, [
+      {
+        dripper: 3,
+        dripId: "d7",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        readyAt: T0,
+        servedAt: T0,
+      },
+    ]),
+    at(4, 5, [
+      {
+        dripper: 2,
+        dripId: "d4",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        brewFinishedAt: T0,
+      },
+    ]),
+    at(5, 1, [{ readyAt: T0 }, {}]),
+  ];
+  const cards = buildCaosCards(orders);
+  const comment = (text: string, author: "cashier" | "master" = "cashier") => ({
+    author,
+    text,
+    createdAt: T0,
+    orderNo: 2,
+    orderId: "order-2",
+  });
+  const comments = new Map([
+    ["order-2", [comment("氷少なめ"), comment("👍 了解", "master")]],
+  ]);
+  const rows = (practice = false) =>
+    unfinishedOrders({
+      orders,
+      cards,
+      lanes: boardLanes(cards),
+      comments,
+      nowMs: T0.getTime(),
+      practice,
+    });
+
+  test("まだ提供していない注文を注文番号の順に、受けてからの時間（15 分超は late）と今の場所で", () => {
+    expect(
+      rows().map((row) => ({
+        no: row.orderNo,
+        late: row.late,
+        places: row.cards.map(({ place }) => place),
+        ready: row.readyCups,
+      })),
+    ).toEqual([
+      { no: 1, late: true, places: ["1st 抽出中 0:00"], ready: 0 },
+      { no: 2, late: false, places: ["未割当"], ready: 0 },
+      { no: 4, late: false, places: ["2nd 済"], ready: 0 },
+      { no: 5, late: false, places: ["未割当"], ready: 1 },
+      { no: 6, late: false, places: ["未割当"], ready: 1 },
+    ]);
+    expect(rows()[1].comments).toHaveLength(2);
+    expect(rows().map(unfinishedStates)).toEqual([
+      ["1st 抽出中 0:00"],
+      ["未割当"],
+      ["2nd 済"],
+      ["未割当", "準備完了 1/2"],
+      ["未割当", "準備完了"],
+    ]);
+  });
+
+  test("実データテストは、抽出の要るカップが全部抽出を終えた注文を済みとみる", () => {
+    expect(rows(true).map((row) => row.orderNo)).toEqual([1, 2, 5, 6, 7]);
+  });
+
+  test("未提供は提供画面と同じ15分ちょうどから時間超過。60分でも時間は戻らない", () => {
+    const orders = [order(1, [{}])];
+    const at = (seconds: number) =>
+      unfinishedOrders({
+        orders,
+        cards: buildCaosCards(orders),
+        lanes: boardLanes(buildCaosCards(orders)),
+        comments: null,
+        nowMs: T0.getTime() + seconds * 1000,
+        practice: false,
+      })[0];
+    expect(at(899)).toMatchObject({ waitSec: 899, late: false });
+    expect(at(900)).toMatchObject({ waitSec: 900, late: true });
+    expect(at(3601)).toMatchObject({ waitSec: 3601, late: true });
+  });
+
+  test("タブの印は、まだ見ていない 15 分超の注文と新しいコメント（返したスタンプは数えない）。見たら消え、今の未提供に無いものは忘れる", () => {
+    expect(isStampReply(comment("👍 了解", "master"))).toBe(true);
+    expect(isStampReply(comment("👍 了解"))).toBe(false);
+    const none = { late: [], comments: [] };
+    const unseen = unseenAlerts(rows(), none);
+    expect(unseen.late).toEqual(["order-1"]);
+    expect(unseen.comments).toHaveLength(1);
+    const seen = markSeen(rows(), { late: ["gone"], comments: [] }, unseen);
+    expect(seen.late).toEqual(["order-1"]);
+    expect(unseenAlerts(rows(), seen)).toEqual(none);
   });
 });

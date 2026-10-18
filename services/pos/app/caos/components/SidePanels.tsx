@@ -382,13 +382,8 @@ export const LanePanel: React.FC<{
 }> = ({ lane, onClose, onMoveQueue }) => (
   <SidePanel title={`ドリッパー ${dripperLabel(lane.id)}`} onClose={onClose}>
     <div className="flex items-center gap-2">
-      <LaneName dripper={lane.id} className="font-black text-[18px]" />
       <LaneAbility dripper={lane.id} />
-      <LaneChangeButton
-        dripper={lane.id}
-        layout="inline"
-        className="ml-auto h-11 px-3"
-      />
+      <LaneChangeButton dripper={lane.id} className="font-black text-[18px]" />
     </div>
     <h3 className="mt-5 mb-2 font-black text-[14px] text-slate-700">
       この列の待機 {orderCount(lane.queued)}件を移す
@@ -413,28 +408,28 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助のタブ（ドリッパー・豆キュー・実績）。右のパネルで開く
+// 補助のタブ（ドリッパー・豆残量確認・実績）。右のパネルで開く
 export type AuxiliaryTab = "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
   bays: "ドリッパー",
-  beans: "豆キュー",
+  beans: "豆残量確認",
   analytics: "実績",
 };
 
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
-    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
+    /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
   } & React.ComponentProps<typeof AnalyticsView>
 > = ({ tab, beans, lanes, ...analytics }) => {
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
-  // ドリッパー：6 列（1st〜6th）の担当者（交代も）と、今の抽出と待ちの件数
+  // ドリッパー：1st〜6thを上から縦1列に並べ、担当者（交代も）と、今の抽出と待ちの件数
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-1 gap-2">
       {lanes.map((lane) => {
         const [current, ...waiting] = laneActive(lane);
         return (

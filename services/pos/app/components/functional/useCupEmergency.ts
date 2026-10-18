@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
+import { labelPrintableWidth } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
@@ -33,31 +34,42 @@ export const toastEmergenciesCancelled = (count: number) =>
  * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。刷れなければ端末に残して送り直す（usePrinter）。
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。
  */
-export const useCupEmergency = () => {
-  const { label_printer_ip } = usePrinterAddresses();
+export const useCupEmergency = (
+  onActivity?: (event: string, details: Record<string, unknown>) => void,
+) => {
+  const printerSettings = usePrinterAddresses();
+  const { label_printer_ip } = printerSettings;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
+    labelPrintableWidth(printerSettings),
+    onActivity,
   );
   const { printCupLabel } = printer;
 
   /** 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
     async (cups: EmergencyCup[], reason: string) => {
+      onActivity?.("emergency.api.requested", {
+        cupIds: cups.map((cup) => cup.cupId),
+        reason,
+      });
       const result = await addCupEmergencies(
         cups.map((cup) => cup.cupId),
         reason,
       );
       if (result.error !== undefined) {
+        onActivity?.("emergency.api.rejected", { error: result.error });
         toast.error(result.error);
         return null;
       }
+      onActivity?.("emergency.api.succeeded", { unitIds: result.data.ids });
       cups.forEach(({ order, cupId }, i) => {
         void printCupLabel(order, cupId, result.data.ids[i]);
       });
       toastEmergenciesAdded(cups.length);
       return result.data.ids;
     },
-    [printCupLabel],
+    [printCupLabel, onActivity],
   );
 
   /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */

@@ -1,39 +1,40 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import {
-  ArrowRightCircle,
-  Clock3,
-  type LucideIcon,
-  Pause,
-  Play,
-  Plus,
-} from "lucide-react";
+import { Clock3, type LucideIcon, Pause, Play, Plus } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenCornerToast } from "../hooks/useCornerToasts";
 import { longWaitMinutes } from "../logic/alerts";
 import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
-import type { LanePhase, LaneStatus, NextAvailable } from "../logic/queue";
+import type { LanePhase, LaneStatus } from "../logic/queue";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・「次へ」と右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
+// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
-/** パネルの見出し（アイコン・題・右に添えるもの） */
+/** パネルの見出し（アイコン・題・右に添えるもの）。題の代わりにタブを置くときは icon・title を渡さない */
 export const PanelHeader: React.FC<{
-  icon: LucideIcon;
-  title: string;
+  icon?: LucideIcon;
+  title?: string;
   className?: string;
+  backgroundClassName?: string;
+  heightClassName?: string;
   children?: React.ReactNode;
 }> = ({
   icon: Icon,
   title,
   className = "border-slate-200 border-b",
   children,
+  backgroundClassName = "bg-slate-50",
+  heightClassName = "h-11",
 }) => (
   <header
-    className={`flex h-11 shrink-0 items-center gap-2 rounded-t-lg bg-slate-50 px-3 ${className}`}
+    className={`flex ${heightClassName} shrink-0 items-center gap-2 rounded-t-lg px-3 ${backgroundClassName} ${className}`}
   >
-    <Icon className="h-4 w-4 shrink-0 text-slate-700" />
-    <h2 className="shrink-0 font-black text-[15px] text-slate-950">{title}</h2>
+    {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-700" />}
+    {title && (
+      <h2 className="shrink-0 font-black text-[15px] text-slate-950">
+        {title}
+      </h2>
+    )}
     {children}
   </header>
 );
@@ -52,14 +53,14 @@ export const OrderCountLabel: React.FC<{ cards: readonly CaosCard[] }> = ({
 
 /** 列の番号（1st〜6th。右のパネルの列の一覧）。担当者の名前は出さない */
 export const LaneBadge: React.FC<{ bayId: number }> = ({ bayId }) => (
-  <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[13px] text-slate-600">
+  <span className="flex h-8 w-fit min-w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-1 font-bold font-mono text-[15px] text-slate-600">
     {dripperLabel(bayId)}
   </span>
 );
 
 // 列の状態の色と札（ドリッパーの番号に出す）。空きは「今すぐ割り当てられる」ので一番目立たせ、待機（始めていない）は青、
-// 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤・「次へ」の橙と分ける）。
-// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・「次へ」の押し忘れかもしれない。logic/alerts）は FORGOTTEN
+// 抽出中は白、まもなくは黄、予定より長くかかっている継続中は薄い赤（caos.css の --caos-overtime。緊急の赤と分ける）。
+// 色だけに頼らず札の文字も出す。継続中のうち予定を大きく過ぎた抽出（入れ忘れ・終えるのを押し忘れたのかもしれない。logic/alerts）は FORGOTTEN
 const PHASES: Record<LanePhase, { label: string; className: string }> = {
   empty: {
     label: "空き",
@@ -103,21 +104,26 @@ export const DripperIndicator: React.FC<{
 }> = ({ bayId, status, nominatedCups, onOpenLane, className = "" }) => {
   const phase = status.forgotten ? FORGOTTEN : PHASES[status.phase];
   const showsRemaining = status.phase === "brewing" || status.phase === "soon";
+  const countsUp = status.phase === "overtime" && !status.forgotten;
+  const elapsed = clockLabel(Math.max(0, Math.floor(status.elapsedMs / 1000)));
+  const label = countsUp ? elapsed : phase.label;
   return (
     <button
       type="button"
       disabled={!onOpenLane}
       onClick={() => onOpenLane?.(bayId)}
       data-lane-phase={status.forgotten ? "forgotten" : status.phase}
-      aria-label={`${dripperLabel(bayId)} ${phase.label}`}
+      aria-label={`${dripperLabel(bayId)} ${countsUp ? `抽出開始から ${elapsed}` : phase.label}`}
       className={`relative flex shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 pt-1.5 leading-none enabled:active:scale-95 ${phase.className} ${className}`}
     >
       <span className="font-black font-mono text-[24px]">{bayId}</span>
-      <span className="mt-0.5 whitespace-nowrap font-black text-[10px] tracking-tighter">
-        {phase.label}
+      <span
+        className={`mt-0.5 whitespace-nowrap font-black ${countsUp ? "font-mono text-[14px] tabular-nums" : "text-[11px] tracking-tighter"}`}
+      >
+        {label}
       </span>
       {showsRemaining && (
-        <span className="mt-0.5 font-black font-mono text-[12px] tabular-nums">
+        <span className="mt-0.5 font-black font-mono text-[14px] tabular-nums">
           {clockLabel(status.remainingSec)}
         </span>
       )}
@@ -138,31 +144,6 @@ export const DripperIndicator: React.FC<{
   );
 };
 
-/**
- * 「次へ」（抽出中のカードを終えて待機の先頭を始める）。押せないとき（カードが無い・locked）は薄い枠だけ。列の状態はドリッパーの番号に出す。
- * locked のあいだ（抽出を始めてすぐ。二度押しを防ぐ）は押せない
- */
-export const NextButton: React.FC<{
-  bayId: number;
-  /** 抽出中か待機のカードがある */
-  active: boolean;
-  /** まだ押せない（抽出を始めてすぐ） */
-  locked?: boolean;
-  onAdvance: (bayId: number) => void;
-  className?: string;
-}> = ({ bayId, active, locked = false, onAdvance, className = "" }) => (
-  <button
-    type="button"
-    disabled={!active || locked}
-    onClick={() => onAdvance(bayId)}
-    title={`${dripperLabel(bayId)}の現在の抽出を確定して次へ`}
-    className={`flex touch-manipulation items-center justify-center gap-1 rounded-lg border-2 font-black shadow-xs active:scale-95 enabled:border-orange-700 enabled:bg-orange-600 enabled:text-white disabled:border-slate-200 disabled:border-dashed disabled:bg-white disabled:text-slate-300 disabled:shadow-none ${className}`}
-  >
-    次へ
-    {active && <ArrowRightCircle className="h-4 w-4 shrink-0" />}
-  </button>
-);
-
 // 知らせのあとに添える文
 const FIX_HINT = "違っていたら逆の操作（外す・移す）で直してください。";
 
@@ -173,12 +154,7 @@ const toastText = (toast: OpenCornerToast) => {
       label: `${dripperLabel(toast.bayId)}の抽出を終える確かめ`,
       title: `${dripperLabel(toast.bayId)} の ${orderLabel(toast.card)} を終えますか？`,
       body: `始めてからまだ ${clockLabel(toast.elapsedSec)} です。押す列を間違えていませんか？`,
-      action:
-        toast.start === "none"
-          ? "終える"
-          : toast.start === "head"
-            ? "次へ進める"
-            : "終えて始める",
+      action: toast.start === "none" ? "終える" : "次へ進める",
       frame: "border-orange-600",
     };
   if (toast.kind === "lateMerge")
@@ -207,11 +183,12 @@ const toastText = (toast: OpenCornerToast) => {
 };
 
 /**
- * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は［やめる（残りの秒）］［次へ進める］。
+ * 右上の確かめと知らせ（hooks/useCornerToasts）。押し間違いかもしれない、抽出中のカードを終える操作（カードの ✓。抽出時間の半分もたっていない）は
+ * ［やめる（残りの秒）］［次へ進める］。
  * 抽出を始めてから時間のたったカード（@cafeore/common の caosLateMerge）へ統合したときは、統合したうえで「#005 は抽出を始めてから 2:10 たっています」と、
  * 上級生のみのカードを上級生でない担当者のドリッパーに置いたとき（@cafeore/common の nonSeniorPlacement）は置いたうえで
  * 「上級生のみの #012 を上級生でない 3rd 佐藤に置きました」と知らせるだけ（［閉じる（残りの秒）］。押さなくても消える）。
- * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのドリッパーの「次へ」・カード）はそのまま。
+ * 画面を占めず、背景も暗くしないので、出ているあいだも盤面の操作（割当・ほかのカードの操作）はそのまま。
  * 種類によらず右上に新しいものから縦に並べる（置く場所は caos.css の .caos-corner-toasts。右のパネルを避ける）
  */
 export const CornerToasts: React.FC<{
@@ -258,43 +235,36 @@ export const CornerToasts: React.FC<{
     </div>
   );
 
-/** 空きスロット（押すと、このドリッパーへの割当のパネルを開く） */
+/** 空きスロット。未割当カードの選択中は直接割当し、未選択なら割当パネルを開く */
 export const EmptySlotButton: React.FC<{
   onClick: () => void;
   className?: string;
-}> = ({ onClick, className = "" }) => (
+  assigning?: boolean;
+  disabled?: boolean;
+}> = ({ onClick, className = "", assigning = false, disabled = false }) => (
   <button
     type="button"
     onClick={onClick}
-    title="タップして未割当オーダーをこのドリッパーに割り当て"
-    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-slate-300 border-dashed bg-slate-50 px-2 font-bold text-[12px] text-slate-500 hover:border-blue-400 hover:text-blue-600 active:bg-blue-100/70 ${className}`}
+    disabled={disabled}
+    data-unassigned-slot={assigning || undefined}
+    title={
+      disabled
+        ? "指名のあるカードはこの担当者に割り当てられません"
+        : assigning
+          ? "選択中のコーヒーをこの担当者の列の最後に割り当て"
+          : "タップして未割当オーダーをこのドリッパーに割り当て"
+    }
+    className={`flex touch-manipulation select-none items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 font-bold text-[14px] disabled:opacity-40 ${assigning && !disabled ? "border-emerald-600 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 active:bg-emerald-200" : "border-slate-300 bg-slate-50 text-slate-500 enabled:active:bg-blue-100/70 enabled:hover:border-blue-400 enabled:hover:text-blue-600"} ${className}`}
   >
     <Plus className="h-4 w-4 shrink-0" />
-    空きスロット
+    {assigning ? "ここに割当" : "空きスロット"}
   </button>
 );
 
-/** 「次に空く」ドリッパー（未割当とドリッパーの見出し）。札の幅は決めておく（毎秒の残りや「空き」で見出しの並びが動かないように） */
-export const NextAvailableChips: React.FC<{
-  nextAvailable: NextAvailable;
-  className?: string;
-}> = ({ nextAvailable, className = "ml-1" }) => (
-  <div
-    className={`flex min-w-0 items-center gap-1 font-bold text-[10px] text-slate-500 ${className}`}
-  >
-    <span className="shrink-0">次に空く:</span>
-    {nextAvailable.map((item, index) => (
-      <span
-        key={item.bayId}
-        className={`min-w-[6em] shrink-0 whitespace-nowrap rounded border px-1.5 py-0.5 text-center font-mono ${index === 0 ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`}
-      >
-        #{item.bayId} {item.isStandby ? "空き" : clockLabel(item.seconds)}
-      </span>
-    ))}
-  </div>
-);
-
-/** 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる */
+/**
+ * 長く待っている未割当のカードの札（「待ち 6分」。logic/alerts）。カードの children に置き、上の辺の左寄り（左上の角はコメントの印）に重ねる。
+ * 提供の15分超過アイコンは未提供の一覧に表示する
+ */
 export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
   card,
   nowMs,
@@ -316,7 +286,7 @@ export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
 /** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 D の表） */
 export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
   label && (
-    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[11px] text-white leading-none shadow-xs">
+    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[12px] text-white leading-none shadow-xs">
       {label}
     </span>
   );

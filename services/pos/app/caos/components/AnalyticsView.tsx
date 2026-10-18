@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import { OperationsDashboard } from "~/components/organisms/dashboard/operations/OperationsDashboard";
 import {
   type DeltaGrade,
   analyticsReport,
@@ -28,6 +29,8 @@ import type { Lane } from "../logic/lanes";
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
 interface AnalyticsViewProps {
+  /** 本番の注文を分析。練習中は本番データを読まない。 */
+  liveAnalytics?: boolean;
   lanes: Lane[];
   looks: CardLooks;
   /** 実データテストの、今までに届いた注文（テストをしていなければ空） */
@@ -63,6 +66,7 @@ const GRADE_STYLE: Record<
 export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   lanes,
   looks,
+  liveAnalytics = false,
   salesOrders,
   periodStartMs,
   periodEndMs,
@@ -89,6 +93,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   return (
     <div className="space-y-3">
+      {liveAnalytics && <OperationsDashboard compact />}
+      {!liveAnalytics && (
+        <p className="text-slate-500 text-xs">
+          練習の実績です。本番の注文・操作ログとは分離しています。
+        </p>
+      )}
       <div className="border-slate-200 border-b pb-3">
         <h2 className="flex items-center gap-2 font-black text-[18px] text-slate-950">
           <BarChart3 className="h-5 w-5 text-blue-700" />

@@ -2,8 +2,12 @@ import { useColorSettings } from "@cafeore/common";
 import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { OrderCountLabel } from "./components/BoardParts";
-import { ControlViewA } from "./components/ControlViewA";
-import { ViewHeader } from "./components/ViewHeader";
+import {
+  CONTROL_VIEWS,
+  type ControlViewMode,
+  ControlWorkspace,
+} from "./components/ControlWorkspace";
+import { SEGMENTS, ViewHeader, segmentClass } from "./components/ViewHeader";
 import { useBeanInventory } from "./hooks/useBeanInventory";
 import { useDeviceSetting } from "./hooks/useDeviceSetting";
 import { useViewBoard } from "./hooks/useViewBoard";
@@ -13,7 +17,7 @@ import { nextAvailableBays } from "./logic/queue";
 import { timelineArrivals } from "./logic/timeline";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
-// 管制盤 A のタイムラインに映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// 管制盤 A・C・Dを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
 // タイムラインに新しく入ったカードは、通知音（ヘッダーで切り替え）とそのカードの点滅で知らせる。未割当の横帯はたためる（この端末に覚える）。
 
 const noop = () => {};
@@ -28,6 +32,12 @@ export default function ReadOnlyBoard() {
     "caos-view-unassigned-folded",
     false,
   );
+  const [storedMode, setMode] = useDeviceSetting<ControlViewMode>(
+    "caos-view-control-mode",
+    "a",
+  );
+  const mode: ControlViewMode =
+    storedMode === "c" || storedMode === "d" ? storedMode : "a";
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(
@@ -46,6 +56,19 @@ export default function ReadOnlyBoard() {
   return (
     <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
       <ViewHeader nowMs={nowMs} status={status} sound={sound}>
+        <nav aria-label="閲覧する管制盤の表示切替" className={SEGMENTS}>
+          {Object.entries(CONTROL_VIEWS).map(([key, view]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={mode === key}
+              onClick={() => setMode(key as ControlViewMode)}
+              className={`min-h-8 min-w-8 touch-manipulation ${segmentClass(mode === key)}`}
+            >
+              {view.label}
+            </button>
+          ))}
+        </nav>
         <span className="ml-auto font-bold text-slate-600 text-sm">
           未割当{" "}
           <span className="font-black font-mono text-red-600">
@@ -54,7 +77,8 @@ export default function ReadOnlyBoard() {
         </span>
       </ViewHeader>
       <div className="min-h-0 flex-1">
-        <ControlViewA
+        <ControlWorkspace
+          mode={mode}
           lanes={lanes}
           unassignedOrders={unassigned}
           looks={looks}
@@ -63,8 +87,6 @@ export default function ReadOnlyBoard() {
           nowMs={nowMs}
           timelineCommand={null}
           onSelectOrder={noop}
-          onAdvanceBay={noop}
-          onPressCard={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
           onOpenEmptySlot={noop}

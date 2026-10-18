@@ -16,4 +16,25 @@ describe("[unit] openapiEnumLabels", () => {
       cup: "カップ",
     });
   });
+
+  test("レシート用のプリンターの機種の名前", () => {
+    expect(openapiEnumLabels("ReceiptPrinterModel")).toEqual({
+      tm_l90: "TM-L90",
+      tm_m30: "TM-m30",
+    });
+  });
+
+  test("プリンターの用紙の幅の名前", () => {
+    expect(openapiEnumLabels("PrinterPaperWidth")).toEqual({
+      "58mm": "58mm",
+      "80mm": "80mm",
+    });
+  });
+
+  test("プリンターの用紙の種類の名前", () => {
+    expect(openapiEnumLabels("PrinterPaperType")).toEqual({
+      receipt: "レシート紙",
+      die_cut_label: "ダイカットラベル",
+    });
+  });
 });

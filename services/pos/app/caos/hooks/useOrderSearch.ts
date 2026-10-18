@@ -4,7 +4,9 @@ import { orderNoLabel } from "../logic/cards";
 import type { CommentsByOrder } from "../logic/comments";
 import type { Lane } from "../logic/lanes";
 import { findOrder, focusCard } from "../logic/search";
+import { caosLog } from "../utils/log";
 import { scrollCardIntoView } from "../utils/scrollToCard";
+import { useCaosStateLog } from "./useCaosStateLog";
 
 /** 入れられる番号の桁 */
 const MAX_DIGITS = 4;
@@ -15,7 +17,7 @@ const SEARCH_DELAY_MS = 500;
 const appendDigit = (value: string, digit: string) =>
   value.length < MAX_DIGITS ? `${value}${digit}`.replace(/^0+/, "") : value;
 
-// 番号を押す前にフォーカスしていたボタン（指で押した「次へ」など）を、あとの Enter で押さないように外す
+// 番号を押す前にフォーカスしていたボタン（指で押したヘッダーのボタンなど）を、あとの Enter で押さないように外す
 const blurFocus = () => {
   if (document.activeElement instanceof HTMLElement)
     document.activeElement.blur();
@@ -98,13 +100,42 @@ export const useOrderSearch = ({
     else setDigits((value) => appendDigit(value, key));
   };
   /** 待たずに今の番号で探して閉じる（Enter・×・パネルの外。閉じても選んだまま、番号が空なら外す） */
+  useCaosStateLog("search.result.changed", {
+    searched,
+    orderNo: found?.orderNo ?? null,
+    cardKey: target?.key ?? null,
+    orderId: found?.orderId ?? null,
+    commentCount: found?.comments.length ?? 0,
+    commentKeys:
+      found?.comments.map((c) => ({
+        orderId: c.orderId,
+        createdAt: c.createdAt,
+      })) ?? [],
+  });
   const finish = () => {
+    const result = digits
+      ? findOrder({ ...board, orderNo: Number(digits) })
+      : null;
+    caosLog("search.submitted", {
+      digits,
+      orderId: result?.orderId ?? null,
+      commentCount: result?.comments.length ?? 0,
+    });
     setSearched(digits);
     close();
   };
 
+  // 注文を選び、そのカードを見せる（A のタイムラインのカードはタイムラインで、ほかは並べた枠の中で）
+  const reveal = (orderNo: number, card: CaosCard) => {
+    selectOrder(`#${orderNoLabel(orderNo)}`);
+    if (showOnTimeline && card.status !== "unassigned")
+      showOnTimeline(card.key);
+    else scrollCardIntoView(card.key);
+  };
+
   // 効果の中で読む今の値（効果は番号・キーで動かし、毎回は張り直さない）
   const current = {
+    reveal,
     found,
     target,
     digits,
@@ -114,7 +145,6 @@ export const useOrderSearch = ({
     open,
     close,
     selectOrder,
-    showOnTimeline,
   };
   const latest = useRef(current);
   useLayoutEffect(() => {
@@ -124,16 +154,12 @@ export const useOrderSearch = ({
   // 探す番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
   // 開いたまま番号を変えて、盤面に見せるカードが無くなったら（消した・無い番号）選んだ注文を外す（閉じたときは選んだままにする）
   useEffect(() => {
-    const { found, target, searched, selectOrder, showOnTimeline } =
-      latest.current;
+    const { found, target, searched, selectOrder } = latest.current;
     if (targetId === null || !found || !target) {
       if (searched !== null) selectOrder(null);
       return;
     }
-    selectOrder(`#${orderNoLabel(found.orderNo)}`);
-    if (showOnTimeline && target.status !== "unassigned")
-      showOnTimeline(target.key);
-    else scrollCardIntoView(target.key);
+    latest.current.reveal(found.orderNo, target);
   }, [targetId]);
 
   useEffect(() => {
@@ -174,8 +200,16 @@ export const useOrderSearch = ({
     pending: digits !== searched,
     press,
     finish,
+    /** 番号で探したときと同じく、その注文を選んでカードを見せる（パネルは開かない。未提供の行）。盤面にカードが無ければ選ぶだけ */
+    select: (orderNo: number) => {
+      const found = findOrder({ ...board, orderNo });
+      const card = found && focusCard(found);
+      if (card) reveal(orderNo, card);
+      else selectOrder(`#${orderNoLabel(orderNo)}`);
+    },
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
+      caosLog("search.opened-from-comment", { orderNo });
       const shown = String(orderNo);
       open(shown);
       setSearched(shown);

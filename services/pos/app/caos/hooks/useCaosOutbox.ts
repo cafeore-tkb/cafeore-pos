@@ -20,6 +20,8 @@ import { cancelPendingPrint } from "~/label/pending-prints";
 import { createDeviceStore } from "~/lib/device-store";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 
+import { caosLog } from "../utils/log";
+
 // CaOS の送れていない操作（@cafeore/common の lib/caos-outbox.ts）。押した操作はまずこの端末に残し（~/lib/device-store。
 // 再読み込み・タブを閉じても残り、同じ端末のタブどうしで共有する）、画面はサーバーの盤面にこれを重ねて出す（useLiveBoard・CaosLanesProvider）。
 // 送るのは操作の画面（/master-sheet）の 1 つのタブだけ（Web Locks で決める。閉じたらほかのタブが引き継ぐ）で、古い順に 1 つずつ。
@@ -39,6 +41,7 @@ export const enqueueCaosOp = (label: string, op: CaosOutboxOp) => {
   lastAt = Math.max(Date.now(), lastAt + 1);
   const id = crypto.randomUUID();
   store.put({ id, at: lastAt, label, op });
+  caosLog("outbox.enqueued", { id, at: lastAt, label, op });
   return id;
 };
 
@@ -89,12 +92,35 @@ export const useCaosOutboxSender = (
     createCaosOutbox({
       store,
       server: () => server.current,
-      send: sendCaosOutboxRequest,
+      send: async (request, pressedAt) => {
+        const started = performance.now();
+        caosLog("outbox.send", { request, pressedAt });
+        try {
+          const result = await sendCaosOutboxRequest(request, pressedAt);
+          caosLog("outbox.response", {
+            request,
+            pressedAt,
+            result,
+            durationMs: performance.now() - started,
+          });
+          return result;
+        } catch (error) {
+          caosLog("outbox.error", {
+            request,
+            pressedAt,
+            error: String(error),
+            durationMs: performance.now() - started,
+          });
+          throw error;
+        }
+      },
       // 取り消せた緊急の、この端末に残っているシールを消す
-      onSent: ({ op }) => {
+      onSent: ({ op, id }) => {
+        caosLog("outbox.sent", { id, op });
         if (op.kind === "cancel-emergency") cancelPendingPrint(op.id);
       },
       onRejected: (entry, reason) => {
+        caosLog("outbox.rejected", { entry, reason });
         const { label } = entry;
         toast.error(`「${label}」は通らなかったので、盤面を戻しました`, {
           description: reason,
@@ -111,8 +137,11 @@ export const useCaosOutboxSender = (
       release = resolve;
     });
     let active = true;
+    let acquired = false;
     void store.withLock(async () => {
       if (!active) return;
+      acquired = true;
+      caosLog("outbox.leader-acquired");
       setLeader(true);
       await held;
     });
@@ -120,6 +149,7 @@ export const useCaosOutboxSender = (
       active = false;
       release();
       setLeader(false);
+      if (acquired) caosLog("outbox.sender-stopped");
       outbox.stop();
     };
   }, [outbox]);
@@ -143,6 +173,7 @@ export const useCaosOutboxSender = (
       : NO_ENTRIES,
     sending: leader ? outbox.inFlight() : null,
     retry: () => {
+      caosLog("outbox.retry", { leader });
       if (leader) void outbox.retryNow();
     },
     /**
@@ -153,6 +184,7 @@ export const useCaosOutboxSender = (
       const sending = outbox.inFlight();
       for (const entry of unsent) {
         if (!ids.includes(entry.id) || entry.id === sending) continue;
+        caosLog("outbox.discard", { entry });
         store.remove(entry.id);
         rejected.current(entry);
       }

@@ -55,7 +55,11 @@ export const orderBacklog = (cards: readonly CaosCard[], nowMs: number) => {
       cards.filter((card) => statuses.includes(card.status)),
       nowMs,
     );
+  const unassigned = unstarted(["unassigned"]);
   return {
+    smallestUnassigned: unassigned.length
+      ? Math.min(...unassigned.map((order) => order.orderNo))
+      : null,
     oldestUnassigned: unstarted(["unassigned"])[0] ?? null,
     late: unstarted(["unassigned", "queued"]).filter((order) => order.late),
   };

@@ -6,7 +6,8 @@
   "compatibility_date": "2026-08-04",
 
   // PR ごとの versions upload で <version>-<name>.<subdomain>.workers.dev の
-  // プレビュー URL を出すために有効化している。
+  // プレビュー URL と、pr-<番号>-<name>.<subdomain>.workers.dev のエイリアスの URL
+  // （--preview-alias）を出すために有効化している。
   //
   // 注意: **閉じた PR のプレビュー URL も残り続ける。** wrangler には
   // versions delete が無く、バージョンを個別に消す手段が今のところ無い
@@ -36,8 +37,19 @@
     "binding": "ASSETS",
     // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
     "not_found_handling": "single-page-application",
-    // この3つだけはアセットより先にスクリプトへ回す。無いと上のフォールバックで
-    // index.html が返り、API に届かない。**worker/index.ts の API_PATH と揃えること。**
-    "run_worker_first": ["/api/*", "/status", "/health"]
-  }
+    // これらだけはアセットより先にスクリプトへ回す。無いと上のフォールバックで
+    // index.html が返り、API に届かない。**worker/index.ts の API_PATH・CALL_VOICE_PREFIX と揃えること。**
+    "run_worker_first": ["/api/*", "/status", "/health", "/call-voice/*"]
+  },
+
+  // 呼び出し画面の音声（ElevenLabs で作ったもの）を溜めておくところ（worker/call-voice.ts）。
+  // 本番もプレビューも同じバケットを使う（鍵は送った中身のハッシュなので、同じ文面なら同じ音声）。
+  // **バケットが無いとデプロイが失敗する。** 先に wrangler r2 bucket create で作っておくこと。
+  // ElevenLabs の鍵は secret の ELEVENLABS_API_KEY（デプロイの workflow が入れる）。
+  "r2_buckets": [
+    {
+      "binding": "CALL_VOICES",
+      "bucket_name": "cafeore-call-voices"
+    }
+  ]
 }

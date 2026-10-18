@@ -2,12 +2,15 @@ import type { OrderEntity } from "@cafeore/common";
 import oreLogoUrl from "~/assets/receipt/ore-logo.svg";
 import type { PrintJob, RasterImage } from "./document";
 import {
+  type ClaimReceipt,
   type FormalReceipt,
   type OrderReceipt,
   RECEIPT_ISSUER,
   RECEIPT_ISSUER_READING,
   type ReceiptPayment,
   type ReceiptRow,
+  type ReceiptSplit,
+  claimReceipt,
   formalReceipt,
   orderReceipt,
 } from "./receipt";
@@ -19,21 +22,15 @@ import {
  * プリンターの文字ではなく、画面で描いた白黒の画像を刷る。
  *
  * 寸法は幅 576 の座標で決めてある（デザインのモックの紙の幅 229px の 1px を約 2.8 として写した）。
- * 描くときに紙の印字幅（RECEIPT_WIDTH ドット）に縮めるので、紙の幅を変えても比率は変わらない。
+ * 描くときに刷るプリンターの印字幅（paper.ts の receiptPrintableWidth。機種と用紙の種類・幅で決まる）に合わせるので、
+ * 幅が変わっても比率は変わらない（80mm の紙なら 576 ドットでそのまま、58mm の紙なら縮める）。
  */
-
-/**
- * 紙の印字できる幅（ドット）
- *
- * TM-m30 で 58mm の紙なら 420 ドット（52.5mm）。80mm の紙なら 576 ドット（72mm）にする。
- */
-export const RECEIPT_WIDTH = 420;
 
 /** 寸法を決めている座標の幅 */
 const DESIGN_WIDTH = 576;
 
-/** 座標を刷るドットに直す倍率 */
-const SCALE = RECEIPT_WIDTH / DESIGN_WIDTH;
+/** 座標を印字幅（width ドット）に直す倍率 */
+const scaleFor = (width: number) => width / DESIGN_WIDTH;
 
 /** 画面と同じフォント（tailwind.css で読み込んでいる） */
 const FONT_FAMILY = '"Noto Sans JP Variable", sans-serif';
@@ -49,10 +46,12 @@ const PADDING_X = 40;
 
 type Ctx = CanvasRenderingContext2D;
 
-type TextStyle = {
+export type TextStyle = {
   size: number;
   weight: number;
   align?: CanvasTextAlign;
+  /** y をどこに合わせるか。省いたら文字の縦の中心 */
+  baseline?: CanvasTextBaseline;
   color?: string;
 };
 
@@ -102,7 +101,7 @@ export const fitText = (
 };
 
 /** width × height ドットの白い canvas */
-const createCanvas = (width: number, height: number) => {
+export const createCanvas = (width: number, height: number) => {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -113,18 +112,18 @@ const createCanvas = (width: number, height: number) => {
   return { canvas, ctx };
 };
 
-/** 座標で width × height の大きさを、刷るドットに縮めて描ける canvas */
-const createDesignCanvas = (width: number, height: number) => {
+/** 座標で width × height の大きさを、scale を掛けて刷るドットに縮めて描ける canvas */
+const createDesignCanvas = (width: number, height: number, scale: number) => {
   const created = createCanvas(
-    Math.round(width * SCALE),
-    Math.round(height * SCALE),
+    Math.round(width * scale),
+    Math.round(height * scale),
   );
-  created.ctx.scale(SCALE, SCALE);
+  created.ctx.scale(scale, scale);
   return created;
 };
 
-/** y を文字の縦の中心にして書く */
-const drawText = (
+/** y を文字の縦の中心（style.baseline があればそこ）にして書く */
+export const drawText = (
   ctx: Ctx,
   text: string,
   x: number,
@@ -133,12 +132,12 @@ const drawText = (
 ) => {
   ctx.font = font(style);
   ctx.textAlign = style.align ?? "left";
-  ctx.textBaseline = "middle";
+  ctx.textBaseline = style.baseline ?? "middle";
   ctx.fillStyle = style.color ?? "#000";
   ctx.fillText(text, x, y);
 };
 
-const textWidth = (ctx: Ctx, text: string, style: TextStyle) => {
+export const textWidth = (ctx: Ctx, text: string, style: TextStyle) => {
   ctx.font = font(style);
   return ctx.measureText(text).width;
 };
@@ -168,8 +167,9 @@ const drawLogo = (
   x: number,
   y: number,
   size: number,
+  scale: number,
 ) => {
-  const dots = Math.round(size * SCALE);
+  const dots = Math.round(size * scale);
   const { canvas, ctx: logoCtx } = createCanvas(dots, dots);
   logoCtx.drawImage(logo, 0, 0, dots, dots);
   logoCtx.putImageData(
@@ -179,7 +179,7 @@ const drawLogo = (
   );
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(canvas, Math.round(x * SCALE), Math.round(y * SCALE));
+  ctx.drawImage(canvas, Math.round(x * scale), Math.round(y * scale));
   ctx.restore();
 };
 
@@ -190,11 +190,12 @@ const drawIssuer = (
   x: number,
   top: number,
   logoSize: number,
+  scale: number,
 ) => {
   const centerY = top + logoSize / 2;
   let textX = x;
   if (logo) {
-    drawLogo(ctx, logo, x, top, logoSize);
+    drawLogo(ctx, logo, x, top, logoSize, scale);
     textX += logoSize + 36;
   }
   drawText(ctx, RECEIPT_ISSUER, textX, centerY - 21, ISSUER);
@@ -213,10 +214,10 @@ type Block = { height: number; draw?: (ctx: Ctx, top: number) => void };
 
 const gap = (height: number): Block => ({ height });
 
-/** 部品を上から積んだ高さの canvas に描く */
-const stack = (width: number, blocks: Block[]) => {
+/** 部品を上から積んだ高さの canvas に、scale を掛けて描く */
+const stack = (width: number, blocks: Block[], scale: number) => {
   const height = blocks.reduce((sum, block) => sum + block.height, 0);
-  const { canvas, ctx } = createDesignCanvas(width, height);
+  const { canvas, ctx } = createDesignCanvas(width, height, scale);
   let top = 0;
   for (const block of blocks) {
     block.draw?.(ctx, top);
@@ -226,7 +227,7 @@ const stack = (width: number, blocks: Block[]) => {
 };
 
 /** canvas 全体を白黒にして取り出す */
-const toRasterImage = (ctx: Ctx): RasterImage => {
+export const toRasterImage = (ctx: Ctx): RasterImage => {
   const { width, height } = ctx.canvas;
   return binarize(ctx.getImageData(0, 0, width, height), TEXT_THRESHOLD);
 };
@@ -237,7 +238,7 @@ const imageJob = (image: RasterImage): PrintJob => ({
 });
 
 /** 書く文字がすべて入ったフォントを読み込む（読み込めなければ代わりのフォントで描く） */
-const loadFonts = async (texts: string[]) => {
+export const loadFonts = async (texts: string[]) => {
   try {
     await document.fonts.load(font(BODY), texts.join(""));
   } catch (error) {
@@ -319,11 +320,11 @@ const rule: Block = {
     drawDashedLine(ctx, PADDING_X, contentRight, top + RULE.y),
 };
 
-const issuerBlock = (logo: HTMLImageElement | null): Block => ({
+const issuerBlock = (logo: HTMLImageElement | null, scale: number): Block => ({
   height: RECEIPT_LOGO_SIZE,
   draw: (ctx, top) => {
     const x = (DESIGN_WIDTH - issuerWidth(ctx, logo, RECEIPT_LOGO_SIZE)) / 2;
-    drawIssuer(ctx, logo, x, top, RECEIPT_LOGO_SIZE);
+    drawIssuer(ctx, logo, x, top, RECEIPT_LOGO_SIZE, scale);
   },
 });
 
@@ -359,10 +360,33 @@ const claimNumberBlock = (claimNumber: string): Block => ({
     ),
 });
 
-/** 会計のたびに刷るレシートを描く */
+/** レシートの頭。ロゴ・名前・読みと、日時・注文番号の行、その下の点線 */
+const headerBlocks = (
+  receipt: { dateTime: string; orderNo: string },
+  logo: HTMLImageElement | null,
+  scale: number,
+): Block[] => [
+  gap(16),
+  issuerBlock(logo, scale),
+  gap(35),
+  row({ label: receipt.dateTime, amount: receipt.orderNo }),
+  gap(15),
+  rule,
+];
+
+/** 引換券番号の見出しと案内、その下の大きな番号 */
+const claimBlocks = (claimNumber: string): Block[] => [
+  claimLabelBlock,
+  gap(53),
+  claimNumberBlock(claimNumber),
+];
+
+/** 会計のたびに刷るレシートを、印字幅（width ドット）で描く */
 export const drawOrderReceipt = async (
   receipt: OrderReceipt,
+  width: number,
 ): Promise<RasterImage> => {
+  const scale = scaleFor(width);
   const rows = [...receipt.items, ...receipt.adjustments, ...receipt.payments];
   await loadFonts([
     RECEIPT_ISSUER,
@@ -370,7 +394,7 @@ export const drawOrderReceipt = async (
     receipt.dateTime,
     receipt.orderNo,
     receipt.total,
-    receipt.claimNumber,
+    receipt.claimNumber ?? "",
     "合計引換券番号…",
     ...CLAIM_NOTE_LINES,
     ...rows.flatMap(({ label, quantity = "", amount }) => [
@@ -382,12 +406,7 @@ export const drawOrderReceipt = async (
   const logo = await loadLogo();
 
   const blocks: Block[] = [
-    gap(16),
-    issuerBlock(logo),
-    gap(35),
-    row({ label: receipt.dateTime, amount: receipt.orderNo }),
-    gap(15),
-    rule,
+    ...headerBlocks(receipt, logo, scale),
     ...receipt.items.map((item) => row(item)),
     rule,
   ];
@@ -398,14 +417,44 @@ export const drawOrderReceipt = async (
     row({ label: "合計", amount: receipt.total }, TOTAL_LINE, TOTAL_AMOUNT),
     gap(21),
     ...receipt.payments.map((item) => row(item)),
-    gap(42),
-    claimLabelBlock,
-    gap(53),
-    claimNumberBlock(receipt.claimNumber),
-    gap(40),
   );
+  // 注文を何回かに分けて払うときは、引換券番号を載せない（払い終えたら別のレシートで刷る）
+  if (receipt.claimNumber !== undefined) {
+    blocks.push(gap(42), ...claimBlocks(receipt.claimNumber));
+  }
+  blocks.push(gap(40));
 
-  const { ctx } = stack(DESIGN_WIDTH, blocks);
+  const { ctx } = stack(DESIGN_WIDTH, blocks, scale);
+  return toRasterImage(ctx);
+};
+
+/** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートを、印字幅（width ドット）で描く */
+export const drawClaimReceipt = async (
+  receipt: ClaimReceipt,
+  width: number,
+): Promise<RasterImage> => {
+  const scale = scaleFor(width);
+  await loadFonts([
+    RECEIPT_ISSUER,
+    RECEIPT_ISSUER_READING,
+    receipt.dateTime,
+    receipt.orderNo,
+    receipt.claimNumber,
+    "引換券番号",
+    ...CLAIM_NOTE_LINES,
+  ]);
+  const logo = await loadLogo();
+
+  const { ctx } = stack(
+    DESIGN_WIDTH,
+    [
+      ...headerBlocks(receipt, logo, scale),
+      gap(21),
+      ...claimBlocks(receipt.claimNumber),
+      gap(40),
+    ],
+    scale,
+  );
   return toRasterImage(ctx);
 };
 
@@ -423,8 +472,18 @@ const FORMAL_LOGO_SIZE = 185;
 const FORMAL_TITLE: TextStyle = { size: 56, weight: 700 };
 const FORMAL_BODY: TextStyle = { size: 33, weight: 600 };
 const FORMAL_AMOUNT: TextStyle = { size: 51, weight: 700 };
+const COPY_MARK: TextStyle = {
+  size: 36,
+  weight: 700,
+  align: "center",
+  color: "#fff",
+};
 
+const FORMAL_TITLE_TEXT = "領収書";
 const FORMAL_ACKNOWLEDGEMENT = "上記 正に領収いたしました";
+
+/** 店舗控の印の白抜きの箱。「領収書」の右に置く */
+const COPY_MARK_BOX = { height: 60, paddingX: 18, marginLeft: 28 };
 
 /** 時計回りに 90 度回す */
 const rotateClockwise = (source: HTMLCanvasElement) => {
@@ -435,12 +494,14 @@ const rotateClockwise = (source: HTMLCanvasElement) => {
   return { canvas, ctx };
 };
 
-/** 求められたときだけ刷る領収書を描く */
+/** 求められたときだけ刷る領収書を、印字幅（width ドット）で描く */
 export const drawFormalReceipt = async (
   receipt: FormalReceipt,
+  width: number,
 ): Promise<RasterImage> => {
+  const scale = scaleFor(width);
   await loadFonts([
-    "領収書様",
+    `${FORMAL_TITLE_TEXT}様`,
     receipt.orderNo,
     receipt.amount,
     receipt.note,
@@ -448,17 +509,39 @@ export const drawFormalReceipt = async (
     receipt.date,
     RECEIPT_ISSUER,
     RECEIPT_ISSUER_READING,
+    receipt.copyMark ?? "",
   ]);
   const logo = await loadLogo();
 
-  const { canvas, ctx } = createDesignCanvas(FORMAL_WIDTH, FORMAL_HEIGHT);
+  const { canvas, ctx } = createDesignCanvas(
+    FORMAL_WIDTH,
+    FORMAL_HEIGHT,
+    scale,
+  );
   const right = FORMAL_WIDTH - PADDING_X;
 
-  drawText(ctx, "領収書", PADDING_X, 67, FORMAL_TITLE);
+  drawText(ctx, FORMAL_TITLE_TEXT, PADDING_X, 67, FORMAL_TITLE);
   drawText(ctx, receipt.orderNo, right, 67, {
     ...FORMAL_BODY,
     align: "right",
   });
+
+  if (receipt.copyMark) {
+    const left =
+      PADDING_X +
+      textWidth(ctx, FORMAL_TITLE_TEXT, FORMAL_TITLE) +
+      COPY_MARK_BOX.marginLeft;
+    const width =
+      textWidth(ctx, receipt.copyMark, COPY_MARK) + COPY_MARK_BOX.paddingX * 2;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(
+      left,
+      67 - COPY_MARK_BOX.height / 2,
+      width,
+      COPY_MARK_BOX.height,
+    );
+    drawText(ctx, receipt.copyMark, left + width / 2, 67, COPY_MARK);
+  }
 
   // 宛名は手で書けるよう、下線と「様」だけ置く
   ctx.fillStyle = "#000";
@@ -470,22 +553,41 @@ export const drawFormalReceipt = async (
   drawText(ctx, FORMAL_ACKNOWLEDGEMENT, PADDING_X, 420, FORMAL_BODY);
   drawText(ctx, receipt.date, 762, 515, { ...FORMAL_BODY, align: "right" });
 
-  drawIssuer(ctx, logo, 820, 353, FORMAL_LOGO_SIZE);
+  drawIssuer(ctx, logo, 820, 353, FORMAL_LOGO_SIZE, scale);
 
   return toRasterImage(rotateClockwise(canvas).ctx);
 };
 
 /**
- * 会計のたびに刷るレシートの印刷データ
+ * 会計のたびに刷るレシートの印刷データ。width は刷るプリンターの印字幅（ドット）
  *
  * 注文の中身は呼んだときに読む（描くのを待つ間に注文が変わっても、そのときの中身で刷る）。
  */
 export const orderReceiptJob = async (
+  width: number,
   order: OrderEntity,
   payment: ReceiptPayment,
+  split?: ReceiptSplit,
 ): Promise<PrintJob> =>
-  imageJob(await drawOrderReceipt(orderReceipt(order, payment)));
+  imageJob(await drawOrderReceipt(orderReceipt(order, payment, split), width));
 
-/** 求められたときだけ刷る領収書の印刷データ（注文の中身は呼んだときに読む） */
-export const formalReceiptJob = async (order: OrderEntity): Promise<PrintJob> =>
-  imageJob(await drawFormalReceipt(formalReceipt(order)));
+/**
+ * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの印刷データ。
+ * width は刷るプリンターの印字幅（ドット）（注文の中身は呼んだときに読む）
+ */
+export const claimReceiptJob = async (
+  width: number,
+  order: OrderEntity,
+): Promise<PrintJob> =>
+  imageJob(await drawClaimReceipt(claimReceipt(order), width));
+
+/**
+ * 求められたときだけ刷る領収書の印刷データ。width は刷るプリンターの印字幅（ドット）、storeCopy なら店舗控
+ * （注文の中身は呼んだときに読む）
+ */
+export const formalReceiptJob = async (
+  width: number,
+  order: OrderEntity,
+  options?: { storeCopy?: boolean },
+): Promise<PrintJob> =>
+  imageJob(await drawFormalReceipt(formalReceipt(order, options), width));

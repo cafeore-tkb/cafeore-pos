@@ -1,7 +1,7 @@
 import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
-import { Fragment } from "react";
+import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import {
@@ -15,8 +15,9 @@ import {
   orderLabel,
   orderNoLabel,
 } from "../logic/cards";
+import { commentKey } from "../logic/comments";
 import { type DropSide, moveTargets } from "../logic/lanes";
-import { CommentMark } from "./OrderComments";
+import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
@@ -33,14 +34,15 @@ import { CommentMark } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生・豆など）。
+// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生など）。
 // emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
-  pad: "px-1.5 py-1",
-  no: "text-[14px]",
-  cups: "px-0.5 text-[13px]",
-  meta: "text-[11px]",
-  item: "text-[12px]",
+  pad: "px-1 py-1",
+  no: "text-[16px]",
+  cups: "px-0.5 text-[14px]",
+  cupCount: "px-0.5 text-[18px]",
+  meta: "text-[12px]",
+  item: "text-[14px]",
   emergencyBelow: true,
 };
 const SIZES = {
@@ -49,36 +51,40 @@ const SIZES = {
   // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
   lane: {
     ...SM,
-    no: "text-[17px]",
-    item: "text-[14px]",
+    no: "text-[20px]",
+    cupCount: "px-0.5 text-[20px]",
+    item: "text-[16px]",
     emergencyBelow: false,
   },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
     pad: "px-2.5 py-1.5",
-    no: "text-[21px]",
-    cups: "px-1.5 text-[18px]",
+    no: "text-[24px]",
+    cups: "px-1.5 text-[20px]",
+    cupCount: "px-1.5 text-[26px]",
     meta: "text-[15px]",
     emergencyBelow: false,
-    item: "text-[15px]",
+    item: "text-[16px]",
   },
   // 管制盤 A のタイムライン
   md: {
     pad: "px-2 py-1",
-    no: "text-[19px]",
-    cups: "px-1.5 text-[17px]",
-    meta: "text-[12px]",
+    no: "text-[22px]",
+    cups: "px-1.5 text-[18px]",
+    cupCount: "px-1.5 text-[24px]",
+    meta: "text-[13px]",
     emergencyBelow: false,
-    item: "text-[15px]",
+    item: "text-[16px]",
   },
   // 詳細のパネル
   xl: {
     pad: "p-4",
-    no: "text-[26px]",
-    cups: "px-2 text-[22px]",
+    no: "text-[30px]",
+    cups: "px-2 text-[24px]",
+    cupCount: "px-2 text-[30px]",
     meta: "text-[15px]",
     emergencyBelow: false,
-    item: "text-[18px]",
+    item: "text-[20px]",
   },
 };
 
@@ -131,6 +137,8 @@ export const OrderCard: React.FC<
     look?: CardLook;
     size?: keyof typeof SIZES;
     selected?: boolean;
+    /** タイムラインでは既存コメントを隠し、新着通知が残っている間だけ表示 */
+    newCommentsOnly?: boolean;
     /** ドラッグで運んでいるカード（中身だけ薄く。上に重ねた 1〜6 のボタンはそのまま） */
     dragging?: boolean;
     note?: string;
@@ -148,6 +156,7 @@ export const OrderCard: React.FC<
   look,
   size = "md",
   selected = false,
+  newCommentsOnly = false,
   dragging = false,
   note,
   mergeInto,
@@ -159,6 +168,14 @@ export const OrderCard: React.FC<
   children,
   ...props
 }) => {
+  const freshComments = useContext(FreshCommentsContext);
+  const freshKeys = new Set(freshComments.map(commentKey));
+  const badgeComments =
+    card.status === "unassigned"
+      ? []
+      : (look?.comments ?? []).filter(
+          (comment) => !newCommentsOnly || freshKeys.has(commentKey(comment)),
+        );
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
@@ -168,14 +185,16 @@ export const OrderCard: React.FC<
   const merged = cardOrderNos(card).length > 1;
   // 注文ごとの段（byOrder の統合したカード）。1 行目に商品、注文番号と緊急の理由は段に出す
   const parts = byOrder && merged ? cardOrderParts(card, look) : null;
+  // Dの狭い列は統合2注文・4桁番号・新着コメントも収める。単独の3桁番号を優先して拡大。
+  const compactNumber =
+    size === "sm" && (Boolean(parts) || orderLabel(card).length > 4);
+  const numberSize = compactNumber ? "text-[14px]" : text.no;
   const reasons = parts ? "" : emergencyReasons(card);
   const served = cardServedLabel(card);
-  // 豆の札（在庫対象の名前をそのまま）。豆の無い（商品のアイテムの在庫が無い）カードには出さない
-  const bean = look?.bean?.name;
   // 注文番号の札と、商品の略称
-  const noTag = (label: string, size: string) => (
+  const noTag = (label: string, fontSize: string) => (
     <span
-      className={`rounded bg-black/10 px-1 py-0.5 font-black font-mono ${size}`}
+      className={`rounded bg-black/10 ${size === "sm" ? "px-0.5" : "px-1"} py-0.5 font-black font-mono ${fontSize}`}
       title={label}
     >
       {label}
@@ -208,7 +227,7 @@ export const OrderCard: React.FC<
       {name}
     </span>
   );
-  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの豆の札と指名・上級生の札を先に縮め、商品は入らなければ省略する。
+  // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの緊急の理由と指名・上級生の札を先に縮め、商品は入らなければ省略する。
   // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
   // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
@@ -218,7 +237,7 @@ export const OrderCard: React.FC<
         orderNo(
           merged
             ? `min-w-0 truncate tracking-tighter ${text.cups}`
-            : `shrink-0 ${text.no}`,
+            : `shrink-0 ${numberSize}`,
         ),
         itemName(`max-w-full shrink-0 ${text.item}`),
       ];
@@ -232,15 +251,19 @@ export const OrderCard: React.FC<
       {children}
       {mergeTap && <MergeOverlay />}
       <DropMark side={dropSide} />
-      {/* コメントのある注文は左上の角に印（押すと中身を右下に出す。開いたカードのパネル・番号の検索にも出す） */}
-      {look?.comments && (
-        <CommentMark count={look.comments.length} label={orderLabel(card)} />
-      )}
       {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
       <div
-        className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
+        {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
+        {!parts && badgeComments.length > 0 && (
+          <CommentMark
+            count={badgeComments.length}
+            label={orderLabel(card)}
+            className={size === "sm" ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"}
+          />
+        )}
         {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {!text.emergencyBelow && emergencyTag(text.cups)}
@@ -250,7 +273,7 @@ export const OrderCard: React.FC<
             </Check>
           )}
           <span
-            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cups} ${cupsClass(card.cups.length, done)}`}
+            className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cupCount} ${cupsClass(card.cups.length, done)}`}
           >
             {card.cups.length}杯
           </span>
@@ -266,24 +289,30 @@ export const OrderCard: React.FC<
                   <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
                 </div>
               )}
-              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右上に重ね、番号は字の間を、段は札の間を詰める */}
-              <div className="flex min-w-0 shrink-0 items-center gap-0.5 leading-none">
-                <span className="relative shrink-0">
+              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右に並べ、番号は字の間を、段は札の間を詰める */}
+              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-0.5 gap-y-1 leading-none">
+                <span className="flex min-w-0 shrink-0 items-center gap-1">
                   {noTag(
                     `#${orderNoLabel(part.orderNo)}`,
-                    `tracking-tighter ${text.no}`,
+                    `tracking-tighter ${numberSize}`,
                   )}
-                  {part.comments > 0 && (
+                  {badgeComments.some(
+                    (comment) => comment.orderNo === part.orderNo,
+                  ) && (
                     <CommentMark
-                      count={part.comments}
+                      count={
+                        badgeComments.filter(
+                          (comment) => comment.orderNo === part.orderNo,
+                        ).length
+                      }
                       label={`#${orderNoLabel(part.orderNo)}`}
-                      className="-top-1.5 -right-1.5 absolute h-4 w-4 border border-white"
+                      className="h-4 w-4 shrink-0"
                     />
                   )}
                 </span>
                 {part.reason && reasonTag(part.reason, text.meta)}
                 <span
-                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.no}`}
+                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.cupCount}`}
                 >
                   {part.cups}杯
                 </span>
@@ -292,7 +321,7 @@ export const OrderCard: React.FC<
           ))}
         </div>
       )}
-      {/* 商品・指名・上級生のみ（縮めるのは豆・緊急の理由のあと）・緊急の理由か豆 */}
+      {/* 商品・指名・上級生のみ（縮めるのは緊急の理由のあと）・緊急の理由 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
@@ -336,17 +365,8 @@ export const OrderCard: React.FC<
             </span>
           )}
         </span>
-        {/* 入れ直し（緊急）は理由を、ほかは豆を出す */}
-        {reasons
-          ? reasonTag(reasons, "ml-auto")
-          : bean && (
-              <span
-                title={`豆：${bean}`}
-                className="ml-auto min-w-0 shrink truncate font-bold opacity-75"
-              >
-                {bean}
-              </span>
-            )}
+        {/* 入れ直し（緊急）の理由。商品名は注文番号の下の表示にまとめる */}
+        {reasons && reasonTag(reasons, "ml-auto")}
       </div>
       {note && (
         <div
@@ -457,7 +477,7 @@ const MergeOverlay: React.FC = () => (
 );
 
 /**
- * 統合の解除。統合したカードの 1 杯ずつの「外す」（外した 1 杯は未割当に戻る。残すほうを選べる）。開いたカードの children
+ * 統合の解除。未割当は結果が同じなので「分ける」1つ。割当済みは1杯ずつ「外す」で残すほうを選べる。開いたカードの children
  * （注文番号の行を隠さないよう下の行に重ねる）か、詳細のパネルに置く
  */
 export const SplitCupButtons: React.FC<{
@@ -470,19 +490,23 @@ export const SplitCupButtons: React.FC<{
   className = "absolute bottom-1 left-1 z-[75] flex",
 }) => (
   <div className={`gap-1 ${className}`}>
-    {card.cups.map((cup) => (
-      <button
-        key={cup.id}
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onSplit(cup.id);
-        }}
-        className="min-h-[32px] touch-manipulation whitespace-nowrap rounded-md border-2 border-red-300 bg-white px-2 font-black font-mono text-[12px] text-red-700 shadow-sm active:bg-red-50"
-      >
-        #{orderNoLabel(cup.orderNo)} 外す
-      </button>
-    ))}
+    {(card.status === "unassigned" ? card.cups.slice(0, 1) : card.cups).map(
+      (cup) => (
+        <button
+          key={cup.id}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSplit(cup.id);
+          }}
+          className="min-h-[32px] touch-manipulation whitespace-nowrap rounded-md border-2 border-red-300 bg-white px-2 font-black font-mono text-[12px] text-red-700 shadow-sm active:bg-red-50"
+        >
+          {card.status === "unassigned"
+            ? "分ける"
+            : `#${orderNoLabel(cup.orderNo)} 外す`}
+        </button>
+      ),
+    )}
   </div>
 );
 

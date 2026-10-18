@@ -15,6 +15,10 @@ func All() []any {
 		&Comment{},
 		&OrderMenu{},
 		&OrderCup{},
+		&CaosClientLog{},
+		&CaosOperation{},
+		&CaosOperationCup{},
+		&OrderPayment{},
 		&CupEmergency{},
 		&MasterState{},
 		&CashierState{},
@@ -27,6 +31,7 @@ func All() []any {
 		&DripperAssignee{},
 		&DripperAssigneeChange{},
 		&SquareCheckout{},
+		&SquareAction{},
 		&SquareDevice{},
 		&PrinterSetting{},
 	}

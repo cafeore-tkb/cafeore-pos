@@ -121,15 +121,18 @@ func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.T
 
 // caosUnits は CaOS のカードに入る行：注文のカップ（最初の抽出）と、緊急（入れ直し）。列は order_cups と同じ名前で、
 // cup_id は入れ直したカップ（カップなら自分）。注文・明細・商品は入れ直したカップのもの。
-// 準備完了・提供の時刻は盤面の決まりに使わないので読まない。
-const caosUnits = `(SELECT id, id AS cup_id, order_id, order_menu_id, item_id,
-		dripper, dripper_position, drip_id, brew_started_at, brew_finished_at FROM order_cups
+// 提供の時刻は全杯提供済みの完了忘れを待ち時間なしで修正するときだけ使う。
+// キャンセルした注文のカップは入れない（注文を消したときと同じく盤面から消える。order_cancel.go）。
+const caosUnits = `(SELECT c.id, c.id AS cup_id, c.order_id, c.order_menu_id, c.item_id,
+		c.dripper, c.dripper_position, c.drip_id, c.brew_started_at, c.brew_finished_at, c.served_at
+	FROM order_cups c JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL
 	UNION ALL SELECT e.id, e.order_cup_id, c.order_id, c.order_menu_id, c.item_id,
-		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at
-	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id)`
+		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at, NULL AS served_at
+	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id
+	JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL)`
 
 // caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）。
-// 準備完了・提供（ReadyAt・ServedAt）は読まないので、いつも nil
+// 準備完了（ReadyAt）は読まない。入れ直しは元カップの提供時刻を引き継がない。
 type caosUnit struct {
 	models.OrderCup
 	// 入れ直したカップ（カップなら自分）
@@ -227,7 +230,8 @@ func compareUUID(a, b uuid.UUID) int {
 	return strings.Compare(a.String(), b.String())
 }
 
-// lockCaosOrders は注文の行を ID の順にロックし、カップを読む。orderIDs（書くカップの注文）は、消えていれば 409、今日の注文でなければ 400。
+// lockCaosOrders は注文の行を ID の順にロックし、カップを読む。orderIDs（書くカップの注文）は、消えているかキャンセルしていれば 409、
+// 今日の注文でなければ 400。
 // extra（番号をずらすかもしれないカップと、入るカードの書かないカップの注文）もいっしょに ID の順でロックする（消えていたら飛ばす）。返すのは orderIDs の注文だけ。
 // ロックは 1 回の並びで取る（2 回に分けると、ほかの書き込みと順番が逆になってデッドロックしうる）。
 func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Time) (map[uuid.UUID]*models.Order, error) {
@@ -248,6 +252,9 @@ func lockCaosOrders(tx *gorm.DB, orderIDs, extra []uuid.UUID, start, end time.Ti
 			return nil, err
 		case !must[id]:
 			continue
+		}
+		if order.CancelledAt != nil {
+			return nil, conflictErrorf("注文がキャンセルされました（ほかの端末でキャンセルされたかもしれません）")
 		}
 		if order.CreatedAt.Before(start) || !order.CreatedAt.Before(end) {
 			return nil, ruleErrorf("今日の注文のカップだけ書けます")
@@ -354,6 +361,19 @@ type caosLaneCard struct {
 	dripID  uuid.UUID
 	cups    []caosUnit
 	orderNo int
+}
+
+// 全杯が提供済みなら、完了忘れを待ち時間なしで修正できる。
+func (c *caosLaneCard) allServed() bool {
+	if len(c.cups) == 0 {
+		return false
+	}
+	for _, cup := range c.cups {
+		if cup.ServedAt == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // ドリッパーの中の順番（同じカードのカップは同じ値）
@@ -615,6 +635,12 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 			lockedByID[c.ID] = c
 		}
 
+		logWindow, err := readCaosLogWindow(tx, cupIDs, dripIDs, start, end)
+		if err != nil {
+			return err
+		}
+		merges := caosLogMerges(writes, logWindow)
+
 		if err := requireCaosStartable(tx, starting, cupIDs, start, end); err != nil {
 			return err
 		}
@@ -683,7 +709,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 		for id := range changed {
 			orderIDs = append(orderIDs, id)
 		}
-		return nil
+		return recordCaosOperation(tx, "cups", pressed, now, press, logWindow, cupIDs, merges)
 	})
 	return orderIDs, err
 }
@@ -773,7 +799,7 @@ func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.U
 			return conflictErrorf("このカードはもう終わっています（ほかの端末で「次へ」を押したかもしれません）")
 		case seen == nil && cur != nil:
 			return conflictErrorf("抽出中のカードがあります（画面が古いかもしれません）")
-		case cur != nil && pressed.Sub(*cur.cups[0].BrewStartedAt) < caosNextCooldown:
+		case cur != nil && !cur.allServed() && pressed.Sub(*cur.cups[0].BrewStartedAt) < caosNextCooldown:
 			return ruleErrorf("始めてから %d 秒は「次へ」を押せません", int(caosNextCooldown/time.Second))
 		}
 		if startNext && len(queued) > 0 && len(brewing) == 0 {
@@ -815,9 +841,15 @@ func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.U
 		}
 		for _, r := range cups {
 			i := slices.IndexFunc(locked, func(c caosUnit) bool { return c.ID == r.ID })
-			if i < 0 || !sameCaosState(&locked[i].OrderCup, caosCupState(&r.OrderCup)) {
+			if i < 0 || !sameCaosState(&locked[i].OrderCup, caosCupState(&r.OrderCup)) ||
+				(locked[i].ServedAt == nil) != (r.ServedAt == nil) {
 				return errConflict
 			}
+		}
+
+		logWindow, err := readCaosLogWindow(tx, unitIDs, nil, start, end)
+		if err != nil {
+			return err
 		}
 
 		if cur != nil {
@@ -834,7 +866,7 @@ func (h *CaosHandler) advance(dripper int, req models.CaosNextRequest) ([]uuid.U
 		for id := range orders {
 			orderIDs = append(orderIDs, id)
 		}
-		return nil
+		return recordCaosOperation(tx, "next", pressed, now, req.Press, logWindow, unitIDs, nil)
 	})
 	return orderIDs, err
 }

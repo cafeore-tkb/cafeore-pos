@@ -1,8 +1,97 @@
 import { apiClient } from "../api/client";
+import { openapiEnumLabels } from "../lib/openapi-enum";
 import type { components } from "../types/api";
 
-/** ラベル用とレシート用のプリンターの IP アドレス。全レジで共通 */
+/** ラベル用とレシート用のプリンターの IP アドレスと用紙（幅と種類）、レシート用のプリンターの機種。全レジで共通 */
 export type PrinterSettings = components["schemas"]["PrinterSettingsResponse"];
+
+/** レシート用のプリンターの機種。レシート・領収書の画像の幅が変わる */
+export type ReceiptPrinterModel = components["schemas"]["ReceiptPrinterModel"];
+
+/** プリンターに入れる紙の幅。刷るものの幅が変わる */
+export type PrinterPaperWidth = components["schemas"]["PrinterPaperWidth"];
+
+/** プリンターに入れる紙の種類（レシート紙・ダイカットラベル）。刷るものの幅が変わる */
+export type PrinterPaperType = components["schemas"]["PrinterPaperType"];
+
+/** 一度も保存していないときのレシート用のプリンターの機種。サーバーの既定値（models.DefaultReceiptPrinterModel）とそろえる */
+export const DEFAULT_RECEIPT_PRINTER_MODEL: ReceiptPrinterModel = "tm_l90";
+
+/**
+ * 一度も保存していないときの用紙（幅と種類）。サーバーの既定値（models.DefaultLabelPrinterPaperWidth など）とそろえる
+ */
+export const DEFAULT_LABEL_PRINTER_PAPER_WIDTH: PrinterPaperWidth = "80mm";
+export const DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH: PrinterPaperWidth = "58mm";
+export const DEFAULT_LABEL_PRINTER_PAPER_TYPE: PrinterPaperType =
+  "die_cut_label";
+export const DEFAULT_RECEIPT_PRINTER_PAPER_TYPE: PrinterPaperType = "receipt";
+
+const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
+const printerPaperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
+const printerPaperTypeLabels = openapiEnumLabels("PrinterPaperType");
+
+/** 知っているレシート用のプリンターの機種か */
+export const isReceiptPrinterModel = (
+  value: unknown,
+): value is ReceiptPrinterModel =>
+  typeof value === "string" && Object.hasOwn(receiptPrinterModelLabels, value);
+
+/** 知っている用紙の幅か */
+export const isPrinterPaperWidth = (
+  value: unknown,
+): value is PrinterPaperWidth =>
+  typeof value === "string" && Object.hasOwn(printerPaperWidthLabels, value);
+
+/** 知っている用紙の種類か */
+export const isPrinterPaperType = (value: unknown): value is PrinterPaperType =>
+  typeof value === "string" && Object.hasOwn(printerPaperTypeLabels, value);
+
+/** IP アドレスのほかは、無い・知らない値かもしれない設定（前の API・端末に覚えた設定） */
+type LoosePrinterSettings = Pick<
+  PrinterSettings,
+  "label_printer_ip" | "receipt_printer_ip"
+> & {
+  receipt_printer_model?: unknown;
+  label_printer_paper_width?: unknown;
+  receipt_printer_paper_width?: unknown;
+  label_printer_paper_type?: unknown;
+  receipt_printer_paper_type?: unknown;
+};
+
+/**
+ * 機種・用紙の幅・種類が無い・知らない値なら、既定にする
+ *
+ * レジと API は別々に出すので、機種や用紙を返す前の API に届くことがある。そのときも刷るものの幅を決められるように。
+ */
+export const withPrinterSettingDefaults = (
+  settings: LoosePrinterSettings,
+): PrinterSettings => ({
+  label_printer_ip: settings.label_printer_ip,
+  receipt_printer_ip: settings.receipt_printer_ip,
+  receipt_printer_model: isReceiptPrinterModel(settings.receipt_printer_model)
+    ? settings.receipt_printer_model
+    : DEFAULT_RECEIPT_PRINTER_MODEL,
+  label_printer_paper_width: isPrinterPaperWidth(
+    settings.label_printer_paper_width,
+  )
+    ? settings.label_printer_paper_width
+    : DEFAULT_LABEL_PRINTER_PAPER_WIDTH,
+  receipt_printer_paper_width: isPrinterPaperWidth(
+    settings.receipt_printer_paper_width,
+  )
+    ? settings.receipt_printer_paper_width
+    : DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
+  label_printer_paper_type: isPrinterPaperType(
+    settings.label_printer_paper_type,
+  )
+    ? settings.label_printer_paper_type
+    : DEFAULT_LABEL_PRINTER_PAPER_TYPE,
+  receipt_printer_paper_type: isPrinterPaperType(
+    settings.receipt_printer_paper_type,
+  )
+    ? settings.receipt_printer_paper_type
+    : DEFAULT_RECEIPT_PRINTER_PAPER_TYPE,
+});
 
 const errorMessage = (error: unknown, fallback: string): string => {
   if (
@@ -23,7 +112,7 @@ export const printerSettingRepository = {
     if (!data) {
       throw new Error(errorMessage(error, "プリンター設定を取得できません"));
     }
-    return data;
+    return withPrinterSettingDefaults(data);
   },
   async save(settings: PrinterSettings): Promise<PrinterSettings> {
     const { data, error } = await apiClient.PUT("/api/printer-settings", {
@@ -32,6 +121,6 @@ export const printerSettingRepository = {
     if (!data) {
       throw new Error(errorMessage(error, "プリンター設定を保存できません"));
     }
-    return data;
+    return withPrinterSettingDefaults(data);
   },
 };

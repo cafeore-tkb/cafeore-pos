@@ -61,7 +61,7 @@ export const SquareUnlinkedNotice = ({
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="destructive" className="h-8 gap-1 px-3">
+        <Button variant="destructive" className="h-11 gap-1 px-3">
           <ExclamationTriangleIcon />
           未登録の Square 決済 {unlinked.length} 件
         </Button>

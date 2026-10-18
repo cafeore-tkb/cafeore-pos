@@ -8,6 +8,9 @@ export type SquarePaymentType = components["schemas"]["SquarePaymentType"];
 export type SquareCheckoutOutcome =
   components["schemas"]["SquareCheckoutOutcome"];
 export type SquareRefundStatus = components["schemas"]["SquareRefundStatus"];
+export type SquareAction = components["schemas"]["SquareActionResponse"];
+export type SquareActionOption = components["schemas"]["SquareActionOption"];
+export type SquareActionOutcome = components["schemas"]["SquareActionOutcome"];
 
 /**
  * 決済依頼が進行中・取り消せないなど、API が 409 を返したときのエラー
@@ -159,7 +162,12 @@ export const squareRepository = {
     return refundResult(data, error, response);
   },
 
-  /** 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ） */
+  /**
+   * 注文に使った Square の決済を全額返金し、注文を消す（戻り値と例外は refundCheckout と同じ）
+   *
+   * 個別会計で Square の決済が複数あれば全部を返金し、全部を受け付けたときだけ注文を消す。
+   * 戻り値はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
+   */
   async refundOrder(orderId: string): Promise<SquareCheckout> {
     const { data, error, response } = await apiClient.POST(
       "/api/orders/{id}/square-refund",
@@ -171,6 +179,7 @@ export const squareRepository = {
   /**
    * 注文に使った Square の決済を全額返金し、注文は残す（戻り値と例外は refundCheckout と同じ）
    *
+   * 個別会計で Square の決済が複数あれば全部を返金する（戻り値の選び方は refundOrder と同じ）。
    * 返金の状態は、配られた注文の squareRefundStatus で分かる。
    */
   async refundOrderKeepingOrder(orderId: string): Promise<SquareCheckout> {
@@ -179,6 +188,72 @@ export const squareRepository = {
       { params: { path: { id: orderId } } },
     );
     return refundResult(data, error, response);
+  },
+
+  /**
+   * 端末に、お客さんが決済手段を選ぶ画面を出す
+   *
+   * idempotencyKey は出すたびに 1 つ作り、再送では同じ値を使う（二重に画面が出ない）。
+   * 同じ端末で決済が進行中なら出せず、例外を投げる。
+   * Square が受け付けなかったときは outcome が closed のものを返す。
+   */
+  async createAction(params: {
+    idempotencyKey: string;
+    /** 画面を出す端末（ペアリング済みの端末の device_id） */
+    deviceId: string;
+    /** 今払う額（画面に出す） */
+    amount: number;
+    /** 並べる決済手段（並べる順、2〜5 個） */
+    options: SquareActionOption[];
+  }): Promise<SquareAction> {
+    const { data, error, response } = await apiClient.POST(
+      "/api/square/actions",
+      {
+        body: {
+          idempotency_key: params.idempotencyKey,
+          device_id: params.deviceId,
+          amount: params.amount,
+          options: params.options,
+        },
+      },
+    );
+    if (data) {
+      return data;
+    }
+    // 502 は Square が断ったとき。本文は画面の依頼そのもの（error_message 付き）。
+    if (response.status === 502 && error && "id" in error) {
+      return error as SquareAction;
+    }
+    throw new Error(
+      errorMessage(error, "決済手段を選ぶ画面を出せませんでした"),
+    );
+  },
+
+  /** 決済手段を選ぶ画面の最新の状態（選ばれていなければサーバーが Square に問い合わせる） */
+  async getAction(id: string): Promise<SquareAction> {
+    const { data, error } = await apiClient.GET("/api/square/actions/{id}", {
+      params: { path: { id } },
+    });
+    if (!data) {
+      throw new Error(
+        errorMessage(error, "決済手段を選ぶ画面の状態を取得できません"),
+      );
+    }
+    return data;
+  },
+
+  /** 決済手段を選ぶ画面を取り消す（既に選ばれていた・取り消されていたら、そのときの状態を返す） */
+  async cancelAction(id: string): Promise<SquareAction> {
+    const { data, error } = await apiClient.POST(
+      "/api/square/actions/{id}/cancel",
+      { params: { path: { id } } },
+    );
+    if (!data) {
+      throw new Error(
+        errorMessage(error, "決済手段を選ぶ画面を取り消せませんでした"),
+      );
+    }
+    return data;
   },
 
   /** 支払い済みなのに注文と結び付いていない決済依頼（照合用） */

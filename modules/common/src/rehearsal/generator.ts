@@ -155,10 +155,8 @@ export const sampleBaskets = (
 export type GeneratedOrder = {
   /** 開始からの秒 */
   offsetSec: number;
-  /** 役割ごとの杯数（物販は入らない） */
-  roles: Record<string, number>;
-  drinkCups: number;
-  goods: number;
+  /** 種類の名前 → 個数（物販の種類も入る） */
+  types: Record<string, number>;
 };
 
 /** 注文列を作る。同じ params・seed・オプションなら同じ列になる */
@@ -172,8 +170,6 @@ export const generateOrders = (
   const baskets = sampleBaskets(params, rng, offsets.length);
   return offsets.map((offsetSec, i) => ({
     offsetSec,
-    roles: baskets[i].roles,
-    drinkCups: Object.values(baskets[i].roles).reduce((sum, n) => sum + n, 0),
-    goods: baskets[i].goods,
+    types: baskets[i].types,
   }));
 };

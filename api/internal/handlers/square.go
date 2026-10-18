@@ -51,6 +51,9 @@ type squareAPI interface {
 	CreateTerminalCheckout(ctx context.Context, idempotencyKey string, checkout square.TerminalCheckout) (*square.TerminalCheckout, error)
 	GetTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
 	CancelTerminalCheckout(ctx context.Context, checkoutID string) (*square.TerminalCheckout, error)
+	CreateTerminalAction(ctx context.Context, idempotencyKey string, action square.TerminalAction) (*square.TerminalAction, error)
+	GetTerminalAction(ctx context.Context, actionID string) (*square.TerminalAction, error)
+	CancelTerminalAction(ctx context.Context, actionID string) (*square.TerminalAction, error)
 	GetPayment(ctx context.Context, paymentID string) (*square.Payment, error)
 	RefundPayment(ctx context.Context, idempotencyKey, paymentID string, amount square.Money, reason string) (*square.PaymentRefund, error)
 	GetPaymentRefund(ctx context.Context, refundID string) (*square.PaymentRefund, error)
@@ -373,6 +376,11 @@ func (h *SquareHandler) CreateCheckout(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// 決済手段を選ぶ画面を出したままだと、決済画面がその後ろに並んで出てこない。先に取り消す。
+	if err := h.cancelPendingActions(ctx, req.DeviceId, ""); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	record := models.SquareCheckout{
 		ID:             uuid.New(),
@@ -688,8 +696,8 @@ func (h *SquareHandler) findByRemote(remote *square.TerminalCheckout) (*models.S
 var errSquareCheckoutUnusable = errors.New("square checkout cannot be used for this order")
 
 // linkSquareCheckout は注文作成のトランザクションの中で、決済依頼を行ロックして
-// 検証し、注文と結び付ける。order.ID は採番済みであること。
-func linkSquareCheckout(tx *gorm.DB, checkoutID uuid.UUID, order *models.Order, now time.Time) error {
+// 検証し、注文と結び付ける。決済額は amount（一括なら請求額、個別会計ならその支払いの額）と一致すること。
+func linkSquareCheckout(tx *gorm.DB, checkoutID, orderID uuid.UUID, amount int, now time.Time) error {
 	var record models.SquareCheckout
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&record, "id = ?", checkoutID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -697,8 +705,8 @@ func linkSquareCheckout(tx *gorm.DB, checkoutID uuid.UUID, order *models.Order, 
 		}
 		return err
 	}
-	if err := validateSquareCheckoutForOrder(&record, order.BillingAmount, now); err != nil {
+	if err := validateSquareCheckoutForOrder(&record, amount, now); err != nil {
 		return fmt.Errorf("%w: %s", errSquareCheckoutUnusable, err.Error())
 	}
-	return tx.Model(&record).Update("order_id", order.ID).Error
+	return tx.Model(&record).Update("order_id", orderID).Error
 }

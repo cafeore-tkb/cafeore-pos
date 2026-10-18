@@ -1,6 +1,7 @@
 import {
   type Order,
   OrderEntity,
+  type WithId,
   cashierRepository,
   cashierStateWireSchema,
   orderRepository,
@@ -25,9 +26,14 @@ const OFFLINE_TOAST_ID = "cashier-offline-orders";
  * つながったら sendUnsentOrders でまとめて送る。
  * 失敗したら、保存できるまで消えないトーストで知らせ、「再送」で同じ内容を送り直せるようにする。
  * 応答が届かなくてもサーバー側では保存できていることがあるので、同じ注文には同じ
- * idempotencyKey を付けて送り、送り直しで二重にしない
+ * idempotencyKey を付けて送り、送り直しで二重にしない。
+ * onSaved は、すぐに送って保存できたときだけ呼ぶ（溜めた注文・再送で保存できたときは呼ばない）
  */
-const saveOrderInBackground = (order: OrderEntity, online: boolean) => {
+const saveOrderInBackground = (
+  order: OrderEntity,
+  online: boolean,
+  onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+) => {
   const idempotencyKey = newKey();
   updateUnsentOrders((orders) => ({
     ...orders,
@@ -38,9 +44,13 @@ const saveOrderInBackground = (order: OrderEntity, online: boolean) => {
     return;
   }
   saver(order, idempotencyKey, false)().then(
-    // cashier-mini の「ご注文ありがとうございました」の表示用
-    (savedOrder) =>
-      cashierRepository.setSubmittedOrder(savedOrder).catch(console.error),
+    (savedOrder) => {
+      onSaved?.(savedOrder);
+      // cashier-mini の「ご注文ありがとうございました」の表示用
+      return cashierRepository
+        .setSubmittedOrder(savedOrder)
+        .catch(console.error);
+    },
     (error) =>
       notifySaveFailed(
         order.orderId,
@@ -117,6 +127,16 @@ const notifyOfflineOrders = () => {
   });
 };
 
+/**
+ * 端末に残っている、まだ保存できていない注文のうち、いちばん大きい番号（無ければ 0）。
+ * 読み込み直したあとも、溜めた注文と同じ番号を次の注文に付けないために使う
+ */
+const latestUnsentOrderId = () =>
+  Object.values(readUnsentOrders()).reduce(
+    (acc, order) => Math.max(acc, order.orderId),
+    0,
+  );
+
 // 保存できたら端末に残した分も消す。後から送るとき（溜めた注文・再送）は確定した時刻も送る
 const saver =
   (order: OrderEntity, idempotencyKey: string, sendCreatedAt: boolean) => () =>
@@ -179,6 +199,9 @@ const readUnsentOrders = () => {
   }
 };
 
+// まだ保存できていない注文が変わったら呼ぶ（溜めた・保存できた）
+const unsentListeners = new Set<() => void>();
+
 const updateUnsentOrders = (
   update: (orders: Record<string, Order>) => Record<string, Order>,
 ) => {
@@ -188,7 +211,27 @@ const updateUnsentOrders = (
   } catch (error) {
     console.error(error);
   }
+  for (const listener of unsentListeners) listener();
 };
+
+/**
+ * 端末に残っている、まだ保存できていない注文が無くなるまで待つ（オフラインで溜めた注文・保存に失敗した注文が、
+ * まとめて送ったり再送したりして全部保存できるまで）。signal で待つのをやめる
+ */
+const waitUntilUnsentOrdersSaved = (signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const check = () => {
+      if (Object.keys(readUnsentOrders()).length === 0) {
+        unsentListeners.delete(check);
+        resolve();
+      }
+    };
+    unsentListeners.add(check);
+    signal.addEventListener("abort", () => unsentListeners.delete(check), {
+      once: true,
+    });
+    check();
+  });
 
 // randomUUID は https か localhost でしか使えないので、使えないときは getRandomValues で UUID（v4）を作る
 const newKey = (): string => {
@@ -209,4 +252,10 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
     promise.then(resolve, reject).finally(() => clearTimeout(timer));
   });
 
-export { notifyOfflineOrders, saveOrderInBackground, sendUnsentOrders };
+export {
+  latestUnsentOrderId,
+  notifyOfflineOrders,
+  saveOrderInBackground,
+  sendUnsentOrders,
+  waitUntilUnsentOrdersSaved,
+};

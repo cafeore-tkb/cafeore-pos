@@ -75,6 +75,7 @@ export const responseToMenuEntity = (
     abbr: response.abbr,
     price: response.price,
     key: response.key,
+    priority: response.priority,
     items: response.items.map(({ item, quantity }) => ({
       item: responseToItemEntity(item),
       quantity,
@@ -91,6 +92,7 @@ export const menuToCreateRequest = (menu: MenuEntity): MenuCreateRequest => ({
   abbr: menu.abbr,
   price: menu.price,
   key: menu.key,
+  priority: menu.priority,
   items: menuItemsToRequest(menu),
 });
 
@@ -183,6 +185,23 @@ export const responseToOrderEntity = (
     })),
     paymentMethod: response.payment_method,
     squareRefundStatus: response.square_refund_status,
+    cancelledAt: response.cancelled_at ? new Date(response.cancelled_at) : null,
+    cashRefundedAt: response.cash_refunded_at
+      ? new Date(response.cash_refunded_at)
+      : null,
+    payments: (response.payments ?? []).map((payment) => ({
+      method: payment.method,
+      amount: payment.amount,
+      received: payment.received,
+      discount: payment.discount,
+      // 明細の ID を、menus の中の位置に直す
+      menuIndexes: payment.order_menu_ids
+        .map((id) => menus.findIndex((menu) => menu.orderMenuId === id))
+        .filter((index) => index >= 0),
+      squareCheckoutId: payment.square_checkout_id ?? undefined,
+      squarePaymentType: payment.square_payment_type ?? undefined,
+      squareRefundStatus: payment.square_refund_status,
+    })),
   };
   return OrderEntity.fromOrder(order);
 };
@@ -201,7 +220,8 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
   };
 };
 
-// OrderEntity を CreateRequest に変換
+// OrderEntity を CreateRequest に変換。
+// 個別会計の注文（payments がある）は支払いを payments で送り、payment は使わない
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
   payment: OrderPayment = { method: "cash" },
@@ -214,17 +234,34 @@ export const orderEntityToCreateRequest = (
     });
     return acc;
   }, []);
-  return {
+  const request = {
     order_id: order.orderId,
     billing_amount: order.billingAmount,
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
+    menu_ids: menuIds,
+    comments: order.comments,
+  };
+  if (order.payments.length > 0) {
+    return {
+      ...request,
+      payments: order.payments.map((split) => ({
+        method: split.method,
+        amount: split.amount,
+        received: split.received,
+        discount: split.discount,
+        menu_indexes: split.menuIndexes,
+        square_checkout_id:
+          split.method === "square" ? (split.squareCheckoutId ?? null) : null,
+      })),
+    };
+  }
+  return {
+    ...request,
     payment_method: payment.method,
     square_checkout_id:
       payment.method === "square" ? payment.squareCheckoutId : null,
-    menu_ids: menuIds,
-    comments: order.comments,
   };
 };
 

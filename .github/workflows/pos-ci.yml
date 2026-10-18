@@ -23,6 +23,13 @@ jobs:
       - uses: './.github/actions/setup-deps'
       - run: pnpm run typecheck
 
+  analytics-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm exec vitest run app/lib/analytics/operations.test.ts
+
   # api-ci の lint と見分けるため、ジョブ名は biome にしている。
   # biome.json がリポジトリ直下にあるので、ルートで実行する。
   biome:

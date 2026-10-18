@@ -3,23 +3,31 @@ import type { WithId } from "./typeguard";
 
 /**
  * 割引の参照オーダーの状態を判定する
+ *
+ * 返金した注文（一部でも）の番号は使えない。キャンセルしても返金していなければ、お金はもらっているので
+ * 提供していなくても使える。返金した注文で使った番号は、使っていないことにする（注文を消したときと同じ）
  * @param orderId チェックしたいオーダーID
- * @param allOrders 全てのオーダー（既に使用されているかどうかを判定するため）
+ * @param allOrders 全てのオーダー（キャンセルした注文も含む。既に使用されているかどうかを判定するため）
  * @returns オーダーの状態
  */
 export function getDiscountOrderStatus(
   orderId: number,
   allOrders: WithId<OrderEntity>[],
-): "available" | "already_used" | "unserved" {
+): "available" | "already_used" | "unserved" | "refunded" {
   const targetOrder = allOrders.find((order) => order.orderId === orderId);
 
   if (!targetOrder) {
     return "unserved";
   }
 
+  // 返金した注文の番号は使えない
+  if (targetOrder.isRefunded()) {
+    return "refunded";
+  }
+
   // 既に割引として使用されているかどうかを判定する
   const isAlreadyUsed = allOrders.some(
-    (order) => order.discountOrderId === orderId,
+    (order) => order.discountOrderId === orderId && !order.isRefunded(),
   );
 
   // 既に他のオーダーで割引として使用されている場合は使用できない
@@ -27,8 +35,8 @@ export function getDiscountOrderStatus(
     return "already_used";
   }
 
-  // 提供済みで未使用の場合は利用可能
-  if (targetOrder.servedAt !== null) {
+  // 提供済み（キャンセルしたが返金していない注文も）で未使用の場合は利用可能
+  if (targetOrder.servedAt !== null || targetOrder.isCancelled()) {
     return "available";
   }
 

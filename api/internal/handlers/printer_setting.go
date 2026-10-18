@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,8 +27,13 @@ func NewPrinterSettingHandler(db *gorm.DB) *PrinterSettingHandler {
 
 func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSettingsResponse {
 	return models.PrinterSettingsResponse{
-		LabelPrinterIp:   setting.LabelPrinterIP,
-		ReceiptPrinterIp: setting.ReceiptPrinterIP,
+		LabelPrinterIp:           setting.LabelPrinterIP,
+		ReceiptPrinterIp:         setting.ReceiptPrinterIP,
+		ReceiptPrinterModel:      models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:   models.PrinterPaperWidth(setting.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth: models.PrinterPaperWidth(setting.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:    models.PrinterPaperType(setting.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:  models.PrinterPaperType(setting.ReceiptPrinterPaperType),
 	}
 }
 
@@ -41,6 +47,24 @@ func parsePrinterIP(field, value string) (string, error) {
 	return addr.String(), nil
 }
 
+// 知っている用紙の幅か確かめる。
+func validatePaperWidth(field string, value models.PrinterPaperWidth) error {
+	switch value {
+	case models.PrinterPaperWidth58mm, models.PrinterPaperWidth80mm:
+		return nil
+	}
+	return fmt.Errorf("%s must be 58mm or 80mm", field)
+}
+
+// 知っている用紙の種類か確かめる。
+func validatePaperType(field string, value models.PrinterPaperType) error {
+	switch value {
+	case models.PrinterPaperTypeReceipt, models.PrinterPaperTypeDieCutLabel:
+		return nil
+	}
+	return fmt.Errorf("%s must be receipt or die_cut_label", field)
+}
+
 // リクエストを検証して DB モデルに変換する。
 func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.PrinterSetting, error) {
 	label, err := parsePrinterIP("label_printer_ip", request.LabelPrinterIp)
@@ -51,11 +75,33 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	if err != nil {
 		return models.PrinterSetting{}, err
 	}
+	switch request.ReceiptPrinterModel {
+	case models.ReceiptPrinterModelTmL90, models.ReceiptPrinterModelTmM30:
+	default:
+		return models.PrinterSetting{}, errors.New("receipt_printer_model must be tm_l90 or tm_m30")
+	}
+	if err := validatePaperWidth("label_printer_paper_width", request.LabelPrinterPaperWidth); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	if err := validatePaperWidth("receipt_printer_paper_width", request.ReceiptPrinterPaperWidth); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	if err := validatePaperType("label_printer_paper_type", request.LabelPrinterPaperType); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	if err := validatePaperType("receipt_printer_paper_type", request.ReceiptPrinterPaperType); err != nil {
+		return models.PrinterSetting{}, err
+	}
 	return models.PrinterSetting{
-		ID:               models.PrinterSettingID,
-		LabelPrinterIP:   label,
-		ReceiptPrinterIP: receipt,
-		UpdatedAt:        time.Now(),
+		ID:                       models.PrinterSettingID,
+		LabelPrinterIP:           label,
+		ReceiptPrinterIP:         receipt,
+		ReceiptPrinterModel:      string(request.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:   string(request.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth: string(request.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:    string(request.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:  string(request.ReceiptPrinterPaperType),
+		UpdatedAt:                time.Now(),
 	}, nil
 }
 

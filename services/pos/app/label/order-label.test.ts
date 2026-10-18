@@ -2,6 +2,10 @@ import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import type { Label, TextLine } from "./document";
 import { cupLabelJob, orderLabelJob } from "./order-label";
+import { DIE_CUT_LABEL_WIDTHS, RECEIPT_PAPER_WIDTHS } from "./paper";
+
+/** 80mm のダイカットラベル（いつものシール）の印字幅 */
+const WIDTH = DIE_CUT_LABEL_WIDTHS["80mm"];
 
 const hotType: ItemType = {
   id: "1",
@@ -49,27 +53,24 @@ const cupLines = (label: Label) => {
   );
 };
 
-/** 引換券に貼るシールの、上から順の行 */
-const summaryLines = (label: Label) => {
-  if (label.type !== "flow") throw new Error("flow ではない");
-  return label.lines.map(textOf);
-};
+// 引換券に貼るシールは刷らないので、そのテストもコメントアウトしてある（order-label.ts の summaryLabel と同じ）
+// /** 引換券に貼るシールの、上から順の行 */
+// const summaryLines = (label: Label) => {
+//   if (label.type !== "flow") throw new Error("flow ではない");
+//   return label.lines.map(textOf);
+// };
 
 describe("[unit] orderLabelJob", () => {
-  test("抽出が要るもの 1 杯ごとのシールと、引換券のシール 1 枚を刷る", () => {
+  test("抽出が要るもの 1 杯ごとのシールだけを刷る（引換券のシールは刷らない）", () => {
     const order = orderOf(7, [
       menu("ブレンド", hotType, null),
       menu("カフェオレ", hotType, "やまだ"),
       menu("クッキー", goodsType, null),
     ]);
 
-    const { labels } = orderLabelJob(order);
+    const { labels } = orderLabelJob(order, WIDTH);
 
-    expect(labels.map((label) => label.type)).toEqual([
-      "fixed",
-      "fixed",
-      "flow",
-    ]);
+    expect(labels.map((label) => label.type)).toEqual(["fixed", "fixed"]);
     expect(cupLines(labels[0])).toEqual([" No.7", " ブレンド", " 1/2", " 　"]);
     expect(cupLines(labels[1])).toEqual([
       " No.7",
@@ -82,7 +83,7 @@ describe("[unit] orderLabelJob", () => {
   test("カップのシールにはロゴを置く", () => {
     const order = orderOf(7, [menu("ブレンド", hotType, null)]);
 
-    const [cup] = orderLabelJob(order).labels;
+    const [cup] = orderLabelJob(order, WIDTH).labels;
 
     expect(cup.type === "fixed" && cup.elements.at(-1)).toEqual({
       type: "logo",
@@ -91,37 +92,51 @@ describe("[unit] orderLabelJob", () => {
     });
   });
 
-  test("抽出が要るものが無ければ、引換券のシールだけを刷る", () => {
+  test("カップのシールの範囲（幅 570）は、印字幅がそれより狭い紙では印字幅に縮める", () => {
+    const order = orderOf(7, [menu("ブレンド", hotType, null)]);
+    const widthOf = (width: number) => {
+      const [cup] = orderLabelJob(order, width).labels;
+      return cup.type === "fixed" && cup.area.width;
+    };
+
+    expect(widthOf(RECEIPT_PAPER_WIDTHS.tm_l90["80mm"])).toBe(570);
+    expect(widthOf(DIE_CUT_LABEL_WIDTHS["80mm"])).toBe(560);
+    expect(widthOf(DIE_CUT_LABEL_WIDTHS["58mm"])).toBe(384);
+    // 高さと位置は変えない
+    const [cup] = orderLabelJob(order, WIDTH).labels;
+    expect(cup.type === "fixed" && cup.area).toEqual({
+      x: 0,
+      y: 24,
+      width: 560,
+      height: 210,
+    });
+  });
+
+  test("抽出が要るものが無ければ、何も刷らない", () => {
     const order = orderOf(12, [menu("クッキー", goodsType, null)]);
 
-    const { labels } = orderLabelJob(order);
-
-    expect(labels).toHaveLength(1);
-    expect(summaryLines(labels[0])).toEqual([
-      " 明細 No.012 ￥300-",
-      " クッキー",
-    ]);
+    expect(orderLabelJob(order, WIDTH).labels).toEqual([]);
   });
 
-  test("引換券のシールは、指名ありを先に 1 つずつ、指名なしを 2 列で並べる", () => {
-    const order = orderOf(45, [
-      menu("ブレンド", hotType, null),
-      menu("アイス", hotType, "B"),
-      menu("俺のブレンドスペシャル", hotType, null),
-      menu("ラテ", hotType, null),
-    ]);
-
-    const summary = orderLabelJob(order).labels.at(-1);
-
-    expect(summary && summaryLines(summary)).toEqual([
-      " 明細 No.045 ￥1200-",
-      " アイス",
-      "   指名：B",
-      // 8 文字以上の名前は 6 文字にする
-      " ブレンド    俺のブレンド",
-      " ラテ",
-    ]);
-  });
+  // test("引換券のシールは、指名ありを先に 1 つずつ、指名なしを 2 列で並べる", () => {
+  //   const order = orderOf(45, [
+  //     menu("ブレンド", hotType, null),
+  //     menu("アイス", hotType, "B"),
+  //     menu("俺のブレンドスペシャル", hotType, null),
+  //     menu("ラテ", hotType, null),
+  //   ]);
+  //
+  //   const summary = orderLabelJob(order, WIDTH).labels.at(-1);
+  //
+  //   expect(summary && summaryLines(summary)).toEqual([
+  //     " 明細 No.045 ￥1200-",
+  //     " アイス",
+  //     "   指名：B",
+  //     // 8 文字以上の名前は 6 文字にする
+  //     " ブレンド    俺のブレンド",
+  //     " ラテ",
+  //   ]);
+  // });
 });
 
 describe("[unit] cupLabelJob", () => {
@@ -156,9 +171,9 @@ describe("[unit] cupLabelJob", () => {
         })),
     });
 
-    expect(cupLabelJob(saved, "cup-カフェオレ")).toEqual({
-      labels: [orderLabelJob(order).labels[1]],
+    expect(cupLabelJob(saved, "cup-カフェオレ", WIDTH)).toEqual({
+      labels: [orderLabelJob(order, WIDTH).labels[1]],
     });
-    expect(cupLabelJob(saved, "cup-クッキー")).toBeNull();
+    expect(cupLabelJob(saved, "cup-クッキー", WIDTH)).toBeNull();
   });
 });

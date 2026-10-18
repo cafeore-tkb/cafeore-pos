@@ -1,11 +1,12 @@
 import { apiClient, throwApiError } from "../api/client";
 import {
+  commentConverter,
   orderEntityToCreateRequest,
   orderToUpdateRequest,
   responseToOrderEntity,
 } from "../api/converter";
 import { type WithId, hasId } from "../lib/typeguard";
-import type { OrderEntity } from "../models/order";
+import type { OrderComment, OrderEntity } from "../models/order";
 import type { OrderRepository } from "./type";
 
 // TODO(toririm): エラーハンドリングをやる
@@ -94,6 +95,45 @@ export const orderRepoFactory = (): OrderRepository => {
       }
     },
 
+    cancel: async (id: string): Promise<WithId<OrderEntity>> => {
+      const { data, error, response } = await apiClient.POST(
+        "/api/orders/{id}/cancel",
+        { params: { path: { id } } },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to cancel order");
+      }
+      return responseToOrderEntity(data);
+    },
+
+    refundCash: async (id: string): Promise<WithId<OrderEntity>> => {
+      const { data, error, response } = await apiClient.POST(
+        "/api/orders/{id}/cash-refund",
+        { params: { path: { id } } },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to record cash refund");
+      }
+      return responseToOrderEntity(data);
+    },
+
+    recall: async (id: string): Promise<void> => {
+      const { error, response } = await apiClient.POST(
+        "/api/orders/{id}/recall",
+        {
+          params: {
+            path: { id },
+          },
+        },
+      );
+
+      if (error || !response.ok) {
+        throwApiError(response, error, "Failed to recall order");
+      }
+    },
+
     readyCup: async (id: string, cupId: string) => {
       const { data, error, response } = await apiClient.PATCH(
         "/api/orders/{id}/cups/{cupId}/ready",
@@ -132,8 +172,8 @@ export const orderRepoFactory = (): OrderRepository => {
       id: string,
       author: string,
       text: string,
-    ): Promise<void> => {
-      const { error, response } = await apiClient.POST(
+    ): Promise<OrderComment> => {
+      const { data, error, response } = await apiClient.POST(
         "/api/orders/{id}/comments",
         {
           params: {
@@ -146,6 +186,7 @@ export const orderRepoFactory = (): OrderRepository => {
       if (error || !response.ok) {
         throwApiError(response, error, "Failed to add comment");
       }
+      return commentConverter(data);
     },
 
     delete: async (id) => {

@@ -157,6 +157,7 @@ const writeLabel = (
 ) => {
   if (label.type === "image") {
     const { image } = label;
+    if (label.top) builder.addFeedPosition(builder.FEED_CURRENT_TOF);
     builder.addTextAlign(builder.ALIGN_CENTER);
     builder.addImage(
       { getImageData: () => image },

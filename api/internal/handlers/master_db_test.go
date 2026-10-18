@@ -205,6 +205,52 @@ func TestMenuCRUD(t *testing.T) {
 	api.do(http.MethodDelete, "/api/menus/abc", nil).expect(http.StatusBadRequest)
 }
 
+func TestMenuPriority(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	items := []models.MenuItemRequest{{ItemId: m.blend.ID, Quantity: 1}}
+
+	// 送らなければ 0
+	var plain, top models.MenuResponse
+	api.do(http.MethodPost, "/api/menus", models.MenuCreateRequest{Name: "ふつう", Abbr: "ふ", Key: "f", Price: 100, Items: items}).
+		expect(http.StatusCreated).decode(&plain)
+	if plain.Priority != 0 {
+		t.Fatalf("default priority = %d, want 0", plain.Priority)
+	}
+	five := 5
+	api.do(http.MethodPost, "/api/menus", models.MenuCreateRequest{Name: "先頭", Abbr: "先", Key: "t", Price: 100, Priority: &five, Items: items}).
+		expect(http.StatusCreated).decode(&top)
+	if top.Priority != 5 {
+		t.Fatalf("priority = %d, want 5", top.Priority)
+	}
+
+	// 優先度を送らない更新（前の画面）では今の値のまま
+	var got models.MenuResponse
+	api.do(http.MethodPut, "/api/menus/"+top.Id.String(), models.MenuUpdateRequest{Id: top.Id, Name: "先頭", Abbr: "先", Key: "t", Price: 120, Items: items}).
+		expect(http.StatusOK).decode(&got)
+	if got.Priority != 5 || got.Price != 120 {
+		t.Fatalf("update without priority: %+v", got)
+	}
+
+	// 大きい順に返す
+	last := -1
+	api.do(http.MethodPut, "/api/menus/"+plain.Id.String(), models.MenuUpdateRequest{Id: plain.Id, Name: "ふつう", Abbr: "ふ", Key: "f", Price: 100, Priority: &last, Items: items}).
+		expect(http.StatusOK).decode(&got)
+	if got.Priority != -1 {
+		t.Fatalf("priority = %d, want -1", got.Priority)
+	}
+	var menus []models.MenuResponse
+	api.do(http.MethodGet, "/api/menus", nil).expect(http.StatusOK).decode(&menus)
+	if len(menus) != 5 || menus[0].Id != top.Id || menus[len(menus)-1].Id != plain.Id {
+		t.Fatalf("menus must be ordered by priority: %+v", menus)
+	}
+	for i := 1; i < len(menus); i++ {
+		if menus[i-1].Priority < menus[i].Priority {
+			t.Fatalf("menus must be ordered by priority: %+v", menus)
+		}
+	}
+}
+
 func TestColorSettings(t *testing.T) {
 	api := newTestAPI(t)
 	m := api.seedMaster()

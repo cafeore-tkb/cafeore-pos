@@ -8,6 +8,7 @@ import {
   type CaosWritesResult,
   type PracticeDataOrder,
   assignWrites,
+  caosCardServed,
   caosDayOrders,
   caosLane,
   caosLateMerge,
@@ -39,6 +40,7 @@ import {
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { orderBacklog } from "../logic/alerts";
 import { waitingCupsByBean } from "../logic/beans";
+import type { CardBoardAction } from "../logic/cardActions";
 import {
   cardLooks,
   orderAndCupCounts,
@@ -47,12 +49,15 @@ import {
 } from "../logic/cards";
 import { commentsByOrder } from "../logic/comments";
 import { testPlayRemainingLabel } from "../logic/historical";
-import { boardLanes, laneActive } from "../logic/lanes";
+import { boardLanes } from "../logic/lanes";
 import { earlyNext, nextAvailableBays } from "../logic/queue";
+import { runCardAction } from "../logic/runCardAction";
 import { soundManager } from "../utils/audio";
+import { caosLog, logCaosAsync } from "../utils/log";
 import { useBeanInventory } from "./useBeanInventory";
 import { useCaosLanes } from "./useCaosLanes";
 import { useCaosOutboxSender } from "./useCaosOutbox";
+import { useCaosStateLog } from "./useCaosStateLog";
 import { type NextStart, useCornerToasts } from "./useCornerToasts";
 import { useLastAction } from "./useLastAction";
 import { useLiveBoard } from "./useLiveBoard";
@@ -86,6 +91,7 @@ type EmergencyOps = {
 
 // 操作を断った理由を POS の通知で出す
 const fail = (error: string) => {
+  caosLog("operation.rejected", { error });
   toast.error(error);
   return false;
 };
@@ -99,7 +105,10 @@ export const useCaosSession = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [simSpeed, setSimSpeed] = useState(TEST_START_SPEED);
   const [soundEnabled, setSoundEnabled] = useState(soundManager.enabled);
-  const stopRunning = useCallback(() => setIsRunning(false), []);
+  const stopRunning = useCallback(() => {
+    caosLog("practice.finished", { source: "time-up" });
+    setIsRunning(false);
+  }, []);
 
   // 実データテストの注文。過去の注文データは同梱せず、テストプレイの画面で手元の JSON を読み込む
   // （ブラウザの中で練習に使う項目だけを写す。API には書かないので、本番の盤面・注文・在庫には混ざらない）。
@@ -123,8 +132,12 @@ export const useCaosSession = () => {
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
   // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
-  const { printer: labelPrinter, addEmergency } = useCupEmergency();
-  const lastAction = useLastAction(realTime.getTime());
+  const { printer: labelPrinter, addEmergency } = useCupEmergency(caosLog);
+  useCaosStateLog("printer.state.changed", {
+    status: labelPrinter.status,
+    pendingCount: labelPrinter.pendingCount,
+  });
+  const lastAction = useLastAction();
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
   // 止めずにそのまま書き、同じ所に知らせだけ出す
@@ -165,7 +178,7 @@ export const useCaosSession = () => {
       ),
     [cards, colorSettings, beanIndex, comments, testing, people],
   );
-  // 豆キューに出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
+  // 豆残量確認に出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
     () => (test.session ? undefined : waitingCupsByBean(cards, beanIndex)),
     [cards, beanIndex, test.session],
@@ -192,7 +205,7 @@ export const useCaosSession = () => {
     }
     return ok;
   };
-  // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。押した待機のカードを始めるときは、先にそのカードを待機の先頭へ動かす
+  // 「次へ」を送る（seen は終えるカード、start は終えたあとに始めるもの）。未着手のカードを ▶ で始めるときは、そのカードが待機の先頭でなければ（ほかの端末で入れ替わった）先に待機の先頭へ動かす
   // （同じ 1 つの操作として端末に残す）。書けたら音を鳴らし、「直前の操作」に覚える
   const runNext = (bayId: number, seen: string | null, start: NextStart) => {
     const { brewing, queued } = caosLane(cards, bayId);
@@ -235,8 +248,8 @@ export const useCaosSession = () => {
       () => soundManager.playComplete(),
     );
   };
-  // 抽出中のカードを終える操作（「次へ」・抽出中のカードを押す・待機のカードを押して始める）。始めてから 10 秒は終えられず、
-  // 抽出時間の半分もたっていなければ（隣の列の押し間違いかもしれない）すぐには送らず右上で確かめる。抽出中が無ければそのまま始める
+  // 抽出中のカードを終える操作（カードの ✓・✋）。始めてから 10 秒は終えられず、
+  // 抽出時間の半分もたっていなければ右上で確かめる。全杯提供済みの完了忘れは待ち時間・確認を省く
   const endBrewing = (bayId: number, start: NextStart) => {
     const lane = lanes.find((l) => l.id === bayId);
     if (!lane) return;
@@ -244,13 +257,18 @@ export const useCaosSession = () => {
       fail(`始めてから ${CAOS_NEXT_COOLDOWN_SEC} 秒は終えられません`);
       return;
     }
-    const early = earlyNext(lane, nowMs);
+    const early = caosCardServed(lane.brewing) ? null : earlyNext(lane, nowMs);
     if (early) toasts.show({ kind: "next", bayId, start, ...early });
     else runNext(bayId, lane.brewing?.dripId ?? null, start);
   };
   // 統合（firstKey のカードを intoKey のカードへ。firstKey が抽出中なら逆向き。caosMergePair）。どれだけ前に抽出を始めたカードへも統合し、
   // 始めてから時間がたっていれば（caosLateMerge）、統合したあとに右上で知らせる（向きを決めたあとのカードで出す）
   const runMerge = (firstKey: string, intoKey: string) => {
+    caosLog("board.merge.requested", {
+      firstKey,
+      intoKey,
+      mode: testing ? "practice" : "live",
+    });
     const first = cardOf(firstKey);
     const second = cardOf(intoKey);
     if (!first || !second) return fail(NOT_FOUND);
@@ -364,10 +382,10 @@ export const useCaosSession = () => {
     /** 本番の今日の注文のコメント（注文ごと）。実データテスト中と、注文が届くまでは null */
     comments,
     nextAvailable: nextAvailableBays(lanes, nowMs),
-    /** ヘッダーの注文の数と杯数（未割当・ドリッパーの待ち） */
+    /** ヘッダーの注文の数と杯数（未割当・ドリッパーに置いてまだ始めていない待機。抽出中は数えない） */
     counts: {
       unassigned: orderAndCupCounts(unassigned),
-      waiting: orderAndCupCounts(lanes.flatMap(laneActive)),
+      waiting: orderAndCupCounts(lanes.flatMap((lane) => lane.queued)),
     },
     /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
     backlog: orderBacklog(cards, nowMs),
@@ -375,7 +393,7 @@ export const useCaosSession = () => {
     nowMs,
     /** ヘッダーの時刻（日本時間の「10:05:09」） */
     timeLabel: jstClock(nowMs),
-    /** 豆キューに出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
+    /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数。実データテスト中は本物の在庫に記録させない */
     beans: {
       ...beanStock,
       waitingCups: beanWaitingCups,
@@ -384,16 +402,34 @@ export const useCaosSession = () => {
     /** 実データテストの時計（一時停止・速さ・やめる）を出すか。本番の盤面は実時間なので出さない */
     simulating: Boolean(test.session),
     isRunning,
-    toggleRunning: () => setIsRunning((value) => !value),
+    toggleRunning: () => {
+      caosLog("practice.running.changed", {
+        running: !isRunning,
+        simulatedAt: nowMs,
+      });
+      setIsRunning(!isRunning);
+    },
     simSpeed,
-    cycleSpeed: () =>
+    cycleSpeed: () => {
+      caosLog("practice.speed.changed", {
+        before: simSpeed,
+        after:
+          SIM_SPEEDS[(SIM_SPEEDS.indexOf(simSpeed) + 1) % SIM_SPEEDS.length],
+      });
       setSimSpeed(
         (speed) =>
           SIM_SPEEDS[(SIM_SPEEDS.indexOf(speed) + 1) % SIM_SPEEDS.length],
-      ),
+      );
+    },
     posStatus: live.status,
     /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し） */
-    labelPrinter,
+    labelPrinter: {
+      ...labelPrinter,
+      retry: () => {
+        caosLog("printer.retry");
+        labelPrinter.retry();
+      },
+    },
     /** この端末のまだ送れていない盤面の操作の数と、今すぐ送り直す */
     unsent,
     /**
@@ -412,7 +448,20 @@ export const useCaosSession = () => {
           cards,
           cups.map((cup) => cup.cupId),
         );
-        const ids = await emergencyOps.add(cups, reason);
+        const ids = await logCaosAsync(
+          "emergency.add",
+          {
+            mode: testing ? "practice" : "live",
+            simulatedAt: testing ? nowMs : undefined,
+            reason,
+            cups: cups.map(({ order, cupId }) => ({
+              orderId: order.id,
+              orderNo: order.orderId,
+              cupId,
+            })),
+          },
+          () => emergencyOps.add(cups, reason),
+        );
         if (!ids) return null;
         if (together) mergeRebrews(ids);
         lastAction.remember(label, []);
@@ -421,18 +470,39 @@ export const useCaosSession = () => {
       cancel: (card: CaosCard) => {
         const label = `緊急の取り消し ${orderLabel(card)}`;
         const cups = card.cups.filter((cup) => cup.emergency);
-        if (!emergencyOps.cancel(cups, label)) return;
+        caosLog("emergency.cancel.requested", {
+          mode: testing ? "practice" : "live",
+          cupIds: cups.map((c) => c.cupId),
+          unitIds: cups.map((c) => c.id),
+          orderIds: cups.map((c) => c.orderId),
+        });
+        if (!emergencyOps.cancel(cups, label)) {
+          caosLog("emergency.cancel.rejected", { label });
+          return;
+        }
+        caosLog("emergency.cancel.accepted", {
+          label,
+          unitIds: cups.map((c) => c.id),
+          mode: testing ? "practice" : "live",
+        });
         toastEmergenciesCancelled(cups.length);
         lastAction.remember(label, liveIds());
       },
     },
     soundEnabled,
     toggleSound: () => {
+      caosLog("sound.changed", { enabled: !soundEnabled });
       soundManager.enabled = !soundEnabled;
       setSoundEnabled(!soundEnabled);
     },
     /** 割当・ドリッパーの移動・順番の入れ替え（place は @cafeore/common の CaosPlace：列の先頭（今から始まる）・待機の先頭・カードの前後。無ければ最後）。抽出中のカードも動かせる。順番の数はサーバー（練習なら練習の盤面）が決める */
     place: (key: string, bayId: number, place?: CaosPlace) => {
+      caosLog("board.place.requested", {
+        key,
+        bayId,
+        place,
+        mode: testing ? "practice" : "live",
+      });
       const card = cardOf(key);
       if (!card) return fail(NOT_FOUND);
       const action =
@@ -451,6 +521,10 @@ export const useCaosSession = () => {
     },
     /** 待機・抽出中のカードを未割当に戻す */
     returnToUnassigned: (key: string) => {
+      caosLog("board.unassign.requested", {
+        key,
+        mode: testing ? "practice" : "live",
+      });
       const card = cardOf(key);
       if (!card) return fail(NOT_FOUND);
       return write(unassignWrites(card), `未割当に戻す ${orderLabel(card)}`);
@@ -459,6 +533,11 @@ export const useCaosSession = () => {
     merge: runMerge,
     /** 統合の解除：統合したカードから cupId の 1 杯を外して未割当に戻す */
     split: (key: string, cupId: string) => {
+      caosLog("board.split.requested", {
+        key,
+        cupId,
+        mode: testing ? "practice" : "live",
+      });
       const card = cardOf(key);
       const cup = card?.cups.find((c) => c.id === cupId);
       if (!card || !cup) return fail(NOT_FOUND);
@@ -469,6 +548,11 @@ export const useCaosSession = () => {
     },
     /** ドリッパー from の待機を全部 to へ（指名で置けないカードは残して知らせる。上級生のみのカードは移して知らせる） */
     moveQueue: (from: number, to: number) => {
+      caosLog("board.move-queue.requested", {
+        from,
+        to,
+        mode: testing ? "practice" : "live",
+      });
       const result = moveQueueWrites(cards, from, to);
       if ("kept" in result && result.kept > 0)
         toast(
@@ -487,26 +571,33 @@ export const useCaosSession = () => {
       return ok;
     },
     /**
-     * 「次へ」。抽出中のカードを終え、待機の先頭を始める。抽出中のカードの dripId を付ける（二度押しやほかの端末と同時に押したときに断ってもらう）。
-     * 抽出中が無ければ null で、待機の先頭を始める。押し間違いの確かめは endBrewing
+     * カードの上のアイコンの操作（logic/cardActions）。
+     *   - start（▶）：未着手のカードを始める（「次へ」。抽出中があれば断る）
+     *   - finish（✓）：抽出中のカードを終え、待機の先頭を始める（「次へ」）
+     *   - unstart（✋）：着手後60秒未満のカードを未着手に戻す
+     *   - assign:1〜6・unassign：未着手のカードを再割当・未割当に戻す
+     * 終える操作は「次へ」と同じ押し間違いの決まり（endBrewing）。押したときの盤面とカードの段階が違えば断る
      */
-    advance: (bayId: number) => endBrewing(bayId, "head"),
-    /**
-     * ドリッパーのカードを押した。抽出中のカードは終える（待機の先頭は始めない）、待機のカードはそれを始める（抽出中のカードがあれば終える。
-     * 待機の先頭でなくても、押したカードを始める）。終わったカードは何もしない
-     */
-    pressCard: (pressed: CaosCard) => {
-      const card = cardOf(pressed.key);
-      if (!card?.dripper) return;
-      if (card.status === "brewing") endBrewing(card.dripper, "none");
-      else if (card.status === "queued")
-        endBrewing(card.dripper, { key: card.key });
-    },
+    runCardAction: (pressed: CaosCard, action: CardBoardAction) =>
+      runCardAction(cards, pressed, action, nowMs, {
+        write,
+        fail,
+        newId: newDripId,
+        onAssigned: (card, bayId) =>
+          noticeNonSenior([card], nonSeniorPlacement(card, bayId, people)),
+        start: (bayId, key) => runNext(bayId, null, { key }),
+        finish: (bayId) => endBrewing(bayId, "head"),
+      }),
     /** 右上の確かめ（「次へ」）と知らせ（時間のたったカードへの統合・上級生のみのカードを上級生でない担当者に置いた）。新しいものが先 */
     cornerToasts: toasts.open,
     /** 確かめた「次へ」を送る（確かめたカードを終える。そのあいだに終わっていれば断られる） */
     confirm: (id: string) => {
       const asked = toasts.take(id);
+      caosLog("confirmation.confirmed", {
+        id,
+        available: Boolean(asked),
+        kind: asked?.kind,
+      });
       if (asked?.kind === "next")
         runNext(asked.bayId, asked.card.dripId, asked.start);
     },
@@ -516,6 +607,7 @@ export const useCaosSession = () => {
     lastAction: lastAction.label,
     /** 実データテストをやめて cafeore-pos の盤面に戻る（練習の盤面は捨てる。本番のカップは触らない） */
     reset: () => {
+      caosLog("practice.reset");
       forgetPending();
       test.clear();
       setIsRunning(true);
@@ -538,12 +630,18 @@ export const useCaosSession = () => {
       /** 読み込んだ実データ（テストプレイの画面で選ぶ） */
       practiceData,
       start: (startMs: number, durationMinutes: 30 | 60) => {
+        caosLog("practice.started", {
+          startMs,
+          durationMinutes,
+          speed: TEST_START_SPEED,
+        });
         forgetPending();
         test.start(startMs, durationMinutes);
         setIsRunning(true);
         setSimSpeed(TEST_START_SPEED);
       },
       finish: () => {
+        caosLog("practice.finished", { simulatedAt: nowMs, source: "manual" });
         test.finish();
         setIsRunning(false);
       },

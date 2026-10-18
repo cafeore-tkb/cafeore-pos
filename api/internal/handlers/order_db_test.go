@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"testing"
@@ -444,6 +445,38 @@ func TestConcurrentCupOperationsAreNotLost(t *testing.T) {
 	}
 }
 
+// 呼び出し催促は、呼び出し中（準備完了で、まだ提供していない）の注文だけ。注文は変えず、全部の画面に知らせるだけ
+func TestRecallOrder(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	created := api.createOrder(1, m.blendMenu)
+	base := "/api/orders/" + created.Id.String()
+	recall := func() testResponse { return api.do(http.MethodPost, base+"/recall", nil) }
+
+	// まだ呼んでいない注文は催促できない
+	recall().expect(http.StatusConflict)
+	api.noBroadcast()
+
+	ready := api.patchStatus(base + "/ready")
+	recall().expect(http.StatusNoContent)
+	if msg := api.nextBroadcast(); msg.Type != WSMessageTypeOrderRecalled || msg.OrderID == nil || *msg.OrderID != uuid.UUID(created.Id) {
+		t.Fatalf("broadcast = %+v, want order_recalled %s", msg, created.Id)
+	}
+	// 注文は変えないので、注文の配信も無い
+	api.noBroadcast()
+	if order := api.loadOrder(uuid.UUID(created.Id)); !timeEqual(order.ReadyAt, ready.ReadyAt) || order.ServedAt != nil {
+		t.Fatalf("recall must not change the order: %+v", order)
+	}
+
+	// 提供済みの注文も催促できない
+	api.patchStatus(base + "/served")
+	recall().expect(http.StatusConflict)
+
+	api.do(http.MethodPost, "/api/orders/"+uuid.NewString()+"/recall", nil).expect(http.StatusNotFound)
+	api.do(http.MethodPost, "/api/orders/abc/recall", nil).expect(http.StatusBadRequest)
+	api.noBroadcast()
+}
+
 // -------------------------------------------------------------------
 // コメント
 
@@ -464,6 +497,17 @@ func TestOrderComments(t *testing.T) {
 		expect(http.StatusCreated).decode(&comment)
 	if comment.OrderId != created.Id || comment.Author != "master" || comment.Text != "豆を切らした" {
 		t.Fatalf("comment: %+v", comment)
+	}
+	var audit models.CaosOperation
+	if err := api.db.Where("kind = ?", "comment.created").First(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	var details map[string]any
+	if err := json.Unmarshal(audit.Details, &details); err != nil {
+		t.Fatal(err)
+	}
+	if details["orderId"] != created.Id.String() || details["author"] != "master" || details["text"] != "豆を切らした" {
+		t.Fatalf("comment audit: %s", audit.Details)
 	}
 	// コメントの付いた注文を配信する
 	msg := api.nextBroadcast()
@@ -486,5 +530,23 @@ func TestOrderComments(t *testing.T) {
 	api.do(http.MethodPost, base, `{`).expect(http.StatusBadRequest)
 	api.do(http.MethodPost, "/api/orders/"+uuid.NewString()+"/comments", models.CommentCreateRequest{Author: "cashier", Text: "x"}).
 		expect(http.StatusNotFound)
+	api.noBroadcast()
+}
+
+func TestCommentAuditFailureRollsBackComment(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	created := api.createOrder(1, m.blendMenu)
+	if err := api.db.Exec("ALTER TABLE caos_operations ADD CONSTRAINT reject_comment_audit CHECK (kind <> 'comment.created') NOT VALID").Error; err != nil {
+		t.Fatal(err)
+	}
+	api.do(http.MethodPost, "/api/orders/"+created.Id.String()+"/comments", models.CommentCreateRequest{Author: "master", Text: "👍 了解"}).expect(http.StatusInternalServerError)
+	var count int64
+	if err := api.db.Model(&models.Comment{}).Where("order_id = ?", created.Id).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("failed audit left %d comments", count)
+	}
 	api.noBroadcast()
 }

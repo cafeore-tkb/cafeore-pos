@@ -23,6 +23,7 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => {
           pick={pick}
           readOnly={props.readOnly}
           fold={props.unassignedFold}
+          unfinished={props.unfinished}
         />
       </div>
     </div>

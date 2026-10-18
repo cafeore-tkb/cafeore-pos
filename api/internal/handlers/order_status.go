@@ -231,13 +231,27 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		if err != nil {
 			return err
 		}
+		// キャンセルした注文は作る画面に出さないので、準備完了・提供にもしない（古い画面から押されたとき）
+		if order.CancelledAt != nil {
+			return errOrderCancelled
+		}
 		before = order
 		before.OrderCups = append([]models.OrderCup(nil), order.OrderCups...)
-		// DB に保存される精度にそろえておくと、保存前後で時刻を比べられる
-		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
+		// カップの打刻と成功履歴の発生時刻は、同じマイクロ秒精度の時刻を使う。
+		now := time.Now().Truncate(time.Microsecond)
+		if err := change(&order, now); err != nil {
 			return err
 		}
-		return saveOrderStatus(tx, &before, &order)
+		if err := saveOrderStatus(tx, &before, &order); err != nil {
+			return err
+		}
+		changed := changedCupStatuses(&before, &order)
+		if len(changed) == 0 {
+			return nil
+		}
+		return recordServiceOperation(tx, "order.status.changed", now, now, map[string]any{
+			"orderId": order.ID, "orderNo": order.OrderId, "cups": changed,
+		})
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -245,6 +259,9 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		return
 	case errors.Is(err, errOrderCupNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "Order cup not found"})
+		return
+	case errors.Is(err, errOrderCancelled):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		return
 	case err != nil:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

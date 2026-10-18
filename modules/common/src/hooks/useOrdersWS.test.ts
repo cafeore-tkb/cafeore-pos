@@ -18,6 +18,7 @@ vi.mock("react", () => ({
   useState: (initial: unknown) => [initial, () => {}],
   useRef: (current: unknown) => ({ current }),
   useEffect: (effect: () => void) => effect(),
+  useMemo: (factory: () => unknown) => factory(),
 }));
 
 const { useOrdersWS } = await import("./useOrdersWS");
@@ -42,5 +43,33 @@ describe("[unit] useOrdersWS の緊急の取り消し", () => {
     receive({ type: "orders" });
 
     expect(cancelled).not.toHaveBeenCalled();
+  });
+});
+
+describe("[unit] useOrdersWS の呼び出し催促", () => {
+  const recalled = vi.fn();
+  const cancelled = vi.fn();
+  beforeEach(() => {
+    recalled.mockClear();
+    cancelled.mockClear();
+    useOrdersWS({
+      onCupEmergencyCancelled: cancelled,
+      onOrderRecalled: recalled,
+    });
+  });
+
+  test("催促の知らせを受けたら、その注文の id で呼ぶ", () => {
+    receive({ type: "order_recalled", order_id: "o1" });
+
+    expect(recalled).toHaveBeenCalledTimes(1);
+    expect(recalled).toHaveBeenCalledWith("o1");
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  test("注文が消えても、緊急が取り消されても呼ばない", () => {
+    receive({ type: "order_deleted", order_id: "o1" });
+    receive({ type: "cup_emergency_cancelled", cup_emergency_id: "e1" });
+
+    expect(recalled).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,9 @@
 import {
   BarChart3,
+  Bean,
   CalendarClock,
-  Coffee,
   Database,
   History,
-  LayoutGrid,
   type LucideIcon,
   Printer,
   Search,
@@ -17,9 +16,8 @@ import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
-import { LATE_ORDER_SEC, type orderBacklog } from "../logic/alerts";
-import { type orderAndCupCounts, orderNoLabel } from "../logic/cards";
-import { clockLabel } from "../logic/format";
+import openDripperSettingsIcon from "../icons/open-dripper-settings.svg";
+import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
@@ -27,19 +25,34 @@ import { UnsentOps } from "./UnsentOps";
 
 export type NavTab = "control" | AuxiliaryTab;
 
-type Counts = ReturnType<typeof orderAndCupCounts>;
-
-// 「15分超」の分
-const LATE_MIN = LATE_ORDER_SEC / 60;
-
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
+
+/** 支給SVGをマスクとして使い、選択状態に合わせた文字色をそのまま継承する。 */
+const DripperNavIcon: React.FC<{ className?: string }> = ({
+  className = "",
+}) => (
+  <span
+    aria-hidden="true"
+    className={`inline-block bg-current ${className}`}
+    style={{
+      maskImage: `url("${openDripperSettingsIcon}")`,
+      WebkitMaskImage: `url("${openDripperSettingsIcon}")`,
+      maskSize: "contain",
+      WebkitMaskSize: "contain",
+      maskRepeat: "no-repeat",
+      WebkitMaskRepeat: "no-repeat",
+      maskPosition: "center",
+      WebkitMaskPosition: "center",
+    }}
+  />
+);
 
 // 画面切替（管制盤と、補助のタブ。補助のタブの名前は右のパネルの題と同じ）
 const NAV_ITEMS = [
   { id: "control", label: "CaOS", icon: null },
-  { id: "bays", label: AUXILIARY_TITLES.bays, icon: LayoutGrid },
-  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Coffee },
+  { id: "bays", label: AUXILIARY_TITLES.bays, icon: DripperNavIcon },
+  { id: "beans", label: AUXILIARY_TITLES.beans, icon: Bean },
   { id: "analytics", label: AUXILIARY_TITLES.analytics, icon: BarChart3 },
 ] as const;
 
@@ -49,12 +62,10 @@ interface TopHeaderProps {
   onSelectTab: (tab: NavTab) => void;
   onSelectControlViewMode: (mode: ControlViewMode) => void;
   timeStr: string;
-  /** 未割当と、全ドリッパーの待ち（抽出中・待機）の注文の数と杯数 */
-  counts: { unassigned: Counts; waiting: Counts };
-  /** 抽出を始めていない注文の待ち（いちばん古い未割当・LATE_ORDER_SEC を超えた注文） */
-  backlog: ReturnType<typeof orderBacklog>;
-  /** 注文番号でその注文を選ぶ（番号の検索と同じ） */
-  onFindOrder: (orderNo: number) => void;
+  /** 盤面の時計。シフト交換の予告にも使う */
+  nowMs: number;
+  /** 今日届いた直近の注文キャンセル（練習中・未受信時はnull） */
+  cancelledOrderNo: number | null;
   soundEnabled: boolean;
   onToggleSound: () => void;
   /** 実データテストの盤面を出している（「テスト」の色を変える。時計の操作は盤面の上の帯 TestBoardBanner） */
@@ -165,9 +176,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onSelectTab,
   onSelectControlViewMode,
   timeStr,
-  counts,
-  backlog,
-  onFindOrder,
+  nowMs,
+  cancelledOrderNo,
   soundEnabled,
   onToggleSound,
   simulating,
@@ -186,7 +196,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenEmergency,
   lastAction,
 }) => {
-  const oldest = backlog.oldestUnassigned;
+  const minute = new Date(nowMs).getUTCMinutes();
+  const shiftReminder =
+    minute >= 55 ? "シフト交換5分前" : minute >= 50 ? "シフト交換10分前" : null;
+  const cancellation =
+    cancelledOrderNo === null
+      ? null
+      : `キャンセル #${orderNoLabel(cancelledOrderNo)}`;
+  const notices = [cancellation, shiftReminder].filter(Boolean);
   return (
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
@@ -288,42 +305,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </button>
           )}
         </div>
-
-        {/* 注文の数（杯数は小さく添える。統合したカードは中の注文をみな、分けた注文は 1 つと数える）と、入れ忘れ・飛ばしに気づく待ち。
-            押すと、いちばん古い未割当・受けてから LATE_ORDER_SEC を超えて始めていないいちばん古い注文を選ぶ */}
-        <BacklogButton
-          label="未割当"
-          counts={counts.unassigned}
-          detail={
-            oldest
-              ? `最古 #${orderNoLabel(oldest.orderNo)} ${clockLabel(oldest.waitSec)}`
-              : "最古 なし"
-          }
-          late={oldest?.late ?? false}
-          title={
-            oldest
-              ? `いちばん古い未割当 #${orderNoLabel(oldest.orderNo)}（受けてから ${clockLabel(oldest.waitSec)}）を選ぶ`
-              : "未割当の注文はありません"
-          }
-          onClick={oldest ? () => onFindOrder(oldest.orderNo) : undefined}
-        />
-        <BacklogButton
-          label="待ち"
-          counts={counts.waiting}
-          detail={`${LATE_MIN}分超 ${backlog.late.length}件`}
-          late={backlog.late.length > 0}
-          title={
-            backlog.late.length > 0
-              ? `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文が ${backlog.late.length} 件（いちばん古い #${orderNoLabel(backlog.late[0].orderNo)} を選ぶ）`
-              : `受けてから ${LATE_MIN} 分を超えて、まだ抽出を始めていない注文はありません`
-          }
-          onClick={
-            backlog.late.length > 0
-              ? () => onFindOrder(backlog.late[0].orderNo)
-              : undefined
-          }
-        />
       </div>
+
+      <output
+        aria-live="polite"
+        aria-atomic="true"
+        title={notices.join("・") || undefined}
+        className="flex min-w-0 flex-1 flex-col px-2 text-center font-black text-[16px] text-red-600 leading-tight"
+      >
+        {cancellation && <span className="truncate">{cancellation}</span>}
+        {shiftReminder && <span className="truncate">{shiftReminder}</span>}
+      </output>
 
       <div className="flex shrink-0 items-center gap-1">
         {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
@@ -399,37 +391,3 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     </header>
   );
 };
-
-/**
- * ヘッダーの注文の数（「未割当 8件 10杯」）と、その下の待ち（detail）。late なら赤くする。
- * 押すと待ちの注文を選ぶ（押せる注文が無ければ押せない）
- */
-const BacklogButton: React.FC<{
-  label: string;
-  counts: Counts;
-  detail: string;
-  late: boolean;
-  title: string;
-  onClick?: () => void;
-}> = ({ label, counts, detail, late, title, onClick }) => (
-  <button
-    type="button"
-    disabled={!onClick}
-    onClick={onClick}
-    title={title}
-    className="flex h-11 w-[104px] shrink-0 touch-manipulation flex-col items-start justify-center whitespace-nowrap rounded-md border border-[#d3e5f8] bg-[#eef5fc] px-2 text-[#475569] leading-tight"
-  >
-    <span className="flex items-baseline gap-1 font-semibold text-[11px]">
-      {label}
-      <span className="font-extrabold font-mono text-[#0f172a] text-[16px]">
-        {counts.orders}
-      </span>
-      件<span className="font-mono text-[10px]">{counts.cups}杯</span>
-    </span>
-    <span
-      className={`font-black font-mono text-[11px] ${late ? "rounded bg-red-600 px-1 text-white" : ""}`}
-    >
-      {detail}
-    </span>
-  </button>
-);

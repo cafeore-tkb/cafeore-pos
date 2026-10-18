@@ -32,10 +32,50 @@ const (
 	InventoryLevelWarning   InventoryLevel = "warning"
 )
 
+// Defines values for MasterStateUpdateRequestType.
+const (
+	Operational MasterStateUpdateRequestType = "operational"
+	Stop        MasterStateUpdateRequestType = "stop"
+)
+
 // Defines values for PaymentMethod.
 const (
 	Cash   PaymentMethod = "cash"
 	Square PaymentMethod = "square"
+)
+
+// Defines values for PrinterPaperType.
+const (
+	PrinterPaperTypeDieCutLabel PrinterPaperType = "die_cut_label"
+	PrinterPaperTypeReceipt     PrinterPaperType = "receipt"
+)
+
+// Defines values for PrinterPaperWidth.
+const (
+	PrinterPaperWidth58mm PrinterPaperWidth = "58mm"
+	PrinterPaperWidth80mm PrinterPaperWidth = "80mm"
+)
+
+// Defines values for ReceiptPrinterModel.
+const (
+	ReceiptPrinterModelTmL90 ReceiptPrinterModel = "tm_l90"
+	ReceiptPrinterModelTmM30 ReceiptPrinterModel = "tm_m30"
+)
+
+// Defines values for SquareActionOption.
+const (
+	OptionCardPresent SquareActionOption = "CARD_PRESENT"
+	OptionCash        SquareActionOption = "CASH"
+	OptionFelicaAll   SquareActionOption = "FELICA_ALL"
+	OptionQrCode      SquareActionOption = "QR_CODE"
+	OptionSplit       SquareActionOption = "SPLIT"
+)
+
+// Defines values for SquareActionOutcome.
+const (
+	ActionClosed   SquareActionOutcome = "closed"
+	ActionPending  SquareActionOutcome = "pending"
+	ActionSelected SquareActionOutcome = "selected"
 )
 
 // Defines values for SquareCheckoutOutcome.
@@ -128,6 +168,9 @@ type CaosCupsWrite struct {
 	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
+
+	// MergeInto 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+	MergeInto *openapi_types.UUID `json:"merge_into,omitempty"`
 }
 
 // CaosCupsWriteRequest defines model for CaosCupsWriteRequest.
@@ -196,6 +239,28 @@ type CaosLanes struct {
 	Lanes []CaosLane `json:"lanes"`
 }
 
+// CaosLogBatch defines model for CaosLogBatch.
+type CaosLogBatch struct {
+	Entries []CaosLogEntry `json:"entries"`
+}
+
+// CaosLogEntry defines model for CaosLogEntry.
+type CaosLogEntry struct {
+	At       time.Time              `json:"at"`
+	Details  map[string]interface{} `json:"details"`
+	Event    string                 `json:"event"`
+	Sequence int64                  `json:"sequence"`
+	TabId    openapi_types.UUID     `json:"tabId"`
+}
+
+// CaosLogPage defines model for CaosLogPage.
+type CaosLogPage struct {
+	Entries []CaosStoredLogEntry `json:"entries"`
+	HasMore bool                 `json:"hasMore"`
+	Limit   int                  `json:"limit"`
+	Offset  int                  `json:"offset"`
+}
+
 // CaosNextRequest defines model for CaosNextRequest.
 type CaosNextRequest struct {
 	// DripId 画面が抽出中と見ているカードの drip_id。抽出中が無いと見ているなら null
@@ -231,6 +296,16 @@ type CaosPress struct {
 
 	// SentAt 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
 	SentAt int64 `json:"sent_at"`
+}
+
+// CaosStoredLogEntry defines model for CaosStoredLogEntry.
+type CaosStoredLogEntry struct {
+	At         time.Time              `json:"at"`
+	Details    map[string]interface{} `json:"details"`
+	Event      string                 `json:"event"`
+	ReceivedAt time.Time              `json:"receivedAt"`
+	Sequence   int64                  `json:"sequence"`
+	TabId      openapi_types.UUID     `json:"tabId"`
 }
 
 // CashierStateResponse defines model for CashierStateResponse.
@@ -459,8 +534,11 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type string `json:"type"`
+	Type MasterStateUpdateRequestType `json:"type"`
 }
+
+// MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
+type MasterStateUpdateRequestType string
 
 // MenuCreateRequest defines model for MenuCreateRequest.
 type MenuCreateRequest struct {
@@ -469,6 +547,9 @@ type MenuCreateRequest struct {
 	Key   string            `json:"key"`
 	Name  string            `json:"name"`
 	Price int               `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // MenuInfo defines model for MenuInfo.
@@ -523,6 +604,9 @@ type MenuResponse struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ
+	Priority int `json:"priority"`
 }
 
 // MenuUpdateRequest defines model for MenuUpdateRequest.
@@ -533,6 +617,9 @@ type MenuUpdateRequest struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Price int                `json:"price"`
+
+	// Priority レジ・商品管理での並びの優先度。大きいほど先に並ぶ。省くと作成では 0、更新では今の値のまま
+	Priority *int `json:"priority,omitempty"`
 }
 
 // OrderCreateRequest defines model for OrderCreateRequest.
@@ -552,7 +639,12 @@ type OrderCreateRequest struct {
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
-	Received      int            `json:"received"`
+
+	// Payments 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
+	// amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+	// Square の支払いを含めば square、含まなければ cash になる。
+	Payments *[]OrderPaymentCreate `json:"payments,omitempty"`
+	Received int                   `json:"received"`
 
 	// SquareCheckoutId payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
 	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
@@ -569,7 +661,7 @@ type OrderCupResponse struct {
 	// DripId CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる
 	DripId *openapi_types.UUID `json:"drip_id"`
 
-	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない
+	// Dripper CaOS が置いたドリッパーの番号（1〜6）。未割当なら null。以下の CaOS の列は CaOS 以外の画面は読まない（呼び出し画面だけは、ドリップ中かを見るのに読む）
 	Dripper *int `json:"dripper"`
 
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
@@ -602,11 +694,63 @@ type OrderListItem struct {
 	ServedAt          *time.Time         `json:"served_at"`
 }
 
+// OrderPaymentCreate defines model for OrderPaymentCreate.
+type OrderPaymentCreate struct {
+	// Amount この支払いで払う額（この支払いの明細の値段の合計 − この支払いで引いた割引）
+	Amount int `json:"amount"`
+
+	// Discount この支払いで引いた割引（円）
+	Discount *int `json:"discount,omitempty"`
+
+	// MenuIndexes この支払いで払った明細の、menu_ids の中の位置（0 から）。小計を金額で分けて払ったときは、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）
+	MenuIndexes *[]int `json:"menu_indexes,omitempty"`
+
+	// Method 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	Method PaymentMethod `json:"method"`
+
+	// Received お預かり。現金なら amount 以上。Square なら amount にする（違っていても amount として記録する）
+	Received int `json:"received"`
+
+	// SquareCheckoutId method が square のとき必須。COMPLETED で金額が amount と一致し、まだどの注文にも使われていない決済依頼の id。
+	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
+}
+
+// OrderPaymentResponse defines model for OrderPaymentResponse.
+type OrderPaymentResponse struct {
+	Amount   int `json:"amount"`
+	Discount int `json:"discount"`
+
+	// Method 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
+	Method PaymentMethod `json:"method"`
+
+	// OrderMenuIds この支払いで払った明細の id（MenuInfo.id）。あとで注文を編集して外した明細は含まない
+	OrderMenuIds     []openapi_types.UUID `json:"order_menu_ids"`
+	Received         int                  `json:"received"`
+	SquareCheckoutId *openapi_types.UUID  `json:"square_checkout_id"`
+
+	// SquarePaymentType Square で払ったときの決済画面の種類（SquarePaymentType の値）
+	SquarePaymentType *string `json:"square_payment_type"`
+
+	// SquareRefundStatus 返金（全額）の状態。
+	//   - none: 返金を頼んでいない
+	//   - pending: Square に頼んだ。結果を待っている
+	//   - refunded: 返金が終わった
+	//   - failed: Square が断った・失敗した（お金は手元にある）。もう一度頼めるし、注文にも使える
+	//   - unknown: Square から応答が無く、返金できたか分からない。もう一度頼むと確かめる（同じ idempotency_key を使うので二重には返金されない）。分かるまで注文には使えない
+	SquareRefundStatus *SquareRefundStatus `json:"square_refund_status,omitempty"`
+}
+
 // OrderResponse defines model for OrderResponse.
 type OrderResponse struct {
-	BillingAmount int                `json:"billing_amount"`
-	Comments      *[]CommentResponse `json:"comments,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
+	BillingAmount int `json:"billing_amount"`
+
+	// CancelledAt キャンセルした時刻（POST /api/orders/{id}/cancel・square-refund）。キャンセルしても注文は消さない
+	CancelledAt *time.Time `json:"cancelled_at"`
+
+	// CashRefundedAt 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
+	CashRefundedAt *time.Time         `json:"cash_refunded_at"`
+	Comments       *[]CommentResponse `json:"comments,omitempty"`
+	CreatedAt      time.Time          `json:"created_at"`
 
 	// Cups 注文のカップ（1杯ずつ）。注文した順に並ぶ。グッズだけの注文では空
 	Cups              []OrderCupResponse `json:"cups"`
@@ -618,9 +762,12 @@ type OrderResponse struct {
 
 	// PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 	PaymentMethod PaymentMethod `json:"payment_method"`
-	ReadyAt       *time.Time    `json:"ready_at"`
-	Received      int           `json:"received"`
-	ServedAt      *time.Time    `json:"served_at"`
+
+	// Payments 個別会計の支払い（払った順）。一括で払った注文では空
+	Payments []OrderPaymentResponse `json:"payments"`
+	ReadyAt  *time.Time             `json:"ready_at"`
+	Received int                    `json:"received"`
+	ServedAt *time.Time             `json:"served_at"`
 
 	// SquareRefundStatus 返金（全額）の状態。
 	//   - none: 返金を頼んでいない
@@ -647,13 +794,38 @@ type OrderUpdateRequest struct {
 // PaymentMethod 支払い方法。square は Square Terminal での決済（カード・電子マネー・QR）
 type PaymentMethod string
 
+// PrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+type PrinterPaperType string
+
+// PrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+type PrinterPaperWidth string
+
 // PrinterSettingsResponse defines model for PrinterSettingsResponse.
 type PrinterSettingsResponse struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
+
+	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	ReceiptPrinterPaperType PrinterPaperType `json:"receipt_printer_paper_type"`
+
+	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
 }
 
 // PrinterSettingsUpdateRequest defines model for PrinterSettingsUpdateRequest.
@@ -661,8 +833,86 @@ type PrinterSettingsUpdateRequest struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
+
+	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
+
+	// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+	// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
+	ReceiptPrinterModel ReceiptPrinterModel `json:"receipt_printer_model"`
+
+	// ReceiptPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
+	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
+	ReceiptPrinterPaperType PrinterPaperType `json:"receipt_printer_paper_type"`
+
+	// ReceiptPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
+	ReceiptPrinterPaperWidth PrinterPaperWidth `json:"receipt_printer_paper_width"`
+}
+
+// ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
+// 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
+type ReceiptPrinterModel string
+
+// SquareActionCreateRequest defines model for SquareActionCreateRequest.
+type SquareActionCreateRequest struct {
+	// Amount 今払う額（円）。画面に出す
+	Amount int `json:"amount"`
+
+	// DeviceId 画面を出す端末。GET /api/square/devices で PAIRED の行の device_id
+	DeviceId string `json:"device_id"`
+
+	// IdempotencyKey レジが出すたびに作る一意な値（UUID）。再送しても二重に画面が出ないようにする
+	IdempotencyKey string `json:"idempotency_key"`
+
+	// Options 端末に並べる選択肢（並べる順）。Square の SELECT は 2〜5 個
+	Options []SquareActionOption `json:"options"`
+}
+
+// SquareActionOption 決済手段を選ぶ画面に出す選択肢。CASH は現金、SPLIT は「割り勘」（決済手段ではなく、
+// スタッフに分け方を選んでもらう）、それ以外は Square の決済画面の種類（SquarePaymentType と同じ値）。
+// 端末にはこの値を reference_id として渡し、ボタンの文字はサーバーが決める。
+type SquareActionOption string
+
+// SquareActionOutcome レジが次に何をすべきかをサーバーが判定したもの。
+//   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
+//   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
+//   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
+type SquareActionOutcome string
+
+// SquareActionResponse defines model for SquareActionResponse.
+type SquareActionResponse struct {
+	// ActionId Square の TerminalAction の id
+	ActionId *string `json:"action_id"`
+	Amount   int     `json:"amount"`
+
+	// CancelReason Square の cancel_reason（BUYER_CANCELED / SELLER_CANCELED / TIMED_OUT）
+	CancelReason *string   `json:"cancel_reason"`
+	CreatedAt    time.Time `json:"created_at"`
+
+	// DeviceId 画面を出した端末
+	DeviceId     string               `json:"device_id"`
+	ErrorMessage *string              `json:"error_message"`
+	Id           openapi_types.UUID   `json:"id"`
+	Options      []SquareActionOption `json:"options"`
+
+	// Outcome レジが次に何をすべきかをサーバーが判定したもの。
+	//   - pending: 端末に出している（作っている途中を含む）。お客さんが選ぶのを待つ
+	//   - selected: お客さんが選んだ。selected の決済手段で会計する（SPLIT ならスタッフが分け方を選ぶ）
+	//   - closed: 取り消された・時間切れ・出せなかった。スタッフがレジで選ぶ
+	Outcome SquareActionOutcome `json:"outcome"`
+
+	// Selected お客さんが選んだ選択肢（SquareActionOption の値）。outcome が selected のときだけ入る
+	Selected *string `json:"selected"`
+
+	// Status Square の status（PENDING / IN_PROGRESS / CANCEL_REQUESTED / CANCELED / COMPLETED）。依頼前は CREATING、依頼に失敗したら ERROR
+	Status    string    `json:"status"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SquareCheckoutConflictResponse defines model for SquareCheckoutConflictResponse.
@@ -897,6 +1147,14 @@ type StockResourceResponse struct {
 	Unit       string  `json:"unit"`
 }
 
+// GetCaosLogsParams defines parameters for GetCaosLogs.
+type GetCaosLogsParams struct {
+	Limit  *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                `form:"offset,omitempty" json:"offset,omitempty"`
+	TabId  *openapi_types.UUID `form:"tab_id,omitempty" json:"tab_id,omitempty"`
+	Event  *string             `form:"event,omitempty" json:"event,omitempty"`
+}
+
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
@@ -914,6 +1172,9 @@ type SwapCaosLanesJSONRequestBody = CaosLaneSwapRequest
 
 // PutCaosLaneJSONRequestBody defines body for PutCaosLane for application/json ContentType.
 type PutCaosLaneJSONRequestBody = CaosLaneUpdateRequest
+
+// CreateCaosLogsJSONRequestBody defines body for CreateCaosLogs for application/json ContentType.
+type CreateCaosLogsJSONRequestBody = CaosLogBatch
 
 // UpdateCashierStateJSONRequestBody defines body for UpdateCashierState for application/json ContentType.
 type UpdateCashierStateJSONRequestBody = CashierStateUpdateRequest
@@ -965,6 +1226,9 @@ type CreateOrderCommentJSONRequestBody = CommentCreateRequest
 
 // UpdatePrinterSettingsJSONRequestBody defines body for UpdatePrinterSettings for application/json ContentType.
 type UpdatePrinterSettingsJSONRequestBody = PrinterSettingsUpdateRequest
+
+// CreateSquareActionJSONRequestBody defines body for CreateSquareAction for application/json ContentType.
+type CreateSquareActionJSONRequestBody = SquareActionCreateRequest
 
 // CreateSquareCheckoutJSONRequestBody defines body for CreateSquareCheckout for application/json ContentType.
 type CreateSquareCheckoutJSONRequestBody = SquareCheckoutCreateRequest

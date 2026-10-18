@@ -1,5 +1,6 @@
 import {
   OrderEntity,
+  type WithId,
   cashierRepository,
   orderRepository,
   orderSchema,
@@ -12,18 +13,25 @@ import { useCallback, useEffect } from "react";
 import {
   type ClientActionFunction,
   type MetaFunction,
+  useOutletContext,
   useSubmit,
 } from "react-router";
 import useSWR from "swr";
 import { z } from "zod";
+import type {
+  HeaderOutletContext,
+  StatusBarHandle,
+} from "~/components/functional/connectionIssues";
 import {
   notifyOfflineOrders,
   saveOrderInBackground,
   sendUnsentOrders,
 } from "~/components/functional/saveOrderInBackground";
 import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
+import { useMissingOrderIdsAfterReconnect } from "~/components/functional/useMissingOrderIdsAfterReconnect";
 import { usePrinterAddresses } from "~/components/functional/usePrinterAddresses";
 import { useSquareDevice } from "~/components/functional/useSquareDevice";
+import { DiscardCouponDialog } from "~/components/molecules/DiscardCouponDialog";
 import { CashierV2 } from "~/components/pages/CashierV2";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
@@ -31,10 +39,15 @@ export const meta: MetaFunction = () => {
   return [{ title: "レジ / 珈琲・俺POS" }];
 };
 
+// つながっていないものはレジのヘッダーに出すので、上のバーは色だけにする
+export const handle: StatusBarHandle = { compactStatusBar: true };
+
 // コンポーネントではデータの取得と更新のみを行う
 export default function Cashier() {
   const { items } = useMenuMaster();
-  const { orders, status } = useOrdersWSContext();
+  // レジはキャンセルした注文も使う（番号を使い回さない・引換券・過去の注文に「キャンセル」と出す）
+  const { allOrders: orders, status, isOrdersLoaded } = useOrdersWSContext();
+  const { connectionIssues } = useOutletContext<HeaderOutletContext>();
   const { isDeviceOnline } = useDeviceOnlineStatus();
   const submit = useSubmit();
   // 今すぐ保存できるか（つながっているか）は端末とWebSocketで判定し、ヘッダーの/status監視には依存させない。
@@ -51,8 +64,17 @@ export default function Cashier() {
     }
   }, [canSaveNow, connecting]);
 
+  // オンラインに戻って溜めた注文を全部送れたら、切れている間にできた抜け番号の引換券を廃棄するよう案内する
+  const missing = useMissingOrderIdsAfterReconnect(
+    canSaveNow,
+    isOrdersLoaded ? orders : undefined,
+  );
+
   const submitPayload = useCallback(
-    (newOrder: OrderEntity) => saveOrderInBackground(newOrder, canSaveNow),
+    (
+      newOrder: OrderEntity,
+      onSaved?: (savedOrder: WithId<OrderEntity>) => void,
+    ) => saveOrderInBackground(newOrder, canSaveNow, onSaved),
     [canSaveNow],
   );
   // Square 連携が有効なときだけ、確定欄に Square のボタンを出す。
@@ -93,18 +115,27 @@ export default function Cashier() {
   );
 
   return (
-    <CashierV2
-      items={items}
-      orders={orders}
-      wsStatus={status}
-      canSaveNow={canSaveNow}
-      squareEnabled={squareEnabled}
-      squareDevice={squareDevice}
-      printerAddresses={printerAddresses}
-      submitPayload={submitPayload}
-      submitSquarePayload={submitSquarePayload}
-      syncOrder={syncOrder}
-    />
+    <>
+      <CashierV2
+        items={items}
+        orders={orders}
+        wsStatus={status}
+        connectionIssues={connectionIssues}
+        canSaveNow={canSaveNow}
+        squareEnabled={squareEnabled}
+        squareDevice={squareDevice}
+        printerAddresses={printerAddresses}
+        submitPayload={submitPayload}
+        submitSquarePayload={submitSquarePayload}
+        syncOrder={syncOrder}
+      />
+      <DiscardCouponDialog
+        ranges={missing.ranges}
+        description="つながっていない間に、注文の無い番号ができました。この番号の引換券は使わずに廃棄してください。"
+        note="ほかのレジが溜めた注文をまだ送っていなければ、送られた番号はこの一覧から消えます。"
+        onClose={missing.dismiss}
+      />
+    </>
   );
 }
 

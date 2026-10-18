@@ -1,19 +1,22 @@
 import type { CaosCard, CaosLane } from "@cafeore/common";
 import { useState } from "react";
 
+import { caosLog } from "../utils/log";
+import { useCaosStateLog } from "./useCaosStateLog";
+
 // 右上に出しておく秒。何もしなければ消える（確かめはやめる扱いで何も送らず、知らせは読んだ扱い）
 const SHOW_SEC = 8;
 
 /**
- * 抽出中のカードを終えたあとに始めるもの。head は待機の先頭（「次へ」）、none は何も始めない（抽出中のカードを押した）、
- * key はそのカード（押した待機のカード）
+ * 抽出中のカードを終えたあとに始めるもの。head は待機の先頭（カードの ✓）、none は何も始めない（カードの ✋）、
+ * key はそのカード（未着手のカードの ▶。抽出中は無い）
  */
 export type NextStart = "head" | "none" | { key: string };
 
 /**
  * 右上に出す確かめと知らせ（盤面の操作を止めない）
  *   - next（確かめ）：押し間違いかもしれない、抽出中のカードを終える操作（どのドリッパーの、どのカードを、始めてから何秒で終えようとしたか。
- *     start は終えたあとに始めるもの）。［やめる］［次へ進める］（終えるだけなら［終える］、押した待機のカードを始めるなら［終えて始める］）
+ *     start は終えたあとに始めるもの）。［やめる］［次へ進める］（終えるだけなら［終える］）
  *   - lateMerge（知らせ）：抽出を始めてから時間のたったカードへ統合した（card を into へ統合した。into は始めてから何秒か）。統合はもうしてあり、［閉じる］だけ
  *   - seniorOnly（知らせ）：上級生のみのカード（cards。まとめて移したときは何枚も）を、上級生でない担当者（lane）のドリッパーに置いた。［閉じる］だけ
  */
@@ -55,6 +58,9 @@ export const useCornerToasts = (nowMs: number) => {
     );
     return secondsLeft > 0 ? [{ ...toast, secondsLeft }] : [];
   });
+  useCaosStateLog("notice.active.changed", {
+    notices: open.map(({ id, kind }) => ({ id, kind })),
+  });
   const drop = (id: string) =>
     setShown((list) => list.filter((toast) => toast.id !== id));
 
@@ -67,6 +73,7 @@ export const useCornerToasts = (nowMs: number) => {
      */
     show: (toast: CornerToast, ops: string[] = []) => {
       const id = toastId(toast);
+      caosLog("notice.shown", { id, notice: toast, ops });
       const atMs = Date.now();
       setShown((list) => [
         { ...toast, id, ops, atMs },
@@ -79,7 +86,10 @@ export const useCornerToasts = (nowMs: number) => {
       return open.find((toast) => toast.id === id) ?? null;
     },
     /** 閉じる（確かめはやめる、知らせは読んだ） */
-    dismiss: drop,
+    dismiss: (id: string) => {
+      caosLog("notice.dismissed", { id });
+      drop(id);
+    },
     /** 端末に残した盤面の操作（entry）が断られて盤面が戻ったので、その操作の知らせを消す（id で引くので、同じ名前のほかの操作の知らせは残す） */
     forgetOp: (entry: { id: string }) =>
       setShown((list) => list.filter((toast) => !toast.ops.includes(entry.id))),
