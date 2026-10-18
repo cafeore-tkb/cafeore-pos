@@ -48,7 +48,8 @@ func categorizedCaosDetails(details json.RawMessage, category string) json.RawMe
 func (row CaosClientLog) MarshalJSON() ([]byte, error) {
 	type plain CaosClientLog
 	value := plain(row)
-	value.Details = categorizedCaosDetails(row.Details, CaosLogCategory(row.Event, row.Details))
+	details, _ := decodeCaosClientLogDetails(row.Details)
+	value.Details = categorizedCaosDetails(details, CaosLogCategory(row.Event, details))
 	return json.Marshal(value)
 }
 

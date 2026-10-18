@@ -17,6 +17,10 @@
 
 `/master-sheet` のログは端末に残してから `POST /api/caos/logs` でDBに保存します。コンソールには出しません。通信に失敗したログは残し、接続回復後に再送します。同じ `(tabId, sequence)` の再送はDBで重複保存しません。
 
+古いコメントキーなどに NUL（`U+0000`）が含まれる場合、DB の `jsonb` が受け付けないため、API は元の details の JSON を文字列として包んで保存します。GET・書き出しでは元の details に復元します。通常のログの保存形式、コメントキー、既読判定は変えません。古い画面から滞留ログが再送されても、1件の特殊文字で後続ログ全体が止まらないようにします。
+
+実機の保存容量不足・タブ間の送信停止とログ救出は [2026-10-18の調査記録](./SAVE_INCIDENT_20261018.md) を参照してください。
+
 POSトップ画面から開く「各種データ書き出し」の「CaOS 操作ログ」にある「ログを保存」で、DBのログをJSONファイルとしてダウンロードできます。`GET /api/caos/logs/export` は同じDBスナップショットで全件を書き出し、ファイルが完成してから返します。JSONの `entries` は端末イベント、`operations` は成功した盤面操作、`cups` はcup単位の履歴、`exportedAt` は書き出し時刻です。未送信の端末ログは、DBへの送信が済んでからの書き出しに含まれます。
 
 一覧取得は `GET /api/caos/logs?limit=100&offset=0` です。`event=ui.click` や `tab_id=UUID` で絞り込めます。応答は `{ entries, limit, offset, hasMore }`、新しい時刻順です。`limit` は1〜1000、`hasMore` が true なら `offset` を進めて続きを読みます。
