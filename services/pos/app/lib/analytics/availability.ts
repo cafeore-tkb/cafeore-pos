@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { FlowBucket } from "./operations";
+import type { BucketMinutes, FlowBucket } from "./operations";
 const observation = z.object({
   at: z.string().datetime({ offset: true }),
   availableMenus: z.number().int().nonnegative(),
@@ -10,7 +10,9 @@ export type AvailabilityObservation = z.infer<typeof observation>;
 export const availabilityComparison = (
   input: AvailabilityObservation[],
   buckets: FlowBucket[],
+  intervalMinutes: BucketMinutes = 15,
 ) => {
+  const intervalMs = intervalMinutes * 60000;
   const observations = [
     ...new Map(input.map((v) => [Date.parse(v.at), v])).values(),
   ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
@@ -26,7 +28,7 @@ export const availabilityComparison = (
           count = point.availableMenus;
           continue;
         }
-        if (at >= bucket.at + 900_000) break;
+        if (at >= bucket.at + intervalMs) break;
         if (count === null) return { ...bucket, availableMenus: null };
         exposure += (at - cursor) * count;
         cursor = at;
@@ -37,7 +39,8 @@ export const availabilityComparison = (
         availableMenus:
           count === null
             ? null
-            : (exposure + (bucket.at + 900_000 - cursor) * count) / 900_000,
+            : (exposure + (bucket.at + intervalMs - cursor) * count) /
+              intervalMs,
       };
     });
 };

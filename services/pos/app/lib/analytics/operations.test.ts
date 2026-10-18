@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { availabilityComparison, availabilitySchema } from "./availability";
 import { evidenceRows, reviewEvidence } from "./evidence";
+import { flowCsv } from "./flowCsv";
 import { historicalOrders, load2025Baseline } from "./historical";
 import {
   type AnalysisOrder,
@@ -289,4 +290,162 @@ describe("unit operations analytics", () => {
       expect(report.total.cdf.at(-1)?.percent).toBe(100);
     }
   });
+});
+
+describe("unit 可変の集計間隔", () => {
+  test.each([5, 60] as const)(
+    "%i分境界で注文・提供を分け、終端を含めず空枠も残す",
+    (minutes) => {
+      const width = minutes * 60000;
+      const end = T + 3 * width;
+      const report = operationsReport(
+        [
+          order("1", T, [cup("a", T + 1, T + width)]),
+          order("2", T + width, [cup("b")]),
+          order("3", end, [cup("excluded")]),
+        ],
+        { start: T, end, now: end },
+        minutes,
+      );
+      expect(report.intervalMinutes).toBe(minutes);
+      expect(
+        report.buckets.map((b) => [
+          b.at,
+          b.received,
+          b.served,
+          b.backlog,
+          b.complete,
+        ]),
+      ).toEqual([
+        [T, 1, 0, 1, true],
+        [T + width, 1, 1, 1, true],
+        [T + 2 * width, 0, 0, 1, true],
+      ]);
+      expect(report.buckets.map((b) => b.acceleration)).toEqual([null, -1, 0]);
+      expect(report.received).toBe(2);
+      expect(report.served).toBe(1);
+    },
+  );
+
+  test.each([5, 60] as const)(
+    "%i分枠と揃わない開始でも持越し・提供・取消を欠落させない",
+    (minutes) => {
+      const width = minutes * 60000;
+      const start = T + 7 * 60000 + 123;
+      const end = start + 2 * width;
+      const report = operationsReport(
+        [
+          order("1", start - 1, [cup("carry", start, start + 1)]),
+          order("2", start, [cup("a", start + 1, start + width)]),
+          order("3", start + width, [cup("b")], start + width + 1),
+          order("4", end, [cup("excluded")]),
+        ],
+        { start, end, now: end },
+        minutes,
+      );
+      expect(report.openingBacklog).toBe(1);
+      expect(
+        report.buckets.map((b) => [
+          b.at,
+          b.received,
+          b.served,
+          b.cancelled,
+          b.backlog,
+        ]),
+      ).toEqual([
+        [start, 1, 1, 0, 1],
+        [start + width, 1, 1, 1, 0],
+      ]);
+      expect(report.received).toBe(2);
+      expect(report.served).toBe(2);
+      expect(report.cancelledCups).toBe(1);
+      expect(report.backlog).toBe(0);
+    },
+  );
+
+  test.each([5, 60] as const)(
+    "%i分でも未完了の枠は前枠との差から除く",
+    (minutes) => {
+      const width = minutes * 60000;
+      const report = operationsReport(
+        [order("1", T, [cup("a", T + 1, T + width + 1)])],
+        {
+          start: T,
+          end: T + 3 * width,
+          now: T + 1.5 * width,
+        },
+        minutes,
+      );
+      expect(
+        report.buckets.map((b) => [b.served, b.complete, b.acceleration]),
+      ).toEqual([
+        [0, true, null],
+        [1, false, null],
+      ]);
+      expect(report.latest?.at).toBe(T);
+    },
+  );
+
+  test.each([5, 60] as const)(
+    "販売可能数も%i分幅で時間加重し、境界・未計測・途中枠を区別する",
+    (minutes) => {
+      const width = minutes * 60000;
+      const start = T + 7 * 60000 + 123;
+      const buckets = operationsReport(
+        [],
+        { start, end: start + 3 * width, now: start + 2.5 * width },
+        minutes,
+      ).buckets;
+      const observations = [
+        { at: new Date(start).toISOString(), availableMenus: 8 },
+        { at: new Date(start + width / 2).toISOString(), availableMenus: 4 },
+        { at: new Date(start + width).toISOString(), availableMenus: 6 },
+        { at: new Date(start + 1.5 * width).toISOString(), availableMenus: 2 },
+      ];
+      const compared = availabilityComparison(observations, buckets, minutes);
+      expect(compared.map((b) => [b.at, b.availableMenus])).toEqual([
+        [start, 6],
+        [start + width, 4],
+      ]);
+      expect(
+        availabilityComparison(observations.slice(1), buckets, minutes).map(
+          (b) => b.availableMenus,
+        ),
+      ).toEqual([null, 4]);
+    },
+  );
+});
+
+test("unit CSVの既存8列を保ち、集計間隔だけ末尾に追加する", () => {
+  const csv = flowCsv(
+    [
+      {
+        at: T,
+        received: 3,
+        served: 1,
+        backlog: 5,
+        cancelled: 1,
+        net: 1,
+        acceleration: null,
+        complete: false,
+      },
+    ],
+    60,
+  );
+  const [header, row] = csv.split("\n").map((line) => line.split(","));
+  expect(header.slice(0, 8)).toEqual([
+    "日時(JST)",
+    "受注杯数",
+    "提供杯数",
+    "未提供杯数",
+    "キャンセル未提供杯数",
+    "未提供増減",
+    "混み合い加速度",
+    "枠確定",
+  ]);
+  expect(row.slice(1, 8)).toEqual(["3", "1", "5", "1", "1", "", "途中"]);
+  expect(header).toHaveLength(9);
+  expect(row).toHaveLength(9);
+  expect(header.at(-1)).toBe("集計間隔(分)");
+  expect(row.at(-1)).toBe("60");
 });

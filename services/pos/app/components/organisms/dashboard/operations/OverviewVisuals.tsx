@@ -61,7 +61,9 @@ export function OverviewVisuals({
             <TrendIcon className="h-7 w-7" />
           </span>
           <div>
-            <p className="text-stone-600 text-xs">直近の15分・集計済み</p>
+            <p className="text-stone-600 text-xs">
+              直近の{report.intervalMinutes}分・集計済み
+            </p>
             <h4 className="mt-1 font-bold text-lg">
               {net === undefined
                 ? "集計がたまると混み具合を表示します"
@@ -73,11 +75,11 @@ export function OverviewVisuals({
             </h4>
             <p className="mt-1 text-sm">
               {net === undefined
-                ? "営業開始直後は、最初の15分が終わるまでお待ちください。"
+                ? `最初の${report.intervalMinutes}分が終わるまでお待ちください。`
                 : `待ちの増減 ${net > 0 ? "+" : ""}${net}杯`}
               {change !== undefined &&
                 change !== null &&
-                ` ／ 前の15分との差 ${change > 0 ? "+" : ""}${change}杯`}
+                ` ／ 前の${report.intervalMinutes}分との差 ${change > 0 ? "+" : ""}${change}杯`}
             </p>
           </div>
         </div>

@@ -15,9 +15,11 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
+import { flowCsv } from "~/lib/analytics/flowCsv";
 import { historicalOrders, load2025Baseline } from "~/lib/analytics/historical";
 import {
   type AnalysisOrder,
+  type BucketMinutes,
   type TimeWindow,
   dayWindow,
   liveAnalysisOrders,
@@ -105,6 +107,7 @@ export function OperationsDashboard({
   const [endTime, setEndTime] = useState("24:00");
   const [view, setView] = useState("summary");
   const panelId = useId();
+  const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [mode, setMode] = useState<Mode>("floor");
   const [reference, setReference] = useState<AnalysisOrder[]>([]);
   const [referenceInfo, setReferenceInfo] = useState("");
@@ -139,31 +142,39 @@ export function OperationsDashboard({
   const extraPanels = validPeriod ? (additionalPanels?.(window) ?? []) : [];
   const views = [...VIEWS, ...extraPanels];
   const report = useMemo(
-    () => operationsReport(orders, window),
-    [orders, window],
+    () => operationsReport(orders, window, intervalMinutes),
+    [orders, window, intervalMinutes],
   );
   const handoffEnd =
     Math.floor(Math.min(window.end, now) / 3_600_000) * 3_600_000;
   const handoffStart = Math.max(window.start, handoffEnd - 3_600_000);
   const handoff = useMemo(
     () =>
-      operationsReport(orders, { start: handoffStart, end: handoffEnd, now }),
-    [orders, handoffStart, handoffEnd, now],
+      operationsReport(
+        orders,
+        { start: handoffStart, end: handoffEnd, now },
+        intervalMinutes,
+      ),
+    [orders, handoffStart, handoffEnd, now, intervalMinutes],
   );
   const baseline = useMemo(
     () =>
       referenceDate
-        ? operationsReport(reference, {
-            start:
-              dayWindow(referenceDate, now).start +
-              (window.start - dayWindow(date, now).start),
-            end:
-              dayWindow(referenceDate, now).start +
-              (window.end - dayWindow(date, now).start),
-            now: Number.POSITIVE_INFINITY,
-          })
+        ? operationsReport(
+            reference,
+            {
+              start:
+                dayWindow(referenceDate, now).start +
+                (window.start - dayWindow(date, now).start),
+              end:
+                dayWindow(referenceDate, now).start +
+                (window.end - dayWindow(date, now).start),
+              now: Number.POSITIVE_INFINITY,
+            },
+            intervalMinutes,
+          )
         : null,
-    [reference, referenceDate, window, date, now],
+    [reference, referenceDate, window, date, now, intervalMinutes],
   );
   useEffect(() => {
     if (isOrdersLoaded) setSnapshot({ at: Date.now(), orders: orders.length });
@@ -178,7 +189,7 @@ export function OperationsDashboard({
       : last.net < 0
         ? "お渡し待ちを減らせています"
         : "待っている杯数は横ばいです"
-    : "最初の15分を集計中";
+    : `最初の${intervalMinutes}分を集計中`;
   const loadBaseline = async () => {
     setLoading(true);
     setFailure("");
@@ -196,21 +207,7 @@ export function OperationsDashboard({
     }
   };
   const exportFlow = () => {
-    const csv = [
-      "日時(JST),受注杯数,提供杯数,未提供杯数,キャンセル未提供杯数,未提供増減,混み合い加速度,枠確定",
-      ...report.buckets.map((b) =>
-        [
-          `${jstDate(b.at)} ${jstClock(b.at)}`,
-          b.received,
-          b.served,
-          b.backlog,
-          b.cancelled,
-          b.net,
-          b.acceleration ?? "",
-          b.complete ? "確定" : "途中",
-        ].join(","),
-      ),
-    ].join("\n");
+    const csv = flowCsv(report.buckets, intervalMinutes);
     const url = URL.createObjectURL(
       new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }),
     );
@@ -239,18 +236,12 @@ export function OperationsDashboard({
           <div>
             <h2 className="font-bold text-xl">お店のダッシュボード</h2>
             <p className="mt-1 text-muted-foreground text-xs">
-              注文・お渡しの記録から、営業の様子を15分ごとに。
+              注文・お渡しの記録から、営業の様子を{intervalMinutes}分ごとに。
             </p>
           </div>
         </div>
-        <details open={!compact}>
-          <summary
-            className={
-              compact
-                ? "cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs"
-                : "hidden"
-            }
-          >
+        <details>
+          <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
             期間を変える：{date} {startTime}〜
             {throughDate !== date ? `${throughDate} ` : ""}
             {endTime}
@@ -284,6 +275,25 @@ export function OperationsDashboard({
           / 現在 {jstClock(now)}
         </p>
       </header>
+      <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+        <legend className="px-1 font-bold text-xs">
+          時系列グラフの集計間隔
+        </legend>
+        {([5, 15, 60] as const).map((minutes) => (
+          <button
+            key={minutes}
+            type="button"
+            aria-pressed={intervalMinutes === minutes}
+            onClick={() => setIntervalMinutes(minutes)}
+            className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
+          >
+            {minutes === 60 ? "1時間" : `${minutes}分`}
+          </button>
+        ))}
+        <span className="text-stone-500 text-xs">
+          注文・お渡し・混雑・メニュー比較に反映。提供時間の分布は変わりません。
+        </span>
+      </fieldset>
       <section>
         <div
           className="-mb-px relative z-[1] flex overflow-x-auto pt-1"
@@ -436,15 +446,19 @@ export function OperationsDashboard({
                     <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
                       <h3 className="font-bold">{trend}</h3>
                       <p className="mt-2 text-sm">
-                        直近15分：待ち {signed(last?.net ?? null)}杯 ／
-                        増え方の変化 {signed(last?.acceleration ?? null)}杯
+                        直近{intervalMinutes}分：待ち{" "}
+                        {signed(last?.net ?? null)}杯 ／ 増え方の変化{" "}
+                        {signed(last?.acceleration ?? null)}杯
                       </p>
                       <details className="mt-2 text-stone-500 text-xs">
                         <summary className="cursor-pointer">
                           この数字の見方
                         </summary>
                         <p className="mt-2">
-                          待ちの増減＝注文−お渡し−まだ渡していない取消分。その増減を前の15分と比べた差が「混み合い加速度」です。マイナスでも待ちの杯数そのものは増える場合があります。途中の15分は比較しません。直近枠：
+                          待ちの増減＝注文−お渡し−まだ渡していない取消分。その増減を前の
+                          {intervalMinutes}
+                          分と比べた差が「混み合い加速度」です。マイナスでも待ちの杯数そのものは増える場合があります。途中の
+                          {intervalMinutes}分は比較しません。直近枠：
                           {last
                             ? `${jstDate(last.at)} ${jstClock(last.at).slice(0, 5)}〜`
                             : "集計待ち"}
@@ -465,10 +479,11 @@ export function OperationsDashboard({
                           className="underline"
                           onClick={exportFlow}
                         >
-                          15分集計CSVを保存
+                          {intervalMinutes}分集計CSVを保存
                         </button>
                       </div>
                       <FlowCharts
+                        intervalMinutes={intervalMinutes}
                         buckets={report.buckets}
                         chart={
                           view === "acceleration" ? "acceleration" : "flow"
@@ -650,7 +665,10 @@ export function OperationsDashboard({
                     </section>
                   )}
                   {view === "availability" && (
-                    <AvailabilityReview buckets={report.buckets} />
+                    <AvailabilityReview
+                      buckets={report.buckets}
+                      intervalMinutes={intervalMinutes}
+                    />
                   )}
                   {view === "logs" && (
                     <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5">
@@ -779,7 +797,10 @@ export function OperationsDashboard({
                               note={`${baseline.received}杯 / お渡しまでの真ん中${minutes(baseline.total.p50)}`}
                             />
                           </div>
-                          <FlowCharts buckets={baseline.buckets} />
+                          <FlowCharts
+                            buckets={baseline.buckets}
+                            intervalMinutes={intervalMinutes}
+                          />
                           <DurationCharts
                             stats={baseline.total}
                             compact={compact}
@@ -796,7 +817,8 @@ export function OperationsDashboard({
                   数字の見方・分かること／分からないこと
                 </summary>
                 <p className="mt-2">
-                  日本時間で15分ごとに数えます。開始時刻ちょうどを含み、終了時刻ちょうどは次の期間に入ります。杯数は飲み物だけ。グッズと入れ直しは新しい杯数に足しません。取消前の注文も注文杯数に残し、まだ渡す前の取消分は待ちから減らします。売上と提供時間は、この期間に受けた注文が対象です。後から注文を直すと数字も変わります。まだ届いていない記録は含みません。
+                  日本時間で{intervalMinutes}
+                  分ごとに数えます。開始時刻ちょうどを含み、終了時刻ちょうどは次の期間に入ります。杯数は飲み物だけ。グッズと入れ直しは新しい杯数に足しません。取消前の注文も注文杯数に残し、まだ渡す前の取消分は待ちから減らします。売上と提供時間は、この期間に受けた注文が対象です。後から注文を直すと数字も変わります。まだ届いていない記録は含みません。
                 </p>
                 <p className="mt-2">
                   この画面だけでは分からないこと：すべてのボタン操作、品切れ・再開の全記録、誰が何時間働いたか、原価や利益。記録忘れもあり得ます。個人の評価や、これから何人来るかの予測はしません。
