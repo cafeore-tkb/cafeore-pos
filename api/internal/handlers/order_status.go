@@ -241,7 +241,17 @@ func (h *OrderHandler) changeOrderStatus(c *gin.Context, change func(order *mode
 		if err := change(&order, time.Now().Truncate(time.Microsecond)); err != nil {
 			return err
 		}
-		return saveOrderStatus(tx, &before, &order)
+		if err := saveOrderStatus(tx, &before, &order); err != nil {
+			return err
+		}
+		changed := changedCupStatuses(&before, &order)
+		if len(changed) == 0 {
+			return nil
+		}
+		now := time.Now()
+		return recordServiceOperation(tx, "order.status.changed", now, now, map[string]any{
+			"orderId": order.ID, "orderNo": order.OrderId, "cups": changed,
+		})
 	})
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):

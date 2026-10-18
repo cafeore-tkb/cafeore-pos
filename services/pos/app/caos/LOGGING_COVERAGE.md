@@ -76,3 +76,9 @@ GET `/api/caos/logs` と保存JSONの entries / operations に `details.category
 - 既存行も出力時にイベント名から分類する。分類は操作者の認証・本人証明ではない。未知イベントは system。新しいDOMログの isTrusted=false は system。古いDOMログにはこの情報がないためイベント名で推定する。
 - scroll は自動スクロールでも発火するため system。状態の changed は原則 system（明示的操作のハンドラー内だけで記録する音設定などを除く）。
 - 人間の操作だけを読む場合は entries から `details.category == "human"` を抽出する。処理成功まで追う場合は system の結果ログと operations も参照する。保存先DBのログ自体は削除・抑制しない。
+
+## レジ・準備・提供の成功履歴（運営分析追加後）
+
+- `order.created`: 新しい受注の保存と同じトランザクションで記録。注文ID・番号・カップ数・請求額。冪等キーの再送で重複生成しない。occurred_atは受注時刻、recorded_atはサーバー保存時刻。
+- `order.status.changed`: 準備完了・提供・その取消の保存と同じトランザクションで記録。変更したカップだけのready/servedの変更前後を残す。無変更や失敗は成功として残さない。
+- 既存のoperationsと同じ保存JSONから取得できる。更新した画面・役割・個人はこの成功履歴だけでは特定しない。既存注文から過去のログを遡及生成しない。全レジ・提供のUIクリック履歴を捕捉するものではない。
