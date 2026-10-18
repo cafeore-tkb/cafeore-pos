@@ -70,6 +70,18 @@ export const menuColor = (
 export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
   const { colorSettings } = useColorSettings();
   const groups = groupByItemType(menus);
+  // ホットなどの既存の並びを保ち、アイス・ミルクとその他はそれぞれ独立した段へ。
+  const lowerRow = ({ itemType }: MenuGroup) =>
+    itemType.iced_brew || itemType.name === "ice" || itemType.name === "milk";
+  const otherRow = ({ itemType }: MenuGroup) => itemType.name === "others";
+  const rows = [
+    {
+      key: "main",
+      groups: groups.filter((group) => !lowerRow(group) && !otherRow(group)),
+    },
+    { key: "ice-milk", groups: groups.filter(lowerRow) },
+    { key: "others", groups: groups.filter(otherRow) },
+  ];
   const exampleKeys = exampleMenuKeys(menus);
 
   return (
@@ -81,49 +93,56 @@ export const MenuPanel = ({ menus, onAdd, disabled }: props) => {
       )}
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-2">
-        <div className="grid grid-flow-row-dense grid-cols-4 gap-x-2.5 gap-y-3.5">
-          {groups.map(({ itemType, menus }) => {
-            const span = Math.min(menus.length, COLUMNS);
-            const typeColor =
-              resolveItemColor(
-                colorSettings,
-                { item_type: itemType },
-                "cashier",
-              ) ?? NO_COLOR;
-            return (
-              <div
-                key={itemType.id ?? itemType.name}
-                className="flex min-w-0 flex-col gap-2"
-                style={{ gridColumn: `span ${span}` }}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 flex-none rounded-[3px]"
-                    style={{ backgroundColor: typeColor }}
-                  />
-                  <span className="truncate font-bold text-[13px] text-stone-600 tracking-[.06em]">
-                    {itemType.display_name}
-                  </span>
-                </div>
-                <div
-                  className="grid gap-2.5"
-                  style={{
-                    gridTemplateColumns: `repeat(${span}, minmax(0, 1fr))`,
-                  }}
-                >
-                  {menus.map((menu) => (
-                    <MenuButton
-                      key={menu.id}
-                      menu={menu}
-                      color={menuColor(colorSettings, menu)}
-                      disabled={disabled}
-                      onAdd={onAdd}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        <div className="flex flex-col gap-3.5">
+          {rows.map((row) => (
+            <div
+              key={row.key}
+              className="grid grid-cols-4 items-start gap-x-2.5 gap-y-3.5 empty:hidden"
+            >
+              {row.groups.map(({ itemType, menus }) => {
+                const span = Math.min(menus.length, COLUMNS);
+                const typeColor =
+                  resolveItemColor(
+                    colorSettings,
+                    { item_type: itemType },
+                    "cashier",
+                  ) ?? NO_COLOR;
+                return (
+                  <div
+                    key={itemType.id ?? itemType.name}
+                    className="flex min-w-0 flex-col gap-2"
+                    style={{ gridColumn: `span ${span}` }}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 flex-none rounded-[3px]"
+                        style={{ backgroundColor: typeColor }}
+                      />
+                      <span className="truncate font-bold text-[13px] text-stone-600 tracking-[.06em]">
+                        {itemType.display_name}
+                      </span>
+                    </div>
+                    <div
+                      className="grid gap-2.5"
+                      style={{
+                        gridTemplateColumns: `repeat(${span}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {menus.map((menu) => (
+                        <MenuButton
+                          key={menu.id}
+                          menu={menu}
+                          color={menuColor(colorSettings, menu)}
+                          disabled={disabled}
+                          onAdd={onAdd}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
       <RegisterKeyHints exampleKeys={exampleKeys} className="px-5 pb-3.5" />
