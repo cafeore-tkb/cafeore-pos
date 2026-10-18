@@ -123,7 +123,13 @@ export function DurationCharts({
                   strokeDasharray="4 4"
                   label={{ value: "15分", fill: "#c2410c", fontSize: 11 }}
                 />
-                <Tooltip />
+                <Tooltip
+                  labelFormatter={(value) => `${Number(value).toFixed(2)}分`}
+                  formatter={(value: number) => [
+                    `${Number(value).toFixed(2)}%`,
+                    "この時間までに渡せた割合",
+                  ]}
+                />
                 <Line
                   type="stepAfter"
                   dataKey="percent"
