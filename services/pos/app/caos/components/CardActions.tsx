@@ -1,4 +1,4 @@
-import type { CaosCard } from "@cafeore/common";
+import { type CaosCard, caosCardServed } from "@cafeore/common";
 import type React from "react";
 import type { CardMenu } from "../hooks/useCardMenu";
 import finishBrewIcon from "../icons/finish-brew.svg";
@@ -55,6 +55,7 @@ export const CardOverlay: React.FC<{
   inset?: string;
 }> = ({ card, lane, look, nowMs, menu, inset = "0px" }) => {
   const ready = cardStage(card, lane) === "ready";
+  const servedRecovery = card.status === "brewing" && caosCardServed(card);
   return (
     <>
       {ready && (
@@ -67,6 +68,24 @@ export const CardOverlay: React.FC<{
             />
           )}
         </span>
+      )}
+      {servedRecovery && menu && !menu.isOpen(card) && (
+        <button
+          type="button"
+          aria-label="提供済み：抽出を終える（待機の先頭を始める）"
+          title="提供済み：確認なしで抽出を終える"
+          style={{ left: `max(calc(${inset} + 4px), calc(50% - 20px))` }}
+          className="absolute bottom-0 z-[90] flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-white shadow-lg active:scale-90"
+          onClick={(event) => {
+            event.stopPropagation();
+            menu.run(card, "finish", event.currentTarget);
+          }}
+        >
+          <Icon
+            src={finishBrewIcon}
+            className="caos-served-finish h-full w-full"
+          />
+        </button>
       )}
       {menu?.isOpen(card) && (
         <div
@@ -96,7 +115,12 @@ export const CardOverlay: React.FC<{
                   }}
                   className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-white font-black text-lg text-slate-950 active:scale-90 disabled:opacity-40"
                 >
-                  {target ?? <Icon src={icon.src} className="h-full w-full" />}
+                  {target ?? (
+                    <Icon
+                      src={icon.src}
+                      className={`h-full w-full ${action === "finish" && servedRecovery ? "caos-served-finish" : ""}`}
+                    />
+                  )}
                 </button>
               );
             })}
