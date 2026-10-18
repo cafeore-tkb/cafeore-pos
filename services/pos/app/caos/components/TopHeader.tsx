@@ -11,6 +11,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import type React from "react";
+import { useEffect, useState } from "react";
 import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
@@ -88,6 +89,7 @@ interface TopHeaderProps {
     pendingCount: number;
     retry: () => void;
     relayedCount: number;
+    relayAvailable?: boolean;
   };
   /** この端末のまだ送れていない盤面の操作と、送り直し・消す */
   unsent: ReturnType<typeof useCaosOutboxSender>;
@@ -198,6 +200,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenEmergency,
   lastAction,
 }) => {
+  // 「隠す」は現在の未接続にだけ適用し、接続状態が変わったら解除する。
+  const [printerWarningHidden, setPrinterWarningHidden] = useState(false);
+  useEffect(() => {
+    if (labelPrinter.status !== "disconnected") {
+      setPrinterWarningHidden(false);
+    }
+  }, [labelPrinter.status]);
+  const showPrinterWarning =
+    labelPrinter.status === "disconnected" &&
+    !labelPrinter.relayAvailable &&
+    !printerWarningHidden;
   const minute = new Date(nowMs).getUTCMinutes();
   const shiftReminder =
     minute >= 55 ? "シフト交換5分前" : minute >= 50 ? "シフト交換10分前" : null;
@@ -212,17 +225,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
       <FloatingStatusNotices
         active={
-          labelPrinter.status === "disconnected" ||
+          showPrinterWarning ||
           unsent.entries.length > 0 ||
-          labelPrinter.pendingCount > 0
+          labelPrinter.pendingCount > 0 ||
+          labelPrinter.relayedCount > 0
         }
       >
-        {labelPrinter.status === "disconnected" && (
-          <PrinterStatus
-            name="ラベル"
-            status={labelPrinter.status}
-            certificateUrl={labelPrinter.certificateUrl}
-          />
+        {showPrinterWarning && (
+          <div className="flex items-center gap-3">
+            <PrinterStatus
+              name="ラベル"
+              status={labelPrinter.status}
+              certificateUrl={labelPrinter.certificateUrl}
+            />
+            <button
+              type="button"
+              onClick={() => setPrinterWarningHidden(true)}
+              className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-slate-700 text-sm hover:bg-slate-100"
+              aria-label="プリンター未接続の警告を隠す"
+            >
+              隠す
+            </button>
+          </div>
         )}
         <UnsentOps
           entries={unsent.entries}
