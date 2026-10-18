@@ -209,21 +209,28 @@ html:has(.caos-root) body {
   }
 }
 
-/* 録音中の操作元を控えめな揺れで示す。盤面全体の操作はブロックしない。 */
+/* 録音中のボタンを大きく速く揺らし、閉じる前に停止が必要なことを示す。 */
 @keyframes caos-voice-recording {
   0%,
   100% {
-    transform: rotate(0deg);
+    transform: translateX(0) rotate(0deg);
   }
-  25% {
-    transform: rotate(-2deg);
+  20% {
+    transform: translateX(-4px) rotate(-8deg);
   }
-  75% {
-    transform: rotate(2deg);
+  40% {
+    transform: translateX(4px) rotate(8deg);
+  }
+  60% {
+    transform: translateX(-3px) rotate(-6deg);
+  }
+  80% {
+    transform: translateX(3px) rotate(6deg);
   }
 }
 .caos-root .caos-voice-recording {
-  animation: caos-voice-recording 1.4s ease-in-out infinite;
+  transform-origin: 50% 70%;
+  animation: caos-voice-recording 0.42s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .caos-root .caos-voice-recording {
