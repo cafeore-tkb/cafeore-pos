@@ -1,5 +1,5 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import { Clock3, type LucideIcon, Pause, Play, Plus } from "lucide-react";
+import { Clock3, type LucideIcon, Pause, Play, Plus, X } from "lucide-react";
 import type React from "react";
 import { Button } from "~/components/ui/button";
 import type { OpenCornerToast } from "../hooks/useCornerToasts";
@@ -7,6 +7,7 @@ import { longWaitMinutes } from "../logic/alerts";
 import { orderAndCupCounts, orderLabel } from "../logic/cards";
 import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus } from "../logic/queue";
+import { useFloatingWindow } from "./FloatingWindows";
 
 // 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
@@ -202,38 +203,69 @@ export const CornerToasts: React.FC<{
       className="caos-corner-toasts pointer-events-none fixed top-[64px] z-[160] flex w-[400px] flex-col gap-2"
     >
       {toasts.map((toast) => {
-        const { label, title, body, action, frame } = toastText(toast);
         return (
-          <section
+          <CornerNotice
             key={toast.id}
-            role={action ? "alertdialog" : "status"}
-            aria-label={label}
-            className={`fade-in-75 slide-in-from-right pointer-events-auto animate-in rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl duration-200 ${frame}`}
-          >
-            <h2 className="font-black text-[16px]">{title}</h2>
-            <p className="mt-1 font-bold text-[13px]">{body}</p>
-            <div className="mt-2 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => onDismiss(toast.id)}
-                className="h-11 touch-manipulation font-bold"
-              >
-                {action ? "やめる" : "閉じる"}（{toast.secondsLeft}）
-              </Button>
-              {action && (
-                <Button
-                  onClick={() => onConfirm(toast.id)}
-                  className="h-11 touch-manipulation font-bold"
-                >
-                  {action}
-                </Button>
-              )}
-            </div>
-          </section>
+            toast={toast}
+            onDismiss={onDismiss}
+            onConfirm={onConfirm}
+          />
         );
       })}
     </div>
   );
+
+const CornerNotice: React.FC<{
+  toast: OpenCornerToast;
+  onDismiss: (id: string) => void;
+  onConfirm: (id: string) => void;
+}> = ({ toast, onDismiss, onConfirm }) => {
+  const { label, title, body, action, frame } = toastText(toast);
+  const floating = useFloatingWindow(title);
+  return (
+    <section
+      ref={(element) => {
+        floating.ref.current = element;
+      }}
+      style={floating.style}
+      data-popup-hidden={floating.hidden}
+      role={action ? "alertdialog" : "status"}
+      aria-label={label}
+      className={`pointer-events-auto rounded-xl border-2 bg-white p-3 text-slate-950 shadow-2xl ${frame}`}
+    >
+      <header className="flex items-center gap-1">
+        {floating.handle}
+        <h2 className="min-w-0 flex-1 font-black text-[16px]">{title}</h2>
+        <button
+          type="button"
+          onClick={floating.hide}
+          aria-label="通知を非表示"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md hover:bg-slate-100"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </header>
+      <p className="mt-1 font-bold text-[13px]">{body}</p>
+      <div className="mt-2 flex justify-end gap-2">
+        <Button
+          variant="outline"
+          onClick={() => onDismiss(toast.id)}
+          className="h-11 touch-manipulation font-bold"
+        >
+          {action ? "やめる" : "確認済み"}
+        </Button>
+        {action && (
+          <Button
+            onClick={() => onConfirm(toast.id)}
+            className="h-11 touch-manipulation font-bold"
+          >
+            {action}
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+};
 
 /** 空きスロット。未割当カードの選択中は直接割当し、未選択なら割当パネルを開く */
 export const EmptySlotButton: React.FC<{

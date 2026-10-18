@@ -20,7 +20,7 @@ export const useOutsidePress = (
     const handleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       // 右下のコメントの置き場（CommentDock）は盤面の上に重ねたもので、押しても開いているものを閉じない
-      if (target.closest("[data-comment-dock]")) return;
+      if (target.closest("[data-comment-dock], [data-popup-tray]")) return;
       if (latest.current.isInside(target)) return;
       latest.current.onOutside();
       if (!swallow) return;
@@ -70,7 +70,12 @@ export const usePanelOutsidePress = (
     enabled,
     (target) => {
       const panel = ref.current;
-      if (!panel || panel.contains(target)) return true;
+      if (
+        !panel ||
+        panel.closest("[data-popup-hidden='true']") ||
+        panel.contains(target)
+      )
+        return true;
       const layer = target.closest(LAYERS);
       return layer !== null && !layer.contains(panel);
     },

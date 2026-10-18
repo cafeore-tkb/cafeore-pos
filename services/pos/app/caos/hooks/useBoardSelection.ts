@@ -1,15 +1,15 @@
 import type { CaosCard, CaosPlace } from "@cafeore/common";
-import { useEffect, useState } from "react";
+import { type SetStateAction, useCallback, useEffect, useState } from "react";
 import type { AuxiliaryTab } from "../components/SidePanels";
 import { orderLabel } from "../logic/cards";
 import { useCaosStateLog } from "./useCaosStateLog";
 
 /**
- * 開いている右のパネル（同じ位置に出るので、開くのはいつも 1 つ。どれかを開くと前のものは閉じる）。
+ * 操作パネル。選択中の1つを表示し、ほかは入力を保って非表示にする。明示的な終了・取消で除く。
  * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
  */
-type OpenPanel =
+export type OpenPanel =
   | { kind: "detail"; key: string }
   | { kind: "rebrew"; key: string | null }
   | { kind: "assign"; bayId: number }
@@ -17,6 +17,15 @@ type OpenPanel =
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | { kind: "search"; digits: string }
   | null;
+
+const panelKey = (item: NonNullable<OpenPanel>) =>
+  item.kind === "detail" || item.kind === "rebrew"
+    ? `${item.kind}:${item.key}`
+    : item.kind === "lane" || item.kind === "assign"
+      ? `${item.kind}:${item.bayId}`
+      : item.kind === "auxiliary"
+        ? `${item.kind}:${item.tab}`
+        : item.kind;
 
 // 画面で選んでいるもの（注文・開いているパネル）と、選んだものへの操作。
 // パネルはカードのキーだけを持ち、カードは毎回いまの盤面から読む（開いているあいだに始まった・終わったカードを古いまま扱わない）。
@@ -33,7 +42,29 @@ export const useBoardSelection = (
 ) => {
   // 選んだ注文（orderLabel。同じ注文のカードを全部の列で光らせる）
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [panel, setPanel] = useState<OpenPanel>(null);
+  const [{ panel, panels }, setPanelState] = useState<{
+    panel: OpenPanel;
+    panels: NonNullable<OpenPanel>[];
+  }>({ panel: null, panels: [] });
+  const setPanel = useCallback((update: SetStateAction<OpenPanel>) => {
+    setPanelState((state) => {
+      const next = typeof update === "function" ? update(state.panel) : update;
+      return {
+        panel: next,
+        panels: next
+          ? [
+              ...state.panels.filter(
+                (item) => panelKey(item) !== panelKey(next),
+              ),
+              next,
+            ]
+          : state.panels.filter(
+              (item) =>
+                !state.panel || panelKey(item) !== panelKey(state.panel),
+            ),
+      };
+    });
+  }, []);
   useCaosStateLog("ui.selection.changed", { selectedOrderId, panel });
   // 閉じるのは、そのパネルが開いているときだけ（ほかのパネルに替わっていたら何もしない）
   const close = (kind: NonNullable<OpenPanel>["kind"]) =>
@@ -48,9 +79,6 @@ export const useBoardSelection = (
     found?.status === "queued" && found.dripper !== null
       ? { card: found, bayId: found.dripper }
       : null;
-  useEffect(() => {
-    if (ticketKey && !scheduled) setPanel(null);
-  }, [ticketKey, scheduled]);
   // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
@@ -61,11 +89,25 @@ export const useBoardSelection = (
       )
     : undefined;
   useEffect(() => {
-    if (rebrewKey && !rebrewing) {
-      setPanel(null);
+    // 非表示のパネルも含め、対象の状態が変わった時点で終了する。
+    const valid = (item: NonNullable<OpenPanel>) => {
+      if (item.kind !== "detail" && item.kind !== "rebrew") return true;
+      if (item.kind === "rebrew" && item.key === null) return true;
+      const card = cards.find((card) => card.key === item.key);
+      return item.kind === "detail"
+        ? card?.status === "queued" && card.dripper !== null
+        : card?.status === "brewing" || card?.status === "done";
+    };
+    setPanelState((state) => {
+      const retained = state.panels.filter(valid);
+      const active = state.panel && valid(state.panel) ? state.panel : null;
+      return retained.length === state.panels.length && active === state.panel
+        ? state
+        : { panel: active, panels: retained };
+    });
+    if (panel?.kind === "rebrew" && panel.key !== null && !valid(panel))
       setSelectedOrderId(null);
-    }
-  }, [rebrewKey, rebrewing]);
+  }, [cards, panel]);
 
   const { emergency } = actions;
   // 動かしたら注文の選択を外す
@@ -80,6 +122,37 @@ export const useBoardSelection = (
     selectOrder: setSelectedOrderId,
     /** 開いているパネル */
     panel,
+    panels,
+    panelKey,
+    activatePanel: (item: NonNullable<OpenPanel>) =>
+      setPanelState((state) => ({
+        ...state,
+        panel:
+          state.panels.find((saved) => panelKey(saved) === panelKey(item)) ??
+          state.panel,
+      })),
+    suspendPanel: (item: NonNullable<OpenPanel>) =>
+      setPanelState((state) => ({
+        ...state,
+        panel:
+          state.panel && panelKey(state.panel) === panelKey(item)
+            ? null
+            : state.panel,
+      })),
+    closePanel: (item: NonNullable<OpenPanel>) => {
+      const id = panelKey(item);
+      if (
+        panel &&
+        panelKey(panel) === id &&
+        (item.kind === "detail" ||
+          (item.kind === "rebrew" && item.key !== null))
+      )
+        setSelectedOrderId(null);
+      setPanelState((state) => ({
+        panels: state.panels.filter((saved) => panelKey(saved) !== id),
+        panel: state.panel && panelKey(state.panel) === id ? null : state.panel,
+      }));
+    },
     /** 開いている待機のカードと、そのドリッパー */
     scheduled,
     /** 緊急の入力を開いていれば、開いたカード（ヘッダーから開いたなら card は無い） */
@@ -129,7 +202,7 @@ export const useBoardSelection = (
     /** 全部閉じる（リセット・実データテストの開始） */
     clear: () => {
       setSelectedOrderId(null);
-      setPanel(null);
+      setPanelState({ panel: null, panels: [] });
     },
     /** 未割当のカードをドリッパーへ（place が無ければ待機の最後へ） */
     assign: placeCard,

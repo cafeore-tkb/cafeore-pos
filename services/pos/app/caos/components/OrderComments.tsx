@@ -1,7 +1,14 @@
 import { AUTHOR_MARKS, type CaosCard } from "@cafeore/common";
 import { ChevronRight, MessageSquareText, X } from "lucide-react";
 import type React from "react";
-import { createContext, useContext, useEffect } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type CommentAnchor,
   useCommentPopupPosition,
@@ -14,6 +21,7 @@ import {
   commentReaction,
 } from "../logic/comments";
 import { caosLog } from "../utils/log";
+import { FloatingWindowScope, useFloatingWindow } from "./FloatingWindows";
 import { ReactionIcon } from "./ReactionIcon";
 import { VoiceComment } from "./VoiceComment";
 
@@ -203,6 +211,12 @@ const NOTICES_SHOWN = 3;
  * 上に見ている注文（選んだ注文か、印を押した注文）のコメント（×で閉じる）、下に新しいコメントの知らせ（新しいものが下）。
  * 知らせは押すとその注文を開き（onOpen）、×で閉じる。どちらも押すまで残す
  */
+type ViewingComment = {
+  label: string;
+  comments: readonly BoardComment[];
+  anchor?: CommentAnchor;
+};
+
 export const CommentDock: React.FC<{
   /** 見ている注文（orderLabel）と、そのコメント（コメントがあるときだけ） */
   viewing?: {
@@ -211,13 +225,157 @@ export const CommentDock: React.FC<{
     anchor?: CommentAnchor;
   };
   onCloseViewing: () => void;
+  onRestoreViewing?: (label: string) => void;
   notices: readonly BoardComment[];
   onOpen: (comment: BoardComment) => void;
   onDismiss: (comments: readonly BoardComment[]) => void;
-}> = ({ viewing, onCloseViewing, notices, onOpen, onDismiss }) => {
-  const popup = useCommentPopupPosition(viewing?.anchor);
+}> = ({
+  viewing,
+  onCloseViewing,
+  onRestoreViewing,
+  notices,
+  onOpen,
+  onDismiss,
+}) => {
+  const saved = useRef(new Map<string, ViewingComment>());
+  const [, refresh] = useState(0);
+  if (viewing) saved.current.set(viewing.label, viewing);
+  const noticesWindow = useFloatingWindow("新着コメント", notices.length > 0);
+  const shown = notices.slice(-NOTICES_SHOWN);
+  const hidden = notices.length - shown.length;
+  if (notices.length === 0 && saved.current.size === 0) return null;
+  return (
+    // 中を押しても、開いているもの（未割当のカード・右のパネル）を閉じない（useOutsidePress）
+    <div
+      data-comment-dock
+      aria-live="polite"
+      className="caos-comment-dock pointer-events-none fixed bottom-2 z-[150] flex w-[340px] flex-col gap-1.5"
+    >
+      {[...saved.current.values()].map((item) => (
+        <FloatingWindowScope
+          key={item.label}
+          value={{
+            active: viewing?.label === item.label,
+            activate: () => onRestoreViewing?.(item.label),
+            suspend: () => {
+              if (viewing?.label === item.label) onCloseViewing();
+            },
+          }}
+        >
+          <ViewingCommentWindow
+            viewing={item}
+            onDone={() => {
+              saved.current.delete(item.label);
+              refresh((value) => value + 1);
+              if (viewing?.label === item.label) onCloseViewing();
+            }}
+          />
+        </FloatingWindowScope>
+      ))}
+
+      <section
+        ref={(element) => {
+          noticesWindow.ref.current = element;
+        }}
+        style={noticesWindow.style}
+        data-popup-hidden={noticesWindow.hidden}
+      >
+        {notices.length > 0 && (
+          <header className="pointer-events-auto flex items-center rounded-t-lg bg-white px-2 font-bold text-sm">
+            {noticesWindow.handle}
+            <span className="flex-1">新着コメント</span>
+            <button
+              type="button"
+              onClick={() => onDismiss(notices)}
+              className="min-h-10 rounded border px-2 text-xs"
+            >
+              確認済み
+            </button>
+            <button
+              type="button"
+              onClick={noticesWindow.hide}
+              aria-label="新着コメントを非表示"
+              className="h-10 w-10"
+            >
+              ×
+            </button>
+          </header>
+        )}
+        {hidden > 0 && (
+          <div className="border-(color:--caos-comment) bg-(color:--caos-comment-soft) pointer-events-auto flex items-center justify-between rounded-lg border-2 px-2 py-1 font-black text-[12px] text-slate-700 shadow-lg">
+            ほかに新しいコメント {hidden} 件
+            <button
+              type="button"
+              onClick={noticesWindow.hide}
+              className="h-7 touch-manipulation rounded-md border border-slate-300 bg-white px-2"
+            >
+              すべて閉じる
+            </button>
+          </div>
+        )}
+        {shown.map((comment) => (
+          <div
+            key={commentKey(comment)}
+            className="border-(color:--caos-comment) bg-(color:--caos-comment-soft) pointer-events-auto flex items-stretch overflow-hidden rounded-lg border-2 shadow-lg"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                caosLog("comment.notice.clicked", {
+                  orderId: comment.orderId,
+                  orderNo: comment.orderNo,
+                  key: commentKey(comment),
+                });
+                onOpen(comment);
+              }}
+              className="flex min-w-0 flex-1 touch-manipulation items-center gap-2 px-2 py-1.5 text-left"
+            >
+              <MessageSquareText className="text-(color:--caos-comment) h-5 w-5 shrink-0" />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block font-black text-[13px] text-slate-950">
+                  #{orderNoLabel(comment.orderNo)} に新しいコメント
+                </span>
+                <span className="block truncate font-bold text-[13px] text-slate-700">
+                  {AUTHOR_MARKS[comment.author]}：{comment.text}
+                </span>
+              </span>
+              <span className="text-(color:--caos-comment) flex shrink-0 items-center font-black text-[12px]">
+                開く
+                <ChevronRight className="h-4 w-4" />
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={noticesWindow.hide}
+              aria-label="閉じる"
+              className="border-(color:--caos-comment) flex w-10 shrink-0 touch-manipulation items-center justify-center border-l text-slate-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}{" "}
+      </section>
+    </div>
+  );
+};
+
+const ViewingCommentWindow = ({
+  viewing,
+  onDone,
+}: { viewing: ViewingComment; onDone: () => void }) => {
+  const popup = useCommentPopupPosition(viewing.anchor);
+  const floating = useFloatingWindow(`${viewing.label} のコメント`, true);
+  const popupRef = popup.ref;
+  const floatingRef = floating.ref;
+  const attachPopup = useCallback(
+    (element: HTMLElement | null) => {
+      popupRef(element);
+      floatingRef.current = element;
+    },
+    [popupRef, floatingRef],
+  );
   useEffect(() => {
-    if (!viewing || !popup.element) return;
+    if (!viewing || !popup.element || floating.hidden) return;
     const element = popup.element;
     let voiceProtectedAtPress = false;
     let voiceBusyAtPress = false;
@@ -230,6 +388,11 @@ export const CommentDock: React.FC<{
       );
     };
     const closeOutside = (event: MouseEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-popup-tray], [data-caos-layer]")
+      )
+        return;
       if (event.target instanceof Node && element.contains(event.target))
         return;
       // 親のポップアップ側も録音中・送信中の枠外操作を飲み込まない。
@@ -243,7 +406,7 @@ export const CommentDock: React.FC<{
           "[data-voice-panel] textarea:focus",
         );
         focused?.blur();
-      } else onCloseViewing();
+      } else floating.hide();
       // 最初の枠外タップは閉じるだけにし、背後の割当・進行操作へ渡さない。
       event.preventDefault();
       event.stopPropagation();
@@ -254,97 +417,45 @@ export const CommentDock: React.FC<{
       document.removeEventListener("pointerdown", rememberVoiceInput, true);
       document.removeEventListener("click", closeOutside, true);
     };
-  }, [viewing, popup.element, onCloseViewing]);
-  const shown = notices.slice(-NOTICES_SHOWN);
-  const hidden = notices.length - shown.length;
-  if (notices.length === 0 && !viewing) return null;
+  }, [viewing, popup.element, floating.hidden, floating.hide]);
   return (
-    // 中を押しても、開いているもの（未割当のカード・右のパネル）を閉じない（useOutsidePress）
-    <div
-      data-comment-dock
-      aria-live="polite"
-      className="caos-comment-dock pointer-events-none fixed bottom-2 z-[150] flex w-[340px] flex-col gap-1.5"
+    <section
+      ref={attachPopup}
+      data-popup-hidden={floating.hidden}
+      style={{ ...popup.style, ...floating.style }}
+      aria-label={`${viewing.label} のコメント`}
+      className="border-(color:--caos-comment) pointer-events-auto rounded-lg border-2 bg-white p-1.5 shadow-lg"
     >
-      {viewing && (
-        <section
-          ref={popup.ref}
-          style={popup.style}
-          aria-label={`${viewing.label} のコメント`}
-          className="border-(color:--caos-comment) pointer-events-auto rounded-lg border-2 bg-white p-1.5 shadow-lg"
+      <header className="mb-1 flex items-center gap-1 pl-1">
+        {floating.handle}
+        <MessageSquareText className="text-(color:--caos-comment) h-3.5 w-3.5" />
+        <h3 className="text-(color:--caos-comment) min-w-0 flex-1 truncate font-black text-[12px]">
+          {viewing.label} のコメント
+        </h3>
+        <button
+          type="button"
+          onClick={floating.hide}
+          aria-label="コメントを閉じる"
+          className="flex h-7 w-8 shrink-0 touch-manipulation items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
         >
-          <header className="mb-1 flex items-center gap-1 pl-1">
-            <MessageSquareText className="text-(color:--caos-comment) h-3.5 w-3.5" />
-            <h3 className="text-(color:--caos-comment) min-w-0 flex-1 truncate font-black text-[12px]">
-              {viewing.label} のコメント
-            </h3>
-            <button
-              type="button"
-              onClick={onCloseViewing}
-              aria-label="コメントを閉じる"
-              className="flex h-7 w-8 shrink-0 touch-manipulation items-center justify-center rounded-md text-slate-500 hover:bg-slate-100"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </header>
-          <CommentList
-            comments={viewing.comments}
-            className="max-h-[40vh] overflow-y-auto"
-          />
-        </section>
-      )}
-      {hidden > 0 && (
-        <div className="border-(color:--caos-comment) bg-(color:--caos-comment-soft) pointer-events-auto flex items-center justify-between rounded-lg border-2 px-2 py-1 font-black text-[12px] text-slate-700 shadow-lg">
-          ほかに新しいコメント {hidden} 件
-          <button
-            type="button"
-            onClick={() => onDismiss(notices)}
-            className="h-7 touch-manipulation rounded-md border border-slate-300 bg-white px-2"
-          >
-            すべて閉じる
-          </button>
-        </div>
-      )}
-      {shown.map((comment) => (
-        <div
-          key={commentKey(comment)}
-          className="border-(color:--caos-comment) bg-(color:--caos-comment-soft) pointer-events-auto flex items-stretch overflow-hidden rounded-lg border-2 shadow-lg"
-        >
-          <button
-            type="button"
-            onClick={() => {
-              caosLog("comment.notice.clicked", {
-                orderId: comment.orderId,
-                orderNo: comment.orderNo,
-                key: commentKey(comment),
-              });
-              onOpen(comment);
-            }}
-            className="flex min-w-0 flex-1 touch-manipulation items-center gap-2 px-2 py-1.5 text-left"
-          >
-            <MessageSquareText className="text-(color:--caos-comment) h-5 w-5 shrink-0" />
-            <span className="min-w-0 flex-1 leading-tight">
-              <span className="block font-black text-[13px] text-slate-950">
-                #{orderNoLabel(comment.orderNo)} に新しいコメント
-              </span>
-              <span className="block truncate font-bold text-[13px] text-slate-700">
-                {AUTHOR_MARKS[comment.author]}：{comment.text}
-              </span>
-            </span>
-            <span className="text-(color:--caos-comment) flex shrink-0 items-center font-black text-[12px]">
-              開く
-              <ChevronRight className="h-4 w-4" />
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onDismiss([comment])}
-            aria-label="閉じる"
-            className="border-(color:--caos-comment) flex w-10 shrink-0 touch-manipulation items-center justify-center border-l text-slate-500"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-    </div>
+          <X className="h-4 w-4" />
+        </button>
+      </header>
+      <button
+        type="button"
+        onClick={onDone}
+        className="mb-1 min-h-8 rounded border px-2 font-bold text-xs"
+      >
+        閲覧を終了
+      </button>
+      <FloatingWindowScope
+        value={{ active: !floating.hidden, activate: floating.restore }}
+      >
+        <CommentList
+          comments={viewing.comments}
+          className="max-h-[40vh] overflow-y-auto"
+        />
+      </FloatingWindowScope>
+    </section>
   );
 };

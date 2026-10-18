@@ -1,11 +1,15 @@
 import { useTheme } from "next-themes";
+import { useLocation } from "react-router";
 import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
+  const managedByCaos = useLocation().pathname === "/master-sheet";
 
+  // CaOSはOperationNoticesが表示と寿命を管理する。二重のタイマーを持たない。
+  if (managedByCaos) return null;
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}

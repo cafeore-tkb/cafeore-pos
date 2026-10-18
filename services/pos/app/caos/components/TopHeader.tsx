@@ -19,6 +19,7 @@ import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import openDripperSettingsIcon from "../icons/open-dripper-settings.svg";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { FloatingStatusNotices, FloatingWindowTray } from "./FloatingWindows";
 import { LaneHeaderStatus } from "./LaneParts";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
@@ -209,7 +210,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     <header className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs">
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
-      <div className="absolute top-full right-2 z-[160] mt-1 flex flex-col items-end gap-1 [&>*]:rounded-lg [&>*]:border-2 [&>*]:border-red-300 [&>*]:bg-white [&>*]:px-3 [&>*]:py-1 [&>*]:shadow-lg">
+      <FloatingStatusNotices
+        active={
+          labelPrinter.status === "disconnected" ||
+          unsent.entries.length > 0 ||
+          labelPrinter.pendingCount > 0
+        }
+      >
         {labelPrinter.status === "disconnected" && (
           <PrinterStatus
             name="ラベル"
@@ -228,7 +235,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           onRetry={labelPrinter.retry}
           relayedCount={labelPrinter.relayedCount}
         />
-      </div>
+      </FloatingStatusNotices>
       <div className="flex min-w-0 items-center gap-2">
         <nav
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
@@ -309,6 +316,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
+      <FloatingWindowTray />
       <output
         aria-live="polite"
         aria-atomic="true"

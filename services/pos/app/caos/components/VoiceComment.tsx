@@ -1,5 +1,6 @@
 import { Mic, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useFloatingWindow } from "./FloatingWindows";
 
 // Web Speech API の標準名と Safari/Chrome の接頭辞付き実装の両方を扱う。
 type Recognition = {
@@ -41,7 +42,11 @@ export const VoiceComment = ({
   const voiceBusy = phase !== "idle";
   const [text, setText] = useState("");
   const [message, setMessage] = useState("");
-  const panelRef = useRef<HTMLDivElement>(null);
+  const floating = useFloatingWindow(
+    `音声コメント ${orderId.slice(0, 6)}`,
+    open,
+  );
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognition = useRef<Recognition | null>(null);
@@ -72,13 +77,15 @@ export const VoiceComment = ({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || floating.hidden) return;
     let typingAtPress = false;
     const rememberTyping = () => {
       typingAtPress = document.activeElement === inputRef.current;
     };
     const closeOutside = (event: MouseEvent) => {
       const target = event.target;
+      if (target instanceof Element && target.closest("[data-popup-tray]"))
+        return;
       if (
         !(target instanceof Node) ||
         panelRef.current?.contains(target) ||
@@ -90,7 +97,7 @@ export const VoiceComment = ({
       // 入力中の最初のタップではキーボードだけを閉じ、下書きとパネルは残す。
       if (typingAtPress || document.activeElement === inputRef.current)
         inputRef.current?.blur();
-      else setOpen(false);
+      else floating.hide();
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -100,7 +107,7 @@ export const VoiceComment = ({
       document.removeEventListener("pointerdown", rememberTyping, true);
       document.removeEventListener("click", closeOutside, true);
     };
-  }, [open, voiceBusy, sending]);
+  }, [open, voiceBusy, sending, floating.hidden, floating.hide]);
 
   const start = () => {
     if (recognition.current || sending) return;
@@ -211,7 +218,10 @@ export const VoiceComment = ({
         onClick={(event) => {
           event.stopPropagation();
           if (voiceBusy) finish();
-          else start();
+          else {
+            floating.restore();
+            start();
+          }
         }}
         className={`flex h-12 min-w-14 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border px-1 active:ring-2 active:ring-slate-500 active:ring-offset-1 disabled:opacity-40 ${voiceBusy ? "border-red-600 bg-red-100 text-red-700" : "border-slate-300 bg-white text-slate-700 active:bg-slate-100"}`}
       >
@@ -229,7 +239,12 @@ export const VoiceComment = ({
       </button>
       {open && (
         <div
-          ref={panelRef}
+          ref={(element) => {
+            panelRef.current = element;
+            floating.ref.current = element;
+          }}
+          style={floating.style}
+          data-popup-hidden={floating.hidden}
           data-voice-panel
           data-voice-busy={voiceBusy || sending || undefined}
           className="grid w-full gap-2 rounded-lg border border-slate-300 bg-white p-2"
@@ -237,6 +252,18 @@ export const VoiceComment = ({
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
         >
+          <header className="flex items-center gap-1">
+            {floating.handle}
+            <span className="flex-1 font-bold text-xs">音声コメント</span>
+            <button
+              type="button"
+              onClick={floating.hide}
+              aria-label="音声コメントを非表示"
+              className="h-10 w-10"
+            >
+              ×
+            </button>
+          </header>
           {(voiceBusy || message) && (
             <div className="flex min-w-0 items-center gap-2">
               <output className="min-w-0 flex-1 text-[12px] text-slate-600">

@@ -142,7 +142,7 @@ export const useCaosSession = () => {
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。
   // 抽出を始めてから時間のたったカードへの統合（caosLateMerge）と、上級生のみのカードを上級生でない担当者に置いたのは、
   // 止めずにそのまま書き、同じ所に知らせだけ出す
-  const toasts = useCornerToasts(realTime.getTime());
+  const toasts = useCornerToasts(source.cards, Boolean(test.session));
   // この端末の送れていない操作を送る（実データテスト中も、テストの前に押した本番の操作は送る）。
   // 通らなかった操作は「直前の操作」から忘れ、その操作の右上の知らせも消す（盤面は戻っているので）
   const unsent = useCaosOutboxSender(realTime.getTime(), (entry) => {
