@@ -71,6 +71,7 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	cashierStateHandler := NewCashierStateHandler(db, hub)
 	colorSettingHandler := NewColorSettingHandler(db, nil)
 	printerSettingHandler := NewPrinterSettingHandler(db)
+	labelPrintHandler := NewLabelPrintHandler(db, hub)
 
 	api := r.Group("/api")
 	api.GET("/items", itemHandler.GetItems)
@@ -125,6 +126,11 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.DELETE("/color-settings/:id", colorSettingHandler.DeleteColorSetting)
 	api.GET("/printer-settings", printerSettingHandler.GetPrinterSettings)
 	api.PUT("/printer-settings", printerSettingHandler.UpdatePrinterSettings)
+	api.POST("/label-print-requests", labelPrintHandler.CreateLabelPrintRequest)
+	api.GET("/label-print-requests", labelPrintHandler.GetLabelPrintRequests)
+	api.POST("/label-print-requests/:id/claim", labelPrintHandler.ClaimLabelPrintRequest)
+	api.POST("/label-print-requests/:id/printed", labelPrintHandler.MarkLabelPrintRequestPrinted)
+	api.POST("/label-print-requests/:id/release", labelPrintHandler.ReleaseLabelPrintRequest)
 }
 
 type testResponse struct {

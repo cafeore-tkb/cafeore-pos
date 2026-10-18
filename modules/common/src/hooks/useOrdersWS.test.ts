@@ -73,3 +73,41 @@ describe("[unit] useOrdersWS の呼び出し催促", () => {
     expect(recalled).not.toHaveBeenCalled();
   });
 });
+
+describe("[unit] useOrdersWS の代理印刷", () => {
+  const requested = vi.fn();
+  const done = vi.fn();
+  const cancelled = vi.fn();
+  beforeEach(() => {
+    requested.mockClear();
+    done.mockClear();
+    cancelled.mockClear();
+    useOrdersWS({
+      onCupEmergencyCancelled: cancelled,
+      onLabelPrintRequested: requested,
+      onLabelPrintDone: done,
+    });
+  });
+
+  test("頼みを受けたら、その頼みで呼ぶ", () => {
+    const request = {
+      id: "r1",
+      job: { labels: [{ type: "flow", lines: [] }] },
+      created_at: "2026-10-18T01:00:00Z",
+    };
+    receive({ type: "label_print_requested", label_print_request: request });
+
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(requested).toHaveBeenCalledWith(request);
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  test("刷れたという知らせを受けたら、その id で呼ぶ（取り消しとは別）", () => {
+    receive({ type: "label_print_done", label_print_request_id: "r1" });
+
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalledWith("r1");
+    expect(requested).not.toHaveBeenCalled();
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+});

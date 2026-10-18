@@ -94,7 +94,11 @@ export default function FielsOfMaster() {
           </Button>
         </div>
         <div className="flex w-1/3 items-center justify-end gap-3">
-          <PendingPrints count={printer.pendingCount} onRetry={printer.retry} />
+          <PendingPrints
+            count={printer.pendingCount}
+            onRetry={printer.retry}
+            relayedCount={printer.relayedCount}
+          />
           <p>提供待ちオーダー数：{unserved}</p>
           <PastOrderSideSheet
             orders={orders?.filter((order) => order.servedAt !== null)}

@@ -32,6 +32,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	inv := NewInventoryHandler(inventory)
 	colorSetting := NewColorSettingHandler(db, activity)
 	printerSetting := NewPrinterSettingHandler(db)
+	// 代理印刷（端末が直接刷れなかったシールを、代理印刷をオンにしたレジに刷ってもらう）
+	labelPrint := NewLabelPrintHandler(db, hub)
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caos := NewCaosHandler(db, hub, inventory)
 
@@ -120,6 +122,11 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	}
 	api.GET("/printer-settings", printerSetting.GetPrinterSettings)
 	api.PUT("/printer-settings", printerSetting.UpdatePrinterSettings)
+	api.POST("/label-print-requests", labelPrint.CreateLabelPrintRequest)
+	api.GET("/label-print-requests", labelPrint.GetLabelPrintRequests)
+	api.POST("/label-print-requests/:id/claim", labelPrint.ClaimLabelPrintRequest)
+	api.POST("/label-print-requests/:id/printed", labelPrint.MarkLabelPrintRequestPrinted)
+	api.POST("/label-print-requests/:id/release", labelPrint.ReleaseLabelPrintRequest)
 	api.GET("/caos/logs/export", caos.ExportCaosLogs)
 	api.GET("/caos/logs", caos.GetCaosLogs)
 	api.POST("/caos/logs", caos.CreateCaosLogs)

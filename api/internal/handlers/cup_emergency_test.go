@@ -288,6 +288,25 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 		}
 	}
 
+	// レジに頼んだ代理印刷は、取り消すと消える（断ったときは消さない）
+	printID := add()
+	unrelated := uuid.New()
+	for _, id := range []uuid.UUID{printID, unrelated} {
+		if err := db.Create(&models.LabelPrintRequest{ID: id, Job: models.JSONB(`{"labels":[{}]}`), CreatedAt: time.Now()}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, body := f.cancelEmergency(t, printID); code != http.StatusNoContent {
+		t.Fatalf("cancel printing = %d: %s", code, body)
+	}
+	var printIDs []uuid.UUID
+	if err := db.Model(&models.LabelPrintRequest{}).Pluck("id", &printIDs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(printIDs) != 1 || printIDs[0] != unrelated {
+		t.Fatalf("label print requests after cancel = %v, want only %s", printIDs, unrelated)
+	}
+
 	// 待機（統合したカップは残る）
 	queuedID := add()
 	card := uuid.New()
@@ -304,8 +323,14 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	// 抽出を始めたら取り消せない（何も消さない）
 	brewingID := add()
 	f.mustPut(t, write([]uuid.UUID{brewingID}, unassigned, placed(2, uuid.New(), true)))
+	if err := db.Create(&models.LabelPrintRequest{ID: brewingID, Job: models.JSONB(`{"labels":[{}]}`), CreatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
 	if code, body := f.cancelEmergency(t, brewingID); code != http.StatusBadRequest || !strings.Contains(body, "抽出") {
 		t.Fatalf("cancel brewing = %d: %s", code, body)
+	}
+	if err := db.First(&models.LabelPrintRequest{}, "id = ?", brewingID).Error; err != nil {
+		t.Fatalf("label print request of the brewing one: %v", err)
 	}
 	if rows := f.emergencies(t, cupID); len(rows) != 1 || rows[0].ID != brewingID {
 		t.Fatalf("emergencies = %+v, want the brewing one", rows)

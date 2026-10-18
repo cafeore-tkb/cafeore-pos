@@ -26,11 +26,15 @@ const (
 	cupEmergencyCancelledChannel = "cup_emergency_cancelled"
 	// 呼び出し催促。通知の中身は "<送ったインスタンスの ID> <注文 ID>"
 	orderRecalledChannel = "order_recalled"
+	// 代理印刷の頼み（label_print.go）。通知の中身は "<送ったインスタンスの ID> <頼みの ID>"
+	labelPrintRequestedChannel = "label_print_requested"
+	// 刷れた代理印刷。通知の中身は "<送ったインスタンスの ID> <頼みの ID>"
+	labelPrintDoneChannel = "label_print_done"
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
 // CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel, orderRecalledChannel}
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel, orderRecalledChannel, labelPrintRequestedChannel, labelPrintDoneChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -193,10 +197,20 @@ type changeSet struct {
 	cancelledEmergencies map[uuid.UUID]struct{}
 	// 呼び出し催促した注文。取り消された緊急と同じく、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
 	recalledOrders map[uuid.UUID]struct{}
+	// 代理印刷の頼み。DB から読み直し、まだ刷れていなければ配る（待ち受けていなかった間のものは、レジが GET で読んで追いつく）
+	labelPrintRequests map[uuid.UUID]struct{}
+	// 刷れた代理印刷。知らせをそのまま配る
+	labelPrintsDone map[uuid.UUID]struct{}
 }
 
 func newChangeSet() changeSet {
-	return changeSet{orderIDs: map[uuid.UUID]struct{}{}, cancelledEmergencies: map[uuid.UUID]struct{}{}, recalledOrders: map[uuid.UUID]struct{}{}}
+	return changeSet{
+		orderIDs:             map[uuid.UUID]struct{}{},
+		cancelledEmergencies: map[uuid.UUID]struct{}{},
+		recalledOrders:       map[uuid.UUID]struct{}{},
+		labelPrintRequests:   map[uuid.UUID]struct{}{},
+		labelPrintsDone:      map[uuid.UUID]struct{}{},
+	}
 }
 
 func newPendingChanges() *pendingChanges {
@@ -228,6 +242,15 @@ func (q *pendingChanges) add(channel, payload string) {
 		// 形の分からない通知は、どの注文か分からないので配らない（その呼び出し画面は読み上げないだけ）
 		if id, err := uuid.Parse(rest); err == nil {
 			q.update(func(s *changeSet) { s.recalledOrders[id] = struct{}{} })
+		}
+	case labelPrintRequestedChannel:
+		// 形の分からない通知は配らない（レジは一定の間隔で GET して追いつく）
+		if id, err := uuid.Parse(rest); err == nil {
+			q.update(func(s *changeSet) { s.labelPrintRequests[id] = struct{}{} })
+		}
+	case labelPrintDoneChannel:
+		if id, err := uuid.Parse(rest); err == nil {
+			q.update(func(s *changeSet) { s.labelPrintsDone[id] = struct{}{} })
 		}
 	}
 }
@@ -317,6 +340,12 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		for id := range s.recalledOrders {
 			broadcastOrderRecalled(h.hub, id)
+		}
+		for id := range s.labelPrintRequests {
+			broadcastLabelPrintRequested(h.db, h.hub, id)
+		}
+		for id := range s.labelPrintsDone {
+			broadcastLabelPrintDone(h.hub, id)
 		}
 		if failed.allOrders || len(failed.orderIDs) > 0 {
 			select {

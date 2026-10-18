@@ -6,6 +6,7 @@ import {
   cancelCupEmergency,
   cupNeedsBrew,
   getCupEmergencyReasons,
+  requestLabelPrint,
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +14,7 @@ import useSWR from "swr";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
 import { labelPrintableWidth } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
+import { useLabelPrintQueue } from "~/label/print-relay";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
 
@@ -31,8 +33,10 @@ export const toastEmergenciesCancelled = (count: number) =>
 /**
  * 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルで使う。
  * カップに入れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を 1 枚ずつ
- * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。刷れなければ端末に残して送り直す（usePrinter）。
+ * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。直接刷れなければ、すぐ代理印刷をオンにしたレジに頼む
+ * （POST /api/label-print-requests。label/print-relay）。頼めなければ端末に残し、送り直すたびにもう一度試す（usePrinter）。
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。
+ * レジに頼んだものはサーバーが消す（代理印刷のレジは、取り消しの知らせで刷るのをやめる）。
  */
 export const useCupEmergency = (
   onActivity?: (event: string, details: Record<string, unknown>) => void,
@@ -43,8 +47,11 @@ export const useCupEmergency = (
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
     labelPrintableWidth(printerSettings),
     onActivity,
+    requestLabelPrint,
   );
   const { printCupLabel } = printer;
+  // レジに頼んで、まだ刷れていないシール（ほかの端末が頼んだものも）
+  const { requests: relayed } = useLabelPrintQueue();
 
   /** 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
@@ -89,10 +96,11 @@ export const useCupEmergency = (
   }, []);
 
   return {
-    /** この端末のシールのプリンターと、つながらないときに証明書を許可するページ */
+    /** この端末のシールのプリンターと、つながらないときに証明書を許可するページ、レジで印刷待ちのシールの数 */
     printer: {
       ...printer,
       certificateUrl: eposCertificateUrl(label_printer_ip),
+      relayedCount: relayed.length,
     },
     addEmergency,
     cancelEmergency,

@@ -149,7 +149,7 @@ func (h *CaosHandler) addEmergencies(cupIDs []uuid.UUID, reason string) (rows []
 }
 
 // DELETE /api/cup-emergencies/{id} - 緊急（入れ直し）を取り消す（押し間違い）。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。
-// 入れ直しで減らした在庫も戻す。取り消したら全部の画面に {"type":"cup_emergency_cancelled"} で知らせる（publishCupEmergencyCancelled）。
+// 入れ直しで減らした在庫も戻し、レジに頼んだその入れ直しのシールの代理印刷も消す。取り消したら全部の画面に {"type":"cup_emergency_cancelled"} で知らせる（publishCupEmergencyCancelled）。
 func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	id, ok := parseUUIDParam(c)
 	if !ok {
@@ -235,6 +235,10 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 			}
 		}
 		if err := deleteCupEmergencies(tx, "id = ?", id); err != nil {
+			return err
+		}
+		// レジに頼んだ代理印刷も消す（まだ刷れていなければ、レジは刷らない。label_print.go）
+		if err := tx.Delete(&models.LabelPrintRequest{}, "id = ?", id).Error; err != nil {
 			return err
 		}
 		return recordCaosEmergency(tx, "emergency.cancel", now, window, []uuid.UUID{id}, reason)

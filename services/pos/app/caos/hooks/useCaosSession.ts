@@ -135,6 +135,7 @@ export const useCaosSession = () => {
   useCaosStateLog("printer.state.changed", {
     status: labelPrinter.status,
     pendingCount: labelPrinter.pendingCount,
+    relayedCount: labelPrinter.relayedCount,
   });
   const lastAction = useLastAction();
   // 押し間違いかもしれない「次へ」（抽出時間の半分もたっていない）は右上で確かめてから送る。

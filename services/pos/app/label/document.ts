@@ -56,3 +56,15 @@ export type Label =
 export type PrintJob = {
   labels: readonly Label[];
 };
+
+/**
+ * 端末の外から来た印刷データ（端末に残したもの・代理印刷で届いたもの）を読む。labels が配列でなければ null。
+ * 中身（シールの形）は、作ったのも POS の画面なので確かめない
+ */
+export const toPrintJob = (value: unknown): PrintJob | null =>
+  typeof value === "object" &&
+  value !== null &&
+  "labels" in value &&
+  Array.isArray(value.labels)
+    ? (value as PrintJob)
+    : null;
