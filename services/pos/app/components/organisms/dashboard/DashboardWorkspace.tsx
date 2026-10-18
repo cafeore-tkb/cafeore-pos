@@ -635,7 +635,7 @@ function AnalysisSection({
             description={`中央値 ${minutes(report.total.p50)}・90%が ${minutes(report.total.p90)} 以内`}
           />
           <div className="mt-5">
-            <DurationCharts stats={report.total} />
+            <DurationCharts stats={report.total} hideBoxPlot />
           </div>
         </section>
         <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">

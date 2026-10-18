@@ -19,10 +19,12 @@ export function DurationCharts({
   stats,
   chart = "all",
   compact = false,
+  hideBoxPlot = false,
 }: {
   stats: ReturnType<typeof distribution>;
   compact?: boolean;
   chart?: "histogram" | "cdf" | "box" | "all";
+  hideBoxPlot?: boolean;
 }) {
   if (!stats.count)
     return (
@@ -135,7 +137,7 @@ export function DurationCharts({
           </div>
         ) : null}
       </div>
-      {chart === "all" || chart === "box" ? (
+      {(chart === "all" || chart === "box") && !hideBoxPlot ? (
         <div
           aria-label={`箱ひげ図：下ひげ${minutes(stats.min)}、第1四分位${minutes(stats.q1)}、中央値${minutes(stats.p50)}、第3四分位${minutes(stats.q3)}、上ひげ${minutes(stats.max)}`}
           className="rounded-lg border p-4"
@@ -175,8 +177,10 @@ export function DurationCharts({
       <details className="text-stone-500 text-xs">
         <summary className="cursor-pointer">時間の見方を詳しく</summary>
         <p className="mt-2">
-          渡し終えた分だけの実測です。真ん中は中央値、9割を渡すまではP90。次の注文の待ち時間予測ではありません。箱ひげ図の線の端は箱の幅の1.5倍までの範囲にある最小・最大で、特に離れた記録も平均や割合には含めます。平均{" "}
-          {minutes(stats.mean)}。
+          渡し終えた分だけの実測です。真ん中は中央値、9割を渡すまではP90。次の注文の待ち時間予測ではありません。
+          {!hideBoxPlot &&
+            "箱ひげ図の線の端は箱の幅の1.5倍までの範囲にある最小・最大です。"}
+          特に離れた記録も平均や割合には含めます。平均 {minutes(stats.mean)}。
         </p>
       </details>
     </div>
