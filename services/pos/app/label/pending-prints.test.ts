@@ -85,6 +85,22 @@ describe("[unit] pending-prints", () => {
     expect(readPendingPrints().map((p) => p.id)).toEqual(["emergency-2"]);
   });
 
+  test("代理印刷の完了で同じIDの未印刷を消し、遅れて直接印刷が失敗しても残し直さない", async () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    const {
+      addPendingPrint,
+      completePendingPrint,
+      readPendingPrints,
+      isPrintSettled,
+    } = await load();
+    addPendingPrint(job, "emergency-1");
+    addPendingPrint(job, "emergency-2");
+    completePendingPrint("emergency-1");
+    addPendingPrint(job, "emergency-1");
+    expect(isPrintSettled("emergency-1")).toBe(true);
+    expect(readPendingPrints().map((p) => p.id)).toEqual(["emergency-2"]);
+  });
+
   test("壊れたもの・ほかのキーは読まない", async () => {
     const storage = fakeStorage();
     storage.setItem("cafeore:pending-label-print:x", "{");

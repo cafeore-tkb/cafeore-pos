@@ -16,7 +16,7 @@ import type {
 import { emergencyLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
-  isPrintCancelled,
+  isPrintSettled,
   readPendingPrints,
   removePendingPrint,
   subscribePendingPrints,
@@ -99,20 +99,23 @@ export const usePrinter = (
   /** 直接刷れなかったシールをレジに頼む（relay があるときだけ。取り消した緊急のシールは頼まない）。頼めたら true */
   const handOver = useCallback(
     async (job: PrintJob, id: string) =>
-      relay !== undefined && !isPrintCancelled(id) && relay(id, job),
+      relay !== undefined && !isPrintSettled(id) && relay(id, job),
     [relay],
   );
 
   const printJob = useCallback(
     async (job: PrintJob, pendingId?: string) => {
+      if (pendingId && isPrintSettled(pendingId)) return;
       onActivity?.("printer.print.requested", { emergencyId: pendingId });
       const printed = await print(job);
       if (printed) {
+        if (pendingId) removePendingPrint(pendingId);
         onActivity?.("printer.print.succeeded", { emergencyId: pendingId });
         return;
       }
       const id = pendingId ?? crypto.randomUUID();
       if (await handOver(job, id)) {
+        removePendingPrint(id);
         onActivity?.("printer.print.relayed", { emergencyId: pendingId });
         return;
       }

@@ -25,6 +25,7 @@ const store = createDeviceStore("cafeore:pending-label-print:", parse);
 
 // このタブで取り消しを知った緊急の id。刷っている間に取り消されたら、刷れなくても残さない
 const cancelled = new Set<string>();
+const completed = new Set<string>();
 
 /** 残っているシール（古い順） */
 export const readPendingPrints = store.read;
@@ -34,7 +35,7 @@ export const addPendingPrint = (
   job: PrintJob,
   id: string = crypto.randomUUID(),
 ) => {
-  if (cancelled.has(id)) return;
+  if (isPrintSettled(id)) return;
   store.put({ id, at: Date.now(), job });
 };
 
@@ -42,6 +43,16 @@ export const removePendingPrint = store.remove;
 
 /** このタブで取り消しを知った緊急（入れ直し）の id か。そのシールはレジにも頼まない */
 export const isPrintCancelled = (id: string) => cancelled.has(id);
+
+/** 直接印刷の結果を待つ間に、代理印刷で完了・取り消しになったシールか。 */
+export const isPrintSettled = (id: string) =>
+  cancelled.has(id) || completed.has(id);
+
+/** 代理印刷で刷れたシールを端末から消し、遅れて来た直接印刷の失敗で残し直さない。 */
+export const completePendingPrint = (id: string) => {
+  completed.add(id);
+  removePendingPrint(id);
+};
 
 /**
  * 緊急（入れ直し）が取り消された（サーバーから取り消したと知らせが来た・この端末で取り消せた）。そのシールを消し、このあと残そうとしても残さない。

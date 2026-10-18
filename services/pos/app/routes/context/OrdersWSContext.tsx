@@ -7,7 +7,10 @@ import {
   useEffect,
   useRef,
 } from "react";
-import { cancelPendingPrint } from "~/label/pending-prints";
+import {
+  cancelPendingPrint,
+  completePendingPrint,
+} from "~/label/pending-prints";
 
 type RecallListener = (orderId: string) => void;
 
@@ -58,7 +61,10 @@ export const OrdersWSProvider = ({
     },
     onLabelPrintRequested: (request) =>
       emitLabelPrint({ type: "requested", request }),
-    onLabelPrintDone: (id) => emitLabelPrint({ type: "done", id }),
+    onLabelPrintDone: (id) => {
+      completePendingPrint(id);
+      emitLabelPrint({ type: "done", id });
+    },
   });
   const subscribeRecall = useCallback(
     (listener: RecallListener) =>
