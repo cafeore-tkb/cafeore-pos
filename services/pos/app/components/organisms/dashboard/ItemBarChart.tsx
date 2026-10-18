@@ -1,5 +1,4 @@
 import { type OrderEntity, useMenuMaster } from "@cafeore/common";
-import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   Card,
@@ -26,41 +25,7 @@ type props = {
  * @returns
  */
 const ItemBarChart = ({ orders, pastOrders }: props) => {
-  const [pastRange, setPastRange] = useState<OrderEntity[] | undefined>([]);
   const itemMaster = useMenuMaster().items;
-
-  // 各基準時刻を計算
-  const realtimeStart = useMemo(() => {
-    const first = orders?.at(0);
-    return first ? new Date(first.createdAt) : new Date();
-  }, [orders]);
-
-  const pastStart = useMemo(() => {
-    const first = pastOrders?.at(0);
-    return first ? new Date(first.createdAt) : new Date();
-  }, [pastOrders]);
-
-  // 10分間隔でpastRangeを更新
-  useEffect(() => {
-    if (!pastOrders?.length) return;
-
-    const updatePastRange = () => {
-      const elapsedMs = Date.now() - realtimeStart.getTime();
-      const pastCutoff = new Date(pastStart.getTime() + elapsedMs);
-      const range = pastOrders.filter(
-        (o) => new Date(o.createdAt) <= pastCutoff,
-      );
-      setPastRange(range);
-    };
-
-    // 初回更新
-    updatePastRange();
-
-    // 10分ごとに更新
-    const timer = setInterval(updatePastRange, 10 * 60 * 1000);
-
-    return () => clearInterval(timer);
-  }, [pastOrders, realtimeStart, pastStart]);
 
   // 集計関数
   const sumByItem = (orders: OrderEntity[] | undefined) => {
@@ -112,7 +77,7 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
   };
 
   const realtimeSum = sumByItem(orders);
-  const pastSum = sumByItem(pastRange);
+  const pastSum = sumByItem(pastOrders);
 
   const chartData = Object.entries(itemMaster).map(([, item]) => ({
     name: item.abbr,
@@ -126,7 +91,7 @@ const ItemBarChart = ({ orders, pastOrders }: props) => {
       <CardHeader>
         <CardTitle>商品ごとの杯数（過去との比較）</CardTitle>
         <CardDescription>
-          商品ごとの総杯数(濃)と過去データの現時点での総杯数(薄)を表示します{" "}
+          選択期間の商品ごとの総杯数(濃)と読み込んだ過去データの総杯数(薄)を表示します{" "}
           <br />
           読み替え：べっぴん→縁、マンデ→トラジャ、コスタリカ→キリマン、限定→ライチ、ブルマン
         </CardDescription>
