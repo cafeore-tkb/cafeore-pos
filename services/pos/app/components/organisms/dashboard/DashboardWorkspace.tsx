@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   Clock3,
   Coffee,
+  History,
   LayoutDashboard,
   ListOrdered,
   Radio,
@@ -24,7 +25,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { load2025Baseline } from "~/lib/analytics/historical";
 import {
+  type AnalysisOrder,
   type BucketMinutes,
   dayWindow,
   liveAnalysisOrders,
@@ -62,6 +65,12 @@ const SECTIONS = [
     description: "流量と提供時間のグラフ",
     icon: BarChart3,
   },
+  {
+    id: "comparison",
+    name: "25年度比較",
+    description: "2025年度の実績と比較",
+    icon: History,
+  },
 ] as const;
 
 type DashboardSection = (typeof SECTIONS)[number]["id"];
@@ -84,11 +93,46 @@ export function DashboardWorkspace() {
   const [selectedDate, setSelectedDate] = useState(() => jstDate(Date.now()));
   const [section, setSection] = useState<DashboardSection>("overview");
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
+  const [referenceOrders, setReferenceOrders] = useState<AnalysisOrder[]>([]);
+  const [referenceDate, setReferenceDate] = useState("");
+  const [referenceInfo, setReferenceInfo] = useState("");
+  const [referenceLoading, setReferenceLoading] = useState(true);
+  const [referenceFailure, setReferenceFailure] = useState("");
   const tabId = useId();
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setReferenceLoading(true);
+    load2025Baseline()
+      .then((data) => {
+        if (!active) return;
+        const days = [
+          ...new Set(data.orders.map((order) => jstDate(order.created))),
+        ].sort();
+        setReferenceOrders(data.orders);
+        setReferenceDate((current) =>
+          days.includes(current) ? current : (days[0] ?? ""),
+        );
+        setReferenceInfo(
+          `2025/data/day12.json / sohosai-analysis ${data.commit.slice(0, 8)}`,
+        );
+        setReferenceFailure("");
+      })
+      .catch(() => {
+        if (active)
+          setReferenceFailure("2025年度の記録を読み込めませんでした。");
+      })
+      .finally(() => {
+        if (active) setReferenceLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const sourceOrders = allOrders ?? activeOrders ?? [];
@@ -114,6 +158,33 @@ export function DashboardWorkspace() {
       ),
     [sourceOrders, window, intervalMinutes],
   );
+  const referenceDays = useMemo(
+    () =>
+      [
+        ...new Set(referenceOrders.map((order) => jstDate(order.created))),
+      ].sort(),
+    [referenceOrders],
+  );
+  const comparisonReport = useMemo(() => {
+    if (!referenceDate) return null;
+    const start = dayWindow(referenceDate, now).start;
+    return operationsReport(
+      referenceOrders,
+      {
+        start,
+        end: start + Math.max(0, cutoff - window.start),
+        now: Number.POSITIVE_INFINITY,
+      },
+      intervalMinutes,
+    );
+  }, [
+    referenceOrders,
+    referenceDate,
+    now,
+    cutoff,
+    window.start,
+    intervalMinutes,
+  ]);
   const finance = useMemo(() => {
     const validOrders = selectedOrders.filter((order) => {
       const cancelledAt = order.cancelledAt?.getTime();
@@ -243,7 +314,7 @@ export function DashboardWorkspace() {
         </header>
 
         <nav
-          className="grid grid-cols-2 gap-2 border-stone-200 border-b bg-white p-2 sm:grid-cols-4 sm:p-3"
+          className="grid grid-cols-2 gap-2 border-stone-200 border-b bg-white p-2 sm:grid-cols-3 sm:p-3 lg:grid-cols-5"
           role="tablist"
           aria-label="ダッシュボードの表示"
         >
@@ -335,10 +406,24 @@ export function DashboardWorkspace() {
                 <OrderList orders={selectedOrders} />
               </div>
             </section>
-          ) : (
+          ) : section === "analysis" ? (
             <AnalysisSection
               report={report}
               intervalMinutes={intervalMinutes}
+              onIntervalChange={setIntervalMinutes}
+            />
+          ) : (
+            <ComparisonSection
+              currentDate={selectedDate}
+              current={report}
+              referenceDate={referenceDate}
+              referenceDays={referenceDays}
+              reference={comparisonReport}
+              referenceInfo={referenceInfo}
+              loading={referenceLoading}
+              failure={referenceFailure}
+              intervalMinutes={intervalMinutes}
+              onReferenceDateChange={setReferenceDate}
               onIntervalChange={setIntervalMinutes}
             />
           )}
@@ -651,6 +736,218 @@ function AnalysisSection({
         </section>
       </div>
     </div>
+  );
+}
+
+const signedYen = (value: number) =>
+  `${value >= 0 ? "+" : "−"}¥${Math.abs(value).toLocaleString("ja-JP")}`;
+const signedCups = (value: number) =>
+  `${value >= 0 ? "+" : "−"}${Math.abs(value)}杯`;
+const signedMinutes = (value: number | null) =>
+  value === null
+    ? "比較待ち"
+    : `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(1)}分`;
+
+function ComparisonSection({
+  currentDate,
+  current,
+  referenceDate,
+  referenceDays,
+  reference,
+  referenceInfo,
+  loading,
+  failure,
+  intervalMinutes,
+  onReferenceDateChange,
+  onIntervalChange,
+}: {
+  currentDate: string;
+  current: Report;
+  referenceDate: string;
+  referenceDays: string[];
+  reference: Report | null;
+  referenceInfo: string;
+  loading: boolean;
+  failure: string;
+  intervalMinutes: BucketMinutes;
+  onReferenceDateChange: (date: string) => void;
+  onIntervalChange: (minutes: BucketMinutes) => void;
+}) {
+  const medianDifference =
+    reference !== null &&
+    current.total.p50 !== null &&
+    reference.total.p50 !== null
+      ? current.total.p50 - reference.total.p50
+      : null;
+  return (
+    <div className="space-y-5">
+      <section className="flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+        <SectionHeading
+          icon={History}
+          title="2025年度の実績と比較"
+          description="選択中の日付と同じ長さの時間帯を、2025年度の記録と比較します。"
+        />
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="space-y-1 text-sm">
+            <span className="block font-bold text-xs">2025年度の比較日</span>
+            <select
+              value={referenceDate}
+              disabled={loading || referenceDays.length === 0}
+              onChange={(event) => onReferenceDateChange(event.target.value)}
+              className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 font-bold disabled:opacity-50"
+            >
+              {referenceDays.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+          </label>
+          <fieldset
+            className="inline-flex rounded-xl bg-stone-100 p-1"
+            aria-label="比較グラフの集計間隔"
+          >
+            {([15, 30, 60] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={intervalMinutes === value}
+                onClick={() => onIntervalChange(value)}
+                className={`min-h-10 rounded-lg px-3 font-bold text-xs transition ${intervalMinutes === value ? "bg-teal-950 text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-stone-900"}`}
+              >
+                {value}分
+              </button>
+            ))}
+          </fieldset>
+        </div>
+      </section>
+
+      {failure && (
+        <p
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800 text-sm"
+        >
+          {failure}
+        </p>
+      )}
+      {loading && !reference ? (
+        <LoadingState />
+      ) : reference ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-3">
+            <ComparisonMetric
+              label="売上"
+              currentLabel={currentDate}
+              currentValue={yen(current.revenue)}
+              referenceLabel={referenceDate}
+              referenceValue={yen(reference.revenue)}
+              difference={signedYen(current.revenue - reference.revenue)}
+            />
+            <ComparisonMetric
+              label="注文された杯数"
+              currentLabel={currentDate}
+              currentValue={`${current.received}杯`}
+              referenceLabel={referenceDate}
+              referenceValue={`${reference.received}杯`}
+              difference={signedCups(current.received - reference.received)}
+            />
+            <ComparisonMetric
+              label="お渡しまでの中央値"
+              currentLabel={currentDate}
+              currentValue={minutes(current.total.p50)}
+              referenceLabel={referenceDate}
+              referenceValue={minutes(reference.total.p50)}
+              difference={signedMinutes(medianDifference)}
+            />
+          </div>
+
+          <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+            {[
+              { label: `${currentDate}の記録`, report: current },
+              { label: `${referenceDate}の記録`, report: reference },
+            ].map((item) => (
+              <section
+                key={item.label}
+                className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+              >
+                <SectionHeading
+                  icon={Activity}
+                  title={item.label}
+                  description={`${intervalMinutes}分ごとの注文、お渡し、お渡し待ちです。`}
+                />
+                <FlowCharts
+                  buckets={item.report.buckets}
+                  chart="flow"
+                  intervalMinutes={intervalMinutes}
+                  flowStyle="line"
+                />
+              </section>
+            ))}
+          </div>
+
+          <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+            {[
+              { label: `${currentDate}の提供時間`, report: current },
+              { label: `${referenceDate}の提供時間`, report: reference },
+            ].map((item) => (
+              <section
+                key={item.label}
+                className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+              >
+                <SectionHeading
+                  icon={Clock3}
+                  title={item.label}
+                  description={`${item.report.total.count}杯の提供記録を比較します。`}
+                />
+                <div className="mt-5">
+                  <DurationCharts stats={item.report.total} hideBoxPlot />
+                </div>
+              </section>
+            ))}
+          </div>
+
+          <p className="rounded-2xl bg-stone-200/60 p-4 text-stone-600 text-xs leading-relaxed">
+            2025年度は注文単位、選択中の日付はカップ単位の記録です。売上は全商品、杯数はカップを作る商品のみを集計しているため、目安として比較してください。
+            {referenceInfo ? ` データ: ${referenceInfo}` : ""}
+          </p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ComparisonMetric({
+  label,
+  currentLabel,
+  currentValue,
+  referenceLabel,
+  referenceValue,
+  difference,
+}: {
+  label: string;
+  currentLabel: string;
+  currentValue: string;
+  referenceLabel: string;
+  referenceValue: string;
+  difference: string;
+}) {
+  return (
+    <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+      <p className="font-black text-stone-900">{label}</p>
+      <dl className="mt-4 space-y-3 text-sm">
+        <div className="flex items-end justify-between gap-3">
+          <dt className="text-stone-500">{currentLabel}</dt>
+          <dd className="font-black text-2xl tabular-nums">{currentValue}</dd>
+        </div>
+        <div className="flex items-end justify-between gap-3 border-stone-100 border-t pt-3">
+          <dt className="text-stone-500">{referenceLabel}</dt>
+          <dd className="font-bold text-lg tabular-nums">{referenceValue}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 rounded-xl bg-teal-50 px-3 py-2 font-bold text-teal-900 text-xs">
+        2025年度との差 {difference}
+      </p>
+    </article>
   );
 }
 
