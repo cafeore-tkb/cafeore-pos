@@ -37,10 +37,6 @@ export function PastOrdersPanel({
           .map((order) => {
             const cups = order.getCups();
             const elapsed = orderElapsedTime(order);
-            const overdue =
-              order.servedAt !== null &&
-              order.servedAt.getTime() - order.createdAt.getTime() >
-                15 * 60 * 1000;
             return (
               <article
                 key={order.id}
@@ -58,7 +54,7 @@ export function PastOrdersPanel({
                     {cups.length}杯
                   </span>
                   <span
-                    className={`font-bold font-mono text-[14px] ${overdue ? "text-red-600" : "text-slate-700"}`}
+                    className={`font-bold font-mono text-[14px] ${elapsed.overdue ? "text-red-600" : "text-slate-700"}`}
                   >
                     提供まで {elapsed.m}分{elapsed.ss}秒
                   </span>

@@ -265,7 +265,7 @@ export default function App() {
               suspend: () => selection.suspendPanel(saved),
             }}
           >
-            {saved.kind === "pastOrders" && (
+            {saved.kind === "pastOrders" && !session.simulating && (
               <PastOrdersPanel orders={orders} onClose={closeSaved} />
             )}
             {saved.kind === "auxiliary" && (
