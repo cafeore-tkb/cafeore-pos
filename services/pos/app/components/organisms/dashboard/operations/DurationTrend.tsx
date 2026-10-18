@@ -4,6 +4,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -52,6 +53,15 @@ export function DurationTrend({
                 minTickGap={30}
                 tick={{ fontSize: 11 }}
               />
+              {chronological.map((bucket) => (
+                <ReferenceLine
+                  key={bucket.at}
+                  x={bucket.at}
+                  stroke="#d6d3d1"
+                  strokeOpacity={0.45}
+                  strokeWidth={1}
+                />
+              ))}
               <YAxis
                 tickFormatter={(value) => `${value}分`}
                 width={55}
