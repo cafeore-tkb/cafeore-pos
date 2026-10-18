@@ -9,7 +9,7 @@ export const meta: MetaFunction = () => {
   return [{ title: "CaOS リベロビュー" }];
 };
 
-// リベロ（ドリッパーにお湯を持って回る係）が見る、CaOS の閲覧だけの画面。入れ始めてからの時間が長いドリッパーが一目で分かる
+// リベロ（ドリッパーにお湯を持って回る係）が見る、CaOS の閲覧だけの画面。6列で抽出中の残り時間と次の注文を表示する
 export default function MasterSheetLibero() {
   useFixedViewport();
   useCaosActivityLog();
