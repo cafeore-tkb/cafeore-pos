@@ -13,6 +13,8 @@ export const cupEmergencySchema = z.object({
   dripper: z.number().int().nullable(),
   dripperPosition: z.number().int().nullable(),
   dripId: z.string().nullable(),
+  /** マスターで初めてドリッパーへ割り振った時刻 */
+  assignedAt: z.date().nullable().optional(),
   brewStartedAt: z.date().nullable(),
   brewFinishedAt: z.date().nullable(),
 });
@@ -39,6 +41,8 @@ export const cupSchema = z.object({
   dripperPosition: z.number().int().nullable(),
   /** 同じカードで淹れるカップの印 */
   dripId: z.string().nullable(),
+  /** マスターで初めてドリッパーへ割り振った時刻 */
+  assignedAt: z.date().nullable().optional(),
   /** 抽出を始めた時刻 */
   brewStartedAt: z.date().nullable(),
   /** 抽出を終えた時刻 */

@@ -240,8 +240,8 @@ export function ProductTimeChart({
 }: { products: Report["products"] }) {
   const data = products.map((product) => ({
     name: product.name,
-    prep: product.prep.p50,
-    handoff: product.handoff.p50,
+    allocation: product.allocation.p50,
+    afterAllocation: product.afterAllocation.p50,
     total: product.total.p50,
   }));
   if (!data.length)
@@ -253,7 +253,7 @@ export function ProductTimeChart({
   return (
     <div
       style={{ height: Math.max(260, data.length * 74) }}
-      aria-label="商品別の注文からできあがり・できあがりからお渡し・全体の時間の真ん中の値"
+      aria-label="商品別の注文からマスターでの割り振り・割り振りからお渡し・全体の時間の真ん中の値"
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout="vertical" margin={{ right: 20 }}>
@@ -277,15 +277,15 @@ export function ProductTimeChart({
           />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           <Bar
-            dataKey="prep"
-            name="注文→できあがり"
+            dataKey="allocation"
+            name="注文→マスターでの割り振り"
             fill="#38bdf8"
             radius={[0, 4, 4, 0]}
             isAnimationActive={false}
           />
           <Bar
-            dataKey="handoff"
-            name="できあがり→お渡し"
+            dataKey="afterAllocation"
+            name="マスターでの割り振り→お渡し"
             fill="#fbbf24"
             radius={[0, 4, 4, 0]}
             isAnimationActive={false}

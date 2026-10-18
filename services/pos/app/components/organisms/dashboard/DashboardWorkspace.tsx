@@ -643,7 +643,7 @@ function AnalysisSection({
           <SectionHeading
             icon={Coffee}
             title="商品ごとの提供時間"
-            description="商品ごとの中央値を比較します。"
+            description="注文、マスターでの初回割り振り、お渡しまでの中央値を比較します。"
           />
           <div className="mt-5">
             <ProductTimeChart products={report.products} />

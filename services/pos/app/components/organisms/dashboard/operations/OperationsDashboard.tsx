@@ -747,7 +747,7 @@ export function OperationsDashboard({
                         </div>
                       ) : (
                         <p className="rounded-lg bg-amber-50 p-3 text-sm">
-                          2025年には抽出開始の記録がないため、「受注→抽出開始」「抽出開始→提供」は今年の記録だけで確認できます。
+                          2025年には割り振り・抽出開始の記録がないため、これらを使う区間は今年の記録だけで確認できます。
                         </p>
                       )}
                       <h4 className="font-bold">期間全体の分布・ばらつき</h4>
@@ -769,8 +769,8 @@ export function OperationsDashboard({
                                 <tr>
                                   <th>商品</th>
                                   <th>注文/待ち</th>
-                                  <th>注文→できあがり</th>
-                                  <th>できあがり→お渡し</th>
+                                  <th>注文→マスターでの割り振り</th>
+                                  <th>マスターでの割り振り→お渡し</th>
                                   <th>注文→お渡し</th>
                                 </tr>
                               </thead>
@@ -781,16 +781,24 @@ export function OperationsDashboard({
                                     <td>
                                       {p.received}/{p.pending}
                                     </td>
-                                    {[p.prep, p.handoff, p.total].map(
-                                      (s, i) => (
-                                        <td
-                                          key={["prep", "handoff", "total"][i]}
-                                        >
-                                          {minutes(s.p50)} / {minutes(s.p90)}（
-                                          {s.count}）
-                                        </td>
-                                      ),
-                                    )}
+                                    {[
+                                      p.allocation,
+                                      p.afterAllocation,
+                                      p.total,
+                                    ].map((s, i) => (
+                                      <td
+                                        key={
+                                          [
+                                            "allocation",
+                                            "afterAllocation",
+                                            "total",
+                                          ][i]
+                                        }
+                                      >
+                                        {minutes(s.p50)} / {minutes(s.p90)}（
+                                        {s.count}）
+                                      </td>
+                                    ))}
                                   </tr>
                                 ))}
                               </tbody>

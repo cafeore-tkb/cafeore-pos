@@ -139,6 +139,7 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
                 </p>
                 <dl className="mt-2 grid grid-cols-2 gap-2">
                   {[
+                    ["マスターでの割り振り", cup.assignedAt],
                     ["抽出開始", cup.brewStartedAt],
                     ["抽出終了", cup.brewFinishedAt],
                     ["準備完了", cup.readyAt],
