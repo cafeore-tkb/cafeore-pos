@@ -1,13 +1,23 @@
+import { isHumanCaosLog, isSystemCaosLog } from "./human-log";
 import { enqueueCaosLog } from "./log-transport";
 
 // 送信前のJSONを端末に残し、DBに保存する。再送してもDBでは1行。
 // at: 出力時刻（UTC）、tabId: このページ読込の UUID（再読み込みで変わる）、
 // sequence: 読込内の連番、event: イベント名、details: イベントごとの内容。
 let sequence = 0;
+let humanSequence = 0;
 let tabId: string | undefined;
+export const caosHumanLogSequence = () => humanSequence;
 export const caosLog = (event: string, details: unknown = {}) => {
-  if (typeof window === "undefined") return;
+  if (
+    typeof window === "undefined" ||
+    (!isHumanCaosLog(event, details as Record<string, unknown>) &&
+      !isSystemCaosLog(event))
+  )
+    return;
   try {
+    if (isHumanCaosLog(event, details as Record<string, unknown>))
+      humanSequence++;
     tabId ??= crypto.randomUUID();
     const entry = {
       at: new Date().toISOString(),

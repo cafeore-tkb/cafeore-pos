@@ -267,7 +267,7 @@ export const useCardDrag = <S, T>(handlers: {
         if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
         window.clearTimeout(hold);
         dragging = true;
-        caosLog("gesture.drag.started", { source, pointerId, startX, startY });
+        caosLog("gesture.drag.started", { source });
         countDragging(1);
         latest.current.onBegin?.(source);
         setDrag({ source, rect });
@@ -295,8 +295,6 @@ export const useCardDrag = <S, T>(handlers: {
         source,
         target: dropTarget,
         dropped: Boolean(dropTarget),
-        x: upEvent.clientX,
-        y: upEvent.clientY,
       });
       if (dropTarget !== null) latest.current.onDrop(source, dropTarget);
     };

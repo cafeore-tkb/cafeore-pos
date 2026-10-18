@@ -158,6 +158,16 @@ export const useOrderSearch = ({
     latest.current = current;
   });
 
+  useEffect(() => {
+    if (!searched) return;
+    const found = latest.current.found;
+    caosLog("search.performed", {
+      digits: searched,
+      orderId: found?.orderId ?? null,
+      commentCount: found?.comments.length ?? 0,
+    });
+  }, [searched]);
+
   // 探す番号が変わって見つかったら、その注文を選んで見せる（見せるカードが替わったとき（抽出が終わって次のカードになった、など）も見せ直す）。
   // 開いたまま番号を変えて、盤面に見せるカードが無くなったら（消した・無い番号）選んだ注文を外す（閉じたときは選んだままにする）
   useEffect(() => {

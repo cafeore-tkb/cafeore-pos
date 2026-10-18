@@ -9,6 +9,12 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CaosHumanLogEntryCategory.
+const (
+	CaosHumanLogEntryCategoryHuman  CaosHumanLogEntryCategory = "human"
+	CaosHumanLogEntryCategorySystem CaosHumanLogEntryCategory = "system"
+)
+
 // Defines values for ColorScreen.
 const (
 	ColorScreenCashier      ColorScreen = "cashier"
@@ -129,6 +135,14 @@ const (
 	StockResourceKindItem StockResourceKind = "item"
 )
 
+// Defines values for ExportCaosLogsParamsFormat.
+const (
+	ExportCaosLogsParamsFormatHuman  ExportCaosLogsParamsFormat = "human"
+	ExportCaosLogsParamsFormatMixed  ExportCaosLogsParamsFormat = "mixed"
+	ExportCaosLogsParamsFormatRaw    ExportCaosLogsParamsFormat = "raw"
+	ExportCaosLogsParamsFormatSystem ExportCaosLogsParamsFormat = "system"
+)
+
 // BuildInfo このサーバーがどの PR・コミットからビルドされたか。CI がイメージを作るときに焼き込む。
 // POS のトップページに、画面のビルドと並べて出す。
 // ローカルで動かしたときは空。この項目より前のサーバーは build 自体を返さない。
@@ -192,6 +206,24 @@ type CaosCupsWriteRequest struct {
 	Press  *CaosPress      `json:"press,omitempty"`
 	Writes []CaosCupsWrite `json:"writes"`
 }
+
+// CaosHumanLogEntry defines model for CaosHumanLogEntry.
+type CaosHumanLogEntry struct {
+	// Action イベント名をそのまま出力（component.activated等）
+	Action   string                    `json:"action"`
+	Category CaosHumanLogEntryCategory `json:"category"`
+	Details  map[string]interface{}    `json:"details"`
+	Event    string                    `json:"event"`
+
+	// Target 注文番号・コンポーネント名など操作対象
+	Target string `json:"target"`
+
+	// Time 日本時間（例 2026-10-18 02:00:00.000 +09:00）
+	Time string `json:"time"`
+}
+
+// CaosHumanLogEntryCategory defines model for CaosHumanLogEntry.Category.
+type CaosHumanLogEntryCategory string
 
 // CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
 type CaosLane struct {
@@ -1207,6 +1239,14 @@ type GetCaosLogsParams struct {
 	TabId  *openapi_types.UUID `form:"tab_id,omitempty" json:"tab_id,omitempty"`
 	Event  *string             `form:"event,omitempty" json:"event,omitempty"`
 }
+
+// ExportCaosLogsParams defines parameters for ExportCaosLogs.
+type ExportCaosLogsParams struct {
+	Format *ExportCaosLogsParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// ExportCaosLogsParamsFormat defines parameters for ExportCaosLogs.
+type ExportCaosLogsParamsFormat string
 
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}

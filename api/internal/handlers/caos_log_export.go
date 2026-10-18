@@ -16,6 +16,11 @@ import (
 // 書き出し中に新しいログが届いても、3表は同じ時点のものを読む。
 // 全件をメモリに積まず一時ファイルに作り、完成してから返す（途中失敗のJSONを保存させない）。
 func (h *CaosHandler) ExportCaosLogs(c *gin.Context) {
+	format := c.DefaultQuery("format", "human")
+	if format != "human" && format != "system" && format != "mixed" && format != "raw" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "format は human / system / mixed / raw です"})
+		return
+	}
 	file, err := os.CreateTemp("", "caos-logs-*.json")
 	if err != nil {
 		c.JSON(500, gin.H{"error": "書き出しファイルを作成できませんでした"})
@@ -31,7 +36,17 @@ func (h *CaosHandler) ExportCaosLogs(c *gin.Context) {
 		if _, err := fmt.Fprintf(file, `{"exportedAt":%q,"entries":`, now.Format("2006-01-02T15:04:05.999999999Z07:00")); err != nil {
 			return err
 		}
-		if err := writeCaosExportRows[models.CaosClientLog](tx, file, "at, tab_id, sequence"); err != nil {
+		if format == "raw" {
+			if err := writeCaosExportRows[models.CaosClientLog](tx, file, "at, tab_id, sequence"); err != nil {
+				return err
+			}
+		} else {
+			if err := writeCaosDisplayLogs(tx, file, format); err != nil {
+				return err
+			}
+		}
+		if format == "human" {
+			_, err := io.WriteString(file, "}\n")
 			return err
 		}
 		if _, err := io.WriteString(file, `,"operations":`); err != nil {
@@ -57,7 +72,7 @@ func (h *CaosHandler) ExportCaosLogs(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "書き出しファイルを読めませんでした"})
 		return
 	}
-	name := "caos-logs-" + now.Format("20060102-150405") + ".json"
+	name := "caos-logs-" + format + "-" + now.Format("20060102-150405") + ".json"
 	c.Header("Content-Type", "application/json; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(c.Writer, c.Request, name, now, file)

@@ -252,7 +252,7 @@ func TestCaosClientLogsOnDB(t *testing.T) {
 	cupID := order.OrderCups[0].ID
 	f.mustPut(t, write([]uuid.UUID{cupID}, unassigned, placed(1, uuid.New(), false)))
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/caos/logs/export", nil))
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/caos/logs/export?format=raw", nil))
 	if w.Code != http.StatusOK || w.Header().Get("Content-Disposition") == "" {
 		t.Fatalf("export = %d: %s", w.Code, w.Body.String())
 	}
@@ -271,6 +271,73 @@ func TestCaosClientLogsOnDB(t *testing.T) {
 	if row := exported.Cups[0]; row.CupID != cupID || row.OrderID != order.ID || row.AssignedAt == nil || row.OperationID != exported.Operations[0].ID {
 		t.Fatalf("exported cup = %+v", row)
 	}
+
+	// 通常の保存JSONはhumanの意味のある操作だけ。旧座標ログやシステム履歴は含めない。
+	if err := db.Create(&models.CaosClientLog{
+		TabID: uuid.New(), Sequence: 1, At: time.Now(), ReceivedAt: time.Now(),
+		Event: "component.activated", Details: json.RawMessage(`{"component":"OrderCard","control":"card","orderLabel":"#001","cardKey":"cup-1","x":100}`),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	humanResponse := httptest.NewRecorder()
+	r.ServeHTTP(humanResponse, httptest.NewRequest("GET", "/api/caos/logs/export", nil))
+	if humanResponse.Code != http.StatusOK {
+		t.Fatalf("human export: %s", humanResponse.Body.String())
+	}
+	var humanExport struct {
+		Entries    []caosHumanLog
+		Operations json.RawMessage
+		Cups       json.RawMessage
+	}
+	if err := json.Unmarshal(humanResponse.Body.Bytes(), &humanExport); err != nil {
+		t.Fatal(err)
+	}
+	if len(humanExport.Entries) != 1 || humanExport.Entries[0].Action != "component.activated" || humanExport.Operations != nil || humanExport.Cups != nil {
+		t.Fatalf("unexpected human export: %s", humanResponse.Body.String())
+	}
+	if _, ok := humanExport.Entries[0].Details["x"]; ok {
+		t.Fatal("export contains coordinates")
+	}
+
+	for _, format := range []string{"human", "system", "mixed"} {
+		response := httptest.NewRecorder()
+		r.ServeHTTP(response, httptest.NewRequest("GET", "/api/caos/logs/export?format="+format, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s export: %s", format, response.Body.String())
+		}
+		var result struct {
+			Entries    []caosHumanLog
+			Operations []models.CaosOperation
+			Cups       []models.CaosOperationCup
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]int{"human": 1, "system": 1, "mixed": 2}[format]
+		if len(result.Entries) != want {
+			t.Fatalf("%s entries: %+v", format, result.Entries)
+		}
+		for _, row := range result.Entries {
+			if row.Action != row.Event {
+				t.Fatalf("translated action: %+v", row)
+			}
+			if format != "mixed" && row.Category != format {
+				t.Fatalf("category leak: %s %+v", format, row)
+			}
+		}
+		if format == "human" && (len(result.Operations) > 0 || len(result.Cups) > 0) {
+			t.Fatal("system history leaked into human export")
+		}
+		if format != "human" && (len(result.Operations) != 1 || len(result.Cups) != 1) {
+			t.Fatalf("system history missing: %+v", result)
+		}
+	}
+	invalid := httptest.NewRecorder()
+	r.ServeHTTP(invalid, httptest.NewRequest("GET", "/api/caos/logs/export?format=invalid", nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid format: %d", invalid.Code)
+	}
+
 }
 
 func TestCaosEmergencyOperationLogOnDB(t *testing.T) {
@@ -408,5 +475,67 @@ func TestCaosStaleInferredMergeDoesNotRejectWriteOnDB(t *testing.T) {
 	}
 	if cup := f.cup(t, b); cup.DripID == nil || *cup.DripID != newDrip || cup.Dripper == nil || *cup.Dripper != 2 {
 		t.Fatalf("target update lost: %+v", cup)
+	}
+}
+
+// コメントキーのNULで先頭バッチ全体が500になり、後続の操作も
+// 永久に再送待ちになるケース。旧端末の文字列もサーバー側で救済する。
+func TestCaosClientLogsWithNULOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	h := NewCaosHandler(db, nil, nil)
+	router := gin.New()
+	router.POST("/api/caos/logs", h.CreateCaosLogs)
+	tab := uuid.New()
+	entries := []any{}
+	for i, event := range []string{"comment.notice.clicked", "gesture.drag.ended", "emergency.add.requested"} {
+		entries = append(entries, map[string]any{"tabId": tab, "sequence": i + 1, "at": time.Now().UTC(), "event": event, "details": map[string]any{
+			"key": "10\x00comment", "nested": []any{map[string]any{"key\x00name": "a\x00b"}},
+		}})
+	}
+	data, err := json.Marshal(map[string]any{"entries": entries})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/caos/logs", bytes.NewReader(data))
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(response, request)
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("POST: %d %s", response.Code, response.Body.String())
+		}
+	}
+	var stored []models.CaosClientLog
+	if err := db.Order("sequence").Find(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 3 {
+		t.Fatalf("got %d rows, want 3 without retry duplicates", len(stored))
+	}
+	for _, row := range stored {
+		data, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct{ Details json.RawMessage }
+		if err := json.Unmarshal(data, &response); err != nil {
+			t.Fatal(err)
+		}
+		publicDetails := response.Details
+		var details map[string]any
+		if err := json.Unmarshal(publicDetails, &details); err != nil {
+			t.Fatal(err)
+		}
+		if details["key"] != "10\x00comment" {
+			t.Fatalf("details: %s", row.Details)
+		}
+		human := humanCaosLog(row, nil)
+		if human == nil || human.Details["key"] != "10␀comment" {
+			t.Fatalf("wrapped log missing from human export: %+v", human)
+		}
+		nested := details["nested"].([]any)[0].(map[string]any)
+		if nested["key\x00name"] != "a\x00b" {
+			t.Fatalf("nested: %s", row.Details)
+		}
 	}
 }

@@ -38,6 +38,9 @@ export const useCardMenu = ({
       caosLog("card.action", {
         action,
         cardKey: card.key,
+        orderLabel: orderLabel(card),
+        dripper: card.dripper,
+        status: card.status,
         cupIds: card.cups.map((c) => c.cupId),
         unitIds: card.cups.map((c) => c.id),
       });

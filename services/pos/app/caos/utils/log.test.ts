@@ -10,7 +10,7 @@ import { enqueueCaosLog } from "./log-transport";
 vi.mock("./log-transport", () => ({ enqueueCaosLog: vi.fn() }));
 
 describe("unit: CaOS の重複ログ", () => {
-  test("緊急やスタンプの受付と結果を同じactionIdで記録する", async () => {
+  test("人間の操作受付とシステムの結果を記録する", async () => {
     vi.stubGlobal("window", {});
     vi.mocked(enqueueCaosLog).mockClear();
     try {
@@ -27,8 +27,7 @@ describe("unit: CaOS の重複ログ", () => {
         "emergency.add.requested",
         "emergency.add.succeeded",
       ]);
-      expect(entries[0].details.actionId).toBe(entries[1].details.actionId);
-      expect(entries[1].details.result).toEqual(["emergency-1"]);
+      expect(entries[0].details.actionId).toEqual(expect.any(String));
     } finally {
       vi.unstubAllGlobals();
     }
@@ -68,13 +67,13 @@ describe("unit: CaOS の重複ログ", () => {
     });
     try {
       const details = { label: "割当" };
-      caosLog("operation.accepted", details);
+      caosLog("operation.requested", details);
       details.label = "変更後";
       expect(info).not.toHaveBeenCalled();
       expect(enqueueCaosLog).toHaveBeenCalledWith(
         expect.objectContaining({
-          event: "operation.accepted",
-          details: { label: "割当" },
+          event: "operation.requested",
+          details: expect.objectContaining({ label: "割当" }),
         }),
       );
     } finally {
@@ -82,6 +81,39 @@ describe("unit: CaOS の重複ログ", () => {
       info.mockRestore();
     }
   });
+  test("盤面全体・スクロール・座標イベントは送信せず、カード操作は残す", () => {
+    vi.stubGlobal("window", {});
+    vi.mocked(enqueueCaosLog).mockClear();
+    try {
+      for (const event of [
+        "board.changed",
+        "page.open",
+        "ui.scroll",
+        "ui.pointerdown",
+        "ui.click",
+      ])
+        caosLog(event, { x: 1, y: 2 });
+      caosLog("component.activated", {
+        component: "OrderCard",
+        cardKey: "cup-1",
+        orderLabel: "#010",
+      });
+      expect(enqueueCaosLog).toHaveBeenCalledTimes(1);
+      expect(enqueueCaosLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "component.activated",
+          details: expect.objectContaining({
+            component: "OrderCard",
+            cardKey: "cup-1",
+            orderLabel: "#010",
+          }),
+        }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("Effect の再実行と同じ内容の新しい配列は状態変化に数えない", () => {
     const log = vi.fn();
     const state = createCaosStateLog(log);

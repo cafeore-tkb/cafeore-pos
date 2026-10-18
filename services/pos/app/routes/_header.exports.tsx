@@ -51,7 +51,7 @@ export default function ExportsPage() {
       <section className="space-y-3 rounded-lg border p-4">
         <h2 className="font-bold text-xl">CaOS 操作ログ</h2>
         <p className="text-muted-foreground text-sm">
-          DBに保存された操作ログと、統合・割当ての履歴をJSONでダウンロードします。
+          人間の操作・システムの処理・両方を選んでJSONに保存します。
         </p>
         <DownloadCaosLogs />
       </section>

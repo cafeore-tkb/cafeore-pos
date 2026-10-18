@@ -1035,6 +1035,35 @@
       }
     }
   },
+  "CaosHumanLogEntry": {
+    "type": "object",
+    "required": ["time", "action", "target", "event", "details", "category"],
+    "properties": {
+      "category": {
+        "type": "string",
+        "enum": ["human", "system"]
+      },
+      "time": {
+        "type": "string",
+        "description": "日本時間（例 2026-10-18 02:00:00.000 +09:00）"
+      },
+      "action": {
+        "type": "string",
+        "description": "イベント名をそのまま出力（component.activated等）"
+      },
+      "target": {
+        "type": "string",
+        "description": "注文番号・コンポーネント名など操作対象"
+      },
+      "event": {
+        "type": "string"
+      },
+      "details": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
   "CaosStoredLogEntry": {
     "allOf": [
       {
