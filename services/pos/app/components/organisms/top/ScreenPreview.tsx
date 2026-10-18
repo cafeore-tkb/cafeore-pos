@@ -615,40 +615,70 @@ function CaosPreview({ readOnly = false }: { readOnly?: boolean }) {
 // CaOS のリベロビュー（/master-sheet/libero）：ドリッパー1〜6の行に、入れ始めてからの時間の長い順の順位と経過を大きく。
 // 長いほど濃く、予定の抽出時間を過ぎたら赤。抽出していないドリッパーは薄く
 function LiberoPreview() {
-  const rows = [
+  const lanes = [
     {
-      rank: 1,
-      time: "5:44",
+      id: 6,
+      name: "田中",
+      no: "042",
+      cups: 2,
+      time: "0:24",
+      fill: 92,
+      color: "#b91c1c",
+      next: "046",
+    },
+    {
+      id: 5,
+      name: "佐藤",
+      no: "043",
+      cups: 1,
+      time: "1:12",
+      fill: 76,
+      color: "#1d4ed8",
+      next: "047",
+    },
+    {
+      id: 4,
+      name: "鈴木",
+      no: "044",
+      cups: 2,
+      time: "2:30",
+      fill: 58,
+      color: "#ef7777",
+      next: "048",
+    },
+    {
+      id: 3,
+      name: "高橋",
+      no: "045",
+      cups: 1,
+      time: "3:20",
+      fill: 33,
+      color: "#93b8ef",
+      next: "049",
+    },
+    {
+      id: 2,
+      name: "山田",
+      no: "041",
+      cups: 2,
+      time: "あとちょっと",
       fill: 100,
-      row: "border-red-500 bg-red-100",
-      mark: "bg-red-500 text-white",
+      color: "#991b1b",
+      next: "050",
     },
     {
-      rank: 3,
-      time: "2:34",
-      fill: 43,
-      row: "border-violet-400 bg-violet-50",
-      mark: "bg-violet-400",
+      id: 1,
+      name: "伊藤",
+      no: "046",
+      cups: 1,
+      time: "4:30",
+      fill: 10,
+      color: "#f5caca",
+      next: "051",
     },
-    {
-      rank: 4,
-      time: "0:49",
-      fill: 16,
-      row: "border-violet-200 bg-white",
-      mark: "bg-violet-200",
-    },
-    null,
-    {
-      rank: 2,
-      time: "4:54",
-      fill: 82,
-      row: "border-violet-800 bg-violet-100",
-      mark: "bg-violet-800 text-white",
-    },
-    null,
   ];
   return (
-    <div className="flex h-full flex-col gap-[0.3em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
+    <div className="flex h-full flex-col gap-[0.4em] bg-[#f0f4fa] p-[0.5em] text-[#0f172a]">
       <div className="flex items-center gap-[0.4em]">
         <span className="rounded bg-slate-900 px-[0.5em] py-[0.15em] font-black text-[0.8em] text-white">
           CaOS
@@ -656,44 +686,55 @@ function LiberoPreview() {
         <span className="rounded border bg-white px-[0.4em] py-[0.1em] font-bold text-[0.6em] text-slate-600">
           リベロ
         </span>
-        <span className="ml-auto font-black font-mono text-[1.1em]">10:24</span>
+        <span className="ml-auto font-black text-[1.1em] tabular-nums">
+          10:24
+        </span>
       </div>
-      {rows.map((row, i) => (
-        <div
-          key={`lane-${i + 1}`}
-          className={cn(
-            "flex flex-1 items-center gap-[0.4em] rounded border-2 px-[0.3em]",
-            row ? row.row : "border-transparent bg-slate-200/60 text-slate-400",
-          )}
-        >
-          <span
-            className={cn(
-              "flex h-[1.5em] w-[1.5em] items-center justify-center rounded font-black font-mono",
-              row?.mark,
-            )}
+      <div className="grid min-h-0 flex-1 grid-cols-6 gap-[0.3em]">
+        {lanes.map((lane) => (
+          <div
+            key={lane.id}
+            className="grid min-w-0 grid-rows-[1fr_3fr_2fr] overflow-hidden rounded border border-slate-300 bg-white text-center"
           >
-            {row?.rank}
-          </span>
-          <span className="w-[2.4em] font-black font-mono text-[0.8em]">
-            {i + 1}
-          </span>
-          {row ? (
-            <>
-              <span className="h-[0.4em] flex-1 overflow-hidden rounded-full bg-slate-900/10">
-                <span
-                  className={cn("block h-full rounded-full", row.mark)}
-                  style={{ width: `${row.fill}%` }}
+            <div className="flex flex-col items-center justify-center border-slate-200 border-b py-[0.3em]">
+              <span className="font-black text-[1.5em]">{lane.id}</span>
+              <span className="font-bold text-[0.65em]">{lane.name}</span>
+            </div>
+            <div className="relative isolate flex flex-col items-center justify-evenly overflow-hidden py-[0.5em]">
+              <div
+                className="-z-[1] absolute inset-y-0 right-0"
+                style={{ width: `${lane.fill}%`, backgroundColor: lane.color }}
+              />
+              <span className="rounded bg-white px-[0.1em] font-black text-[0.9em]">
+                #{lane.no}
+              </span>
+              <span className="rounded bg-white px-[0.2em] font-black text-[1.1em]">
+                {lane.cups}杯
+              </span>
+              <span className="rounded bg-white px-[0.2em] text-[0.55em]">
+                あと
+              </span>
+              <span className="rounded bg-white px-[0.1em] font-black text-[0.8em] tabular-nums">
+                {lane.time}
+              </span>
+              <div className="relative h-[0.25em] w-4/5 overflow-hidden rounded-full bg-slate-300">
+                <div
+                  className="absolute inset-y-0 right-0 bg-slate-800"
+                  style={{ width: `${lane.fill}%` }}
                 />
-              </span>
-              <span className="font-black font-mono text-[1.2em]">
-                {row.time}
-              </span>
-            </>
-          ) : (
-            <span className="font-bold text-[0.6em]">空き</span>
-          )}
-        </div>
-      ))}
+              </div>
+            </div>
+            <div
+              className="flex flex-col items-center justify-evenly border-slate-300 border-t py-[0.4em]"
+              style={{ backgroundColor: lane.id % 2 ? "#dbeafe" : "#fecaca" }}
+            >
+              <span className="text-[0.55em]">NEXT</span>
+              <span className="font-black text-[0.85em]">#{lane.next}</span>
+              <span className="font-black text-[0.85em]">1杯</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
