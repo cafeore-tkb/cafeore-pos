@@ -120,6 +120,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
   onReturnToUnassigned,
   onMergeOrders,
   unfinished,
+  commentsPanel,
 }) => {
   const picked = useSheetSelection({
     unassigned: unassignedOrders,
@@ -482,115 +483,121 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
         </ScrollArea>
       </section>
 
-      <aside
-        data-return-target
-        className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${unassignedAreaBackground(unfinished)} ${LINE}`}
-      >
-        {dragSource?.kind === "ticket" && (
-          <div
-            className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-md border-4 border-dashed p-4 text-center font-black text-[15px] ${
-              hoveredTarget === "unassigned"
-                ? "border-blue-700 bg-blue-100/90 text-blue-800"
-                : "border-slate-400 bg-white/80 text-slate-500"
-            }`}
-          >
-            ここで離すと未割当に戻す
-          </div>
-        )}
-        <PanelHeader
-          backgroundClassName="bg-slate-100"
-          className={`border-b-2 [--caos-folder-border:2px] [--caos-folder-line:var(--color-slate-900)] ${LINE}`}
+      {commentsPanel ? (
+        <aside className="min-h-0 min-w-0">{commentsPanel}</aside>
+      ) : (
+        <aside
+          data-return-target
+          className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${unassignedAreaBackground(unfinished)} ${LINE}`}
         >
-          <UnassignedHeading
-            nextBayId={nextAvailable[0]?.bayId}
-            unassignedOrders={unassignedOrders}
-            view={unfinished}
-            label="注文内容"
-            className={unfinished ? "text-[13px]" : undefined}
-          />
-          <span className="ml-auto font-black text-[12px] text-slate-700">
-            未割り振り <OrderCountLabel cards={unassignedOrders} />
-          </span>
-        </PanelHeader>
-
-        {unfinished?.tab === "unfinished" ? (
-          <UnfinishedList view={unfinished} axis="y" />
-        ) : orderGroups.length === 0 ? (
-          <p className="flex-1 py-8 text-center font-bold text-[13px] text-slate-400">
-            未割り振りの注文はありません
-          </p>
-        ) : (
-          <ScrollArea
-            axis="y"
-            className="flex-1"
-            scrollerClassName="grid auto-rows-max content-start gap-2 p-2"
+          {dragSource?.kind === "ticket" && (
+            <div
+              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-md border-4 border-dashed p-4 text-center font-black text-[15px] ${
+                hoveredTarget === "unassigned"
+                  ? "border-blue-700 bg-blue-100/90 text-blue-800"
+                  : "border-slate-400 bg-white/80 text-slate-500"
+              }`}
+            >
+              ここで離すと未割当に戻す
+            </div>
+          )}
+          <PanelHeader
+            backgroundClassName="bg-slate-100"
+            className={`border-b-2 [--caos-folder-border:2px] [--caos-folder-line:var(--color-slate-900)] ${LINE}`}
           >
-            {orderGroups.map((group) => (
-              <article
-                key={group.key}
-                className={`overflow-hidden rounded-md border-2 ${LINE}`}
-              >
-                <div
-                  className={`flex items-center justify-between gap-2 border-b-2 bg-slate-100 px-2 py-1 ${LINE}`}
+            <UnassignedHeading
+              nextBayId={nextAvailable[0]?.bayId}
+              unassignedOrders={unassignedOrders}
+              view={unfinished}
+              label="注文内容"
+              className={unfinished ? "text-[13px]" : undefined}
+            />
+            <span className="ml-auto font-black text-[12px] text-slate-700">
+              未割り振り <OrderCountLabel cards={unassignedOrders} />
+            </span>
+          </PanelHeader>
+
+          {unfinished?.tab === "unfinished" ? (
+            <UnfinishedList view={unfinished} axis="y" />
+          ) : orderGroups.length === 0 ? (
+            <p className="flex-1 py-8 text-center font-bold text-[13px] text-slate-400">
+              未割り振りの注文はありません
+            </p>
+          ) : (
+            <ScrollArea
+              axis="y"
+              className="flex-1"
+              scrollerClassName="grid auto-rows-max content-start gap-2 p-2"
+            >
+              {orderGroups.map((group) => (
+                <article
+                  key={group.key}
+                  className={`overflow-hidden rounded-md border-2 ${LINE}`}
                 >
-                  <h3 className="flex items-center gap-1 font-black font-mono text-[17px]">
-                    注文 {group.key}
-                    <OrderCommentBadge cards={group.items} looks={looks} />
-                  </h3>
-                  <span className="font-black text-[13px]">
-                    {totalCups(group.items)}杯
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 p-2">
-                  {group.items.map((order) => {
-                    const uid = order.key;
-                    const isSelected = selectedOrder?.key === uid;
-                    const isMergeCandidate = picked.canMergeWith(order);
-                    return (
-                      <OrderCard
-                        key={uid}
-                        card={order}
-                        look={looks.get(uid)}
-                        size="sm"
-                        byOrder
-                        // 選んだカードと、カードを選んでいないときは選んだ注文（番号で探した・表のカードを開いた）のカード
-                        selected={
-                          isSelected ||
-                          (!selectedOrder &&
-                            sharesOrder(order, selectedOrderId))
-                        }
-                        mergeInto={isSelected ? picked.partner : undefined}
-                        mergeTap={isMergeCandidate}
-                        data-search-key={uid}
-                        onPointerDown={(event) =>
-                          drag.press({ kind: "unassigned", order }, event)
-                        }
-                        onClickCapture={drag.suppressClick}
-                        onClick={() => {
-                          if (isMergeCandidate) picked.mergeWith(order);
-                          else picked.toggle(order);
-                        }}
-                        className="min-h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
-                        dragging={dragCup?.key === uid}
-                      >
-                        <LongWaitTag card={order} nowMs={nowMs} />
-                        {isSelected && order.emergency && onCancelEmergency && (
-                          <CancelEmergencyButton
-                            onConfirm={() => {
-                              onCancelEmergency(order);
-                              picked.clear();
-                            }}
-                          />
-                        )}
-                      </OrderCard>
-                    );
-                  })}
-                </div>
-              </article>
-            ))}
-          </ScrollArea>
-        )}
-      </aside>
+                  <div
+                    className={`flex items-center justify-between gap-2 border-b-2 bg-slate-100 px-2 py-1 ${LINE}`}
+                  >
+                    <h3 className="flex items-center gap-1 font-black font-mono text-[17px]">
+                      注文 {group.key}
+                      <OrderCommentBadge cards={group.items} looks={looks} />
+                    </h3>
+                    <span className="font-black text-[13px]">
+                      {totalCups(group.items)}杯
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 p-2">
+                    {group.items.map((order) => {
+                      const uid = order.key;
+                      const isSelected = selectedOrder?.key === uid;
+                      const isMergeCandidate = picked.canMergeWith(order);
+                      return (
+                        <OrderCard
+                          key={uid}
+                          card={order}
+                          look={looks.get(uid)}
+                          size="sm"
+                          byOrder
+                          // 選んだカードと、カードを選んでいないときは選んだ注文（番号で探した・表のカードを開いた）のカード
+                          selected={
+                            isSelected ||
+                            (!selectedOrder &&
+                              sharesOrder(order, selectedOrderId))
+                          }
+                          mergeInto={isSelected ? picked.partner : undefined}
+                          mergeTap={isMergeCandidate}
+                          data-search-key={uid}
+                          onPointerDown={(event) =>
+                            drag.press({ kind: "unassigned", order }, event)
+                          }
+                          onClickCapture={drag.suppressClick}
+                          onClick={() => {
+                            if (isMergeCandidate) picked.mergeWith(order);
+                            else picked.toggle(order);
+                          }}
+                          className="min-h-[64px] cursor-grab touch-none hover:ring-2 hover:ring-slate-400 active:cursor-grabbing"
+                          dragging={dragCup?.key === uid}
+                        >
+                          <LongWaitTag card={order} nowMs={nowMs} />
+                          {isSelected &&
+                            order.emergency &&
+                            onCancelEmergency && (
+                              <CancelEmergencyButton
+                                onConfirm={() => {
+                                  onCancelEmergency(order);
+                                  picked.clear();
+                                }}
+                              />
+                            )}
+                        </OrderCard>
+                      );
+                    })}
+                  </div>
+                </article>
+              ))}
+            </ScrollArea>
+          )}
+        </aside>
+      )}
 
       {dragCup &&
         drag.ghost(

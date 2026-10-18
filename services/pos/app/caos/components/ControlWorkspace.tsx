@@ -66,6 +66,8 @@ export interface ControlViewProps {
   flashKeys?: ReadonlySet<string>;
   /** 未割当の欄の「未提供」のタブ（操作の画面だけ。渡したときだけ、未割当の欄の見出しを「未割当」「未提供」のタブにする） */
   unfinished?: UnfinishedView;
+  /** C・Dの右の注文一覧に代えて表示するコメントチャット */
+  commentsPanel?: React.ReactNode;
   /** 未割当の横帯をたたむか（管制盤 A。渡したときだけ、横帯のヘッダーに「たたむ」「ひらく」を出す） */
   unassignedFold?: UnassignedFold;
   /** タイムラインが NOW を追っているかが変わったとき（管制盤 A。ヘッダーの「現在」の見た目） */

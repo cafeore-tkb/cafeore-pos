@@ -1,10 +1,15 @@
 import type { CaosCard } from "@cafeore/common";
 import { useEffect, useState } from "react";
-import { type CardLooks, selectedComments } from "../logic/cards";
+import {
+  type CardLooks,
+  labelHasOrder,
+  selectedComments,
+} from "../logic/cards";
+import type { CommentsByOrder } from "../logic/comments";
 import type { CommentAnchor } from "./useCommentPopupPosition";
 
 /**
- * CommentDock に出す、見ている注文（orderLabel）のコメント。カードの印を押した注文はカードの近くに表示（×で閉じるか、ほかの注文を選ぶまで。選択を外しても残す）か、
+ * ポップアップまたは右側のチャットに出す、見ている注文（orderLabel）のコメント。カードの印を押した注文はカードの近くに表示（×で閉じるか、ほかの注文を選ぶまで。選択を外しても残す）か、
  * 選んでいる注文。hidden（開いたカードのパネル・番号の検索がコメントを出している）のあいだは出さない。×は印を押した注文も選択もやめる
  */
 export const useViewedComments = ({
@@ -13,12 +18,14 @@ export const useViewedComments = ({
   cards,
   looks,
   hidden,
+  allComments,
 }: {
   selectedOrderId: string | null;
   selectOrder: (orderId: string | null) => void;
   cards: readonly CaosCard[];
   looks: CardLooks;
   hidden: boolean;
+  allComments?: CommentsByOrder | null;
 }) => {
   const [pinned, setPinned] = useState<{
     label: string;
@@ -30,11 +37,18 @@ export const useViewedComments = ({
   }, [selectedOrderId]);
   const label = pinned?.label ?? selectedOrderId;
   const comments =
-    label && !hidden ? selectedComments(cards, looks, label) : [];
+    label && !hidden
+      ? allComments
+        ? [...allComments.values()]
+            .flat()
+            .filter((comment) => labelHasOrder(label, comment.orderNo))
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        : selectedComments(cards, looks, label)
+      : [];
   return {
     /** 見ている注文（パネルで見ているときも） */
     label,
-    /** 右下に出すコメント（無ければ undefined） */
+    /** 表示するコメント（無ければ undefined） */
     viewing:
       label && comments.length > 0
         ? { label, comments, anchor: pinned?.anchor }

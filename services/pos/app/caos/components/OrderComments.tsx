@@ -55,7 +55,7 @@ export const StampReplyContext = createContext<{
 } | null>(null);
 
 /** 注文（orderId）にスタンプを返すボタンの並び（キーボードを出さずに返す）。label は何の注文に返すか（いくつかの注文のコメントを並べたとき） */
-const StampBar: React.FC<{ orderId: string; label?: string }> = ({
+export const StampBar: React.FC<{ orderId: string; label?: string }> = ({
   orderId,
   label,
 }) => {
