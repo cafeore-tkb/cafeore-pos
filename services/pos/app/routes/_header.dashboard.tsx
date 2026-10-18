@@ -16,7 +16,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function Dashboard() {
-  const { orders } = useOrdersWSContext();
+  const { orders, allOrders, isOrdersLoaded } = useOrdersWSContext();
   const unseved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
       return acc + 1;
@@ -145,8 +145,20 @@ export default function Dashboard() {
               },
               {
                 id: "orderList",
-                name: "注文一覧",
-                content: <OrderList orders={selectedOrders} />,
+                name: "注文記録",
+                content: (
+                  <OrderList
+                    orders={
+                      isOrdersLoaded
+                        ? allOrders.filter(
+                            (order) =>
+                              order.createdAt.getTime() >= period.start &&
+                              order.createdAt.getTime() < cutoff,
+                          )
+                        : undefined
+                    }
+                  />
+                ),
               },
               {
                 id: "masterState",
