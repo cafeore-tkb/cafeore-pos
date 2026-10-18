@@ -7,7 +7,6 @@ import {
   resolveItemColor,
   useColorSettings,
 } from "@cafeore/common";
-import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import { PAYMENT_KEYS } from "../../functional/cashierDraft";
@@ -237,7 +236,6 @@ const MenuButton = ({
         >
           {formatYen(menu.price)}
         </span>
-        <KeyHint className="font-normal">{menu.key}</KeyHint>
       </span>
     </button>
   );
