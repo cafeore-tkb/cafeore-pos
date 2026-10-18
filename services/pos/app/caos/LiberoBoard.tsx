@@ -23,16 +23,19 @@ export default function LiberoBoard() {
         className="grid min-h-0 flex-1 grid-cols-6 gap-1.5"
         aria-label="左から6、5、4、3、2、1のドリッパー"
       >
-        {[...rows].reverse().map((row) => (
-          <LiberoColumn
-            key={row.lane.id}
-            row={row}
-            nextIntensity={priorities.get(row.lane.queued[0]?.key)}
-            flashing={
-              row.brew !== undefined && flashKeys.has(row.brew.card.key)
-            }
-          />
-        ))}
+        {[...rows].reverse().map((row) => {
+          const next = row.lane.queued[0];
+          return (
+            <LiberoColumn
+              key={row.lane.id}
+              row={row}
+              nextIntensity={next ? priorities.get(next.key) : undefined}
+              flashing={
+                row.brew !== undefined && flashKeys.has(row.brew.card.key)
+              }
+            />
+          );
+        })}
       </div>
     </div>
   );

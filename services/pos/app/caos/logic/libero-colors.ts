@@ -2,21 +2,45 @@ import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { cardOrderNos } from "./cards";
 import type { LiberoLane } from "./libero";
 
-/** 白から濃い赤／青へ。同じ濃さを使い、文字は背景に合わせる。 */
-export const liberoColor = (card: CaosCard, intensity: number) => {
-  const end = card.cups[0].item.item_type.iced_brew
-    ? [29, 78, 216]
-    : [185, 28, 28];
-  const amount = Math.max(0, Math.min(1, intensity));
-  const backgroundColor = `#${end
+/** 全カップを数える。混在カードを先頭カップだけで代表させない。 */
+export const liberoCupCounts = (card: CaosCard) => {
+  const iced = card.cups.filter((cup) => cup.item.item_type.iced_brew).length;
+  return { hot: card.cups.length - iced, iced };
+};
+
+const tint = (end: number[], amount: number) =>
+  `#${end
     .map((channel) =>
       Math.round(255 + (channel - 255) * amount)
         .toString(16)
         .padStart(2, "0"),
     )
     .join("")}`;
-  return { backgroundColor, color: readableTextColor(backgroundColor) };
+
+/** 各面を独立したbackgroundColorで描く。混在の共通文字は白い面に載せ、
+ * 色の濃さとアニメーション途中の色にかかわらず、両側で読みやすさを保つ。
+ */
+export const liberoColor = (card: CaosCard, intensity: number) => {
+  const amount = Math.max(0, Math.min(1, intensity));
+  const { hot, iced } = liberoCupCounts(card);
+  const parts = [
+    { kind: "hot", count: hot, backgroundColor: tint([185, 28, 28], amount) },
+    { kind: "iced", count: iced, backgroundColor: tint([29, 78, 216], amount) },
+  ]
+    .filter((part) => part.count > 0)
+    .map((part) => ({ ...part, fraction: part.count / card.cups.length }));
+  const mixed = hot > 0 && iced > 0;
+  return {
+    parts,
+    textStyle: mixed
+      ? { color: "#0f172a", backgroundColor: "#ffffff" }
+      : { color: readableTextColor(parts[0]?.backgroundColor ?? "#ffffff") },
+  };
 };
+
+/** 抽出開始から60秒未満だけ担当者名を強調する。 */
+export const justStarted = (elapsedSec: number | undefined) =>
+  elapsedSec !== undefined && elapsedSec >= 0 && elapsedSec < 60;
 
 /** 終了間際に濃さが加速する、0〜1に正規化した指数曲線。 */
 export const brewIntensity = (progress: number) =>
