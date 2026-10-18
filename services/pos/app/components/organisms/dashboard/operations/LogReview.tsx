@@ -11,8 +11,8 @@ import {
 } from "~/lib/analytics/evidence";
 
 const EVENT_NAMES: Record<string, string> = {
-  "order.created": "受注確定",
-  "order.status.changed": "準備・提供の状態変更",
+  "order.created": "注文を受付",
+  "order.status.changed": "できあがり・お渡しを変更",
   "comment.created": "業務コメントを保存",
   "lanes.change": "担当者交代",
   "lanes.swap": "担当者の入替",
@@ -80,23 +80,23 @@ export function LogReview({ start, end }: { start: number; end: number }) {
   };
   return (
     <section className="space-y-3">
-      <h3 className="font-bold">業務連絡と操作の証拠</h3>
+      <h3 className="font-bold">何があったかを振り返る</h3>
       <p className="text-muted-foreground text-sm">
-        端末のクリックは成功や個人の貢献度とは扱いません。書き手は役割、ページは操作画面であり、個人の本人確認ではありません。記録のある事例を引き継ぎ・振り返りに使ってください。
+        操作と結果の記録です。個人の成績ではありません。「端末で記録」は、処理が完了した証明とは限りません。
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" onClick={() => void mutate()}>
-          最新ログを再取得
+          最新の記録に更新
         </Button>
         <Button
           variant="outline"
           onClick={() => void loadServer()}
           disabled={loading}
         >
-          {loading ? "取得中…" : "サーバー成功履歴を取得"}
+          {loading ? "取得中…" : "完了した操作を取得"}
         </Button>
         <label className="text-sm">
-          保存したログJSON
+          保存した記録を開く
           <input
             type="file"
             className="ml-2 max-w-60"
@@ -120,11 +120,10 @@ export function LogReview({ start, end }: { start: number; end: number }) {
       </div>
       <p className="text-xs">
         {isLoading
-          ? "最新ログ取得中…"
-          : "最新の端末ログは最大500件・30秒ごとに更新。全期間の件数ではありません。"}{" "}
-        {data?.hasMore &&
-          "続きのログがあります。全成功履歴は上のボタンで取得してください。"}{" "}
-        {archive && `読み込んだ成功履歴 ${archive.operations.length}件。`}
+          ? "記録を読み込み中…"
+          : "端末の記録は最新500件・30秒ごとに更新。"}{" "}
+        {data?.hasMore && "続きは「完了した操作を取得」で確認できます。"}{" "}
+        {archive && `読み込んだ完了記録 ${archive.operations.length}件。`}
       </p>
       {(error || failure) && (
         <p role="alert" className="text-red-700">
@@ -136,7 +135,7 @@ export function LogReview({ start, end }: { start: number; end: number }) {
           <details key={row.key} className="rounded-md border p-2 text-sm">
             <summary className="cursor-pointer">
               {jstClock(row.at)} ·{" "}
-              {row.source === "server" ? "サーバー成功" : "端末観測"} ·{" "}
+              {row.source === "server" ? "完了を確認" : "端末で記録"} ·{" "}
               {eventName(row.event)}
               {typeof row.details.orderNo === "number" &&
                 ` · #${String(row.details.orderNo).padStart(3, "0")}`}
@@ -149,7 +148,7 @@ export function LogReview({ start, end }: { start: number; end: number }) {
         ))}
         {!rows.length && (
           <p className="text-muted-foreground text-sm">
-            選択した期間に取得済みの業務結果・連絡ログはありません。未取得と操作ゼロは区別してください。
+            この期間の記録はまだありません。未取得の記録がある場合もあります。
           </p>
         )}
       </div>

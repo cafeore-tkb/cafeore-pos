@@ -1,8 +1,8 @@
 import { jstClock, jstDate } from "@cafeore/common";
 import {
-  Area,
   Bar,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Line,
   ReferenceLine,
@@ -25,24 +25,21 @@ export function FlowCharts({
   ).map((b) => ({
     ...b,
     clock: `${jstDate(b.at).slice(5)} ${jstClock(b.at).slice(0, 5)}`,
-    period: b.complete ? "確定した15分枠" : "集計途中",
+    period: b.complete ? "集計済みの15分" : "集計中",
   }));
+  const peakReceived = Math.max(1, ...data.map((point) => point.received));
   return (
     <div className="space-y-4">
       {chart !== "acceleration" && (
         <>
           <p className="mt-3 flex flex-wrap gap-4 text-xs">
-            <span className="font-bold text-slate-600">■ 受注（杯/15分）</span>
-            <span className="font-bold text-emerald-700">
-              ■ 提供（杯/15分）
-            </span>
-            <span className="font-bold text-amber-700">
-              ─ 枠末の未提供（杯）
-            </span>
+            <span className="font-bold text-sky-700">■ 注文</span>
+            <span className="font-bold text-emerald-700">■ お渡し</span>
+            <span className="font-bold text-amber-700">─ お渡し待ち</span>
           </p>
           <div
             className="h-64 w-full"
-            aria-label="15分ごとの受注・提供・未提供カップ数"
+            aria-label="15分ごとの注文・お渡し・お渡し待ちの杯数"
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -59,20 +56,20 @@ export function FlowCharts({
                 />
                 <Bar
                   dataKey="received"
-                  name="受注（杯）"
-                  fill="#475569"
+                  name="注文（杯）"
+                  fill="#38bdf8"
                   isAnimationActive={false}
                 />
                 <Bar
                   dataKey="served"
-                  name="提供（杯）"
-                  fill="#059669"
+                  name="お渡し（杯）"
+                  fill="#0d9488"
                   isAnimationActive={false}
                 />
                 <Line
                   dataKey="backlog"
-                  name="枠末の未提供（杯）"
-                  stroke="#d97706"
+                  name="15分の終わりのお渡し待ち（杯）"
+                  stroke="#f59e0b"
                   strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
@@ -85,7 +82,7 @@ export function FlowCharts({
       {chart !== "flow" && (
         <div
           className="h-40 w-full"
-          aria-label="混み合い加速度。未提供増減の前の15分との差"
+          aria-label="待ちの増え方の変化。前の15分との比較"
         >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ right: 16, left: 0 }}>
@@ -94,18 +91,24 @@ export function FlowCharts({
               <YAxis />
               <Tooltip />
               <ReferenceLine y={0} stroke="#64748b" />
-              <Area
-                type="linear"
+              <Bar
                 dataKey="acceleration"
-                name="混み合い加速度（杯/15分²）"
-                stroke="#be123c"
-                fill="#ffe4e6"
-                connectNulls={false}
+                name="待ちの増え方の変化（杯/15分²）"
                 isAnimationActive={false}
-              />
+                radius={[4, 4, 0, 0]}
+              >
+                {data.map((bucket) => (
+                  <Cell
+                    key={bucket.at}
+                    fill={
+                      (bucket.acceleration ?? 0) > 0 ? "#f97316" : "#0d9488"
+                    }
+                  />
+                ))}
+              </Bar>
               <Line
                 dataKey="net"
-                name="未提供の増減（杯/15分）"
+                name="待ちの増減（杯/15分）"
                 stroke="#64748b"
                 dot={false}
                 isAnimationActive={false}
@@ -113,6 +116,48 @@ export function FlowCharts({
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+      )}
+      {chart === "acceleration" && (
+        <p className="text-stone-600 text-xs">
+          <span className="font-bold text-orange-700">
+            オレンジ：待ちが増える方向へ
+          </span>{" "}
+          ／{" "}
+          <span className="font-bold text-teal-700">緑：待ちが減る方向へ</span>
+          。灰色の線は待ちの増減です。
+        </p>
+      )}
+      {chart === "flow" && (
+        <details className="rounded-xl bg-stone-50 p-3">
+          <summary className="cursor-pointer font-bold text-sm">
+            注文が集中した15分を見る
+          </summary>
+          <p className="my-2 text-stone-500 text-xs">
+            濃い青ほど注文が多い時間。各枠に杯数を表示します。
+          </p>
+          <div
+            className="grid gap-1.5"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(86px, 1fr))",
+            }}
+          >
+            {data.map((bucket) => (
+              <div
+                key={bucket.at}
+                title={`${bucket.clock}〜 注文${bucket.received}杯`}
+                className="rounded-lg border border-sky-100 p-2 text-center"
+                style={{
+                  backgroundColor: `rgba(14, 165, 233, ${0.05 + (0.55 * bucket.received) / peakReceived})`,
+                }}
+              >
+                <span className="block text-[10px] text-slate-700">
+                  {bucket.clock}
+                </span>
+                <strong className="text-sm">{bucket.received}杯</strong>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );
