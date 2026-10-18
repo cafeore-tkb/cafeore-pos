@@ -50,7 +50,7 @@ export default function Dashboard() {
     <div className="h-full">
       <div className="sticky top-0 flex justify-between p-4">
         <h1 className="w-auto whitespace-nowrap text-3xl">ダッシュボード</h1>
-        <p>提供待ちオーダー数：{unseved}</p>
+        <p>お渡し待ち：{unseved}</p>
         <div className="flex items-center gap-2 p-2">
           <div className="whitespace-nowrap font-bold text-sm">
             <p>過去のデータを</p>
@@ -94,17 +94,17 @@ export default function Dashboard() {
             return [
               {
                 id: "itemBar",
-                name: "種類別注文数",
+                name: "商品ごとの杯数",
                 content: (
                   <>
                     <p className="mb-3 text-sm">
-                      選択期間に受注した注文。注文の対象は従来と同じです。過去データは下の開始日に同じ開始時刻を合わせ、現在までに観測できた期間と同じ長さで比較します。
+                      この期間の注文を表示します。過去側は、下の開始日から同じ時間帯・同じ長さで比べます。
                     </p>
                     {pastDays.length > 0 && (
                       <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
                         過去データの比較開始日
                         <select
-                          aria-label="種類別注文数の過去比較開始日"
+                          aria-label="商品ごとの杯数の過去比較開始日"
                           className="min-h-10 rounded border bg-white p-2"
                           value={referenceDate}
                           onChange={(event) => setPastDate(event.target.value)}
@@ -133,11 +133,11 @@ export default function Dashboard() {
               },
               {
                 id: "serveTimeGraph",
-                name: "提供時間推移",
+                name: "お渡し時間の変化",
                 content: (
                   <>
                     <p className="mb-3 text-sm">
-                      選択期間に受注した注文の、現在記録されている提供時間です。
+                      この期間に受けた注文の、お渡しまでの時間です。現在の記録で表示します。
                     </p>
                     <ServeTimeGraph orders={selectedOrders} />
                   </>
@@ -150,7 +150,7 @@ export default function Dashboard() {
               },
               {
                 id: "masterState",
-                name: "オーダーストップ記録",
+                name: "注文ストップの記録",
                 content: (
                   <>
                     <p className="mb-3 text-sm">
