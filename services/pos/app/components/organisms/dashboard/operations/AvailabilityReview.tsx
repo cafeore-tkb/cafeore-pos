@@ -14,18 +14,23 @@ import {
   availabilityComparison,
   availabilitySchema,
 } from "~/lib/analytics/availability";
-import type { FlowBucket } from "~/lib/analytics/operations";
+import type { BucketMinutes, FlowBucket } from "~/lib/analytics/operations";
 
-export function AvailabilityReview({ buckets }: { buckets: FlowBucket[] }) {
+export function AvailabilityReview({
+  buckets,
+  intervalMinutes = 15,
+}: { buckets: FlowBucket[]; intervalMinutes?: BucketMinutes }) {
   const { menus, error: menuError, isLoading: menuLoading } = useMenuMaster();
   const { statuses, error, isLoading } = useInventory();
   const [observations, setObservations] = useState<AvailabilityObservation[]>(
     [],
   );
   const [failure, setFailure] = useState("");
-  const compared = availabilityComparison(observations, buckets).filter(
-    (b) => b.availableMenus !== null,
-  );
+  const compared = availabilityComparison(
+    observations,
+    buckets,
+    intervalMinutes,
+  ).filter((b) => b.availableMenus !== null);
   return (
     <div className="space-y-5">
       <section className="space-y-2 rounded-xl border p-4">
@@ -159,7 +164,7 @@ export function AvailabilityReview({ buckets }: { buckets: FlowBucket[] }) {
           <div className="space-y-3">
             <div
               className="h-64"
-              aria-label="売れるメニュー数と15分ごとの注文杯数の関係"
+              aria-label={`売れるメニュー数と${intervalMinutes}分ごとの注文杯数の関係`}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ bottom: 12, right: 20 }}>
@@ -173,7 +178,7 @@ export function AvailabilityReview({ buckets }: { buckets: FlowBucket[] }) {
                   <YAxis
                     type="number"
                     dataKey="received"
-                    name="15分の注文"
+                    name={`${intervalMinutes}分の注文`}
                     unit="杯"
                   />
                   <Tooltip cursor={{ strokeDasharray: "3 3" }} />
@@ -193,9 +198,9 @@ export function AvailabilityReview({ buckets }: { buckets: FlowBucket[] }) {
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr>
-                      <th>15分枠</th>
+                      <th>{intervalMinutes}分枠</th>
                       <th>売れる品数（平均）</th>
-                      <th>15分の注文</th>
+                      <th>{intervalMinutes}分の注文</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -203,7 +208,9 @@ export function AvailabilityReview({ buckets }: { buckets: FlowBucket[] }) {
                       <tr key={b.at} className="border-t">
                         <td className="py-1">{jstClock(b.at).slice(0, 5)}</td>
                         <td>{b.availableMenus?.toFixed(1)}件</td>
-                        <td>{b.received}杯/15分</td>
+                        <td>
+                          {b.received}杯/{intervalMinutes}分
+                        </td>
                       </tr>
                     ))}
                   </tbody>

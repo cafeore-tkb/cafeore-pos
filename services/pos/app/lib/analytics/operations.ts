@@ -1,5 +1,6 @@
 import { type OrderEntity, jstDate } from "@cafeore/common";
 
+export type BucketMinutes = 5 | 15 | 60;
 export const QUARTER_MS = 15 * 60_000;
 export interface AnalysisCup {
   id: string;
@@ -126,7 +127,9 @@ const minutesBetween = (
 export const operationsReport = (
   input: readonly AnalysisOrder[],
   window: TimeWindow,
+  intervalMinutes: BucketMinutes = 15,
 ) => {
+  const intervalMs = intervalMinutes * 60000;
   const cutoff = Math.min(window.end, window.now);
   const orders = [
     ...new Map(input.map((order) => [order.id, order])).values(),
@@ -146,7 +149,9 @@ export const operationsReport = (
     key: "received" | "served" | "cancelled",
     count = 1,
   ) => {
-    const bucket = Math.floor(at / QUARTER_MS) * QUARTER_MS;
+    if (at < window.start || at >= cutoff) return;
+    const bucket =
+      window.start + Math.floor((at - window.start) / intervalMs) * intervalMs;
     const value = events.get(bucket) ?? {
       received: 0,
       served: 0,
@@ -186,11 +191,11 @@ export const operationsReport = (
   const buckets: FlowBucket[] = [];
   let backlog = openingBacklog;
   let previousNet: number | null = null;
-  for (let at = window.start; at < cutoff; at += QUARTER_MS) {
+  for (let at = window.start; at < cutoff; at += intervalMs) {
     const value = events.get(at) ?? { received: 0, served: 0, cancelled: 0 };
     const net = value.received - value.served - value.cancelled;
     backlog += net;
-    const complete = at + QUARTER_MS <= cutoff;
+    const complete = at + intervalMs <= cutoff;
     buckets.push({
       at,
       ...value,
@@ -274,6 +279,7 @@ export const operationsReport = (
     )
     .sort((a, b) => b.minutes - a.minutes);
   return {
+    intervalMinutes,
     buckets,
     openingBacklog,
     latest,

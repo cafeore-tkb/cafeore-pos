@@ -1,5 +1,5 @@
 import { jstDate } from "@cafeore/common";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dayWindow } from "~/lib/analytics/operations";
 
 type Period = {
@@ -29,25 +29,40 @@ export function PeriodFilter({
         dayWindow(throughDate, now).start + direction * 86400000,
       ),
     });
-  const preceding = (minutes: number) => {
-    const end =
-      date === jstDate(now)
-        ? Math.floor(now / 300000) * 300000
-        : dayWindow(throughDate, now).start +
-          (Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3))) * 60000;
-    const start = end - minutes * 60000;
-    const clock = (at: number) => {
-      const minute = Math.round(
-        (at - dayWindow(jstDate(at), now).start) / 60000,
-      );
-      return `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
-    };
+  const [duration, setDuration] = useState<number | null>(null);
+  const timestamp = (date: string, time: string) =>
+    dayWindow(date, now).start +
+    (Number(time.slice(0, 2)) * 60 + Number(time.slice(3))) * 60000;
+  const clock = (at: number) => {
+    const minute = Math.round((at - dayWindow(jstDate(at), now).start) / 60000);
+    return `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+  };
+  const setRange = (start: number, end: number) => {
+    const midnight = end === dayWindow(jstDate(end), now).start;
     onChange({
       date: jstDate(start),
-      throughDate: jstDate(end),
+      throughDate: jstDate(midnight ? end - 1 : end),
       startTime: clock(start),
-      endTime: clock(end),
+      endTime: midnight ? "24:00" : clock(end),
     });
+  };
+  const editStart = (date: string, time: string) => {
+    if (duration !== null) {
+      const start = timestamp(date, time);
+      setRange(start, start + duration * 60000);
+    } else
+      onChange({
+        ...period,
+        date,
+        startTime: time,
+        throughDate: period.date === throughDate ? date : throughDate,
+      });
+  };
+  const editEnd = (date: string, time: string) => {
+    if (duration !== null) {
+      const end = timestamp(date, time);
+      setRange(end - duration * 60000, end);
+    } else onChange({ ...period, throughDate: date, endTime: time });
   };
   return (
     <fieldset className="space-y-4 rounded-2xl border border-stone-200 bg-white p-3">
@@ -62,14 +77,15 @@ export function PeriodFilter({
         <button
           type="button"
           className={SHORTCUT}
-          onClick={() =>
+          onClick={() => {
+            setDuration(null);
             onChange({
               date: jstDate(now),
               throughDate: jstDate(now),
               startTime: "00:00",
               endTime: "24:00",
-            })
-          }
+            });
+          }}
         >
           今日・終日
         </button>
@@ -77,10 +93,19 @@ export function PeriodFilter({
           <button
             type="button"
             key={minutes}
-            className={SHORTCUT}
-            onClick={() => preceding(minutes)}
+            aria-pressed={duration === minutes}
+            className={`${SHORTCUT} ${duration === minutes ? "border-teal-700 bg-teal-50 text-teal-900" : ""}`}
+            onClick={() => {
+              if (duration === minutes) {
+                setDuration(null);
+                return;
+              }
+              setDuration(minutes);
+              const start = timestamp(date, startTime);
+              setRange(start, start + minutes * 60000);
+            }}
           >
-            前{minutes}分
+            {minutes}分間
           </button>
         ))}
       </div>
@@ -89,14 +114,8 @@ export function PeriodFilter({
           label="開始"
           date={date}
           time={startTime}
-          onDate={(value) =>
-            onChange({
-              ...period,
-              date: value,
-              throughDate: date === throughDate ? value : throughDate,
-            })
-          }
-          onTime={(value) => onChange({ ...period, startTime: value })}
+          onDate={(value) => editStart(value, startTime)}
+          onTime={(value) => editStart(date, value)}
         />
         <span className="font-bold text-stone-400">〜</span>
         <TimeEndpoint
@@ -104,8 +123,8 @@ export function PeriodFilter({
           date={throughDate}
           time={endTime}
           end
-          onDate={(value) => onChange({ ...period, throughDate: value })}
-          onTime={(value) => onChange({ ...period, endTime: value })}
+          onDate={(value) => editEnd(value, endTime)}
+          onTime={(value) => editEnd(throughDate, value)}
         />
       </div>
       <div>
@@ -114,7 +133,7 @@ export function PeriodFilter({
           className="grid grid-cols-[repeat(auto-fit,minmax(76px,1fr))] gap-1"
           aria-label="時間帯のショートカット"
         >
-          {HOURS.map((hour) => {
+          {HOURS.filter((hour) => hour >= 10 && hour <= 20).map((hour) => {
             const selected =
               date === throughDate &&
               startTime === `${pad(hour)}:00` &&
@@ -124,14 +143,15 @@ export function PeriodFilter({
                 type="button"
                 key={hour}
                 aria-pressed={selected}
-                onClick={() =>
+                onClick={() => {
+                  setDuration(60);
                   onChange({
                     date,
                     throughDate: date,
                     startTime: `${pad(hour)}:00`,
                     endTime: `${pad(hour + 1)}:00`,
-                  })
-                }
+                  });
+                }}
                 className={`${SHORTCUT} shrink-0 ${selected ? "border-teal-700 bg-teal-50 text-teal-900" : ""}`}
               >
                 {hour}時台
@@ -143,7 +163,9 @@ export function PeriodFilter({
       <p className="text-stone-500 text-xs">
         時・分を上下にスクロール。分は5分刻み。24:00は翌日0時。
         <br />
-        前○分：今日は直前の5分区切りまで、過去日は選んだ終了時刻まで。まだ来ていない時間は集計しません。
+        {duration !== null
+          ? `${duration}分間で連動中。開始を変えると終了、終了を変えると開始も動きます。同じボタンでもう一度押すと解除。`
+          : "15・30・60分間のボタンで、区間の長さを固定できます。"}
       </p>
     </fieldset>
   );
@@ -220,6 +242,34 @@ function TimeWheel({
   const current = useRef({ values, onChange });
   current.current = { values, onChange };
   const index = Math.max(0, values.indexOf(value));
+  const selectedIndex = useRef(index);
+  selectedIndex.current = index;
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    let visible = false;
+    let reset: ReturnType<typeof setTimeout>;
+    const observer = new ResizeObserver(() => {
+      const nextVisible = element.clientHeight > 0;
+      if (nextVisible && !visible) {
+        programmatic.current = true;
+        element.scrollTo({
+          top: selectedIndex.current * 40,
+          behavior: "instant",
+        });
+        clearTimeout(reset);
+        reset = setTimeout(() => {
+          programmatic.current = false;
+        }, 250);
+      }
+      visible = nextVisible;
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      clearTimeout(reset);
+    };
+  }, []);
   useEffect(() => {
     clearTimeout(timer.current);
     programmatic.current = true;

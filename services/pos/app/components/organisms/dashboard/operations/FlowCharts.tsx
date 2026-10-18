@@ -11,13 +11,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { FlowBucket } from "~/lib/analytics/operations";
+import type { BucketMinutes, FlowBucket } from "~/lib/analytics/operations";
 
-/** 未完了の15分枠は流量には表示し、加速度の比較からは除外する。 */
+/** 未完了の時間枠は流量には表示し、加速度の比較からは除外する。 */
 export function FlowCharts({
   buckets,
   chart = "all",
-}: { buckets: FlowBucket[]; chart?: "flow" | "acceleration" | "all" }) {
+  intervalMinutes = 15,
+}: {
+  buckets: FlowBucket[];
+  chart?: "flow" | "acceleration" | "all";
+  intervalMinutes?: BucketMinutes;
+}) {
   // 深夜の空の枠は省略するが、営業中のゼロの枠は残す。
   const first = buckets.findIndex((b) => b.received || b.served || b.backlog);
   const data = (
@@ -25,7 +30,7 @@ export function FlowCharts({
   ).map((b) => ({
     ...b,
     clock: `${jstDate(b.at).slice(5)} ${jstClock(b.at).slice(0, 5)}`,
-    period: b.complete ? "集計済みの15分" : "集計中",
+    period: b.complete ? `集計済みの${intervalMinutes}分` : "集計中",
   }));
   const peakReceived = Math.max(1, ...data.map((point) => point.received));
   return (
@@ -39,7 +44,7 @@ export function FlowCharts({
           </p>
           <div
             className="h-64 w-full"
-            aria-label="15分ごとの注文・お渡し・お渡し待ちの杯数"
+            aria-label={`${intervalMinutes}分ごとの注文・お渡し・お渡し待ちの杯数`}
           >
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
@@ -68,7 +73,7 @@ export function FlowCharts({
                 />
                 <Line
                   dataKey="backlog"
-                  name="15分の終わりのお渡し待ち（杯）"
+                  name={`${intervalMinutes}分の終わりのお渡し待ち（杯）`}
                   stroke="#f59e0b"
                   strokeWidth={2}
                   dot={false}
@@ -82,7 +87,7 @@ export function FlowCharts({
       {chart !== "flow" && (
         <div
           className="h-40 w-full"
-          aria-label="待ちの増え方の変化。前の15分との比較"
+          aria-label={`待ちの増え方の変化。前の${intervalMinutes}分との比較`}
         >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ right: 16, left: 0 }}>
@@ -93,7 +98,7 @@ export function FlowCharts({
               <ReferenceLine y={0} stroke="#64748b" />
               <Bar
                 dataKey="acceleration"
-                name="待ちの増え方の変化（杯/15分²）"
+                name={`待ちの増え方の変化（杯/${intervalMinutes}分²）`}
                 isAnimationActive={false}
                 radius={[4, 4, 0, 0]}
               >
@@ -108,7 +113,7 @@ export function FlowCharts({
               </Bar>
               <Line
                 dataKey="net"
-                name="待ちの増減（杯/15分）"
+                name={`待ちの増減（杯/${intervalMinutes}分）`}
                 stroke="#64748b"
                 dot={false}
                 isAnimationActive={false}
@@ -130,7 +135,7 @@ export function FlowCharts({
       {chart === "flow" && (
         <details className="rounded-xl bg-stone-50 p-3">
           <summary className="cursor-pointer font-bold text-sm">
-            注文が集中した15分を見る
+            注文が集中した{intervalMinutes}分を見る
           </summary>
           <p className="my-2 text-stone-500 text-xs">
             濃い青ほど注文が多い時間。各枠に杯数を表示します。
