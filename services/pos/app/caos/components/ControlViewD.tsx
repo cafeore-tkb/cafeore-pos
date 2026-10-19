@@ -497,7 +497,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       ) : (
         <aside
           data-return-target
-          className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${orderTabsAreaBackground} ${LINE}`}
+          className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden border-2 shadow-xs ${orderTabsAreaBackground(unfinished)} ${LINE}`}
         >
           {dragSource?.kind === "ticket" && (
             <div

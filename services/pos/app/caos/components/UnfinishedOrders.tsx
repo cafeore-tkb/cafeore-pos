@@ -31,8 +31,13 @@ export interface UnfinishedView {
   onSelectOrder: (orderNo: number) => void;
 }
 
-/** 注文タブの表示領域。タブ固有色を広げず、どの表示でも同じ地色にする。 */
-export const orderTabsAreaBackground = "bg-slate-50";
+/** 選択タブと表示領域を同じ色でつなぐ。未提供は従来の薄いブラウン。 */
+export const orderTabsAreaBackground = (view?: UnfinishedView, all = false) =>
+  all
+    ? "bg-[#eef2f7]"
+    : view?.tab === "unfinished"
+      ? "bg-[#f5ede3]"
+      : "bg-[#eef6ff]";
 
 const TAB =
   "relative flex h-12 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
@@ -128,7 +133,7 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unassigned")
             : view.onSelectTab("unassigned")
         }
-        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unassigned" ? `bg-[#eaf3fb] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unassigned" ? `bg-[#eef6ff] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         {icon}
         {label}
@@ -179,7 +184,7 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unfinished")
             : view.onSelectTab("unfinished")
         }
-        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unfinished" ? `bg-[#f1eff8] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unfinished" ? `bg-[#f5ede3] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
@@ -215,7 +220,7 @@ export const UnassignedHeading: React.FC<{
           role="tab"
           aria-selected={allTab.active}
           onClick={allTab.onSelect}
-          className={`${TAB} min-w-0 flex-1 justify-center px-1.5 ${allTab.active ? `bg-[#edf3f1] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
+          className={`${TAB} min-w-0 flex-1 justify-center px-1.5 ${allTab.active ? `bg-[#eef2f7] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
         >
           <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
           一覧

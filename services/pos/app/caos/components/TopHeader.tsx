@@ -1,6 +1,5 @@
 import {
   BellRing,
-  Database,
   type LucideIcon,
   Printer,
   Search,
@@ -14,7 +13,6 @@ import { EmergencyIcon } from "~/components/molecules/EmergencyForm";
 import { PendingPrints } from "~/components/molecules/PendingPrints";
 import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
-import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEW_BUTTONS, type ControlViewMode } from "./ControlWorkspace";
 import { FloatingStatusNotices } from "./FloatingWindows";
@@ -45,7 +43,6 @@ interface TopHeaderProps {
   onTimelineNow: () => void;
   /** タイムラインが NOW を追っている（「現在」を押した形にする。手でスクロールしたら押していない形にして、押すと戻ることを見せる） */
   followingNow: boolean;
-  posStatus: PosConnectionStatus;
   /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し・レジで印刷待ちのシールの数） */
   labelPrinter: {
     status: LabelPrinterStatus;
@@ -102,26 +99,6 @@ const StatusBadge: React.FC<{
   </output>
 );
 
-const POS_STATUS: Record<PosConnectionStatus, { label: string; tone: Tone }> = {
-  off: { label: "実データテスト中は停止", tone: "off" },
-  connecting: { label: "接続中", tone: "waiting" },
-  open: { label: "接続済み", tone: "ok" },
-  reconnecting: { label: "再接続中", tone: "waiting" },
-};
-
-/** 注文の接続の札（閲覧だけの画面（ReadOnlyBoard）でも使う） */
-export const PosStatusBadge: React.FC<{
-  status: PosConnectionStatus;
-  pendingCount?: number;
-}> = ({ status, pendingCount = 0 }) => (
-  <StatusBadge
-    icon={Database}
-    label={`cafeore-posの注文: ${POS_STATUS[status].label}${pendingCount ? `・DB保存待ち ${pendingCount}件` : ""}`}
-    tone={pendingCount ? "waiting" : POS_STATUS[status].tone}
-    text={pendingCount ? `保存待ち ${pendingCount}` : undefined}
-  />
-);
-
 // シールのプリンターの札（つなぐ前はつないでいるところとして出す）
 const PRINTER_STATUS: Record<
   LabelPrinterStatus,
@@ -147,7 +124,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   showTimelineNow,
   onTimelineNow,
   followingNow,
-  posStatus,
   labelPrinter,
   unsent,
   onOpenSearch,
@@ -178,7 +154,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       data-caos-layer
-      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#315f86] border-b bg-[#4682b4] px-2 shadow-md"
+      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#bdd1e2] border-b bg-[#e4eff8] px-2 shadow-md"
     >
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
@@ -221,13 +197,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
       </FloatingStatusNotices>
       <div className="flex h-full min-w-0 items-center gap-2">
-        {/* 左側は時計、表示切替、現在の順。 */}
-        <div className="flex h-full w-[240px] shrink-0 items-center justify-center">
-          <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-white tabular-nums leading-none">
-            {timeStr}
-          </time>
-        </div>
-
         <fieldset
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 p-1"
           aria-label="管制盤の表示切替"
@@ -247,6 +216,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </button>
           ))}
         </fieldset>
+
+        {/* 左側は表示切替、時計、現在の順。 */}
+        <div className="flex h-full w-[240px] shrink-0 items-center justify-center">
+          <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-slate-900 tabular-nums leading-none">
+            {timeStr}
+          </time>
+        </div>
 
         {showTimelineNow && (
           <button
@@ -271,7 +247,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-center font-black text-[16px] leading-tight"
       >
         {cancellation && (
-          <span className="max-w-full truncate text-red-100">
+          <span className="max-w-full truncate text-red-800">
             {cancellation}
           </span>
         )}
@@ -353,12 +329,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             緊急
           </button>
         )}
-        {/* 注文の接続とシールのプリンターは右端に上下で重ねる。 */}
+        {/* シールのプリンターの状態は右端に表示する。 */}
         <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
-          <PosStatusBadge
-            status={posStatus}
-            pendingCount={unsent.pendingCount}
-          />
           <StatusBadge
             icon={Printer}
             label={`ラベルプリンター: ${PRINTER_STATUS[labelPrinter.status].label}`}

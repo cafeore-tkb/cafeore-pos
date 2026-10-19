@@ -2,9 +2,7 @@ import { jstClock } from "@cafeore/common";
 import { Eye, Volume2, VolumeX } from "lucide-react";
 import type React from "react";
 import { NavLink } from "react-router";
-import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import type { ViewSound } from "../hooks/useViewBoard";
-import { PosStatusBadge } from "./TopHeader";
 
 // 閲覧だけの画面（盤面を読むだけで、書き込みは送らない）。ヘッダーから行き来する
 const VIEW_SCREENS = [
@@ -18,13 +16,12 @@ export const SEGMENTS =
 export const segmentClass = (active: boolean) =>
   `rounded-md px-2.5 py-1.5 ${active ? "bg-slate-900 text-white" : "bg-white hover:bg-slate-100"}`;
 
-/** 閲覧だけの画面のヘッダー。CaOS の印・閲覧の画面の切り替え・時計・各画面のもの（children）・通知音・担当者の知らせ・注文の接続 */
+/** 閲覧だけの画面のヘッダー。CaOS の印・閲覧の画面の切り替え・時計・各画面のもの（children）・通知音・担当者の知らせ */
 export const ViewHeader: React.FC<{
   nowMs: number;
-  status: PosConnectionStatus;
   sound: ViewSound;
   children?: React.ReactNode;
-}> = ({ nowMs, status, sound, children }) => (
+}> = ({ nowMs, sound, children }) => (
   <header className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
     <span className="font-black font-mono text-3xl tabular-nums">
       {jstClock(nowMs)}
@@ -47,7 +44,6 @@ export const ViewHeader: React.FC<{
     </nav>
     {children}
     <SoundToggle sound={sound} />
-    <PosStatusBadge status={status} />
   </header>
 );
 

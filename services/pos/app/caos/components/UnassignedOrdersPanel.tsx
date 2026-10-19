@@ -259,7 +259,7 @@ export const UnassignedStrip: React.FC<
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
-      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 ${orderTabsAreaBackground} shadow-xs ${folded ? "" : "h-full"}`}
+      className={`flex flex-col overflow-hidden border border-slate-300 ${orderTabsAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
     >
       <header
         className={`flex ${unfinished ? "h-14" : "h-10"} shrink-0 items-center gap-2 border-slate-300 border-b bg-slate-100 px-2`}
@@ -362,7 +362,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
     : [];
   return (
     <section
-      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${orderTabsAreaBackground}`}
+      className={`flex h-full flex-col overflow-hidden border border-slate-300 shadow-xs ${orderTabsAreaBackground(unfinished, allOrders?.active)}`}
     >
       <PanelHeader
         heightClassName={unfinished ? "h-14" : undefined}

@@ -161,7 +161,7 @@ export default function App() {
   };
 
   const page = (
-    <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
+    <div className="flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
           activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
@@ -181,7 +181,6 @@ export default function App() {
             setTimelineCommand({ direction: "now", id: Date.now() })
           }
           followingNow={followingNow}
-          posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
           unsent={session.unsent}
           onOpenSearch={() => selection.openSearch("")}
