@@ -41,8 +41,6 @@ type OrderCup struct {
 	DripperPosition *int `gorm:"type:integer"`
 	// 同じカードで淹れるカップをまとめる印（統合したら同じ値）
 	DripID *uuid.UUID `gorm:"type:uuid;index"`
-	// 初めてドリッパーへ割り振った時刻。再割当・未割当への差し戻しでは変えない
-	AssignedAt *time.Time
 	// 抽出を始めた時刻・終えた時刻
 	BrewStartedAt  *time.Time
 	BrewFinishedAt *time.Time

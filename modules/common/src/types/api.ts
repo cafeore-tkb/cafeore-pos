@@ -766,11 +766,6 @@ export interface components {
       drip_id: string | null;
       /**
        * Format: date-time
-       * @description CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
-       */
-      assigned_at: string | null;
-      /**
-       * Format: date-time
        * @description CaOS で抽出を始めた時刻
        */
       brew_started_at: string | null;
@@ -794,11 +789,6 @@ export interface components {
       dripper_position: number | null;
       /** Format: uuid */
       drip_id: string | null;
-      /**
-       * Format: date-time
-       * @description CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
-       */
-      assigned_at: string | null;
       /** Format: date-time */
       brew_started_at: string | null;
       /** Format: date-time */

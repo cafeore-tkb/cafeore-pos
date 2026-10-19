@@ -4,7 +4,6 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -51,25 +50,27 @@ export function DurationTrend({
             <LineChart
               data={chronological}
               accessibilityLayer
-              margin={{ left: 8, right: 12, top: 12, bottom: 12 }}
+              margin={{ left: 22, right: 12, top: 12, bottom: 26 }}
             >
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="at"
+                label={{
+                  value: "受付時間枠（JST）",
+                  position: "bottom",
+                  offset: 4,
+                }}
                 tickFormatter={label}
                 minTickGap={30}
                 tick={{ fontSize: 11 }}
               />
-              {chronological.map((bucket) => (
-                <ReferenceLine
-                  key={bucket.at}
-                  x={bucket.at}
-                  stroke="#d6d3d1"
-                  strokeOpacity={0.45}
-                  strokeWidth={1}
-                />
-              ))}
               <YAxis
+                label={{
+                  value: "提供所要時間（分）",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: -12,
+                }}
                 tickFormatter={(value) => `${value}分`}
                 width={55}
                 domain={[0, "auto"]}
@@ -78,7 +79,7 @@ export function DurationTrend({
                 labelFormatter={(value) => `${label(Number(value))}〜`}
                 formatter={(value: number) => minutes(value)}
               />
-              <Legend />
+              <Legend verticalAlign="top" height={32} />
               {series.map((s) => (
                 <Line
                   key={s.key}

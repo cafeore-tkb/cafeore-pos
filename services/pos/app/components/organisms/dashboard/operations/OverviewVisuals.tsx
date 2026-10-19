@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import type { operationsReport } from "~/lib/analytics/operations";
+import { ChartValues } from "./ChartValues";
 
 type Report = ReturnType<typeof operationsReport>;
 const WAIT_BANDS = [
@@ -139,6 +140,10 @@ export function OverviewVisuals({
                   </span>
                 </div>
               </div>
+              <ChartValues
+                columns={["待ち時間区間", "未提供（杯）"]}
+                rows={waiting.map((b) => [b.name, b.value])}
+              />
               <ul className="grid grid-cols-2 gap-2 text-xs">
                 {waiting.map((band) => (
                   <li
@@ -183,7 +188,8 @@ export function OverviewVisuals({
                 <BarChart
                   data={products}
                   layout="vertical"
-                  margin={{ left: 0, right: 20 }}
+                  accessibilityLayer
+                  margin={{ top: 8, left: 16, right: 20, bottom: 28 }}
                 >
                   <CartesianGrid
                     horizontal={false}
@@ -192,6 +198,11 @@ export function OverviewVisuals({
                   />
                   <XAxis
                     type="number"
+                    label={{
+                      value: "注文杯数（杯）",
+                      position: "bottom",
+                      offset: 4,
+                    }}
                     allowDecimals={false}
                     unit="杯"
                     tick={{ fontSize: 11 }}
@@ -199,6 +210,12 @@ export function OverviewVisuals({
                   <YAxis
                     type="category"
                     dataKey="name"
+                    label={{
+                      value: "商品",
+                      angle: -90,
+                      position: "insideLeft",
+                      offset: -12,
+                    }}
                     width={96}
                     tick={{ fontSize: 11 }}
                   />
@@ -221,6 +238,10 @@ export function OverviewVisuals({
               この期間の注文はありません。
             </p>
           )}
+          <ChartValues
+            columns={["商品", "注文（杯）"]}
+            rows={products.map((p) => [p.name, p.cups])}
+          />
           <button
             type="button"
             onClick={() => onSelect("duration")}
@@ -240,9 +261,12 @@ export function ProductTimeChart({
 }: { products: Report["products"] }) {
   const data = products.map((product) => ({
     name: product.name,
-    allocation: product.allocation.p50,
-    afterAllocation: product.afterAllocation.p50,
+    prep: product.prep.p50,
+    handoff: product.handoff.p50,
     total: product.total.p50,
+    prepCount: product.prep.count,
+    handoffCount: product.handoff.count,
+    totalCount: product.total.count,
   }));
   if (!data.length)
     return (
@@ -251,54 +275,157 @@ export function ProductTimeChart({
       </p>
     );
   return (
-    <div
-      style={{ height: Math.max(260, data.length * 74) }}
-      aria-label="商品別の注文からマスターでの割り振り・割り振りからお渡し・全体の時間の真ん中の値"
-    >
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ right: 20 }}>
-          <CartesianGrid
-            horizontal={false}
-            strokeDasharray="3 3"
-            stroke="#e7e5e4"
-          />
-          <XAxis type="number" unit="分" tick={{ fontSize: 11 }} />
-          <YAxis
-            dataKey="name"
-            type="category"
-            width={96}
-            tick={{ fontSize: 11 }}
-          />
-          <Tooltip
-            formatter={(value, name) => [
-              typeof value === "number" ? `${value.toFixed(1)}分` : "記録なし",
-              name,
-            ]}
-          />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          <Bar
-            dataKey="allocation"
-            name="注文→マスターでの割り振り"
-            fill="#38bdf8"
-            radius={[0, 4, 4, 0]}
-            isAnimationActive={false}
-          />
-          <Bar
-            dataKey="afterAllocation"
-            name="マスターでの割り振り→お渡し"
-            fill="#fbbf24"
-            radius={[0, 4, 4, 0]}
-            isAnimationActive={false}
-          />
-          <Bar
-            dataKey="total"
-            name="注文→お渡し"
-            fill="#0d9488"
-            radius={[0, 4, 4, 0]}
-            isAnimationActive={false}
-          />
-        </BarChart>
-      </ResponsiveContainer>
+    <div>
+      <div
+        style={{ height: Math.max(260, data.length * 74) }}
+        aria-label="商品別の注文から準備完了・準備完了からお渡し・全体の時間の真ん中の値"
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            accessibilityLayer
+            margin={{ top: 8, left: 16, right: 20, bottom: 28 }}
+          >
+            <CartesianGrid
+              horizontal={false}
+              strokeDasharray="3 3"
+              stroke="#e7e5e4"
+            />
+            <XAxis
+              type="number"
+              unit="分"
+              domain={[0, "auto"]}
+              label={{
+                value: "所要時間の中央値（分）",
+                position: "bottom",
+                offset: 4,
+              }}
+              tick={{ fontSize: 11 }}
+            />
+            <YAxis
+              dataKey="name"
+              label={{
+                value: "商品",
+                angle: -90,
+                position: "insideLeft",
+                offset: -12,
+              }}
+              type="category"
+              width={96}
+              tick={{ fontSize: 11 }}
+            />
+            <Tooltip
+              formatter={(value, name) => [
+                typeof value === "number"
+                  ? `${value.toFixed(1)}分`
+                  : "記録なし",
+                name,
+              ]}
+            />
+            <Legend
+              verticalAlign="top"
+              wrapperStyle={{ fontSize: 11 }}
+              height={60}
+            />
+            <Bar
+              dataKey="prep"
+              name="注文→準備完了"
+              fill="#38bdf8"
+              radius={[0, 4, 4, 0]}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="handoff"
+              name="準備完了→お渡し"
+              fill="#fbbf24"
+              radius={[0, 4, 4, 0]}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="total"
+              name="注文→お渡し"
+              fill="#0d9488"
+              radius={[0, 4, 4, 0]}
+              isAnimationActive={false}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <ChartValues
+        columns={[
+          "商品",
+          "注文→準備完了（分）",
+          "準備完了記録（杯）",
+          "準備完了→提供（分）",
+          "準備完了→提供の記録（杯）",
+          "注文→提供（分）",
+          "提供記録（杯）",
+        ]}
+        rows={data.map((p) => [
+          p.name,
+          p.prep,
+          p.prepCount,
+          p.handoff,
+          p.handoffCount,
+          p.total,
+          p.totalCount,
+        ])}
+      />
+    </div>
+  );
+}
+
+export function ProductCupChart({
+  products,
+}: { products: Report["products"] }) {
+  const data = [...products].sort((a, b) => b.received - a.received);
+  if (!data.length)
+    return <p className="py-6 text-sm">この期間の注文はありません。</p>;
+  return (
+    <div>
+      <div style={{ height: Math.max(240, data.length * 40 + 60) }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data}
+            layout="vertical"
+            accessibilityLayer
+            margin={{ top: 12, right: 20, bottom: 28, left: 20 }}
+          >
+            <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+            <XAxis
+              type="number"
+              domain={[0, "auto"]}
+              allowDecimals={false}
+              label={{ value: "注文杯数（杯）", position: "bottom", offset: 4 }}
+            />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={100}
+              tick={{ fontSize: 11 }}
+              label={{
+                value: "商品",
+                angle: -90,
+                position: "insideLeft",
+                offset: -16,
+              }}
+            />
+            <Tooltip formatter={(v) => [`${v}杯`, "注文"]} />
+            <Bar
+              dataKey="received"
+              name="注文杯数"
+              fill="#0284c7"
+              isAnimationActive={false}
+              maxBarSize={26}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <ChartValues
+        columns={["商品", "注文杯数（杯）"]}
+        rows={data.map((p) => [p.name, p.received])}
+      />
     </div>
   );
 }

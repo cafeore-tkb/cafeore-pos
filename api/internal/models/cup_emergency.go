@@ -22,7 +22,6 @@ type CupEmergency struct {
 	Dripper         *int       `gorm:"type:smallint;check:cup_emergencies_dripper_check,dripper BETWEEN 1 AND 6"`
 	DripperPosition *int       `gorm:"type:integer"`
 	DripID          *uuid.UUID `gorm:"type:uuid;index"`
-	AssignedAt      *time.Time
 	BrewStartedAt   *time.Time
 	BrewFinishedAt  *time.Time
 }

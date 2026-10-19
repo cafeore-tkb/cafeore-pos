@@ -1,4 +1,4 @@
-import { jstClock, jstDate } from "@cafeore/common";
+import { type OrderEntity, jstClock, jstDate } from "@cafeore/common";
 import {
   Activity,
   Banknote,
@@ -7,11 +7,11 @@ import {
   Clock3,
   Coffee,
   History,
-  LayoutDashboard,
   ListOrdered,
+  Package,
   Radio,
   ReceiptText,
-  ShoppingBag,
+  ScrollText,
   Timer,
   WalletCards,
 } from "lucide-react";
@@ -25,6 +25,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { dashboardFinance } from "~/lib/analytics/dashboardFinance";
 import { load2025Baseline } from "~/lib/analytics/historical";
 import {
   type AnalysisOrder,
@@ -34,36 +35,51 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { OrderStatusList } from "./MasterState";
 import { OrderList } from "./OrderList";
+import { AvailabilityReview } from "./operations/AvailabilityReview";
+import { ChartValues } from "./operations/ChartValues";
 import { DurationCharts, minutes } from "./operations/DurationCharts";
 import { DurationTrend } from "./operations/DurationTrend";
 import { FlowCharts } from "./operations/FlowCharts";
-import { ProductTimeChart } from "./operations/OverviewVisuals";
+import { LogReview } from "./operations/LogReview";
+import { OperationsDashboard } from "./operations/OperationsDashboard";
+import {
+  ProductCupChart,
+  ProductTimeChart,
+} from "./operations/OverviewVisuals";
+import { SnapshotComparison } from "./operations/SnapshotComparison";
 
 const SECTIONS = [
   {
-    id: "overview",
-    name: "概要",
-    description: "営業状況をひと目で確認",
-    icon: LayoutDashboard,
-  },
-  {
     id: "sales",
-    name: "売上",
-    description: "金額と決済の内訳",
+    name: "売り上げ",
+    description: "金額・杯数・決済の内訳",
     icon: Banknote,
   },
   {
+    id: "analysis",
+    name: "提供パフォーマンス",
+    description: "提供スピードと待ち時間",
+    icon: BarChart3,
+  },
+  {
+    id: "inventory",
+    name: "消費量・在庫",
+    description: "POS上の計算値と現在残量",
+    icon: Package,
+  },
+  {
     id: "details",
-    name: "詳細",
+    name: "個別データ",
     description: "注文ごとの記録",
     icon: ListOrdered,
   },
   {
-    id: "analysis",
-    name: "分析",
-    description: "流量と提供時間のグラフ",
-    icon: BarChart3,
+    id: "records",
+    name: "運用記録",
+    description: "停止・再開と操作ログ",
+    icon: ScrollText,
   },
   {
     id: "comparison",
@@ -75,12 +91,7 @@ const SECTIONS = [
 
 type DashboardSection = (typeof SECTIONS)[number]["id"];
 const yen = (value: number) => `¥${value.toLocaleString("ja-JP")}`;
-const squarePaymentLabel = (type: string) => {
-  if (type === "CARD_PRESENT") return "カード";
-  if (type === "QR_CODE") return "QRコード";
-  if (type === "unknown") return "決済種別の記録なし";
-  return "その他のSquare決済";
-};
+const EMPTY_ORDERS: OrderEntity[] = [];
 
 export function DashboardWorkspace() {
   const {
@@ -91,7 +102,7 @@ export function DashboardWorkspace() {
   } = useOrdersWSContext();
   const [now, setNow] = useState(() => Date.now());
   const [selectedDate, setSelectedDate] = useState(() => jstDate(Date.now()));
-  const [section, setSection] = useState<DashboardSection>("overview");
+  const [section, setSection] = useState<DashboardSection>("sales");
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [referenceOrders, setReferenceOrders] = useState<AnalysisOrder[]>([]);
   const [referenceDate, setReferenceDate] = useState("");
@@ -135,7 +146,7 @@ export function DashboardWorkspace() {
     };
   }, []);
 
-  const sourceOrders = allOrders ?? activeOrders ?? [];
+  const sourceOrders = allOrders ?? activeOrders ?? EMPTY_ORDERS;
   const window = useMemo(
     () => dayWindow(selectedDate, now),
     [selectedDate, now],
@@ -185,70 +196,10 @@ export function DashboardWorkspace() {
     window.start,
     intervalMinutes,
   ]);
-  const finance = useMemo(() => {
-    const validOrders = selectedOrders.filter((order) => {
-      const cancelledAt = order.cancelledAt?.getTime();
-      return cancelledAt == null || cancelledAt >= cutoff;
-    });
-    let cash = 0;
-    let square = 0;
-    const squareByType = new Map<string, number>();
-    const addSquare = (amount: number, paymentType?: string) => {
-      square += amount;
-      const key = paymentType ?? "unknown";
-      squareByType.set(key, (squareByType.get(key) ?? 0) + amount);
-    };
-    for (const order of validOrders) {
-      if (order.payments.length > 0) {
-        for (const payment of order.payments) {
-          if (payment.method === "square")
-            addSquare(payment.amount, payment.squarePaymentType);
-          else cash += payment.amount;
-        }
-      } else if (order.paymentMethod === "square") {
-        addSquare(order.billingAmount);
-      } else {
-        cash += order.billingAmount;
-      }
-    }
-    const hourly = Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      label: `${String(hour).padStart(2, "0")}:00`,
-      revenue: 0,
-      orders: 0,
-    }));
-    for (const order of validOrders) {
-      const hour = Number(jstClock(order.createdAt.getTime()).slice(0, 2));
-      hourly[hour].revenue += order.billingAmount;
-      hourly[hour].orders++;
-    }
-    const activeHours = hourly.filter(
-      (item, index) =>
-        item.revenue > 0 ||
-        item.orders > 0 ||
-        (selectedDate === jstDate(now) &&
-          index === Number(jstClock(now).slice(0, 2))),
-    );
-    return {
-      cash,
-      square,
-      squareDetails: [...squareByType.entries()]
-        .map(([type, amount]) => ({
-          type,
-          label: squarePaymentLabel(type),
-          amount,
-        }))
-        .sort((a, b) => b.amount - a.amount),
-      discount: validOrders.reduce((sum, order) => sum + order.discount, 0),
-      cancelled: selectedOrders.length - validOrders.length,
-      average:
-        validOrders.length > 0
-          ? Math.round(report.revenue / validOrders.length)
-          : 0,
-      hourly: activeHours.length > 0 ? activeHours : hourly.slice(8, 19),
-      peak: [...hourly].sort((a, b) => b.revenue - a.revenue)[0],
-    };
-  }, [selectedOrders, cutoff, report.revenue, selectedDate, now]);
+  const finance = useMemo(
+    () => dashboardFinance(selectedOrders, cutoff, now, selectedDate),
+    [selectedOrders, cutoff, now, selectedDate],
+  );
 
   const selectedSection =
     SECTIONS.find((item) => item.id === section) ?? SECTIONS[0];
@@ -314,7 +265,7 @@ export function DashboardWorkspace() {
         </header>
 
         <nav
-          className="grid grid-cols-2 gap-2 border-stone-200 border-b bg-white p-2 sm:grid-cols-3 sm:p-3 lg:grid-cols-5"
+          className="grid grid-cols-12 gap-2 border-stone-200 border-b bg-white p-2 sm:p-3"
           role="tablist"
           aria-label="ダッシュボードの表示"
         >
@@ -346,10 +297,10 @@ export function DashboardWorkspace() {
                     .getElementById(`${tabId}-tab-${nextSection.id}`)
                     ?.focus();
                 }}
-                className={`group flex min-h-16 items-center gap-3 rounded-2xl px-3 py-3 text-left transition sm:px-4 ${selected ? "bg-teal-950 text-white shadow-lg shadow-teal-950/15" : "text-stone-500 hover:bg-stone-100 hover:text-stone-900"}`}
+                className={`${index < 2 ? "col-span-6" : "col-span-6 sm:col-span-3"} group flex min-h-16 items-center gap-3 rounded-2xl px-3 py-3 text-left transition sm:px-4 ${selected ? "bg-teal-950 text-white shadow-lg shadow-teal-950/15" : "text-stone-500 hover:bg-stone-100 hover:text-stone-900"}`}
               >
                 <span
-                  className={`rounded-xl p-2 ${selected ? "bg-white/10 text-teal-200" : "bg-stone-100 text-stone-500 group-hover:bg-white"}`}
+                  className={`${index < 2 ? "" : "hidden sm:block"} rounded-xl p-2 ${selected ? "bg-white/10 text-teal-200" : "bg-stone-100 text-stone-500 group-hover:bg-white"}`}
                 >
                   <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
@@ -382,6 +333,7 @@ export function DashboardWorkspace() {
               </h2>
             </div>
             <p className="rounded-full border border-stone-200 bg-white px-4 py-2 text-stone-500 text-xs shadow-sm">
+              {section === "inventory" ? "在庫は現在値 / 注文の比較期間：" : ""}
               {selectedDate} 00:00〜
               {selectedDate === jstDate(now)
                 ? jstClock(now).slice(0, 5)
@@ -389,10 +341,34 @@ export function DashboardWorkspace() {
             </p>
           </div>
 
-          {!isOrdersLoaded ? (
+          {section === "inventory" ? (
+            <AvailabilityReview
+              buckets={report.buckets}
+              intervalMinutes={intervalMinutes}
+            />
+          ) : !isOrdersLoaded ? (
             <LoadingState />
-          ) : section === "overview" ? (
-            <OverviewSection report={report} />
+          ) : section === "records" ? (
+            <div className="space-y-5">
+              <section className="rounded-3xl border bg-white p-5">
+                <h3 className="mb-3 font-bold text-lg">
+                  オーダーストップ・再開の記録
+                </h3>
+                <OrderStatusList start={window.start} end={cutoff} />
+              </section>
+              <section className="rounded-3xl border bg-white p-5">
+                <h3 className="mb-3 font-bold text-lg">
+                  操作ログ・サーバー成功履歴
+                </h3>
+                <LogReview start={window.start} end={cutoff} />
+              </section>
+              <details className="rounded-3xl border bg-white p-5">
+                <summary className="cursor-pointer font-bold">
+                  従来の運用分析（期間指定・引き継ぎ・CSV）
+                </summary>
+                <OperationsDashboard />
+              </details>
+            </div>
           ) : section === "sales" ? (
             <SalesSection report={report} finance={finance} />
           ) : section === "details" ? (
@@ -413,19 +389,22 @@ export function DashboardWorkspace() {
               onIntervalChange={setIntervalMinutes}
             />
           ) : (
-            <ComparisonSection
-              currentDate={selectedDate}
-              current={report}
-              referenceDate={referenceDate}
-              referenceDays={referenceDays}
-              reference={comparisonReport}
-              referenceInfo={referenceInfo}
-              loading={referenceLoading}
-              failure={referenceFailure}
-              intervalMinutes={intervalMinutes}
-              onReferenceDateChange={setReferenceDate}
-              onIntervalChange={setIntervalMinutes}
-            />
+            <div className="space-y-5">
+              <SnapshotComparison current={report} window={window} />
+              <ComparisonSection
+                currentDate={selectedDate}
+                current={report}
+                referenceDate={referenceDate}
+                referenceDays={referenceDays}
+                reference={comparisonReport}
+                referenceInfo={referenceInfo}
+                loading={referenceLoading}
+                failure={referenceFailure}
+                intervalMinutes={intervalMinutes}
+                onReferenceDateChange={setReferenceDate}
+                onIntervalChange={setIntervalMinutes}
+              />
+            </div>
           )}
         </main>
       </div>
@@ -434,57 +413,7 @@ export function DashboardWorkspace() {
 }
 
 type Report = ReturnType<typeof operationsReport>;
-type Finance = {
-  cash: number;
-  square: number;
-  squareDetails: { type: string; label: string; amount: number }[];
-  discount: number;
-  cancelled: number;
-  average: number;
-  hourly: { hour: number; label: string; revenue: number; orders: number }[];
-  peak: { hour: number; label: string; revenue: number; orders: number };
-};
-
-function OverviewSection({ report }: { report: Report }) {
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <MetricCard
-          icon={Banknote}
-          label="売上"
-          value={yen(report.revenue)}
-          note="取消を除く注文金額"
-          tone="emerald"
-        />
-        <MetricCard
-          icon={ShoppingBag}
-          label="注文"
-          value={`${report.orderCount}件`}
-          note={`取消 ${report.cancelledOrders}件`}
-          tone="sky"
-        />
-        <MetricCard
-          icon={Coffee}
-          label="提供済み杯数"
-          value={`${report.served}杯`}
-          note={`注文 ${report.received}杯`}
-          tone="indigo"
-        />
-        <MetricCard
-          icon={Timer}
-          label="お渡し待ち"
-          value={`${report.backlog}杯`}
-          note={
-            report.longest[0]
-              ? `最長 ${report.longest[0].minutes.toFixed(1)}分`
-              : "待ちはありません"
-          }
-          tone={report.backlog > 0 ? "orange" : "emerald"}
-        />
-      </div>
-    </div>
-  );
-}
+type Finance = ReturnType<typeof dashboardFinance>;
 
 function SalesSection({
   report,
@@ -499,7 +428,14 @@ function SalesSection({
     paymentTotal > 0 ? (finance.square / paymentTotal) * 100 : 0;
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        <MetricCard
+          icon={Coffee}
+          label="注文杯数"
+          value={`${report.products.reduce((sum, product) => sum + product.received, 0)}杯`}
+          note="取消を除く・ドリンクのみ"
+          tone="indigo"
+        />
         <MetricCard
           icon={CircleDollarSign}
           label="売上"
@@ -518,18 +454,26 @@ function SalesSection({
           icon={Banknote}
           label="現金"
           value={yen(finance.cash)}
-          note={`売上の ${cashRatio.toFixed(0)}%`}
+          note={`決済内訳合計の ${cashRatio.toFixed(1)}%`}
           tone="orange"
         />
         <MetricCard
           icon={WalletCards}
           label="Square"
           value={yen(finance.square)}
-          note={`売上の ${squareRatio.toFixed(0)}%`}
+          note={`決済内訳合計の ${squareRatio.toFixed(1)}%`}
           tone="indigo"
         />
       </div>
 
+      <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+        <SectionHeading
+          icon={Coffee}
+          title="商品別の注文杯数"
+          description="選択日に受けた注文から取消を除外。金額とは別の軸で杯数を比較します。"
+        />
+        <ProductCupChart products={report.products} />
+      </section>
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.7fr)]">
         <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
           <SectionHeading
@@ -541,16 +485,29 @@ function SalesSection({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={finance.hourly}
-                margin={{ top: 12, right: 8, left: 8, bottom: 0 }}
+                accessibilityLayer
+                margin={{ top: 24, right: 8, left: 20, bottom: 24 }}
               >
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis
                   dataKey="label"
+                  label={{
+                    value: "受付時間（JST・1時間ごと）",
+                    position: "bottom",
+                    offset: 4,
+                  }}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
                 />
                 <YAxis
+                  label={{
+                    value: "売上（円）",
+                    angle: -90,
+                    position: "insideLeft",
+                    offset: -12,
+                  }}
+                  domain={[0, "auto"]}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(value) =>
@@ -576,16 +533,21 @@ function SalesSection({
             </ResponsiveContainer>
           </div>
           <p className="mt-2 text-stone-500 text-xs">
-            売上が最も多い時間帯: {finance.peak.label}〜・
-            {yen(finance.peak.revenue)}
+            {finance.peak
+              ? `売上が最も多い時間帯: ${finance.peak.label}〜・${yen(finance.peak.revenue)}`
+              : "売上が0円のため、最多の時間帯は表示しません。"}
           </p>
+          <ChartValues
+            columns={["受付時間（JST）", "売上（円）", "注文（件）"]}
+            rows={finance.hourly.map((h) => [h.label, h.revenue, h.orders])}
+          />
         </section>
 
         <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
           <SectionHeading
             icon={WalletCards}
             title="決済の内訳"
-            description="個別会計も支払いごとに集計します。"
+            description="選択日に受けた注文の決済内訳。割合の分母は現金＋Squareの合計です。"
           />
           <div className="mt-6 space-y-6">
             <PaymentRow
@@ -629,6 +591,31 @@ function SalesSection({
               </div>
             )}
           </div>
+          <dl className="mt-5 space-y-2 rounded-xl bg-stone-50 p-3 text-sm">
+            <div className="flex justify-between gap-3">
+              <dt>請求額合計（売上）</dt>
+              <dd>{yen(report.revenue)}</dd>
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt>決済内訳合計（現金＋Square）</dt>
+              <dd>{yen(paymentTotal)}</dd>
+            </div>
+            <div className="flex justify-between gap-3 font-bold">
+              <dt>差額（請求額 − 決済内訳）</dt>
+              <dd>{yen(finance.difference)}</dd>
+            </div>
+            {finance.unclassified !== 0 && (
+              <div className="flex justify-between gap-3">
+                <dt>うち決済方法の記録がない請求額</dt>
+                <dd>{yen(finance.unclassified)}</dd>
+              </div>
+            )}
+          </dl>
+          <p className="mt-3 text-stone-500 text-xs">
+            個別会計はpaymentsの記録額、一括会計は保存された決済方法と請求額で集計（一括会計{" "}
+            {yen(finance.lumpSum)}
+            ）。未記録の方法は現金とみなしません。差額は記録の不一致を示し、未収金とは断定しません。返金時刻別の入出金集計ではありません。
+          </p>
           <dl className="mt-7 space-y-3 border-stone-100 border-t pt-5 text-sm">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-stone-500">値引き</dt>
@@ -659,6 +646,38 @@ function AnalysisSection({
 }) {
   return (
     <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <MetricCard
+          icon={Clock3}
+          label="提供時間の中央値"
+          value={minutes(report.total.p50)}
+          note={`提供済み ${report.total.count}杯の実測`}
+          tone="sky"
+        />
+        <MetricCard
+          icon={Timer}
+          label="9割を渡すまで"
+          value={minutes(report.total.p90)}
+          note="提供済みのP90・待ち時間予測ではありません"
+          tone="indigo"
+        />
+        <MetricCard
+          icon={Coffee}
+          label="お渡し待ち"
+          value={`${report.backlog}杯`}
+          note="期間末・開始前の持越しを含む"
+          tone="orange"
+        />
+        <MetricCard
+          icon={Timer}
+          label="最長の待ち時間"
+          value={
+            report.longest[0] ? minutes(report.longest[0].minutes) : "待ちなし"
+          }
+          note="期間末の未提供が対象"
+          tone="orange"
+        />
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
         <div>
           <p className="font-bold text-sm">集計間隔</p>
@@ -728,7 +747,7 @@ function AnalysisSection({
           <SectionHeading
             icon={Coffee}
             title="商品ごとの提供時間"
-            description="注文、マスターでの初回割り振り、お渡しまでの中央値を比較します。"
+            description="注文→準備完了、準備完了→お渡し、注文→お渡しの中央値を比較します。"
           />
           <div className="mt-5">
             <ProductTimeChart products={report.products} />
@@ -773,6 +792,24 @@ function ComparisonSection({
   onReferenceDateChange: (date: string) => void;
   onIntervalChange: (minutes: BucketMinutes) => void;
 }) {
+  const maximumCups = Math.max(
+    1,
+    ...[current, reference].flatMap((r) =>
+      r ? r.buckets.flatMap((b) => [b.received, b.served, b.backlog]) : [],
+    ),
+  );
+  const maximumCount = Math.max(
+    1,
+    ...[current, reference].flatMap((r) =>
+      r ? r.total.histogram.map((b) => b.count) : [],
+    ),
+  );
+  const maximumMinutes = Math.max(
+    1,
+    ...[current, reference].flatMap((r) =>
+      r ? r.total.cdf.map((b) => b.minutes) : [],
+    ),
+  );
   const medianDifference =
     reference !== null &&
     current.total.p50 !== null &&
@@ -876,6 +913,7 @@ function ComparisonSection({
                   description={`${intervalMinutes}分ごとの注文、お渡し、お渡し待ちです。`}
                 />
                 <FlowCharts
+                  maximumCups={maximumCups}
                   buckets={item.report.buckets}
                   chart="flow"
                   intervalMinutes={intervalMinutes}
@@ -900,14 +938,19 @@ function ComparisonSection({
                   description={`${item.report.total.count}杯の提供記録を比較します。`}
                 />
                 <div className="mt-5">
-                  <DurationCharts stats={item.report.total} hideBoxPlot />
+                  <DurationCharts
+                    stats={item.report.total}
+                    hideBoxPlot
+                    maximumCount={maximumCount}
+                    maximumMinutes={maximumMinutes}
+                  />
                 </div>
               </section>
             ))}
           </div>
 
           <p className="rounded-2xl bg-stone-200/60 p-4 text-stone-600 text-xs leading-relaxed">
-            2025年度は注文単位、選択中の日付はカップ単位の記録です。売上は全商品、杯数はカップを作る商品のみを集計しているため、目安として比較してください。
+            並べたグラフの軸範囲は共通です。2025年度は注文単位、選択中の日付はカップ単位の記録です。売上は全商品、杯数はカップを作る商品のみを集計しているため、目安として比較してください。
             {referenceInfo ? ` データ: ${referenceInfo}` : ""}
           </p>
         </>

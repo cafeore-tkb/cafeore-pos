@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import type { BucketMinutes, FlowBucket } from "~/lib/analytics/operations";
+import { ChartValues } from "./ChartValues";
 
 /** 未完了の時間枠は流量には表示し、加速度の比較からは除外する。 */
 export function FlowCharts({
@@ -19,11 +20,13 @@ export function FlowCharts({
   chart = "all",
   intervalMinutes = 15,
   flowStyle = "bar",
+  maximumCups,
 }: {
   buckets: FlowBucket[];
   chart?: "flow" | "acceleration" | "all";
   intervalMinutes?: BucketMinutes;
   flowStyle?: "bar" | "line";
+  maximumCups?: number;
 }) {
   // 深夜の空の枠は省略するが、営業中のゼロの枠は残す。
   const first = buckets.findIndex((b) => b.received || b.served || b.backlog);
@@ -55,11 +58,28 @@ export function FlowCharts({
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={data}
-                margin={{ top: 10, right: 16, bottom: 0, left: 0 }}
+                accessibilityLayer
+                margin={{ top: 12, right: 16, bottom: 26, left: 16 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="clock" minTickGap={30} />
-                <YAxis allowDecimals={false} />
+                <XAxis
+                  dataKey="clock"
+                  minTickGap={30}
+                  label={{
+                    value: "時間枠の開始（JST）",
+                    position: "bottom",
+                    offset: 4,
+                  }}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  domain={[0, maximumCups ?? "auto"]}
+                  label={{
+                    value: "杯数（杯）",
+                    angle: -90,
+                    position: "insideLeft",
+                  }}
+                />
                 <Tooltip
                   labelFormatter={(_, payload) =>
                     `${payload[0]?.payload.clock ?? ""}〜 / ${payload[0]?.payload.period ?? ""}`
@@ -116,44 +136,98 @@ export function FlowCharts({
           </div>
         </>
       )}
-      {chart !== "flow" && (
-        <div
-          className="h-40 w-full"
-          aria-label={`待ちの増え方の変化。前の${intervalMinutes}分との比較`}
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={data} margin={{ right: 16, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="clock" minTickGap={30} />
-              <YAxis />
-              <Tooltip />
-              <ReferenceLine y={0} stroke="#64748b" />
-              <Bar
-                dataKey="acceleration"
-                name={`待ちの増え方の変化（杯/${intervalMinutes}分²）`}
-                isAnimationActive={false}
-                radius={[4, 4, 0, 0]}
-              >
-                {data.map((bucket) => (
-                  <Cell
-                    key={bucket.at}
-                    fill={
-                      (bucket.acceleration ?? 0) > 0 ? "#f97316" : "#0d9488"
-                    }
+      {chart !== "flow" &&
+        (["net", "acceleration"] as const).map((metric) => (
+          <div key={metric}>
+            <p className="font-bold text-xs">
+              {metric === "net" ? "待ちの増減" : "待ちの増え方の変化"}
+            </p>
+            <div
+              className="h-52 w-full"
+              aria-label={`待ちの増え方の変化。前の${intervalMinutes}分との比較`}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={data}
+                  accessibilityLayer
+                  margin={{ top: 12, right: 16, left: 24, bottom: 26 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="clock"
+                    minTickGap={30}
+                    label={{
+                      value: "時間枠の開始（JST）",
+                      position: "bottom",
+                      offset: 4,
+                    }}
                   />
-                ))}
-              </Bar>
-              <Line
-                dataKey="net"
-                name={`待ちの増減（杯/${intervalMinutes}分）`}
-                stroke="#64748b"
-                dot={false}
-                isAnimationActive={false}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+                  <YAxis
+                    label={{
+                      value:
+                        metric === "net"
+                          ? `杯/${intervalMinutes}分`
+                          : `杯/${intervalMinutes}分²`,
+                      angle: -90,
+                      position: "insideLeft",
+                      offset: -12,
+                    }}
+                  />
+                  <Tooltip />
+                  <ReferenceLine y={0} stroke="#64748b" />
+                  {metric === "acceleration" && (
+                    <Bar
+                      dataKey="acceleration"
+                      name={`待ちの増え方の変化（杯/${intervalMinutes}分²）`}
+                      isAnimationActive={false}
+                      radius={[4, 4, 0, 0]}
+                    >
+                      {data.map((bucket) => (
+                        <Cell
+                          key={bucket.at}
+                          fill={
+                            (bucket.acceleration ?? 0) > 0
+                              ? "#f97316"
+                              : "#0d9488"
+                          }
+                        />
+                      ))}
+                    </Bar>
+                  )}
+                  {metric === "net" && (
+                    <Line
+                      dataKey="net"
+                      name={`待ちの増減（杯/${intervalMinutes}分）`}
+                      stroke="#64748b"
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ))}
+      <ChartValues
+        columns={[
+          "時間枠（JST）",
+          "枠の状態",
+          "注文（杯）",
+          "お渡し（杯）",
+          "枠末の待ち（杯）",
+          `待ちの増減（杯/${intervalMinutes}分）`,
+          `増減の前枠との差（杯/${intervalMinutes}分²）`,
+        ]}
+        rows={data.map((b) => [
+          b.clock,
+          b.period,
+          b.received,
+          b.served,
+          b.backlog,
+          b.net,
+          b.acceleration,
+        ])}
+      />
       {chart === "acceleration" && (
         <p className="text-stone-600 text-xs">
           <span className="font-bold text-orange-700">

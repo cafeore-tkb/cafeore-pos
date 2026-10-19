@@ -124,10 +124,10 @@ func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.T
 // 提供の時刻は全杯提供済みの完了忘れを待ち時間なしで修正するときだけ使う。
 // キャンセルした注文のカップは入れない（注文を消したときと同じく盤面から消える。order_cancel.go）。
 const caosUnits = `(SELECT c.id, c.id AS cup_id, c.order_id, c.order_menu_id, c.item_id,
-		c.dripper, c.dripper_position, c.drip_id, c.assigned_at, c.brew_started_at, c.brew_finished_at, c.served_at
+		c.dripper, c.dripper_position, c.drip_id, c.brew_started_at, c.brew_finished_at, c.served_at
 	FROM order_cups c JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL
 	UNION ALL SELECT e.id, e.order_cup_id, c.order_id, c.order_menu_id, c.item_id,
-		e.dripper, e.dripper_position, e.drip_id, e.assigned_at, e.brew_started_at, e.brew_finished_at, NULL AS served_at
+		e.dripper, e.dripper_position, e.drip_id, e.brew_started_at, e.brew_finished_at, NULL AS served_at
 	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id
 	JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL)`
 
@@ -690,11 +690,7 @@ func (h *CaosHandler) writeCups(writes []models.CaosCupsWrite, press *models.Cao
 					changed[id] = true
 				}
 			}
-			updates := caosUpdates(w.After, position, startedAt)
-			if w.After.Dripper != nil {
-				updates["assigned_at"] = gorm.Expr("COALESCE(assigned_at, ?)", pressed)
-			}
-			if err := updateCaosUnits(tx, updates, "id IN ?", w.CupIds); err != nil {
+			if err := updateCaosUnits(tx, caosUpdates(w.After, position, startedAt), "id IN ?", w.CupIds); err != nil {
 				return err
 			}
 		}

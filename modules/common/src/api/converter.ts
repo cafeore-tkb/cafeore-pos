@@ -164,7 +164,6 @@ export const responseToOrderEntity = (
       dripper: cup.dripper,
       dripperPosition: cup.dripper_position,
       dripId: cup.drip_id,
-      assignedAt: cup.assigned_at ? new Date(cup.assigned_at) : null,
       brewStartedAt: cup.brew_started_at ? new Date(cup.brew_started_at) : null,
       brewFinishedAt: cup.brew_finished_at
         ? new Date(cup.brew_finished_at)
@@ -176,9 +175,6 @@ export const responseToOrderEntity = (
         dripper: emergency.dripper,
         dripperPosition: emergency.dripper_position,
         dripId: emergency.drip_id,
-        assignedAt: emergency.assigned_at
-          ? new Date(emergency.assigned_at)
-          : null,
         brewStartedAt: emergency.brew_started_at
           ? new Date(emergency.brew_started_at)
           : null,

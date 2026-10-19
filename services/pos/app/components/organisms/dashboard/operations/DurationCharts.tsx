@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import type { distribution } from "~/lib/analytics/operations";
+import { ChartValues } from "./ChartValues";
 
 export const minutes = (value: number | null) =>
   value === null ? "未計測" : `${value.toFixed(1)}分`;
@@ -20,11 +21,15 @@ export function DurationCharts({
   chart = "all",
   compact = false,
   hideBoxPlot = false,
+  maximumCount,
+  maximumMinutes,
 }: {
   stats: ReturnType<typeof distribution>;
   compact?: boolean;
   chart?: "histogram" | "cdf" | "box" | "all";
   hideBoxPlot?: boolean;
+  maximumCount?: number;
+  maximumMinutes?: number;
 }) {
   if (!stats.count)
     return (
@@ -32,7 +37,7 @@ export function DurationCharts({
         お渡し時間の記録がまだありません。待っている分は0分に数えません。
       </p>
     );
-  const range = Math.max(stats.max ?? 0, stats.q3 ?? 0, 1);
+  const range = Math.max(stats.max ?? 0, ...stats.outliers, 1);
   const pct = (v: number | null) => `${((v ?? 0) / range) * 100}%`;
   return (
     <div className="space-y-4">
@@ -67,27 +72,39 @@ export function DurationCharts({
           })}
         </div>
       )}
-      <div
-        className={
-          chart === "all" && !compact
-            ? "grid gap-4 lg:grid-cols-2"
-            : "space-y-4"
-        }
-      >
+      <div className="space-y-5">
         {chart === "all" || chart === "histogram" ? (
           <div className="h-56" aria-label="お渡しまでの時間と杯数（5分ごと）">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.histogram}>
+              <BarChart
+                data={stats.histogram}
+                accessibilityLayer
+                margin={{ top: 16, right: 8, left: 16, bottom: 24 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="label"
+                  label={{
+                    value: "提供所要時間（区間）",
+                    position: "bottom",
+                    offset: 2,
+                  }}
                   tick={{ fontSize: 10 }}
-                  interval={0}
+                  interval="preserveStartEnd"
+                  minTickGap={12}
                   angle={-20}
                   height={45}
                 />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
+                <YAxis
+                  allowDecimals={false}
+                  domain={[0, maximumCount ?? "auto"]}
+                  label={{
+                    value: "提供済み（杯）",
+                    angle: -90,
+                    position: "insideLeft",
+                  }}
+                />
+                <Tooltip formatter={(value) => [`${value}杯`, "提供済み"]} />
                 <Bar
                   dataKey="count"
                   name="お渡しした杯数"
@@ -113,10 +130,37 @@ export function DurationCharts({
         {chart === "all" || chart === "cdf" ? (
           <div className="h-56" aria-label="何分以内に何パーセント渡せたか">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={stats.cdf}>
+              <LineChart
+                data={
+                  stats.cdf[0]?.minutes > 0
+                    ? [{ minutes: 0, percent: 0 }, ...stats.cdf]
+                    : stats.cdf
+                }
+                accessibilityLayer
+                margin={{ top: 16, right: 16, left: 24, bottom: 24 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="minutes" type="number" unit="分" />
-                <YAxis domain={[0, 100]} unit="%" />
+                <XAxis
+                  dataKey="minutes"
+                  type="number"
+                  domain={[0, maximumMinutes ?? "auto"]}
+                  unit="分"
+                  label={{
+                    value: "提供所要時間（分）",
+                    position: "bottom",
+                    offset: 4,
+                  }}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  unit="%"
+                  label={{
+                    value: "累積割合（%）",
+                    angle: -90,
+                    position: "insideLeft",
+                    offset: -12,
+                  }}
+                />
                 <ReferenceLine
                   x={15}
                   stroke="#f97316"
@@ -143,6 +187,23 @@ export function DurationCharts({
           </div>
         ) : null}
       </div>
+      {(chart === "all" || chart === "histogram") && (
+        <>
+          <p className="text-stone-500 text-xs">
+            各区間の杯数です。40分以上は上限のない区間の合計で、密度を表すヒストグラムではありません。
+          </p>
+          <ChartValues
+            columns={["提供所要時間", "提供済み（杯）"]}
+            rows={stats.histogram.map((b) => [b.label, b.count])}
+          />
+        </>
+      )}
+      {(chart === "all" || chart === "cdf") && (
+        <ChartValues
+          columns={["提供所要時間（分）", "累積割合（%）"]}
+          rows={stats.cdf.map((b) => [b.minutes, b.percent])}
+        />
+      )}
       {(chart === "all" || chart === "box") && !hideBoxPlot ? (
         <div
           aria-label={`箱ひげ図：下ひげ${minutes(stats.min)}、第1四分位${minutes(stats.q1)}、中央値${minutes(stats.p50)}、第3四分位${minutes(stats.q3)}、上ひげ${minutes(stats.max)}`}
@@ -173,7 +234,34 @@ export function DurationCharts({
                 style={{ left: pct(v) }}
               />
             ))}
+            {[...new Set(stats.outliers)].map((v) => (
+              <span
+                key={v}
+                title={`外れ値 ${v}分`}
+                className="absolute top-3 h-2 w-2 rounded-full bg-rose-600"
+                style={{ left: pct(v) }}
+              />
+            ))}
           </div>
+          <div className="mx-3 flex justify-between text-xs">
+            <span>0分</span>
+            <span>提供所要時間（分）</span>
+            <span>{range.toFixed(1)}分</span>
+          </div>
+          <ChartValues
+            columns={["統計量", "時間（分）"]}
+            rows={[
+              ["下ひげ", stats.min],
+              ["Q1", stats.q1],
+              ["中央値", stats.p50],
+              ["Q3", stats.q3],
+              ["上ひげ", stats.max],
+              ...stats.outliers.map((v, i): [string, number] => [
+                `外れ値 ${i + 1}`,
+                v,
+              ]),
+            ]}
+          />
           <p className="text-xs">
             短い側 {minutes(stats.min)} / 真ん中 {minutes(stats.p50)} / 長い側{" "}
             {minutes(stats.max)} / 特に離れた記録 {stats.outliers.length}杯

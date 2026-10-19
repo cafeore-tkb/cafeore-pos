@@ -6,8 +6,6 @@ export interface AnalysisCup {
   id: string;
   product: string;
   ready: number | null;
-  /** 今年のCaOSで初めてドリッパーへ割り振った時刻。過去データにはない。 */
-  assigned?: number | null;
   /** 今年のCaOSの初回抽出開始。過去データにはない。 */
   brewStarted?: number | null;
   served: number | null;
@@ -40,7 +38,6 @@ export const liveAnalysisOrders = (
       id: cup.id,
       product: cup.item.name,
       ready: time(cup.readyAt),
-      assigned: cupNeedsBrew(cup) ? time(cup.assignedAt) : null,
       brewStarted: cupNeedsBrew(cup) ? time(cup.brewStartedAt) : null,
       served: time(cup.servedAt),
       orderTiming: false,
@@ -250,8 +247,6 @@ export const operationsReport = (
       pending: number;
       prep: number[];
       handoff: number[];
-      allocation: number[];
-      afterAllocation: number[];
       total: number[];
     }
   >();
@@ -267,27 +262,12 @@ export const operationsReport = (
         pending: 0,
         prep: [],
         handoff: [],
-        allocation: [],
-        afterAllocation: [],
         total: [],
       };
       product.received++;
       if (cup.orderTiming) proxyCups++;
       const prep = minutesBetween(cup.ready, order.created, cutoff);
       const handoff = minutesBetween(cup.served, cup.ready, cutoff);
-      const assigned = cup.assigned ?? null;
-      const validAssignment =
-        assigned !== null &&
-        assigned >= order.created &&
-        Number.isFinite(assigned)
-          ? assigned
-          : null;
-      const allocation = minutesBetween(validAssignment, order.created, cutoff);
-      const afterAllocation = minutesBetween(
-        cup.served,
-        validAssignment,
-        cutoff,
-      );
       const total = minutesBetween(cup.served, order.created, cutoff);
       const started = cup.brewStarted ?? null;
       const validStart =
@@ -307,9 +287,6 @@ export const operationsReport = (
         );
       if (prep !== null) product.prep.push(prep);
       if (handoff !== null) product.handoff.push(handoff);
-      if (allocation !== null) product.allocation.push(allocation);
-      if (afterAllocation !== null)
-        product.afterAllocation.push(afterAllocation);
       if (total !== null) {
         product.total.push(total);
         const at =
@@ -337,8 +314,6 @@ export const operationsReport = (
     pending: value.pending,
     prep: distribution(value.prep),
     handoff: distribution(value.handoff),
-    allocation: distribution(value.allocation),
-    afterAllocation: distribution(value.afterAllocation),
     total: distribution(value.total),
   }));
   const total = distribution(outlierCups.map((cup) => cup.minutes));
