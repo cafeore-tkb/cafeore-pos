@@ -218,7 +218,6 @@ func toOrderResponse(order *models.Order) models.OrderResponse {
 		ServedAt:          order.ServedAt,
 		CancelledAt:       order.CancelledAt,
 		CashRefundedAt:    order.CashRefundedAt,
-		SplitParentId:     (*openapi_types.UUID)(order.SplitParentID),
 		BillingAmount:     order.BillingAmount,
 		Received:          order.Received,
 		DiscountOrderId:   &order.DiscountOrderId,
@@ -363,7 +362,7 @@ func squareCheckoutIDForOrder(req models.CreateOrderJSONRequestBody) (*uuid.UUID
 // orderPaymentsFromRequest は作成リクエストの個別会計の支払いを確かめ、支払いと、それぞれが払った明細の
 // menu_ids の中の位置を返す（明細の ID は明細を作ってから埋める）。payments が無ければ nil。
 //
-// amount の合計は billing_amount（分けた注文があればその請求額も足す）と同じでなければならない。現金はお預かりが amount 以上、
+// amount の合計は billing_amount と同じでなければならない。現金はお預かりが amount 以上、
 // Square は決済依頼の ID が要り、お預かりは amount にする。
 // 小計を金額で分けて払うと、同じ明細が 2 つ以上の支払いに入る（1 つの支払いの中で重ねることはできない）。
 func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.OrderPayment, [][]int, error) {
@@ -429,8 +428,8 @@ func orderPaymentsFromRequest(req models.CreateOrderJSONRequestBody) ([]models.O
 		total += request.Amount
 		payments[i] = payment
 	}
-	if expected := splitPaymentsTotal(req); total != expected {
-		return nil, nil, fmt.Errorf("payments の amount の合計 %d 円が請求額 %d 円と一致しません", total, expected)
+	if total != req.BillingAmount {
+		return nil, nil, fmt.Errorf("payments の amount の合計 %d 円が請求額 %d 円と一致しません", total, req.BillingAmount)
 	}
 	return payments, indexes, nil
 }
@@ -577,17 +576,23 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		order.DiscountOrderCups = *req.DiscountOrderCups
 	}
 
-	order.Comments = commentsFromRequest(req.Comments, createdAt)
+	// コメントの作成
+	if req.Comments != nil && len(*req.Comments) > 0 {
+		comments := make([]models.Comment, len(*req.Comments))
+		for i, commentReq := range *req.Comments {
+			comments[i] = models.Comment{
+				Author: commentReq.Author,
+				Text:   commentReq.Text,
+				// コメントの主キーは (order_id, created_at) なので、同じ注文のコメントは 1 マイクロ秒ずつずらす
+				// （Postgres の時刻はマイクロ秒まで）
+				CreatedAt: createdAt.Add(time.Duration(i) * time.Microsecond),
+			}
+		}
+		order.Comments = comments
+	}
 
 	if len(req.MenuIds) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "menu_ids is required"})
-		return
-	}
-
-	// 分けた注文（2 つ目以降）。支払いはこの注文がまとめて持つ（split_group.go）
-	children, err := splitOrdersFromRequest(req, &order)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -641,24 +646,6 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 					return err
 				}
 			}
-			for i := range children {
-				child := &children[i]
-				lines, cups, err := loadOrderMenus(tx, child.ID, (*req.SplitOrders)[i].MenuIds, &models.Order{})
-				if err != nil {
-					return err
-				}
-				child.OrderMenus, child.OrderCups = lines, cups
-				serveCuplessOrder(child, child.CreatedAt)
-				if err := tx.Create(child).Error; err != nil {
-					return err
-				}
-				if err := recordServiceOperation(tx, "order.created", child.CreatedAt, now, map[string]any{
-					"orderId": child.ID, "orderNo": child.OrderId, "cups": len(child.OrderCups),
-					"billingAmount": child.BillingAmount, "splitParentId": order.ID,
-				}); err != nil {
-					return err
-				}
-			}
 			return nil
 		})
 	}
@@ -682,16 +669,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 		status = http.StatusOK
 	}
 
-	// 関連データをロードし、この注文（と分けた注文）だけを配信する。応答はこの注文
-	group, err := splitGroupIDs(h.db, order.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if err := publishOrders(h.db, h.hub, otherOrders(group, order.ID)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	// 関連データをロードし、この注文だけを配信する
 	resp, err := publishOrder(h.db, h.hub, order.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -699,7 +677,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 	}
 
 	c.JSON(status, resp)
-	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(group...)) }()
+	go func() { h.inventory.CheckAlerts(h.inventory.ResourceIDsForOrders(order.ID)) }()
 }
 
 // GET /api/orders/:id - オーダー取得
@@ -862,62 +840,62 @@ func (h *OrderHandler) DeleteOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Order deleted successfully"})
 }
 
-// deleteOrder は注文（分けた注文はグループ全部）を明細・カップごと消し、画面へ配る。
+// deleteOrder は注文を明細・カップごと消し、画面へ配る。Square の返金（SquareHandler）からも使う。
 // 注文が無ければ gorm.ErrRecordNotFound を返す。
 func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
-	// 分けた注文は支払いを 1 つ目がまとめて持つので、まとめて消す（split_group.go）
-	group, err := splitGroupIDs(h.db, orderID)
-	if err != nil {
+	// オーダーアイテムの関連も削除
+	var order models.Order
+	if err := preloadOrder(h.db).First(&order, "id = ?", orderID).Error; err != nil {
 		return err
 	}
 
 	// 明細を消す前に、閾値の記録を戻す対象を取っておく
-	resources := h.inventory.ResourceIDsForOrders(group...)
+	resources := h.inventory.ResourceIDsForOrders(order.ID)
 
 	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
-	var deleted []uuid.UUID
+	var rowsAffected int64
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&models.Order{}).
-			Where("id IN ?", group).Order("id").Pluck("id", &deleted).Error; err != nil {
-			return err
-		}
-		if len(deleted) == 0 {
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&models.Order{}, "id = ?", order.ID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil // ほかで先に消された（下で 404 にする）
 		}
-		if err := tx.Where("order_id IN ?", deleted).Delete(&models.OrderMenu{}).Error; err != nil {
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
 		// カップの入れ直しも消す
-		if err := deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id IN ?", deleted)); err != nil {
+		if err := deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID)); err != nil {
 			return err
 		}
-		if err := tx.Where("order_id IN ?", deleted).Delete(&models.OrderCup{}).Error; err != nil {
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("order_id IN ?", deleted).Delete(&models.OrderStockUsage{}).Error; err != nil {
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderStockUsage{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("order_id IN ?", deleted).Delete(&models.OrderPayment{}).Error; err != nil {
+		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderPayment{}).Error; err != nil {
 			return err
 		}
 		// Square で受け取ったお金は注文を消しても返金されない。結び付きだけ外して
 		// 「支払い済みなのに注文が無い」一覧（GET /api/square/checkouts/unlinked）に戻す。
-		if err := tx.Model(&models.SquareCheckout{}).Where("order_id IN ?", deleted).Update("order_id", nil).Error; err != nil {
+		if err := tx.Model(&models.SquareCheckout{}).Where("order_id = ?", order.ID).Update("order_id", nil).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&models.Order{}, "id IN ?", deleted).Error
+		result := tx.Delete(&models.Order{}, "id = ?", orderID)
+		rowsAffected = result.RowsAffected
+		return result.Error
 	}); err != nil {
 		return err
 	}
 
-	if len(deleted) == 0 {
+	if rowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
 
-	for _, id := range deleted {
-		publishOrderDeleted(h.db, h.hub, id)
-	}
+	publishOrderDeleted(h.db, h.hub, orderID)
 	go h.inventory.CheckAlerts(resources)
 	return nil
 }

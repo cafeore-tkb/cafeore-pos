@@ -139,10 +139,7 @@ export interface paths {
     get: operations["getOrder"];
     /** オーダー情報更新 */
     put: operations["updateOrder"];
-    /**
-     * オーダー削除
-     * @description 分けた注文（split_parent_id）は、どの注文を指定しても分けた注文をまとめて消す。
-     */
+    /** オーダー削除 */
     delete: operations["deleteOrder"];
   };
   "/api/orders/{id}/ready": {
@@ -190,7 +187,6 @@ export interface paths {
      * 返金はしない。Square で払った分は POST /api/orders/{id}/square-refund-keep-order、
      * 現金で払った分は手で返して POST /api/orders/{id}/cash-refund で記録する。
      * キャンセル済みなら、キャンセルした時刻を変えずに注文を返す。
-     * 分けた注文（split_parent_id）は、どの注文を指定しても分けた注文をまとめてキャンセルする。
      */
     post: operations["cancelOrder"];
   };
@@ -201,7 +197,6 @@ export interface paths {
      * （キャンセルもするときは POST /api/orders/{id}/cancel も呼ぶ）。
      * 返金した分は売上に数えず、返金した注文の番号は引換券の割引に使えない。
      * 個別会計では、現金で受け取った分を全部返したことにする。記録済みなら、記録した時刻を変えずに注文を返す。
-     * 分けた注文（split_parent_id）は、どの注文を指定しても支払いを持つ 1 つ目の注文に記録する（応答も 1 つ目の注文）。
      */
     post: operations["refundOrderCash"];
   };
@@ -537,7 +532,6 @@ export interface paths {
      * （手で返して POST /api/orders/{id}/cash-refund で記録する）。
      * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
      * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
-     * 分けた注文（split_parent_id）は、どの注文を指定しても 1 つ目の注文の決済を返金し、分けた注文をまとめてキャンセルする。
      */
     post: operations["refundOrderSquarePayment"];
   };
@@ -550,7 +544,6 @@ export interface paths {
      * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
      * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずにキャンセルだけをする。
      * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
-     * 分けた注文（split_parent_id）は、どの注文を指定しても 1 つ目の注文の決済を返金する。
      */
     post: operations["refundOrderSquarePaymentKeepingOrder"];
   };
@@ -834,13 +827,6 @@ export interface components {
        * @description 現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）
        */
       cash_refunded_at?: string | null;
-      /**
-       * Format: uuid
-       * @description この注文を分けた元の注文（分けた注文の 1 つ目）の id。レジが 1 人の注文を注文番号ごとに分けて作った
-       * （POST /api/orders の split_orders）2 つ目以降の注文に付く。1 つ目の注文と分けていない注文では null。
-       * 支払い（お預かり・payments・Square の決済）は 1 つ目の注文がまとめて持ち、2 つ目以降のお預かりは 0。
-       */
-      split_parent_id?: string | null;
       billing_amount: number;
       received: number;
       discount_order_id?: number | null;
@@ -875,17 +861,10 @@ export interface components {
       square_checkout_id?: string | null;
       /**
        * @description 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
-       * amount の合計は billing_amount と同じにする（split_orders があれば、その billing_amount も足す）。
-       * 注文の received はお預かりの合計、payment_method は Square の支払いを含めば square、含まなければ cash になる。
+       * amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+       * Square の支払いを含めば square、含まなければ cash になる。
        */
       payments?: components["schemas"]["OrderPaymentCreate"][];
-      /**
-       * @description この注文から分けた注文（2 つ目以降）。1 人の注文を注文番号ごとに分けて、まとめて払うときに使う。
-       * この注文と同じトランザクションで作り、それぞれの split_parent_id をこの注文の id にする。
-       * 支払いはこの注文がまとめて持つので、指定するときは payments も指定する。分けた注文のお預かりは 0、
-       * payment_method はこの注文と同じになる。空の配列は指定しない
-       */
-      split_orders?: components["schemas"]["SplitOrderCreate"][];
       menu_ids: components["schemas"]["MenuInfoCreate"][];
       comments?: components["schemas"]["CommentCreateRequest"][];
       /**
@@ -898,18 +877,6 @@ export interface components {
        * @description レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）
        */
       created_at?: string;
-    };
-    /** @description 分けた注文 1 つ分（POST /api/orders の split_orders）。支払いは分けた元の注文が持つ */
-    SplitOrderCreate: {
-      /** @example 2 */
-      order_id: number;
-      /** @example 500 */
-      billing_amount: number;
-      discount_order_id?: number | null;
-      /** @default 0 */
-      discount_order_cups?: number;
-      menu_ids: components["schemas"]["MenuInfoCreate"][];
-      comments?: components["schemas"]["CommentCreateRequest"][];
     };
     OrderUpdateRequest: {
       /** Format: uuid */
@@ -2219,10 +2186,7 @@ export interface operations {
       };
     };
   };
-  /**
-   * オーダー削除
-   * @description 分けた注文（split_parent_id）は、どの注文を指定しても分けた注文をまとめて消す。
-   */
+  /** オーダー削除 */
   deleteOrder: {
     parameters: {
       path: {
@@ -2399,7 +2363,6 @@ export interface operations {
    * 返金はしない。Square で払った分は POST /api/orders/{id}/square-refund-keep-order、
    * 現金で払った分は手で返して POST /api/orders/{id}/cash-refund で記録する。
    * キャンセル済みなら、キャンセルした時刻を変えずに注文を返す。
-   * 分けた注文（split_parent_id）は、どの注文を指定しても分けた注文をまとめてキャンセルする。
    */
   cancelOrder: {
     parameters: {
@@ -2435,7 +2398,6 @@ export interface operations {
    * （キャンセルもするときは POST /api/orders/{id}/cancel も呼ぶ）。
    * 返金した分は売上に数えず、返金した注文の番号は引換券の割引に使えない。
    * 個別会計では、現金で受け取った分を全部返したことにする。記録済みなら、記録した時刻を変えずに注文を返す。
-   * 分けた注文（split_parent_id）は、どの注文を指定しても支払いを持つ 1 つ目の注文に記録する（応答も 1 つ目の注文）。
    */
   refundOrderCash: {
     parameters: {
@@ -3522,7 +3484,6 @@ export interface operations {
    * （手で返して POST /api/orders/{id}/cash-refund で記録する）。
    * 応答はそのうちの 1 つ（返金できなかったもの、無ければ結果待ちのもの、無ければ最後のもの）。
    * 途中で止まっても、もう一度呼ぶと受け付け済みの決済は頼み直さずに残りを返金する。
-   * 分けた注文（split_parent_id）は、どの注文を指定しても 1 つ目の注文の決済を返金し、分けた注文をまとめてキャンセルする。
    */
   refundOrderSquarePayment: {
     parameters: {
@@ -3582,7 +3543,6 @@ export interface operations {
    * 結果待ち（pending）の返金は GET /api/square/checkouts/unlinked が Square に問い合わせて最新にする。
    * 返金を受け付けたあとに POST /api/orders/{id}/square-refund を呼ぶと、Square には頼まずにキャンセルだけをする。
    * 個別会計で Square の決済が複数あれば全部を返金する（応答の選び方は square-refund と同じ）。
-   * 分けた注文（split_parent_id）は、どの注文を指定しても 1 つ目の注文の決済を返金する。
    */
   refundOrderSquarePaymentKeepingOrder: {
     parameters: {

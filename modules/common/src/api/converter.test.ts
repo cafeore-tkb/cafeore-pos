@@ -236,46 +236,6 @@ describe("[unit] order snapshot conversion", () => {
     ).not.toHaveProperty("payments");
   });
 
-  test("create request carries split orders, and responses keep the parent", () => {
-    const order = responseToOrderEntity(response).clone();
-    const split = responseToOrderEntity(response).clone();
-    split.orderId = 2;
-    split.applyServiceOneCupDiscount();
-    order.splitOrders = [split];
-    const request = orderEntityToCreateRequest(order);
-    expect(request.split_orders).toEqual([
-      {
-        order_id: 2,
-        billing_amount: 400,
-        discount_order_id: split.discountOrderId,
-        discount_order_cups: 1,
-        menu_ids: [
-          {
-            assignee: null,
-            dripper: null,
-            menu_id: response.menus[0].menu.id,
-          },
-        ],
-        comments: [],
-      },
-    ]);
-    // まだ送れていない注文として残しても、分けた注文は消えない
-    expect(OrderEntity.fromOrder(order.toOrder()).splitOrders[0].orderId).toBe(
-      2,
-    );
-    expect(orderEntityToCreateRequest(split)).not.toHaveProperty(
-      "split_orders",
-    );
-
-    const child = responseToOrderEntity({
-      ...response,
-      split_parent_id: "00000000-0000-4000-8000-000000000041",
-    });
-    expect(child.splitParentId).toBe("00000000-0000-4000-8000-000000000041");
-    expect(child.clone().splitParentId).toBe(child.splitParentId);
-    expect(responseToOrderEntity(response).splitParentId).toBeNull();
-  });
-
   test("keeps the Square refund status through cloning", () => {
     expect(responseToOrderEntity(response).squareRefundStatus).toBeUndefined();
     const order = responseToOrderEntity({

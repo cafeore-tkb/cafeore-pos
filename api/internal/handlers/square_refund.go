@@ -446,16 +446,11 @@ func (h *SquareHandler) finishRefund(c *gin.Context, records []*models.SquareChe
 }
 
 // publishRefundedOrder は返金した決済の注文を配り直す（カードに出す返金の状態を変える）。
-// 分けた注文はまとめてキャンセルするので、分けた注文もまとめて配る。
 func (h *SquareHandler) publishRefundedOrder(orderID *uuid.UUID, record *models.SquareCheckout) {
 	if orderID == nil {
 		return
 	}
-	group, err := splitGroupIDs(h.db, *orderID)
-	if err == nil {
-		err = publishOrders(h.db, h.orders.hub, group)
-	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := publishOrder(h.db, h.orders.hub, *orderID); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Printf("square: failed to publish order %s of checkout %s: %v", *orderID, record.ID, err)
 	}
 }
@@ -508,15 +503,6 @@ func (h *SquareHandler) refundOrder(c *gin.Context, keepOrder bool) {
 	}
 	const notFound = "この注文に Square の決済がありません"
 	ctx := c.Request.Context()
-	// 分けた注文は、支払いを持つ 1 つ目の注文の決済を返金する（キャンセルは分けた注文をまとめて。split_group.go）
-	root, err := splitGroupRoot(h.db.WithContext(ctx), id)
-	switch {
-	case err == nil:
-		id = root
-	case !errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
 	var checkoutIDs []uuid.UUID
 	if err := h.db.WithContext(ctx).Model(&models.SquareCheckout{}).
 		Where("order_id = ?", id).Order("created_at, id").Pluck("id", &checkoutIDs).Error; err != nil {

@@ -17,10 +17,7 @@ import { BackspaceIcon } from "./PayPanel";
 // --------------------------------------------------
 
 /** 開いている間、押したキーを受け取る。handle が true を返したキーは既定の動きを止める */
-export const useDialogKeys = (
-  open: boolean,
-  handle: (key: string) => boolean,
-) => {
+const useDialogKeys = (open: boolean, handle: (key: string) => boolean) => {
   const handleRef = useRef(handle);
   handleRef.current = handle;
   useEffect(() => {
@@ -63,8 +60,8 @@ const amountKey = (
 
 type ShellProps = {
   open: boolean;
-  /** デザインの幅（440 / 480 / 540 / 600） */
-  width: 440 | 480 | 540 | 600;
+  /** デザインの幅（440 / 540） */
+  width: 440 | 540;
   title: ReactNode;
   /** 題の下の説明 */
   sub?: string;
@@ -77,7 +74,7 @@ type ShellProps = {
 };
 
 /** 先払いのダイアログの枠。外側のクリック・Esc では閉じない（Esc は useDialogKeys で扱う） */
-export const PrepayDialogShell = ({
+const PrepayDialogShell = ({
   open,
   width,
   title,
@@ -125,7 +122,7 @@ export const PrepayDialogShell = ({
   </DialogPrimitive.Root>
 );
 
-export const CheckIcon = () => (
+const CheckIcon = () => (
   <svg
     width="24"
     height="24"
@@ -175,13 +172,13 @@ const Spinner = () => (
 );
 
 /** ボタンに添える Enter の札 */
-export const EnterTag = () => (
+const EnterTag = () => (
   <span className="rounded border border-white/60 px-1 font-bold text-[10px] leading-[15px]">
     Enter
   </span>
 );
 
-export const buttonClass = {
+const buttonClass = {
   /** 「戻る」「閉じる」など */
   secondary:
     "h-10 rounded-lg border border-stone-300 bg-white px-3.5 font-bold text-sm text-stone-900 disabled:cursor-not-allowed disabled:opacity-40",
@@ -732,33 +729,17 @@ export type SettledRow = {
   dot: string;
 };
 
-/** 会計しましたに出す、注文番号ごとの内訳の行（分割して一括会計） */
-export type SettledGroup = {
-  orderId: number;
-  items: string;
-  points: number;
-};
-
-/**
- * 注文全体を払い終えた（先払いがあったとき・分割して一括会計のとき）。支払いの内訳とお釣りを出す。
- * 分割して一括会計では、注文番号ごとの内訳も出す
- */
 export const SettledDialog = ({
   open,
-  orderIds,
+  orderId,
   rows,
-  groups,
   total,
   lastCash,
   onClose,
 }: {
   open: boolean;
-  /** 注文番号（分けた注文は全部） */
-  orderIds: number[];
-  /** 支払いの内訳。2 つ以上のときだけ出す */
+  orderId: number;
   rows: SettledRow[];
-  /** 注文番号ごとの内訳。分けていなければ空 */
-  groups: SettledGroup[];
   /** 支払いの合計（請求額） */
   total: number;
   /** 最後の支払いが現金なら、そのお預かりとお釣り */
@@ -773,43 +754,21 @@ export const SettledDialog = ({
     return key === "Escape";
   });
 
-  const split = groups.length > 0;
-  const payments = split && rows.length <= 1 ? [] : rows;
   return (
     <PrepayDialogShell
       open={open}
-      width={split ? 480 : 440}
+      width={440}
       large
       icon={<CheckIcon />}
       title="会計しました"
       aside={
-        <span className="font-bold text-[15px] text-stone-600 tabular-nums">
-          No.{orderIds.join("・")}
+        <span className="font-bold text-[15px] text-stone-600">
+          No.{orderId}
         </span>
       }
     >
       <div className="flex flex-col gap-1.5 text-sm text-stone-700 tabular-nums">
-        {split && (
-          <>
-            <span className="font-bold text-stone-500 text-xs">
-              注文番号ごとの内訳
-            </span>
-            {groups.map((group) => (
-              <div key={group.orderId} className="flex items-baseline gap-2.5">
-                <span className="w-16 flex-none font-extrabold text-base text-stone-900">
-                  No.{group.orderId}
-                </span>
-                <span className="min-w-0 flex-1 leading-normal">
-                  {group.items}
-                </span>
-                <span className="flex-none text-[13px] text-stone-600">
-                  {group.points}点
-                </span>
-              </div>
-            ))}
-          </>
-        )}
-        {payments.map((row) => (
+        {rows.map((row) => (
           <div key={row.id} className="flex items-center gap-2">
             <span
               className="h-2 w-2 rounded-[2px]"
@@ -820,19 +779,12 @@ export const SettledDialog = ({
           </div>
         ))}
         <div className="mt-0.5 flex justify-between border-stone-200 border-t pt-2 font-extrabold text-[15px] text-stone-900">
-          <span>
-            {split && rows.length === 1 ? "合計（1 回で会計）" : "合計"}
-          </span>
+          <span>合計</span>
           <span>{formatYen(total)}</span>
         </div>
       </div>
       {lastCash && (
         <ReceivedChange received={lastCash.received} change={lastCash.change} />
-      )}
-      {split && (
-        <span className="text-stone-500 text-xs leading-[1.6]">
-          小計伝票は全額で 1 枚刷りました。シールは注文番号ごとに刷ります。
-        </span>
       )}
       <div className="flex justify-end">
         <button type="button" onClick={onClose} className={buttonClass.primary}>

@@ -374,14 +374,11 @@ const headerBlocks = (
   rule,
 ];
 
-/** 引換券番号の見出しと案内、その下の大きな番号（注文番号ごとに分けた注文は 1 行に 1 つずつ） */
-const claimBlocks = (claimNumbers: readonly string[]): Block[] => [
+/** 引換券番号の見出しと案内、その下の大きな番号 */
+const claimBlocks = (claimNumber: string): Block[] => [
   claimLabelBlock,
   gap(53),
-  ...claimNumbers.flatMap((claimNumber, i) => [
-    ...(i > 0 ? [gap(16)] : []),
-    claimNumberBlock(claimNumber),
-  ]),
+  claimNumberBlock(claimNumber),
 ];
 
 /** 会計のたびに刷るレシートを、印字幅（width ドット）で描く */
@@ -397,7 +394,7 @@ export const drawOrderReceipt = async (
     receipt.dateTime,
     receipt.orderNo,
     receipt.total,
-    ...(receipt.claimNumbers ?? []),
+    receipt.claimNumber ?? "",
     "合計引換券番号…",
     ...CLAIM_NOTE_LINES,
     ...rows.flatMap(({ label, quantity = "", amount }) => [
@@ -422,8 +419,8 @@ export const drawOrderReceipt = async (
     ...receipt.payments.map((item) => row(item)),
   );
   // 注文を何回かに分けて払うときは、引換券番号を載せない（払い終えたら別のレシートで刷る）
-  if (receipt.claimNumbers !== undefined) {
-    blocks.push(gap(42), ...claimBlocks(receipt.claimNumbers));
+  if (receipt.claimNumber !== undefined) {
+    blocks.push(gap(42), ...claimBlocks(receipt.claimNumber));
   }
   blocks.push(gap(40));
 
@@ -442,7 +439,7 @@ export const drawClaimReceipt = async (
     RECEIPT_ISSUER_READING,
     receipt.dateTime,
     receipt.orderNo,
-    ...receipt.claimNumbers,
+    receipt.claimNumber,
     "引換券番号",
     ...CLAIM_NOTE_LINES,
   ]);
@@ -453,7 +450,7 @@ export const drawClaimReceipt = async (
     [
       ...headerBlocks(receipt, logo, scale),
       gap(21),
-      ...claimBlocks(receipt.claimNumbers),
+      ...claimBlocks(receipt.claimNumber),
       gap(40),
     ],
     scale,
@@ -571,14 +568,8 @@ export const orderReceiptJob = async (
   order: OrderEntity,
   payment: ReceiptPayment,
   split?: ReceiptSplit,
-  orderIds?: readonly number[],
 ): Promise<PrintJob> =>
-  imageJob(
-    await drawOrderReceipt(
-      orderReceipt(order, payment, split, orderIds),
-      width,
-    ),
-  );
+  imageJob(await drawOrderReceipt(orderReceipt(order, payment, split), width));
 
 /**
  * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの印刷データ。
@@ -587,9 +578,8 @@ export const orderReceiptJob = async (
 export const claimReceiptJob = async (
   width: number,
   order: OrderEntity,
-  orderIds?: readonly number[],
 ): Promise<PrintJob> =>
-  imageJob(await drawClaimReceipt(claimReceipt(order, orderIds), width));
+  imageJob(await drawClaimReceipt(claimReceipt(order), width));
 
 /**
  * 求められたときだけ刷る領収書の印刷データ。width は刷るプリンターの印字幅（ドット）、storeCopy なら店舗控
@@ -598,6 +588,6 @@ export const claimReceiptJob = async (
 export const formalReceiptJob = async (
   width: number,
   order: OrderEntity,
-  options?: { storeCopy?: boolean; orderIds?: readonly number[] },
+  options?: { storeCopy?: boolean },
 ): Promise<PrintJob> =>
   imageJob(await drawFormalReceipt(formalReceipt(order, options), width));

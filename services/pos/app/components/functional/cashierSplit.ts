@@ -178,7 +178,7 @@ export const canLeavePayment = (draft: CashierDraft): boolean => {
   );
 };
 
-/** 会計中の小計をやめて入れる段階に戻る。受取金額と分け方（分割して一括会計）は消す */
+/** 会計中の小計をやめて入れる段階に戻る。受取金額は消す */
 export const leavePayment = (draft: CashierDraft): CashierDraft => {
   if (!canLeavePayment(draft)) return draft;
   const { split } = draft;
@@ -187,7 +187,6 @@ export const leavePayment = (draft: CashierDraft): CashierDraft => {
     step: "entry",
     received: "",
     payment: "cash",
-    orderSplit: null,
     split: {
       ...split,
       subtotals: split.subtotals.filter((s) => s.id !== split.current),
@@ -333,7 +332,6 @@ export const removeTenders = (
     step: "entry",
     received: "",
     payment: "cash",
-    orderSplit: null,
     split: {
       ...remaining,
       subtotals: subtotals.filter((subtotal) => isDone(remaining, subtotal)),

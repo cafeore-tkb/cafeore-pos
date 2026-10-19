@@ -21,8 +21,6 @@ import { Button, buttonVariants } from "../ui/button";
 
 type Props = {
   order: WithId<OrderEntity>;
-  /** 確認に出す注文番号（分割して一括会計で分けた注文はまとめてキャンセルするので全部）。省くと order の番号 */
-  orderIds?: readonly number[];
   /** 押すボタンの見た目を変える */
   triggerClassName?: string;
   /** キャンセルできたら呼ぶ（キャンセルのシールを刷る） */
@@ -38,13 +36,12 @@ type Props = {
  */
 export const CancelOrderButton = ({
   order,
-  orderIds = [order.orderId],
   triggerClassName,
   onCancelled,
 }: Props) => {
   const [open, setOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const label = `No.${orderIds.join("・")}（${formatYen(order.billingAmount)}）`;
+  const label = `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
   const unrefunded = order.getUnrefundedAmounts();
 
   const run = async () => {

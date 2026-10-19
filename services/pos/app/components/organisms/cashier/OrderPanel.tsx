@@ -27,10 +27,6 @@ type props = {
   /** 入力中の注文の割引額と、割引の対象の杯数 */
   discount: number;
   coffeeCups: number;
-  /** ドリッパーを 3 人以上確保する注文。分けるよう知らせ、「分割して一括会計」を出す */
-  needsSplit: boolean;
-  /** 分割して一括会計の会計中、行（CashierLine.key）が入る注文番号。分けていなければ空 */
-  lineOrderIds: ReadonlyMap<number, number>;
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
   canCancelPayment: boolean;
   onSelect: (index: number) => void;
@@ -41,8 +37,6 @@ type props = {
   onToggleSpecial: () => void;
   onOpenMemo: () => void;
   onGoPay: () => void;
-  /** 分割して一括会計（注文番号ごとに分けて、全額をまとめて会計する） */
-  onGoSplitPay: () => void;
   onCancelPayment: () => void;
 };
 
@@ -59,7 +53,6 @@ const assignText = (line: CashierLine) =>
  * レジの真ん中の列（会計の段階では薄くしたメニューの右へ左に寄せる）。商品（削除・指名）、割引、備考、一括会計
  *
  * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
- * 分割を推奨する注文は「一括会計」（分けない）と「分割して一括会計」（Enter）を並べる。
  */
 export const OrderPanel = (props: props) => {
   const { draft } = props;
@@ -83,12 +76,7 @@ export const OrderPanel = (props: props) => {
         <DiscountSection {...props} />
         <MemoSection {...props} />
       </div>
-      <div
-        className={cn(
-          "grid flex-none gap-2 border-stone-200 border-t px-3 pt-2.5 pb-3",
-          !paying && props.needsSplit && "grid-cols-[98px_minmax(0,1fr)]",
-        )}
-      >
+      <div className="grid flex-none border-stone-200 border-t px-3 pt-2.5 pb-3">
         {paying ? (
           <button
             type="button"
@@ -104,30 +92,6 @@ export const OrderPanel = (props: props) => {
             会計取消
             <KeyHint className="px-1.5 py-0.5 text-[11px]">Esc</KeyHint>
           </button>
-        ) : props.needsSplit ? (
-          <>
-            <button
-              type="button"
-              onClick={props.onGoPay}
-              disabled={!canGoPay(draft)}
-              title="分割せず、1 つの注文番号で会計します"
-              className="h-20 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
-            >
-              一括会計
-            </button>
-            <button
-              type="button"
-              onClick={props.onGoSplitPay}
-              disabled={!canGoPay(draft)}
-              title="商品を注文番号ごとに分けて、全額をまとめて会計します"
-              className="flex h-20 min-w-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] bg-stone-900 px-3 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
-            >
-              分割して一括会計
-              <KeyHint inverted className="px-1.5 py-0.5 text-[11px]">
-                Enter
-              </KeyHint>
-            </button>
-          </>
         ) : (
           <button
             type="button"
@@ -148,8 +112,6 @@ export const OrderPanel = (props: props) => {
 
 const LinesSection = ({
   draft,
-  needsSplit,
-  lineOrderIds,
   onSelect,
   onRemove,
   onOpenAssign,
@@ -173,11 +135,6 @@ const LinesSection = ({
     <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pt-3 pb-2.5">
       <div className="flex flex-none items-center gap-2.5 pl-0.5">
         <span className="font-bold text-[15px]">商品</span>
-        {needsSplit && (
-          <span className="rounded bg-red-50 px-1.5 py-0.5 font-bold text-red-700 text-xs">
-            分割を推奨
-          </span>
-        )}
         {lines.length > 0 && (
           <span className="ml-auto text-sm text-stone-600">
             {lines.length}点
@@ -191,7 +148,6 @@ const LinesSection = ({
         {lines.map((line, index) => {
           const isSelected = selected === index;
           const assign = assignText(line);
-          const lineOrderId = lineOrderIds.get(line.key);
           return (
             <div
               key={line.key}
@@ -231,11 +187,6 @@ const LinesSection = ({
                     </span>
                   )}
                 </span>
-                {lineOrderId !== undefined && (
-                  <span className="flex-none rounded-[5px] border border-stone-400 bg-white px-1.75 py-0.5 font-extrabold text-[11px] text-stone-700 tabular-nums">
-                    No.{lineOrderId}
-                  </span>
-                )}
                 <span className="font-medium text-[15px] tabular-nums">
                   {formatYen(line.menu.price)}
                 </span>

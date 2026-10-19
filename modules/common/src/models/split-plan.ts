@@ -1,8 +1,10 @@
 import type { MenuEntity } from "./menu";
 
 /**
- * 分割を推奨する注文（shouldSplitOrder）を、注文番号ごとに分ける組み合わせ方
+ * 注文の明細を並べる順（レジが送る注文の明細を、この順に並べ替える。注文番号は分けない）
  *
+ * 1 人の注文を注文番号ごとに分けていたときの組み合わせ方で明細を組み、組んだ順に並べる。以下の「番号」は
+ * その組（並べる順の区切り）のこと。
  * 1 つの番号には、同じ商品の 2 杯か 1 杯を 2 つまで入れる（ドリッパー 2 人分）。番号をいちばん少なくし、
  * その中で同じ番号のコーヒーが同時に出せるようにする（抽出は 1 杯 300 秒・2 杯 360 秒）。指名は考えない。
  *   1. 同じ商品を 2 杯ずつまとめる。余った 1 杯は 1 杯のまま（2 杯のまとまりは別々の番号に分けない）
@@ -104,7 +106,7 @@ export const splitItemKey = (item: { id?: string; name: string }) =>
 /** 分けるときの明細 1 行。key は行の印 */
 export type SplitLine<K> = { key: K; menu: MenuEntity };
 
-/** 行の、抽出が要るコーヒーの杯（商品の印。shouldSplitOrder と同じ数え方） */
+/** 行の、抽出が要るコーヒーの杯（商品の印。セットメニューは中のコーヒーで数え、ミルク・グッズは数えない） */
 const brewCups = (menu: MenuEntity) =>
   menu.items.flatMap(({ item, quantity }) =>
     item.item_type.needs_brew
@@ -168,3 +170,12 @@ export const planOrderSplit = <K>(
   if (result.length <= 1) return null;
   return result.map((group) => group.map((index) => lines[index].key));
 };
+
+/**
+ * 明細の行を並べる順（planOrderSplit の番号の順に、番号の中は明細の順）の key。分けなくてよい（番号が 1 つで済む）
+ * 注文は入れた順のまま。prev は前の注文の 1 杯の商品の印（splitItemKey）
+ */
+export const sortOrderLines = <K>(
+  lines: readonly SplitLine<K>[],
+  prev: readonly string[],
+): K[] => planOrderSplit(lines, prev)?.flat() ?? lines.map((line) => line.key);

@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 import type { WithId } from "../lib/typeguard";
 import type { Item, ItemType } from "./item";
 import { MenuEntity } from "./menu";
-import { shouldSplitOrder } from "./recommendation";
 import {
   type SplitChunk,
   planCupSplit,
   planOrderSplit,
+  sortOrderLines,
   splitItemKey,
 } from "./split-plan";
 
@@ -85,7 +85,7 @@ describe("[unit] planCupSplit", () => {
     expect(show(planCupSplit(cupsOf(counts), prev))).toBe(plan);
   });
 
-  test("まとまりが 2 つまでなら分けない（shouldSplitOrder と同じ）", () => {
+  test("まとまりが 2 つまでなら分けない", () => {
     const cases: Record<string, number>[] = [
       { A: 4 },
       { A: 2, B: 2 },
@@ -94,10 +94,6 @@ describe("[unit] planCupSplit", () => {
     ];
     for (const counts of cases) {
       expect(planCupSplit(cupsOf(counts), ["A"])).toHaveLength(1);
-      const menus = cupsOf(counts).map((name) =>
-        menuOf({ item: item(name), quantity: 1 }),
-      );
-      expect(shouldSplitOrder(menus)).toBe(false);
     }
   });
 });
@@ -161,5 +157,35 @@ describe("[unit] planOrderSplit", () => {
       null,
     );
     expect(planOrderSplit([line("m", [milkItem, 3])], [])).toBe(null);
+  });
+});
+
+describe("[unit] sortOrderLines", () => {
+  const line = (key: string, item: WithId<Item>, quantity = 1) => ({
+    key,
+    menu: menuOf({ item, quantity }),
+  });
+
+  test("planOrderSplit の番号の順に並べる（番号は分けない）", () => {
+    const lines = [
+      line("a1", A),
+      line("a2", A),
+      line("m", milkItem),
+      line("a3", A),
+      line("b", B),
+    ];
+    // b+A｜AA
+    expect(sortOrderLines(lines, [splitItemKey(B)])).toEqual([
+      "a1",
+      "m",
+      "b",
+      "a2",
+      "a3",
+    ]);
+  });
+
+  test("分けなくてよい注文は入れた順のまま", () => {
+    const lines = [line("b", B), line("a", A, 2), line("m", milkItem)];
+    expect(sortOrderLines(lines, [splitItemKey(A)])).toEqual(["b", "a", "m"]);
   });
 });

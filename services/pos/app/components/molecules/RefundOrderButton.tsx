@@ -54,8 +54,6 @@ export const refundableAmounts = (
 
 type Props = {
   order: WithId<OrderEntity>;
-  /** 確認に出す注文番号（分割して一括会計で分けた注文はまとめて返金するので全部）。省くと order の番号 */
-  orderIds?: readonly number[];
   mode: RefundOrderMode;
   /** Square で返金できるか（このレジで Square 連携が有効か） */
   squareRefundable: boolean;
@@ -74,7 +72,6 @@ type Props = {
  */
 export const RefundOrderButton = ({
   order,
-  orderIds = [order.orderId],
   mode,
   squareRefundable,
   triggerClassName,
@@ -84,7 +81,7 @@ export const RefundOrderButton = ({
   const [refunding, setRefunding] = useState(false);
   const amounts = refundableAmounts(order, squareRefundable);
   if (amounts === null) return null;
-  const label = `No.${orderIds.join("・")}（${formatYen(order.billingAmount)}）`;
+  const label = `No.${order.orderId}（${formatYen(order.billingAmount)}）`;
 
   const run = async () => {
     setRefunding(true);

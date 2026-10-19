@@ -726,16 +726,10 @@ type OrderCreateRequest struct {
 	PaymentMethod *PaymentMethod `json:"payment_method,omitempty"`
 
 	// Payments 個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。
-	// amount の合計は billing_amount と同じにする（split_orders があれば、その billing_amount も足す）。
-	// 注文の received はお預かりの合計、payment_method は Square の支払いを含めば square、含まなければ cash になる。
+	// amount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は
+	// Square の支払いを含めば square、含まなければ cash になる。
 	Payments *[]OrderPaymentCreate `json:"payments,omitempty"`
 	Received int                   `json:"received"`
-
-	// SplitOrders この注文から分けた注文（2 つ目以降）。1 人の注文を注文番号ごとに分けて、まとめて払うときに使う。
-	// この注文と同じトランザクションで作り、それぞれの split_parent_id をこの注文の id にする。
-	// 支払いはこの注文がまとめて持つので、指定するときは payments も指定する。分けた注文のお預かりは 0、
-	// payment_method はこの注文と同じになる。空の配列は指定しない
-	SplitOrders *[]SplitOrderCreate `json:"split_orders,omitempty"`
 
 	// SquareCheckoutId payment_method が square のとき必須。COMPLETED で金額が billing_amount と一致し、まだどの注文にも使われていない決済依頼の id。
 	SquareCheckoutId *openapi_types.UUID `json:"square_checkout_id"`
@@ -860,11 +854,6 @@ type OrderResponse struct {
 	Received int                    `json:"received"`
 	ServedAt *time.Time             `json:"served_at"`
 
-	// SplitParentId この注文を分けた元の注文（分けた注文の 1 つ目）の id。レジが 1 人の注文を注文番号ごとに分けて作った
-	// （POST /api/orders の split_orders）2 つ目以降の注文に付く。1 つ目の注文と分けていない注文では null。
-	// 支払い（お預かり・payments・Square の決済）は 1 つ目の注文がまとめて持ち、2 つ目以降のお預かりは 0。
-	SplitParentId *openapi_types.UUID `json:"split_parent_id"`
-
 	// SquareRefundStatus 返金（全額）の状態。
 	//   - none: 返金を頼んでいない
 	//   - pending: Square に頼んだ。結果を待っている
@@ -954,16 +943,6 @@ type PrinterSettingsUpdateRequest struct {
 // ReceiptPrinterModel レシート用のプリンターの機種。レシート・領収書の画像を、この機種と用紙（receipt_printer_paper_type・receipt_printer_paper_width）の印字幅に合わせて描く。
 // 58mm のレシート紙の印字幅は、tm_l90 は TM-L90（416 ドット）、tm_m30 は TM-m30（420 ドット）。80mm のレシート紙はどちらも 576 ドット
 type ReceiptPrinterModel string
-
-// SplitOrderCreate 分けた注文 1 つ分（POST /api/orders の split_orders）。支払いは分けた元の注文が持つ
-type SplitOrderCreate struct {
-	BillingAmount     int                     `json:"billing_amount"`
-	Comments          *[]CommentCreateRequest `json:"comments,omitempty"`
-	DiscountOrderCups *int                    `json:"discount_order_cups,omitempty"`
-	DiscountOrderId   *int                    `json:"discount_order_id"`
-	MenuIds           []MenuInfoCreate        `json:"menu_ids"`
-	OrderId           int                     `json:"order_id"`
-}
 
 // SquareActionCreateRequest defines model for SquareActionCreateRequest.
 type SquareActionCreateRequest struct {

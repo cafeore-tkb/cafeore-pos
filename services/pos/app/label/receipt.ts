@@ -58,10 +58,10 @@ export type OrderReceipt = {
   /** 現金ならお預り・お釣り、Square なら決済手段 */
   payments: ReceiptRow[];
   /**
-   * 引換券番号として大きく載せる注文番号（注文番号ごとに分けた注文は全部）。注文を何回かに分けて払うときは載せず、
+   * 引換券番号として大きく載せる注文番号。注文を何回かに分けて払うときは載せず、
    * 払い終えたら引換券番号だけのレシート（ClaimReceipt）を別に刷る
    */
-  claimNumbers?: string[];
+  claimNumber?: string;
 };
 
 /** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシートの中身 */
@@ -70,8 +70,8 @@ export type ClaimReceipt = {
   dateTime: string;
   /** No.123 */
   orderNo: string;
-  /** 引換券番号として大きく載せる注文番号（注文番号ごとに分けた注文は全部） */
-  claimNumbers: string[];
+  /** 引換券番号として大きく載せる注文番号 */
+  claimNumber: string;
 };
 
 /** 求められたときだけ刷る領収書の中身 */
@@ -95,8 +95,7 @@ const STORE_COPY_MARK = "店舗控";
 export const yen = (amount: number) =>
   `${amount < 0 ? "-" : ""}￥${Math.abs(amount).toLocaleString("ja-JP")}`;
 
-/** No.123。注文番号ごとに分けた注文は No.123・124 */
-const orderNo = (orderIds: readonly number[]) => `No.${orderIds.join("・")}`;
+const orderNo = (order: OrderEntity) => `No.${order.orderId}`;
 
 /** 2026/11/07 10:23。注文を確定した時刻（日本時間） */
 const receiptDateTime = (order: OrderEntity) => {
@@ -137,14 +136,11 @@ const receiptItems = (order: OrderEntity): ReceiptRow[] => {
  * 注文を何回かに分けて払うとき（split）は、order はその小計の商品だけの注文。
  * 小計から先に払った額とあとで払う額を引いた残りを、この支払いの合計にする。
  * 引換券番号は載せない（払い終えたら claimReceipt を別に刷る）。
- * 注文番号ごとに分けた注文は、order は分けた注文を全部まとめた注文で、orderIds に番号を全部渡す
- * （レシートは全額で 1 枚、引換券番号は番号を全部載せる）。
  */
 export const orderReceipt = (
   order: OrderEntity,
   payment: ReceiptPayment,
   split?: ReceiptSplit,
-  orderIds: readonly number[] = [order.orderId],
 ): OrderReceipt => {
   const prepaid = split?.prepaid ?? 0;
   const deferred = split?.deferred ?? 0;
@@ -184,12 +180,12 @@ export const orderReceipt = (
 
   return {
     dateTime: receiptDateTime(order),
-    orderNo: orderNo(orderIds),
+    orderNo: orderNo(order),
     items: receiptItems(order),
     adjustments,
     total: yen(total),
     payments,
-    ...(split === undefined && { claimNumbers: orderIds.map(String) }),
+    ...(split === undefined && { claimNumber: `${order.orderId}` }),
   };
 };
 
@@ -197,15 +193,12 @@ export const orderReceipt = (
  * 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート
  *
  * 支払いごとのレシートには引換券番号を載せないので、注文に 1 枚だけ刷る。
- * 日時は注文を確定した時刻（日本時間）。注文番号ごとに分けた注文は、orderIds に番号を全部渡す。
+ * 日時は注文を確定した時刻（日本時間）。
  */
-export const claimReceipt = (
-  order: OrderEntity,
-  orderIds: readonly number[] = [order.orderId],
-): ClaimReceipt => ({
+export const claimReceipt = (order: OrderEntity): ClaimReceipt => ({
   dateTime: receiptDateTime(order),
-  orderNo: orderNo(orderIds),
-  claimNumbers: orderIds.map(String),
+  orderNo: orderNo(order),
+  claimNumber: `${order.orderId}`,
 });
 
 /** 2026年11月7日 */
@@ -218,17 +211,13 @@ const jaDate = (ms: number) => {
  * 求められたときだけ刷る領収書
  *
  * 宛名は手で書けるよう空けておく。日付は注文を受けた日、金額は請求額（割引後）。
- * storeCopy なら、同じ中身に店舗控の印を付ける。注文番号ごとに分けた注文は、order は全部をまとめた注文で、
- * orderIds に番号を全部渡す。
+ * storeCopy なら、同じ中身に店舗控の印を付ける。
  */
 export const formalReceipt = (
   order: OrderEntity,
-  {
-    storeCopy = false,
-    orderIds = [order.orderId],
-  }: { storeCopy?: boolean; orderIds?: readonly number[] } = {},
+  { storeCopy = false }: { storeCopy?: boolean } = {},
 ): FormalReceipt => ({
-  orderNo: orderNo(orderIds),
+  orderNo: orderNo(order),
   amount: `${yen(order.billingAmount)}-`,
   note: "但し 飲食代として",
   date: jaDate(order.createdAt.getTime()),

@@ -271,27 +271,16 @@ export const useReceiptPrinter = (
     [print],
   );
 
-  /**
-   * 会計のたびに刷るレシート。split（注文を何回かに分けて払う 1 回分）なら引換券番号は載せない。
-   * 注文番号ごとに分けた注文は、orderIds に番号を全部渡す（全額で 1 枚）
-   */
+  /** 会計のたびに刷るレシート。split（注文を何回かに分けて払う 1 回分）なら引換券番号は載せない */
   const printReceipt = useCallback(
-    (
-      order: OrderEntity,
-      payment: ReceiptPayment,
-      split?: ReceiptSplit,
-      orderIds?: readonly number[],
-    ) =>
-      printSafely(() =>
-        orderReceiptJob(width, order, payment, split, orderIds),
-      ),
+    (order: OrderEntity, payment: ReceiptPayment, split?: ReceiptSplit) =>
+      printSafely(() => orderReceiptJob(width, order, payment, split)),
     [printSafely, width],
   );
 
-  /** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート（分けた注文は番号を全部） */
+  /** 注文を何回かに分けて払ったとき、払い終えたら別に刷る引換券番号のレシート */
   const printClaimReceipt = useCallback(
-    (order: OrderEntity, orderIds?: readonly number[]) =>
-      printSafely(() => claimReceiptJob(width, order, orderIds)),
+    (order: OrderEntity) => printSafely(() => claimReceiptJob(width, order)),
     [printSafely, width],
   );
 
@@ -301,12 +290,10 @@ export const useReceiptPrinter = (
    * お客さんに渡すものの後に、同じ中身の店舗控を続けて刷る（1 枚ずつ切る）。どちらも送れたら true
    */
   const printFormalReceipt = useCallback(
-    async (order: OrderEntity, orderIds?: readonly number[]) => {
+    async (order: OrderEntity) => {
       const printed = await Promise.all([
-        printSafely(() => formalReceiptJob(width, order, { orderIds })),
-        printSafely(() =>
-          formalReceiptJob(width, order, { storeCopy: true, orderIds }),
-        ),
+        printSafely(() => formalReceiptJob(width, order)),
+        printSafely(() => formalReceiptJob(width, order, { storeCopy: true })),
       ]);
       return printed.every(Boolean);
     },

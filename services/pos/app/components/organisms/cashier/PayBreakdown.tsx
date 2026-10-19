@@ -4,15 +4,6 @@ import { formatYen } from "~/lib/yen";
 import type { CashierTender } from "../../functional/cashierSplit";
 import { tenderDot, tenderLabel } from "./tenderStyle";
 
-/** 分割して一括会計の、注文番号ごとの分け方 */
-export type BreakdownOrderSplit = {
-  groups: { orderId: number; items: string; points: number }[];
-  /** まだ分割を推奨する注文番号（「No.125 はまだ分割を推奨します」）。無ければ空 */
-  warning: string;
-  /** 分け方を編集できるか（端末で決済中は編集しない） */
-  canEdit: boolean;
-};
-
 /** 内訳の帯の 1 区切り（受け取った分・今払う分・残り） */
 export type BreakdownBarSegment = {
   key: string;
@@ -32,9 +23,6 @@ type props = {
   tenders: CashierTender[];
   /** いまの小計の説明（「小計 ¥1,100 を分割 · このあと残り ¥800」）。無ければ空 */
   context: string;
-  /** 分割して一括会計の分け方。分けていなければ null */
-  orderSplit: BreakdownOrderSplit | null;
-  onEditOrderSplit: () => void;
   /** 色分けの帯。出さなければ空 */
   bar: BreakdownBarSegment[];
   /** 小計（今払う額） */
@@ -65,8 +53,6 @@ export const PayBreakdown = ({
   prepaid,
   tenders,
   context,
-  orderSplit,
-  onEditOrderSplit,
   bar,
   due,
   deferred,
@@ -133,43 +119,6 @@ export const PayBreakdown = ({
           </div>
         ))}
       </div>
-      {orderSplit && (
-        <div className="mt-3.5 flex flex-col gap-1.5 rounded-lg bg-stone-100 px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-[13px] text-stone-700">
-              {orderSplit.groups.length}件に分割
-            </span>
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={onEditOrderSplit}
-              disabled={!orderSplit.canEdit}
-              className="h-7.5 rounded-md border border-stone-400 bg-white px-2.5 font-bold text-stone-900 text-xs hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              分け方を編集
-            </button>
-          </div>
-          {orderSplit.groups.map((group) => (
-            <div
-              key={group.orderId}
-              className="flex items-baseline gap-2 text-[13px] leading-normal"
-            >
-              <span className="w-14 flex-none font-extrabold text-stone-900 tabular-nums">
-                No.{group.orderId}
-              </span>
-              <span className="min-w-0 flex-1 text-stone-700">
-                {group.items}
-              </span>
-              <span className="flex-none text-stone-600">{group.points}点</span>
-            </div>
-          ))}
-          {orderSplit.warning && (
-            <p className="m-0 text-red-700 text-xs leading-normal">
-              {orderSplit.warning}
-            </p>
-          )}
-        </div>
-      )}
       {context && (
         <div className="mt-3.5 rounded-lg bg-prepay-soft px-3 py-2.5 font-bold text-[13px] text-prepay-ink leading-normal">
           {context}
@@ -188,7 +137,6 @@ export const PayBreakdown = ({
     </div>
     <PaySummary
       due={due}
-      splitCount={orderSplit?.groups.length ?? 0}
       deferred={deferred}
       cash={cash}
       received={received}
@@ -201,15 +149,11 @@ export const PayBreakdown = ({
 /** 小計・受取金額・お釣り。お釣りはお客さんに伝える額なので一番大きく出す */
 const PaySummary = ({
   due,
-  splitCount,
   deferred,
   cash,
   received,
   onCancelPart,
-}: Pick<props, "due" | "deferred" | "cash" | "received" | "onCancelPart"> & {
-  /** 分割して一括会計で分けた注文の数。分けていなければ 0 */
-  splitCount: number;
-}) => {
+}: Pick<props, "due" | "deferred" | "cash" | "received" | "onCancelPart">) => {
   const receivedAmount = !cash || received === "" ? null : Number(received);
   const change = receivedAmount === null ? null : receivedAmount - due;
   return (
@@ -232,11 +176,6 @@ const PaySummary = ({
       )}
       <div className="flex items-baseline gap-1.5">
         <span className="font-extrabold text-[15px]">小計</span>
-        {splitCount > 0 && (
-          <span className="self-center rounded-[5px] border border-stone-900 px-1.5 font-extrabold text-[11px] text-stone-900">
-            全額 · 注文{splitCount}件
-          </span>
-        )}
         {deferred !== null && (
           <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
             分割

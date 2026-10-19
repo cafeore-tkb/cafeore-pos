@@ -17,10 +17,6 @@ import { hasCancelLabel } from "~/label/cancel-label";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import type { ConnectionIssue } from "../../functional/connectionIssues";
-import {
-  type PastOrderGroup,
-  groupPastOrders,
-} from "../../functional/pastOrderGroups";
 import { useCurrentTime } from "../../functional/useCurrentTime";
 import { CancelOrderButton } from "../../molecules/CancelOrderButton";
 import { RefundOrderButton } from "../../molecules/RefundOrderButton";
@@ -34,11 +30,8 @@ type props = {
   connectionIssues: ConnectionIssue[];
   /** Square で払った分を返金できる（このレジで Square 連携が有効）。現金で払った分はいつでも返金できる */
   squareRefundable: boolean;
-  /** 領収書を刷る（分けた注文は orderIds に番号を全部）。プリンターに送れたら true */
-  onPrintFormalReceipt: (
-    order: OrderEntity,
-    orderIds?: readonly number[],
-  ) => Promise<boolean>;
+  /** 領収書を刷る。プリンターに送れたら true */
+  onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
   /** キャンセルした注文のシールを刷る。刷れたら（刷るシールが無ければ）true */
   onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
   /** レジに戻る */
@@ -71,16 +64,12 @@ const refundTagOf = (order: OrderEntity) =>
   (order.squareRefundStatus && REFUND_TAG[order.squareRefundStatus]) ??
   (order.cashRefundedAt !== null ? REFUND_TAG.refunded : undefined);
 
-// 支払いが 1 回（分割して一括会計を 1 回で払った）なら、分けずに払った注文と同じに出す
 const paymentText = (order: OrderEntity) =>
-  order.payments.length > 1
+  order.payments.length > 0
     ? `分けて会計 ${order.payments.length}回`
     : order.paymentMethod === "square"
       ? "Square"
       : "現金";
-
-/** No.124・125 の 124・125 */
-const numbersText = (group: PastOrderGroup) => group.orderIds.join("・");
 
 /** 分けて会計した支払いの決済手段（「現金」「カード」など） */
 const splitPaymentText = (payment: OrderEntity["payments"][number]) =>
@@ -106,7 +95,6 @@ const discountNote = (order: OrderEntity) => {
  *
  * キャンセルした注文も消さずに「キャンセル」として出す。
  * キャンセルしたら、カップのシールを刷った注文ならラベル用のプリンターでキャンセルのシール（黒地）を刷る。
- * 分割して一括会計で分けた注文は、1 つの注文としてまとめて出す（pastOrderGroups）。
  *
  * ↑↓ で選び、Esc でレジに戻る。
  */
@@ -123,29 +111,24 @@ export const PastOrdersView = ({
   const listRef = useRef<HTMLDivElement>(null);
 
   const sorted = useMemo(
-    () =>
-      groupPastOrders(
-        (orders ?? []).slice().sort((a, b) => b.orderId - a.orderId),
-      ),
+    () => (orders ?? []).slice().sort((a, b) => b.orderId - a.orderId),
     [orders],
   );
   const rows = useMemo(
     () =>
       query === ""
         ? sorted
-        : sorted.filter((group) =>
-            group.orderIds.some((orderId) => String(orderId).includes(query)),
-          ),
+        : sorted.filter((order) => String(order.orderId).includes(query)),
     [sorted, query],
   );
   // 選んでいた注文が絞り込みで外れたら、一番上を選ぶ
   const selected =
-    rows.find((group) => group.order.id === selectedId) ?? rows[0] ?? null;
+    rows.find((order) => order.id === selectedId) ?? rows[0] ?? null;
 
   useEffect(() => {
     if (!selected) return;
     listRef.current
-      ?.querySelector(`[data-row="${selected.order.id}"]`)
+      ?.querySelector(`[data-row="${selected.id}"]`)
       ?.scrollIntoView({ block: "nearest" });
   }, [selected]);
 
@@ -182,7 +165,7 @@ export const PastOrdersView = ({
         const index = selected ? rows.indexOf(selected) : -1;
         const step = event.key === "ArrowDown" ? 1 : -1;
         const next = Math.max(0, Math.min(rows.length - 1, index + step));
-        setSelectedId(rows[next].order.id);
+        setSelectedId(rows[next].id);
       }
     };
     window.addEventListener("keydown", handler);
@@ -243,12 +226,12 @@ export const PastOrdersView = ({
             ref={listRef}
             className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-auto px-3 pt-2 pb-3"
           >
-            {rows.map((group) => (
+            {rows.map((order) => (
               <OrderRow
-                key={group.order.id}
-                group={group}
-                selected={group === selected}
-                onSelect={() => setSelectedId(group.order.id)}
+                key={order.id}
+                order={order}
+                selected={order === selected}
+                onSelect={() => setSelectedId(order.id)}
               />
             ))}
             {rows.length === 0 && (
@@ -261,8 +244,8 @@ export const PastOrdersView = ({
         {selected ? (
           <OrderDetail
             // 注文を変えたら、書きかけのコメントを消す
-            key={selected.order.id}
-            group={selected}
+            key={selected.id}
+            order={selected}
             squareRefundable={squareRefundable}
             onPrintFormalReceipt={onPrintFormalReceipt}
             onPrintCancelLabel={onPrintCancelLabel}
@@ -278,15 +261,14 @@ export const PastOrdersView = ({
 };
 
 const OrderRow = ({
-  group,
+  order,
   selected,
   onSelect,
 }: {
-  group: PastOrderGroup;
+  order: WithId<OrderEntity>;
   selected: boolean;
   onSelect: () => void;
 }) => {
-  const { order } = group;
   const status = order.isCancelled() ? CANCELLED : STATUS[order.status];
   const refundTag = refundTagOf(order);
   return (
@@ -302,16 +284,9 @@ const OrderRow = ({
           : "bg-white shadow-[inset_0_0_0_1px_var(--color-stone-200)]",
       )}
     >
-      <span className="flex flex-col font-black">
-        <span className="flex items-baseline gap-px">
-          <span className="text-[11px]">No.</span>
-          <span className="text-[26px] leading-none">{order.orderId}</span>
-        </span>
-        {group.orderIds.length > 1 && (
-          <span className="text-stone-600 text-xs tabular-nums">
-            ・{group.orderIds.slice(1).join("・")}
-          </span>
-        )}
+      <span className="flex items-baseline gap-px font-black">
+        <span className="text-[11px]">No.</span>
+        <span className="text-[26px] leading-none">{order.orderId}</span>
       </span>
       <span className="flex flex-col text-[13px] tabular-nums">
         <span className="text-stone-600">
@@ -357,19 +332,16 @@ const SOLID_BUTTON =
   "h-12 rounded-[10px] border-0 bg-red-500 px-5.5 font-bold text-[15px] text-white hover:bg-red-600 hover:text-white";
 
 const OrderDetail = ({
-  group,
+  order,
   squareRefundable,
   onPrintFormalReceipt,
   onPrintCancelLabel,
 }: {
-  group: PastOrderGroup;
+  order: WithId<OrderEntity>;
   squareRefundable: boolean;
-  onPrintFormalReceipt: props["onPrintFormalReceipt"];
+  onPrintFormalReceipt: (order: OrderEntity) => Promise<boolean>;
   onPrintCancelLabel: (order: OrderEntity) => Promise<boolean>;
 }) => {
-  const { order } = group;
-  const split = group.orders.length > 1;
-  const numbers = numbersText(group);
   const { colorSettings } = useColorSettings();
   const [comment, setComment] = useState("");
   // 提供までの時間（まだならいままで）を進める
@@ -382,12 +354,7 @@ const OrderDetail = ({
     const text = comment.trim();
     if (!text) return;
     setComment("");
-    // 分けた注文は、どの番号を作る人にも読めるよう全部の注文に付ける
-    Promise.all(
-      group.orders.map((target) =>
-        orderRepository.addComment(target.id, "cashier", text),
-      ),
-    ).catch((error) => {
+    orderRepository.addComment(order.id, "cashier", text).catch((error) => {
       setComment(text);
       toast.error(
         `コメントを追加できませんでした: ${error instanceof Error ? error.message : String(error)}`,
@@ -396,8 +363,8 @@ const OrderDetail = ({
   };
 
   const printFormalReceipt = async () => {
-    if (await onPrintFormalReceipt(order, group.orderIds)) {
-      toast(`No.${numbers} の領収書を印刷しました`);
+    if (await onPrintFormalReceipt(order)) {
+      toast(`No.${order.orderId} の領収書を印刷しました`);
     } else {
       toast.error(
         "レシート用のプリンターにつながっていないため、領収書を印刷できません",
@@ -405,17 +372,14 @@ const OrderDetail = ({
     }
   };
 
-  /**
-   * キャンセルのシール（黒地）を刷る。キャンセルしたときと、刷り直すときに呼ぶ。
-   * 分けた注文は注文ごとに刷る（シールの番号は注文ごと）
-   */
+  /** キャンセルのシール（黒地）を刷る。キャンセルしたときと、刷り直すときに呼ぶ */
   const printCancelLabel = async (reprint = false) => {
-    const printed = await Promise.all(group.orders.map(onPrintCancelLabel));
-    if (printed.every(Boolean)) {
-      if (reprint) toast(`No.${numbers} のキャンセルのシールを印刷しました`);
+    if (await onPrintCancelLabel(order)) {
+      if (reprint)
+        toast(`No.${order.orderId} のキャンセルのシールを印刷しました`);
     } else {
       toast.error(
-        `No.${numbers} のキャンセルのシールを印刷できませんでした。ラベル用のプリンターを確かめて「キャンセルのシールを印刷」で刷り直してください`,
+        `No.${order.orderId} のキャンセルのシールを印刷できませんでした。ラベル用のプリンターを確かめて「キャンセルのシールを印刷」で刷り直してください`,
       );
     }
   };
@@ -425,14 +389,7 @@ const OrderDetail = ({
       <div className="flex flex-none items-end gap-4.5 border-stone-200 border-b px-6 pt-3.5 pb-3">
         <span className="flex items-baseline gap-0.5 font-black">
           <span className="text-base">No.</span>
-          <span
-            className={cn(
-              "leading-none",
-              split ? "text-[44px]" : "text-[56px]",
-            )}
-          >
-            {numbers}
-          </span>
+          <span className="text-[56px] leading-none">{order.orderId}</span>
         </span>
         <span className="flex flex-col gap-0.5 pb-1 text-sm tabular-nums">
           <span className="text-stone-600">
@@ -479,16 +436,46 @@ const OrderDetail = ({
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_280px] content-start gap-6 overflow-auto px-6 py-4">
         <div className="flex min-w-0 flex-col gap-3">
           <div className="font-bold text-[13px] text-stone-600">商品</div>
-          {group.orders.map((part) => (
-            <div key={part.id} className="flex flex-col gap-2">
-              {split && (
-                <div className="font-extrabold text-sm text-stone-700 tabular-nums">
-                  No.{part.orderId}
+          <div className="grid grid-cols-3 gap-2">
+            {order.getItems().map((item, index) => {
+              const color = resolveItemColor(
+                colorSettings,
+                item,
+                "cashier_order",
+              );
+              const assign = [
+                item.dripper !== null ? dripperLabel(item.dripper) : "",
+                item.assignee ?? "",
+              ]
+                .filter(Boolean)
+                .join("・");
+              return (
+                <div
+                  key={`${index}-${item.id}`}
+                  className={cn(
+                    "flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-[10px] border px-2.5 py-2",
+                    color === undefined && "border-stone-300 bg-white",
+                  )}
+                  style={
+                    color === undefined
+                      ? undefined
+                      : {
+                          backgroundColor: color,
+                          borderColor: color,
+                          color: readableTextColor(color),
+                        }
+                  }
+                >
+                  <span className="font-extrabold text-[22px] leading-tight">
+                    {item.abbr}
+                  </span>
+                  {assign && (
+                    <span className="font-bold text-xs">指名:{assign}</span>
+                  )}
                 </div>
-              )}
-              <OrderItems order={part} colorSettings={colorSettings} />
-            </div>
-          ))}
+              );
+            })}
+          </div>
           <div className="mt-1.5 font-bold text-[13px] text-stone-600">
             コメント
           </div>
@@ -555,17 +542,15 @@ const OrderDetail = ({
               className={cn(
                 "font-bold",
                 order.paymentMethod === "square" &&
-                  order.payments.length <= 1 &&
+                  order.payments.length === 0 &&
                   "text-sky-800",
               )}
             >
               {paymentText(order)}
             </span>
           </div>
-          {order.payments.length > 1 && (
-            <SplitPayments order={order} showLines={!split} />
-          )}
-          {order.payments.length <= 1 && order.paymentMethod !== "square" && (
+          {order.payments.length > 0 && <SplitPayments order={order} />}
+          {order.payments.length === 0 && order.paymentMethod !== "square" && (
             <>
               <div className="flex justify-between text-sm">
                 <span className="text-stone-600">お預り</span>
@@ -610,7 +595,6 @@ const OrderDetail = ({
           {order.isCancelled() ? (
             <RefundOrderButton
               order={order}
-              orderIds={group.orderIds}
               mode="cancelled"
               squareRefundable={squareRefundable}
               triggerClassName={SOLID_BUTTON}
@@ -619,14 +603,12 @@ const OrderDetail = ({
             <>
               <RefundOrderButton
                 order={order}
-                orderIds={group.orderIds}
                 mode="keep"
                 squareRefundable={squareRefundable}
                 triggerClassName={OUTLINE_BUTTON}
               />
               <RefundOrderButton
                 order={order}
-                orderIds={group.orderIds}
                 mode="cancel"
                 squareRefundable={squareRefundable}
                 triggerClassName={SOLID_BUTTON}
@@ -635,7 +617,6 @@ const OrderDetail = ({
               {/* 返金せずにキャンセルする。現金・返金済みの注文もキャンセルできる */}
               <CancelOrderButton
                 order={order}
-                orderIds={group.orderIds}
                 triggerClassName={OUTLINE_BUTTON}
                 onCancelled={() => void printCancelLabel()}
               />
@@ -647,61 +628,8 @@ const OrderDetail = ({
   );
 };
 
-/** 注文の商品（指名があれば添える） */
-const OrderItems = ({
-  order,
-  colorSettings,
-}: {
-  order: OrderEntity;
-  colorSettings: ReturnType<typeof useColorSettings>["colorSettings"];
-}) => (
-  <div className="grid grid-cols-3 gap-2">
-    {order.getItems().map((item, index) => {
-      const color = resolveItemColor(colorSettings, item, "cashier_order");
-      const assign = [
-        item.dripper !== null ? dripperLabel(item.dripper) : "",
-        item.assignee ?? "",
-      ]
-        .filter(Boolean)
-        .join("・");
-      return (
-        <div
-          key={`${index}-${item.id}`}
-          className={cn(
-            "flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-[10px] border px-2.5 py-2",
-            color === undefined && "border-stone-300 bg-white",
-          )}
-          style={
-            color === undefined
-              ? undefined
-              : {
-                  backgroundColor: color,
-                  borderColor: color,
-                  color: readableTextColor(color),
-                }
-          }
-        >
-          <span className="font-extrabold text-[22px] leading-tight">
-            {item.abbr}
-          </span>
-          {assign && <span className="font-bold text-xs">指名:{assign}</span>}
-        </div>
-      );
-    })}
-  </div>
-);
-
-/**
- * 分けて会計した支払いの内訳（払った順）。showLines なら、それぞれの支払いで払った商品も出す
- * （分割して一括会計で分けた注文は、支払いが 1 つ目の注文の商品しか指さないので出さない）
- */
-const SplitPayments = ({
-  order,
-  showLines,
-}: {
-  order: OrderEntity;
-  showLines: boolean;
-}) => (
+/** 分けて会計した支払いの内訳（払った順） */
+const SplitPayments = ({ order }: { order: OrderEntity }) => (
   <div className="mt-1 flex flex-col gap-1.5">
     {order.payments.map((payment, index) => (
       <div
@@ -735,14 +663,12 @@ const SplitPayments = ({
             )}
           <span className="ml-auto font-bold">{formatYen(payment.amount)}</span>
         </div>
-        {showLines && (
-          <span className="truncate text-stone-600 text-xs">
-            {payment.menuIndexes
-              .map((menuIndex) => order.menus[menuIndex]?.name)
-              .filter(Boolean)
-              .join("・")}
-          </span>
-        )}
+        <span className="truncate text-stone-600 text-xs">
+          {payment.menuIndexes
+            .map((menuIndex) => order.menus[menuIndex]?.name)
+            .filter(Boolean)
+            .join("・")}
+        </span>
         {(payment.method === "cash" || payment.discount > 0) && (
           <span className="text-stone-500 text-xs">
             {[
