@@ -17,7 +17,7 @@ const AUTHORS: Record<BoardComment["author"], string> = {
   others: "その他",
 };
 
-/** C・Dの右側で注文ごとの会話を表示。閉じると元の注文一覧へ戻る。 */
+/** Cの右側で注文ごとの会話を表示。閉じると元の注文一覧へ戻る。 */
 export const OrderChatPanel = ({
   label,
   comments,

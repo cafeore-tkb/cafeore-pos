@@ -68,7 +68,7 @@ export const useOrderSearch = ({
   close: () => void;
   /** 注文を選ぶ（orderLabel。null で外す） */
   selectOrder: (label: string | null) => void;
-  /** 管制盤 A のタイムラインをカード（key）までスクロールする（タイムラインの無い C・D では渡さない） */
+  /** 管制盤 A のタイムラインをカード（key）までスクロールする（タイムラインの無い C では渡さない） */
   showOnTimeline?: (cardKey: string) => void;
   /** 今の管制盤（替わったら見せ直す） */
   view: string;

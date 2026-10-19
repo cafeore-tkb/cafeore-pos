@@ -14,7 +14,7 @@ import {
 } from "./RollingOrderNumber";
 import { ScrollArea } from "./ScrollArea";
 
-// 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
+// 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列で同じ）。
 // 未提供は、去年までのマスターシートのように、まだ提供していない注文を注文番号の順に、受けてからの時間（15 分を超えたら赤）・今の状態・コメントで並べる。
 // 行を押すとその注文を番号の検索と同じく選んで見せる。コメントにはスタンプで返せる（CommentList）。
 
@@ -48,7 +48,7 @@ export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
   unassignedOrders?: readonly CaosCard[];
   nextBayId?: number;
-  /** 「未割当」のタブの名前（D は「注文内容」） */
+  /** 「未割当」のタブの名前 */
   label?: string;
   className?: string;
 }> = ({
@@ -236,7 +236,7 @@ const UnfinishedRow: React.FC<{
   </article>
 );
 
-// 横に並べる（管制盤 A の横帯）か、縦に並べる（C・D の右の列）か
+// 横に並べる（管制盤 A の横帯）か、縦に並べる（C の右の列）か
 const LIST_LAYOUT = {
   x: {
     scroller: "overscroll-x-contain",
@@ -251,7 +251,7 @@ const LIST_LAYOUT = {
 } as const;
 
 /**
- * 未提供の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C・D の右の列）
+ * 未提供の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C の右の列）
  */
 export const UnfinishedList: React.FC<{
   view: UnfinishedView;

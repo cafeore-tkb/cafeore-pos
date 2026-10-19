@@ -8,9 +8,7 @@ import { describe, expect, test, vi } from "vitest";
 import { LATE_ORDER_SEC, longWaitMinutes, orderBacklog } from "./alerts";
 import { cardActions, cardStage } from "./cardActions";
 import {
-  type CardLook,
   cardLooks,
-  cardOrderParts,
   cardServedLabel,
   orderAndCupCounts,
   orderLabel,
@@ -34,7 +32,6 @@ import { liberoLanes } from "./libero";
 import { earlyNext, laneStatus, laneTimes } from "./queue";
 import { runCardAction } from "./runCardAction";
 import { findOrder, focusCard } from "./search";
-import { buildSheet, cellKey, linkedOrderNos } from "./sheet";
 import { brewStarts, timelineArrivals } from "./timeline";
 import {
   markSeen,
@@ -330,45 +327,6 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(sharesOrder(merged, null)).toBe(false);
     const [own] = buildCaosCards([order(4, [{}])]);
     expect(sharesOrder(own, "#003+#004")).toBe(true);
-    // D の表：#004 を選ぶと、統合したカードの行（#003 と #004）
-    expect([...linkedOrderNos("#004", lanes, unassigned)].sort()).toEqual([
-      3, 4,
-    ]);
-  });
-
-  test("統合したカードの注文ごとの段は、注文番号の小さい順にその注文の杯数", () => {
-    const merged = cards.find((card) => card.key === "m");
-    if (!merged) throw new Error("統合したカードが無い");
-    // コメントはその注文の段にだけ数える
-    const look = { comments: [{ orderNo: 4 }] } as CardLook;
-    expect(cardOrderParts(merged, look)).toEqual([
-      { orderNo: 3, cups: 1, reason: "", comments: 0 },
-      { orderNo: 4, cups: 1, reason: "", comments: 1 },
-    ]);
-    const [two] = buildCaosCards([order(11, [{}, {}])]);
-    expect(cardOrderParts(two)).toEqual([
-      { orderNo: 11, cups: 2, reason: "", comments: 0 },
-    ]);
-    // 入れ直しどうしを統合したカードは、理由をその注文の段にだけ出す
-    const emergency = (id: string, reason: string) => ({
-      id,
-      createdAt: T0,
-      reason,
-      dripper: null,
-      dripperPosition: null,
-      dripId: "em",
-      brewStartedAt: null,
-      brewFinishedAt: null,
-    });
-    const rebrew = buildCaosCards([
-      order(7, [{ emergencies: [emergency("e7", "こぼした")] }]),
-      order(8, [{ emergencies: [emergency("e8", "")] }]),
-    ]).find((card) => card.emergency);
-    if (!rebrew) throw new Error("入れ直しのカードが無い");
-    expect(cardOrderParts(rebrew).map(({ reason }) => reason)).toEqual([
-      "こぼした",
-      "",
-    ]);
   });
 
   test("タイムラインに新しく入ったカードは、割り当てたものと抽出を始めたものだけ（移しただけのカードは入らない）", () => {
@@ -770,18 +728,6 @@ describe("[unit] CaOS の終わったカードと提供済みのカード", () =
     expect(label("d3")).toBe("提供済 1/2");
     // 終わったカードには付けない
     expect(label("d1")).toBe("");
-  });
-
-  test("管制盤 D の表は、終わったカードを枠に出さず、淹れ終わった行は灰色の行として残す", () => {
-    const sheet = buildSheet(lanes, [], new Map());
-    expect(sheet.cells.get(cellKey(1, 1))?.entries ?? []).toEqual([]);
-    expect(
-      sheet.cells.get(cellKey(2, 1))?.entries.map((entry) => entry.state),
-    ).toEqual(["current"]);
-    expect(sheet.rows.find((row) => row.orderNo === 1)).toMatchObject({
-      isPast: true,
-      cups: 1,
-    });
   });
 });
 
