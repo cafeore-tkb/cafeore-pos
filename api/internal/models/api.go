@@ -435,6 +435,8 @@ type CupEmergencyCreateResponse struct {
 
 // CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
 type CupEmergencyResponse struct {
+	// AssignedAt CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
+	AssignedAt      *time.Time          `json:"assigned_at,omitempty"`
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
 	CreatedAt       time.Time           `json:"created_at"`
@@ -737,6 +739,9 @@ type OrderCreateRequest struct {
 
 // OrderCupResponse defines model for OrderCupResponse.
 type OrderCupResponse struct {
+	// AssignedAt CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
+	AssignedAt *time.Time `json:"assigned_at,omitempty"`
+
 	// BrewFinishedAt CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
 	BrewFinishedAt *time.Time `json:"brew_finished_at"`
 

@@ -1,5 +1,8 @@
+import addFormats from "ajv-formats";
+import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, test } from "vitest";
 import { OrderEntity } from "../models/order";
+import schemas from "../types/openapi-schemas.json";
 import {
   type OrderResponse,
   orderEntityToCreateRequest,
@@ -63,6 +66,7 @@ const cup = (id: string): OrderResponse["cups"][number] => ({
   dripper: null,
   dripper_position: null,
   drip_id: null,
+  assigned_at: null,
   brew_started_at: null,
   brew_finished_at: null,
   emergencies: [],
@@ -320,5 +324,38 @@ describe("[unit] order snapshot conversion", () => {
       menus: [{ ...response.menus[0], unit_price: 0 }],
     });
     expect(order.total).toBe(0);
+  });
+});
+
+describe("[unit] assigned_at backward compatibility", () => {
+  const ajv = new Ajv2020({ strict: false });
+  addFormats(ajv);
+  ajv.addSchema({ $id: "openapi", components: { schemas } });
+  const validate = ajv.getSchema(
+    "openapi#/components/schemas/OrderCupResponse",
+  );
+  if (!validate) throw new Error("OrderCupResponse schema missing");
+  test("旧レスポンスの欠落とnullを受け入れ、欠落は未計測にする", () => {
+    const old = cup("00000000-0000-4000-8000-000000000099");
+    old.assigned_at = undefined;
+    expect(validate(old), JSON.stringify(validate.errors)).toBe(true);
+    expect(
+      responseToOrderEntity({ ...response, cups: [old] }).cups[0].assignedAt,
+    ).toBeNull();
+    expect(validate({ ...old, assigned_at: null })).toBe(true);
+    expect(schemas.CupEmergencyResponse.required).not.toContain("assigned_at");
+  });
+  test("初回割り振りの時刻は変換・複製を通して保持し、不正日時は拒否", () => {
+    const saved = {
+      ...cup("00000000-0000-4000-8000-000000000099"),
+      assigned_at: "2026-09-11T00:03:00Z",
+    };
+    expect(validate(saved)).toBe(true);
+    expect(validate({ ...saved, assigned_at: "broken" })).toBe(false);
+    expect(
+      responseToOrderEntity({ ...response, cups: [saved] })
+        .clone()
+        .cups[0].assignedAt?.toISOString(),
+    ).toBe("2026-09-11T00:03:00.000Z");
   });
 });

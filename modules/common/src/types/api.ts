@@ -228,7 +228,7 @@ export interface paths {
   "/api/caos/cups": {
     /**
      * CaOS が決めたことを注文のカップに書く
-     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・assigned_at・brew_started_at・brew_finished_at）で持つ。
      * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
      * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
      * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
@@ -240,7 +240,7 @@ export interface paths {
      * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
      * - 列から抜けたカードの番号は空いたまま（詰めない）
      *
-     * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+     * 割り振り・抽出の時刻そのものは画面から送らない。初めてドリッパーへ置いたときにサーバーが assigned_at を付け、再割当や未割当への差し戻しでは変えない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
      * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
      * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
      * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
@@ -766,6 +766,11 @@ export interface components {
       drip_id: string | null;
       /**
        * Format: date-time
+       * @description CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
+       */
+      assigned_at?: string | null;
+      /**
+       * Format: date-time
        * @description CaOS で抽出を始めた時刻
        */
       brew_started_at: string | null;
@@ -789,6 +794,11 @@ export interface components {
       dripper_position: number | null;
       /** Format: uuid */
       drip_id: string | null;
+      /**
+       * Format: date-time
+       * @description CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない
+       */
+      assigned_at?: string | null;
       /** Format: date-time */
       brew_started_at: string | null;
       /** Format: date-time */
@@ -2581,7 +2591,7 @@ export interface operations {
   };
   /**
    * CaOS が決めたことを注文のカップに書く
-   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・assigned_at・brew_started_at・brew_finished_at）で持つ。
    * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
    * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
    * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
@@ -2593,7 +2603,7 @@ export interface operations {
    * - drip_id がほかのカップ（この書き込みに入っていないもの）と同じなら、そのカードに入る（統合）。番号はそのカードと同じにし、ずらさない（insert_before は null）
    * - 列から抜けたカードの番号は空いたまま（詰めない）
    *
-   * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
+   * 割り振り・抽出の時刻そのものは画面から送らない。初めてドリッパーへ置いたときにサーバーが assigned_at を付け、再割当や未割当への差し戻しでは変えない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
    * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
    * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
    * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。

@@ -403,6 +403,12 @@
         "nullable": true,
         "description": "CaOS のカードの印。同じ値のカップを 1 枚のカード（1 回のドリップ）で淹れる"
       },
+      "assigned_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない"
+      },
       "brew_started_at": {
         "type": "string",
         "format": "date-time",
@@ -464,6 +470,12 @@
         "type": "string",
         "format": "uuid",
         "nullable": true
+      },
+      "assigned_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true,
+        "description": "CaOS で初めてドリッパーへ割り振った時刻。再割当や未割当への差し戻しでは変わらない"
       },
       "brew_started_at": {
         "type": "string",
