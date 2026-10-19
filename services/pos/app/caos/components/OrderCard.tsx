@@ -261,7 +261,7 @@ export const OrderCard: React.FC<
       <DropMark side={dropSide} />
       {/* 何番が何杯か */}
       <div
-        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center ${size === "sm" || parallelOrderNumbers ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}

@@ -72,14 +72,14 @@ const ControlViewCBoard: React.FC<
   flashKeys,
 }) => (
   <section
-    className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_560px] gap-2"
+    className="grid h-full min-h-0 grid-cols-[minmax(0,744px)_minmax(560px,1fr)] gap-2"
     aria-label="Cコントロール画面"
   >
     <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[720px] flex-col">
+        <div className="flex h-full min-w-[744px] flex-col">
           <header className="flex h-11 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-100 px-2">
-            <h2 className="w-[46px] shrink-0 text-center font-black text-[11px] text-slate-700">
+            <h2 className="w-[164px] shrink-0 text-center font-black text-[14px] text-slate-700">
               担当
             </h2>
             <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5">
@@ -106,85 +106,85 @@ const ControlViewCBoard: React.FC<
                   data-bay-target={bay.id}
                   className={`relative isolate flex min-h-0 items-stretch gap-2 px-2 py-1 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
                 >
-                  <DripperIndicator
-                    bayId={bay.id}
-                    status={lane}
-                    nominatedCups={pendingNominatedCups(
-                      unassignedOrders,
-                      bay.id,
-                    )}
-                    onOpenLane={readOnly ? undefined : onOpenLane}
-                    className="w-[46px]"
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex w-[164px] shrink-0 items-stretch gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
+                      )}
+                      onOpenLane={readOnly ? undefined : onOpenLane}
+                      className="w-10"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
                       <LaneChangeButton
                         dripper={bay.id}
-                        className="font-black text-[20px] text-slate-950"
+                        className="w-full min-w-0 font-black text-[18px] text-slate-950"
                       />
                       <LaneAbility dripper={bay.id} />
                     </div>
-                    <div className="grid min-h-0 flex-1 grid-cols-4 gap-1.5">
-                      {COLUMNS.map((label, index) => {
-                        const cards =
-                          index === 0
-                            ? current
-                              ? [current]
-                              : []
-                            : index === 3
-                              ? lane.waiting.slice(2)
-                              : lane.waiting.slice(index - 1, index);
-                        return (
-                          <section
-                            key={label}
-                            aria-label={`${bay.id} ${label}`}
-                            className={`flex min-h-0 min-w-0 flex-col rounded-lg border ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                  </div>
+                  <div className="grid min-h-0 min-w-0 flex-1 grid-cols-4 gap-1.5">
+                    {COLUMNS.map((label, index) => {
+                      const cards =
+                        index === 0
+                          ? current
+                            ? [current]
+                            : []
+                          : index === 3
+                            ? lane.waiting.slice(2)
+                            : lane.waiting.slice(index - 1, index);
+                      return (
+                        <section
+                          key={label}
+                          aria-label={`${bay.id} ${label}`}
+                          className={`flex min-h-0 min-w-0 flex-col rounded-lg border ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                        >
+                          <div
+                            className={`flex min-h-0 flex-1 flex-col gap-2 p-0.5 ${index === 3 && cards.length > 1 ? "overflow-y-auto" : ""}`}
                           >
-                            <div
-                              className={`flex min-h-0 flex-1 flex-col gap-2 p-0.5 ${index === 3 && cards.length > 1 ? "overflow-y-auto" : ""}`}
-                            >
-                              {cards.map((ticket, position) => (
-                                <div
-                                  key={ticket.key}
-                                  className="flex min-h-[48px] shrink-0 flex-col"
-                                >
-                                  {position > 0 && (
-                                    <span className="text-center font-bold text-[11px] text-slate-600">
-                                      待ち{position + 3}
-                                    </span>
+                            {cards.map((ticket, position) => (
+                              <div
+                                key={ticket.key}
+                                className="flex min-h-[48px] shrink-0 flex-col"
+                              >
+                                {position > 0 && (
+                                  <span className="text-center font-bold text-[11px] text-slate-600">
+                                    待ち{position + 3}
+                                  </span>
+                                )}
+                                <LaneCard
+                                  readOnly={readOnly}
+                                  flash={flashKeys?.has(ticket.key)}
+                                  card={ticket}
+                                  look={looks.get(ticket.key)}
+                                  selected={sharesOrder(
+                                    ticket,
+                                    selectedOrderId,
                                   )}
-                                  <LaneCard
-                                    readOnly={readOnly}
-                                    flash={flashKeys?.has(ticket.key)}
-                                    card={ticket}
-                                    look={looks.get(ticket.key)}
-                                    selected={sharesOrder(
-                                      ticket,
-                                      selectedOrderId,
-                                    )}
-                                    lane={bay}
-                                    nowMs={nowMs}
-                                    pick={pick}
-                                    hold={hold}
-                                    menu={cardMenu}
-                                    className={`min-h-[48px] flex-1 ${readOnly ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-400"}`}
-                                  />
-                                </div>
+                                  lane={bay}
+                                  nowMs={nowMs}
+                                  pick={pick}
+                                  hold={hold}
+                                  menu={cardMenu}
+                                  className={`min-h-[48px] flex-1 ${readOnly ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-400"}`}
+                                />
+                              </div>
+                            ))}
+                            {cards.length === 0 &&
+                              (!readOnly && index > 0 ? (
+                                <EmptySlotButton
+                                  onClick={() => onOpenEmptySlot(bay.id)}
+                                  className="min-h-[48px] flex-1"
+                                />
+                              ) : (
+                                <span className="min-h-[48px] flex-1 rounded border border-slate-300 border-dashed" />
                               ))}
-                              {cards.length === 0 &&
-                                (!readOnly && index > 0 ? (
-                                  <EmptySlotButton
-                                    onClick={() => onOpenEmptySlot(bay.id)}
-                                    className="min-h-[48px] flex-1"
-                                  />
-                                ) : (
-                                  <span className="min-h-[48px] flex-1 rounded border border-slate-300 border-dashed" />
-                                ))}
-                            </div>
-                          </section>
-                        );
-                      })}
-                    </div>
+                          </div>
+                        </section>
+                      );
+                    })}
                   </div>
                 </article>
               );
