@@ -14,14 +14,22 @@ const dateFromWire = z
   .union([z.date(), z.string().datetime({ offset: true })])
   .transform((v) => (v instanceof Date ? v : new Date(v)));
 
+const orderDatesFromWire = {
+  createdAt: dateFromWire,
+  readyAt: dateFromWire.nullable(),
+  servedAt: dateFromWire.nullable(),
+  cancelledAt: dateFromWire.nullable().optional(),
+  cashRefundedAt: dateFromWire.nullable().optional(),
+  comments: z.array(commentSchema.extend({ createdAt: dateFromWire })),
+};
+
 export const cashierStateWireSchema = globalCashierStateSchema.extend({
   edittingOrder: orderSchema.extend({
-    createdAt: dateFromWire,
-    readyAt: dateFromWire.nullable(),
-    servedAt: dateFromWire.nullable(),
-    cancelledAt: dateFromWire.nullable().optional(),
-    cashRefundedAt: dateFromWire.nullable().optional(),
-    comments: z.array(commentSchema.extend({ createdAt: dateFromWire })),
+    ...orderDatesFromWire,
+    // 分けた注文（レジで確定して、まだ送れていない注文だけ）
+    splitOrders: z
+      .array(orderSchema.omit({ splitOrders: true }).extend(orderDatesFromWire))
+      .optional(),
   }),
 });
 

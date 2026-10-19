@@ -4,6 +4,8 @@ import { useFocusRef } from "../functional/useFocusRef";
 
 type Props = {
   orderId: number;
+  /** 分割して一括会計で使う番号の数（orderId から続けて）。分けなければ 1 */
+  count?: number;
   isNeedManualOrderId: boolean;
   manualOrderId: number | null;
   onOrderIdOverride: (orderId: number | null) => void;
@@ -15,6 +17,7 @@ type Props = {
  */
 const OrderIdDisplay = ({
   orderId,
+  count = 1,
   isNeedManualOrderId,
   manualOrderId,
   onOrderIdOverride,
@@ -99,7 +102,8 @@ const OrderIdDisplay = ({
               : undefined
           }
         >
-          No.{orderId}
+          No.
+          {Array.from({ length: count }, (_, i) => orderId + i).join("・")}
         </button>
       )}
       {isNeedManualOrderId && (

@@ -551,6 +551,12 @@
         "nullable": true,
         "description": "現金で受け取った分を返した時刻（POST /api/orders/{id}/cash-refund）"
       },
+      "split_parent_id": {
+        "type": "string",
+        "format": "uuid",
+        "nullable": true,
+        "description": "この注文を分けた元の注文（分けた注文の 1 つ目）の id。レジが 1 人の注文を注文番号ごとに分けて作った\n（POST /api/orders の split_orders）2 つ目以降の注文に付く。1 つ目の注文と分けていない注文では null。\n支払い（お預かり・payments・Square の決済）は 1 つ目の注文がまとめて持ち、2 つ目以降のお預かりは 0。\n"
+      },
       "billing_amount": {
         "type": "integer"
       },
@@ -634,9 +640,16 @@
       },
       "payments": {
         "type": "array",
-        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする。注文の received はお預かりの合計、payment_method は\nSquare の支払いを含めば square、含まなければ cash になる。\n",
+        "description": "個別会計の支払い（払った順）。指定するときは payment_method・square_checkout_id は指定しない。\namount の合計は billing_amount と同じにする（split_orders があれば、その billing_amount も足す）。\n注文の received はお預かりの合計、payment_method は Square の支払いを含めば square、含まなければ cash になる。\n",
         "items": {
           "$ref": "#/components/schemas/OrderPaymentCreate"
+        }
+      },
+      "split_orders": {
+        "type": "array",
+        "description": "この注文から分けた注文（2 つ目以降）。1 人の注文を注文番号ごとに分けて、まとめて払うときに使う。\nこの注文と同じトランザクションで作り、それぞれの split_parent_id をこの注文の id にする。\n支払いはこの注文がまとめて持つので、指定するときは payments も指定する。分けた注文のお預かりは 0、\npayment_method はこの注文と同じになる。空の配列は指定しない\n",
+        "items": {
+          "$ref": "#/components/schemas/SplitOrderCreate"
         }
       },
       "menu_ids": {
@@ -660,6 +673,41 @@
         "type": "string",
         "format": "date-time",
         "description": "レジで注文を確定した時刻。オフラインのあいだに溜めた注文を、つながってから送るときに付ける。省略するとサーバーの今。サーバーの今より未来の時刻はサーバーの今にする（端末の時計の進み）。古い時刻もそのまま受け付ける（前の日に溜めた注文も、確定した日の注文として残る）"
+      }
+    }
+  },
+  "SplitOrderCreate": {
+    "type": "object",
+    "description": "分けた注文 1 つ分（POST /api/orders の split_orders）。支払いは分けた元の注文が持つ",
+    "required": ["order_id", "billing_amount", "menu_ids"],
+    "properties": {
+      "order_id": {
+        "type": "integer",
+        "example": 2
+      },
+      "billing_amount": {
+        "type": "integer",
+        "example": 500
+      },
+      "discount_order_id": {
+        "type": "integer",
+        "nullable": true
+      },
+      "discount_order_cups": {
+        "type": "integer",
+        "default": 0
+      },
+      "menu_ids": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MenuInfoCreate"
+        }
+      },
+      "comments": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CommentCreateRequest"
+        }
       }
     }
   },

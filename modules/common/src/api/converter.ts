@@ -189,6 +189,7 @@ export const responseToOrderEntity = (
     cashRefundedAt: response.cash_refunded_at
       ? new Date(response.cash_refunded_at)
       : null,
+    splitParentId: response.split_parent_id ?? null,
     payments: (response.payments ?? []).map((payment) => ({
       method: payment.method,
       amount: payment.amount,
@@ -220,28 +221,38 @@ export const commentConverter = (comment: CommentResponse): OrderComment => {
   };
 };
 
+const menuInfoCreates = (order: OrderEntity): MenuInfoCreate[] =>
+  order.menus.map((menu) => ({
+    assignee: menu.assignee,
+    dripper: menu.dripper,
+    menu_id: menu.id,
+  }));
+
 // OrderEntity を CreateRequest に変換。
-// 個別会計の注文（payments がある）は支払いを payments で送り、payment は使わない
+// 個別会計の注文（payments がある）は支払いを payments で送り、payment は使わない。
+// 分けた注文（splitOrders）は split_orders で一緒に送る（支払いはこの注文が payments でまとめて持つ）
 export const orderEntityToCreateRequest = (
   order: OrderEntity,
   payment: OrderPayment = { method: "cash" },
 ): OrderCreateRequest => {
-  const menuIds = order.menus.reduce((acc: MenuInfoCreate[], cur) => {
-    acc.push({
-      assignee: cur.assignee,
-      dripper: cur.dripper,
-      menu_id: cur.id,
-    });
-    return acc;
-  }, []);
   const request = {
     order_id: order.orderId,
     billing_amount: order.billingAmount,
     received: order.received,
     discount_order_id: order.discountOrderId,
     discount_order_cups: order.discountOrderCups,
-    menu_ids: menuIds,
+    menu_ids: menuInfoCreates(order),
     comments: order.comments,
+    ...(order.splitOrders.length > 0 && {
+      split_orders: order.splitOrders.map((split) => ({
+        order_id: split.orderId,
+        billing_amount: split.billingAmount,
+        discount_order_id: split.discountOrderId,
+        discount_order_cups: split.discountOrderCups,
+        menu_ids: menuInfoCreates(split),
+        comments: split.comments,
+      })),
+    }),
   };
   if (order.payments.length > 0) {
     return {

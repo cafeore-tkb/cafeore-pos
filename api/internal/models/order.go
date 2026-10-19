@@ -25,6 +25,10 @@ type Order struct {
 	// "cash" か "square"。Square の決済は square_checkouts.order_id から引く。
 	// 個別会計（Payments）では、Square の支払いを含めば "square"。
 	PaymentMethod string `gorm:"not null;default:'cash'"`
+	// 分けた元の注文（分けた注文の 1 つ目）。レジが 1 人の注文を注文番号ごとに分けて作った 2 つ目以降に付く。
+	// 支払いは 1 つ目の注文がまとめて持つ（2 つ目以降のお預かりは 0）。キャンセル・返金・削除は分けた注文を
+	// まとめて扱う（handlers/split_group.go）
+	SplitParentID *uuid.UUID `gorm:"type:uuid;index"`
 
 	OrderMenus []OrderMenu `gorm:"foreignKey:OrderID;references:ID"`
 	OrderCups  []OrderCup  `gorm:"foreignKey:OrderID;references:ID"`
