@@ -177,7 +177,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       data-caos-layer
-      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#25c98f] border-b bg-[#46f2b4] px-2 shadow-md"
+      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#315f86] border-b bg-[#4682b4] px-2 shadow-md"
     >
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
@@ -222,7 +222,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex h-full min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
         <div className="flex h-full w-[240px] shrink-0 items-center justify-center">
-          <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-slate-950 tabular-nums leading-none">
+          <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-white tabular-nums leading-none">
             {timeStr}
           </time>
         </div>
@@ -270,7 +270,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-center font-black text-[16px] leading-tight"
       >
         {cancellation && (
-          <span className="max-w-full truncate text-red-800">
+          <span className="max-w-full truncate text-red-100">
             {cancellation}
           </span>
         )}
