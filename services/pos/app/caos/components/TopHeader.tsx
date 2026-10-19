@@ -172,6 +172,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const minute = new Date(nowMs).getUTCMinutes();
   const shiftReminder =
     minute >= 55 ? "シフト交換5分前" : minute >= 50 ? "シフト交換10分前" : null;
+  const shiftReminderUrgent = minute >= 55;
   const cancellation =
     cancelledOrderNo === null
       ? null
@@ -224,8 +225,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </FloatingStatusNotices>
       <div className="flex min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
-        <div className="flex min-h-11 w-[132px] shrink-0 flex-col justify-center rounded-lg bg-slate-950 px-3 leading-none shadow-sm">
-          <time className="font-black font-mono text-[30px] text-white tabular-nums tracking-tight">
+        <div className="flex min-h-11 w-[164px] shrink-0 flex-col justify-center rounded-lg bg-slate-950 px-3 leading-none shadow-sm">
+          <time className="whitespace-nowrap font-black font-mono text-[28px] text-white tabular-nums tracking-tight">
             {timeStr}
           </time>
           {lastAction && (
@@ -274,7 +275,33 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             現在
           </button>
         )}
+      </div>
 
+      <output
+        aria-live="polite"
+        aria-atomic="true"
+        title={notices.join("・") || undefined}
+        className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-center font-black text-[16px] leading-tight"
+      >
+        {cancellation && (
+          <span className="max-w-full truncate text-red-600">
+            {cancellation}
+          </span>
+        )}
+        {shiftReminder && (
+          <span
+            className={`max-w-full truncate whitespace-nowrap rounded-lg border-2 px-4 py-1 shadow-sm ${
+              shiftReminderUrgent
+                ? "border-red-600 bg-red-100 text-red-800"
+                : "border-amber-500 bg-amber-100 text-amber-950"
+            }`}
+          >
+            {shiftReminder}
+          </span>
+        )}
+      </output>
+
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={() => onSelectTab("settings")}
@@ -306,19 +333,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <VolumeX className="h-4 w-4" />
           )}
         </button>
-      </div>
 
-      <output
-        aria-live="polite"
-        aria-atomic="true"
-        title={notices.join("・") || undefined}
-        className="flex min-w-0 flex-1 flex-col px-2 text-center font-black text-[16px] text-red-600 leading-tight"
-      >
-        {cancellation && <span className="truncate">{cancellation}</span>}
-        {shiftReminder && <span className="truncate">{shiftReminder}</span>}
-      </output>
-
-      <div className="flex shrink-0 items-center gap-1">
         {/* 注文番号の検索（右のパネルにテンキー。キーボードの数字でも開く）。ヘッダーの並びを詰めないよう、印の下に小さく「番号」 */}
         <button
           type="button"
