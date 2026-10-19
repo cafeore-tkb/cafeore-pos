@@ -61,7 +61,7 @@ export const splitPaymentSchema = z.object({
 
 export type SplitPayment = z.infer<typeof splitPaymentSchema>;
 
-export const orderSchema = z.object({
+const orderFieldsSchema = z.object({
   id: z.string().optional(), // API の注文の ID（UUID）。未保存なら無い
   orderId: z.number(),
   createdAt: z.date(),
@@ -89,6 +89,15 @@ export const orderSchema = z.object({
   cancelledAt: z.date().nullable().optional(),
   // 現金で受け取った分を返した時刻。保存前の注文には無い
   cashRefundedAt: z.date().nullable().optional(),
+  // 分けた元の注文（分けた注文の 1 つ目）の ID。レジが 1 人の注文を注文番号ごとに分けた 2 つ目以降に付く。
+  // 支払いは 1 つ目の注文がまとめて持つ。保存前の注文と、分けていない注文・1 つ目の注文には無い
+  splitParentId: z.string().nullable().optional(),
+});
+
+export const orderSchema = orderFieldsSchema.extend({
+  // レジで確定した注文で、この注文から分けた注文（2 つ目以降、番号の順）。この注文を作るときに一緒に作る
+  // （POST /api/orders の split_orders）。保存した注文には無い（2 つ目以降は splitParentId でこの注文を指す）
+  splitOrders: z.array(orderFieldsSchema).optional(),
 });
 
 export type Order = z.infer<typeof orderSchema>;
@@ -175,6 +184,8 @@ export class OrderEntity implements Order {
     private _payments: SplitPayment[],
     private readonly _cancelledAt: Date | null,
     private readonly _cashRefundedAt: Date | null,
+    private readonly _splitParentId: string | null,
+    private _splitOrders: OrderEntity[],
   ) {}
 
   static createNew({ orderId }: { orderId: number }): OrderEntity {
@@ -200,6 +211,8 @@ export class OrderEntity implements Order {
       [],
       null,
       null,
+      null,
+      [],
     );
   }
 
@@ -230,6 +243,8 @@ export class OrderEntity implements Order {
       order.payments ?? [],
       order.cancelledAt ?? null,
       order.cashRefundedAt ?? null,
+      order.splitParentId ?? null,
+      (order.splitOrders ?? []).map((split) => OrderEntity.fromOrder(split)),
     );
   }
 
@@ -345,6 +360,19 @@ export class OrderEntity implements Order {
   /** 現金で受け取った分を返した時刻。返していなければ null */
   get cashRefundedAt() {
     return this._cashRefundedAt;
+  }
+
+  /** 分けた元の注文（分けた注文の 1 つ目）の ID。2 つ目以降の注文だけ。支払いは 1 つ目がまとめて持つ */
+  get splitParentId() {
+    return this._splitParentId;
+  }
+
+  /** この注文から分けた注文（2 つ目以降）。レジで確定した注文を作るときに一緒に作る */
+  get splitOrders() {
+    return this._splitOrders;
+  }
+  set splitOrders(orders: OrderEntity[]) {
+    this._splitOrders = orders;
   }
 
   // --------------------------------------------------
@@ -521,6 +549,10 @@ export class OrderEntity implements Order {
     amount: number;
     refunded: boolean;
   }[] {
+    // 分けた注文の 2 つ目以降は、支払いを 1 つ目の注文がまとめて持つ（売上・返金は 1 つ目で数える）
+    if (this._splitParentId !== null) {
+      return [];
+    }
     const squareRefunded = (status: Order["squareRefundStatus"]) =>
       status === "pending" || status === "refunded";
     const cashRefunded = this._cashRefundedAt !== null;
@@ -614,6 +646,8 @@ export class OrderEntity implements Order {
       payments: this.payments,
       cancelledAt: this.cancelledAt,
       cashRefundedAt: this.cashRefundedAt,
+      splitParentId: this.splitParentId,
+      splitOrders: this.splitOrders.map((split) => split.toOrder()),
     };
   }
 

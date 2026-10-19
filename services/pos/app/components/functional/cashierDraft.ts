@@ -7,6 +7,7 @@ import {
   getDiscountOrderStatus,
 } from "@cafeore/common";
 import { isSameKeySet, menuKeyChord } from "~/lib/menuKey";
+import type { OrderSplit } from "./cashierOrderSplit";
 import {
   type CashierSplit,
   emptySplit,
@@ -59,6 +60,8 @@ export type CashierDraft = {
   fixedOrderId: number | null;
   /** 小計と、受け取った支払い（先会計）・小計分割（cashierSplit） */
   split: CashierSplit;
+  /** 分割して一括会計の分け方（cashierOrderSplit）。会計の段階だけ。分けずに会計するなら null */
+  orderSplit: OrderSplit | null;
 };
 
 export const COUPON_DIGITS = 3;
@@ -79,6 +82,7 @@ export const emptyCashierDraft = (): CashierDraft => ({
   payment: "cash",
   fixedOrderId: null,
   split: emptySplit(),
+  orderSplit: null,
 });
 
 /** 消すと失うものがあるか（商品・引換券番号・特殊な割引・特記事項・受取金額） */

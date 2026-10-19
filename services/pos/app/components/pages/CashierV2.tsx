@@ -63,6 +63,17 @@ import {
   toggleSpecial,
 } from "../functional/cashierDraft";
 import {
+  type OrderSplit,
+  orderSplitGroups,
+  previousSingles,
+  splitGroupOf,
+  splitItemsText,
+  splitOrderIds,
+  splitOrdersForSubmit,
+  suggestOrderSplit,
+  withOrderSplit,
+} from "../functional/cashierOrderSplit";
+import {
   type CashierTender,
   beginRest,
   canLeavePayment,
@@ -122,6 +133,7 @@ import {
   exampleMenuKeys,
 } from "../organisms/cashier/MenuPanel";
 import { OrderPanel } from "../organisms/cashier/OrderPanel";
+import { OrderSplitDialog } from "../organisms/cashier/OrderSplitDialog";
 import { PastOrdersView } from "../organisms/cashier/PastOrdersView";
 import {
   type BreakdownBarSegment,
@@ -134,6 +146,7 @@ import {
   type ReceivedTender,
   RefundDialog,
   SettledDialog,
+  type SettledGroup,
   type SettledRow,
   type SquareRefundResult,
 } from "../organisms/cashier/PrepayDialogs";
@@ -211,14 +224,31 @@ type PrepayDialogState =
       tenderIds: number[];
       subtotalIds: number[];
     }
-  /** 注文全体を払い終えた（先払いがあったときだけ） */
+  /** 分割して一括会計の分け方を編集する */
+  | { kind: "orderSplit" }
+  /** 注文全体を払い終えた（先払いがあったとき・分割して一括会計のとき） */
   | {
       kind: "settled";
-      orderId: number;
+      orderIds: number[];
       rows: SettledRow[];
+      groups: SettledGroup[];
       total: number;
       lastCash: ReceivedTender["cash"];
     };
+
+/** 注文番号ごとの内訳（会計しましたに出す） */
+const settledGroups = (
+  lines: Parameters<typeof orderSplitGroups>[0],
+  split: OrderSplit | null,
+  firstOrderId: number,
+): SettledGroup[] =>
+  split === null
+    ? []
+    : orderSplitGroups(lines, split, firstOrderId).map((group) => ({
+        orderId: group.orderId,
+        items: splitItemsText(group.lines),
+        points: group.lines.length,
+      }));
 
 /** 受け取った支払いを、受け取ったあとのダイアログに出す形にする */
 const receivedTender = (
@@ -251,7 +281,8 @@ const squareRefundResult = (checkout: SquareCheckout): SquareRefundResult =>
  * 受取金額か Square の決済手段を選んで確定する。データの入出力は親コンポーネントに任せる
  *
  * 「小計分割・一部金額先払い」で金額で分けた分を先に会計できる
- * （cashierSplit）。受け取った分（先会計）は覚えておき、注文全体を払い終えたら、支払いを全部付けて
+ * （cashierSplit）。分割を推奨する注文は「分割して一括会計」で注文番号ごとに分け、全額をまとめて会計する
+ * （cashierOrderSplit）。受け取った分（先会計）は覚えておき、注文全体を払い終えたら、支払いを全部付けて
  * 注文を 1 つ送る。会計中は左の列に内訳を出す。
  */
 const CashierV2 = ({
@@ -363,6 +394,16 @@ const CashierV2 = ({
    * 一括会計・Square の決済を始めたとき・先払いの途中では刷らない
    */
   const printOrderLabel = printer.printOrderLabel;
+
+  /** 送る注文のシールを刷る。分割して一括会計なら、分けた注文ごとに刷る */
+  const printOrderLabels = useCallback(
+    (first: OrderEntity) => {
+      for (const order of [first, ...first.splitOrders]) {
+        printOrderLabel(order);
+      }
+    },
+    [printOrderLabel],
+  );
 
   // 先払いのレシートを刷った注文は、レシートに載せた番号（No.）のまま確定する（別のレジが送って次の番号が進んでも変えない）
   const fixedOrderId = draft.fixedOrderId;
@@ -531,16 +572,30 @@ const CashierV2 = ({
         tender.received,
       );
       receiptOrder.nowCreated();
-      receiptPrinter.printReceipt(receiptOrder, receipt, {
-        prepaid: paidBefore,
-        deferred: Math.max(subtotal.amount - paidBefore - tender.amount, 0),
-      });
+      // 分割して一括会計なら、レシートの番号は分けた注文の番号を全部
+      const orderIds =
+        before.orderSplit === null
+          ? [order.orderId]
+          : splitOrderIds(before.orderSplit, order.orderId);
+      receiptPrinter.printReceipt(
+        receiptOrder,
+        receipt,
+        {
+          prepaid: paidBefore,
+          deferred: Math.max(subtotal.amount - paidBefore - tender.amount, 0),
+        },
+        orderIds,
+      );
       const after = recordTender(before, tender);
       const received = receivedTender(tender);
       if (after.split.current === null) {
-        const submitOne = splitOrderForSubmit(prepareSubmit(order), after);
-        printOrderLabel(submitOne);
-        receiptPrinter.printClaimReceipt(submitOne);
+        const whole = splitOrderForSubmit(prepareSubmit(order), after);
+        const submitOne =
+          after.orderSplit === null
+            ? whole
+            : splitOrdersForSubmit(whole, after.lines, after.orderSplit);
+        printOrderLabels(submitOne);
+        receiptPrinter.printClaimReceipt(whole, orderIds);
         const paidBySquare = submitOne.payments.some(
           (payment) => payment.method === "square",
         );
@@ -551,18 +606,19 @@ const CashierV2 = ({
             ? (saved) => void refundSquareOrderAutomatically(saved)
             : undefined,
         );
-        markOrderIdIssued(submitOne.orderId);
+        markOrderIdIssued(orderIds[orderIds.length - 1]);
         afterSubmit();
         setPrepayDialog({
           kind: "settled",
-          orderId: submitOne.orderId,
+          orderIds,
           rows: after.split.tenders.map((t) => ({
             id: t.id,
             label: tenderLabel(t),
             amount: t.amount,
             dot: tenderDot(t),
           })),
-          total: submitOne.billingAmount,
+          groups: settledGroups(after.lines, after.orderSplit, whole.orderId),
+          total: whole.billingAmount,
           lastCash: received.cash,
         });
         return;
@@ -578,7 +634,7 @@ const CashierV2 = ({
       store,
       receiptPrinter,
       prepareSubmit,
-      printOrderLabel,
+      printOrderLabels,
       submitPayload,
       autoSquareRefund,
       markOrderIdIssued,
@@ -586,6 +642,58 @@ const CashierV2 = ({
       updateDraft,
       resyncDisplay,
     ],
+  );
+
+  /**
+   * 分割して一括会計の注文を、全額 1 回の支払い（payment）で送る。1 つ目の注文が支払いを持ち、分けた注文を一緒に送る。
+   * シールは注文ごと、レシートは全額で 1 枚（番号を全部載せる）。送ったら注文番号ごとの内訳とお釣りを出す。
+   * submitOne は全部の商品を入れた注文（番号は 1 つ目）。Square なら決済が終わってから呼ぶ（send が登録を待つ）
+   */
+  const submitSplitOrders = useCallback(
+    async (
+      submitOne: OrderEntity,
+      orderSplit: OrderSplit,
+      payment: Omit<CashierTender, "id" | "subtotalId">,
+      receipt: ReceiptPayment,
+      send: (first: OrderEntity) => Promise<unknown>,
+    ) => {
+      const { lines } = store.get(cashierDraftAtom);
+      submitOne.payments = [
+        {
+          method: payment.method,
+          amount: payment.amount,
+          received: payment.received,
+          discount: submitOne.discount,
+          menuIndexes: [],
+          ...(payment.squareCheckoutId !== undefined && {
+            squareCheckoutId: payment.squareCheckoutId,
+          }),
+        },
+      ];
+      const first = splitOrdersForSubmit(submitOne, lines, orderSplit);
+      const orderIds = splitOrderIds(orderSplit, submitOne.orderId);
+      await send(first);
+      markOrderIdIssued(orderIds[orderIds.length - 1]);
+      printOrderLabels(first);
+      receiptPrinter.printReceipt(submitOne, receipt, undefined, orderIds);
+      afterSubmit();
+      setPrepayDialog({
+        kind: "settled",
+        orderIds,
+        rows: [
+          {
+            id: 0,
+            label: tenderLabel(payment),
+            amount: payment.amount,
+            dot: tenderDot(payment),
+          },
+        ],
+        groups: settledGroups(lines, orderSplit, submitOne.orderId),
+        total: submitOne.billingAmount,
+        lastCash: receivedTender(payment).cash,
+      });
+    },
+    [store, markOrderIdIssued, printOrderLabels, receiptPrinter, afterSubmit],
   );
 
   /** 現金で送る。exactPayment なら受取金額を請求額ちょうどにする（お釣り 0） */
@@ -621,6 +729,20 @@ const CashierV2 = ({
       }
       const submitOne = prepareSubmit(newOrder);
       if (exactPayment) submitOne.received = submitOne.billingAmount;
+      if (draft.orderSplit !== null) {
+        void submitSplitOrders(
+          submitOne,
+          draft.orderSplit,
+          {
+            method: "cash",
+            amount: submitOne.billingAmount,
+            received: submitOne.received,
+          },
+          { method: "cash" },
+          async (first) => submitPayload(first),
+        );
+        return;
+      }
       printOrderLabel(submitOne);
       receiptPrinter.printReceipt(submitOne, { method: "cash" });
       submitPayload(submitOne);
@@ -634,6 +756,8 @@ const CashierV2 = ({
       canSubmitOrder,
       draft.step,
       draft.received,
+      draft.orderSplit,
+      submitSplitOrders,
       wholeOrder,
       due,
       completeTender,
@@ -663,6 +787,29 @@ const CashierV2 = ({
       }
       const submitOne = prepareSubmit(order);
       submitOne.received = submitOne.billingAmount;
+      // 分割して一括会計なら、分けた注文を一緒に送る（決済は 1 つ目の注文に結び付く）
+      const { orderSplit } = store.get(cashierDraftAtom);
+      if (orderSplit !== null) {
+        await submitSplitOrders(
+          submitOne,
+          orderSplit,
+          {
+            method: "square",
+            amount: submitOne.billingAmount,
+            received: submitOne.billingAmount,
+            squareCheckoutId: checkout.id,
+            squarePaymentType: checkout.payment_type as SquarePaymentType,
+          },
+          { method: "square", paymentType: checkout.payment_type },
+          async (first) => {
+            const saved = await submitSquarePayload(first, checkout.id);
+            if (autoSquareRefund) {
+              void refundSquareOrderAutomatically(saved);
+            }
+          },
+        );
+        return true;
+      }
       const savedOrder = await submitSquarePayload(submitOne, checkout.id);
       markOrderIdIssued(submitOne.orderId);
       if (autoSquareRefund) {
@@ -682,6 +829,8 @@ const CashierV2 = ({
     [
       canSaveNow,
       prepareSubmit,
+      store,
+      submitSplitOrders,
       submitSquarePayload,
       markOrderIdIssued,
       autoSquareRefund,
@@ -840,13 +989,31 @@ const CashierV2 = ({
     [updateDraft, resyncDisplay],
   );
 
-  /** 一括会計。まだ払っていない商品を全部 1 つの小計にして会計する */
-  const startPayment = useCallback(() => {
-    if (!canGoPay(store.get(cashierDraftAtom))) {
-      return;
-    }
-    startSubtotal((c) => beginRest(c, discountCups, discountPerCup));
-  }, [store, startSubtotal, discountCups, discountPerCup]);
+  /**
+   * 一括会計。まだ払っていない商品を全部 1 つの小計にして会計する。
+   * splitOrders（分割して一括会計）なら、注文番号ごとの分け方も決める（前の注文の 1 杯と組みやすいように）
+   */
+  const startPayment = useCallback(
+    (splitOrders: boolean) => {
+      const current = store.get(cashierDraftAtom);
+      if (!canGoPay(current)) {
+        return;
+      }
+      const orderSplit = splitOrders
+        ? suggestOrderSplit(
+            current.lines,
+            previousSingles(orders ?? [], store.get(editingOrderAtom).orderId),
+          )
+        : null;
+      startSubtotal((c) =>
+        withOrderSplit(beginRest(c, discountCups, discountPerCup), orderSplit),
+      );
+    },
+    [store, orders, startSubtotal, discountCups, discountPerCup],
+  );
+
+  /** 分割を推奨する注文（Enter・決済手段のキーでは分割して一括会計に進む） */
+  const needsSplit = shouldSplitOrder(newOrder.menus);
 
   /**
    * 決済手段のキーで選んだ Square の決済手段が、今は使えないことを知らせる。
@@ -961,6 +1128,13 @@ const CashierV2 = ({
       setPrepayDialog({ kind: "part", preset: null });
     }
   }, [canSplit]);
+
+  /** 分割して一括会計の分け方を編集する（端末で決済中は編集しない） */
+  const openOrderSplit = useCallback(() => {
+    if (draft.orderSplit !== null && !squarePaymentActive) {
+      setPrepayDialog({ kind: "orderSplit" });
+    }
+  }, [draft.orderSplit, squarePaymentActive]);
 
   /** 先払いを全部返金する */
   const openRefund = useCallback(() => {
@@ -1106,7 +1280,7 @@ const CashierV2 = ({
           openMemo();
           return;
         case "goPay":
-          startPayment();
+          startPayment(needsSplit);
           if (intent.payment !== undefined) {
             setQueuedPayment(intent.payment);
           }
@@ -1154,6 +1328,7 @@ const CashierV2 = ({
     openAssign,
     openMemo,
     startPayment,
+    needsSplit,
     submitCash,
     startSquarePayment,
     warnSquareUnavailable,
@@ -1219,6 +1394,22 @@ const CashierV2 = ({
       : [];
   const squareState = squarePayment.state;
 
+  // 分割して一括会計の分け方（会計の段階だけ）
+  const orderSplit = draft.orderSplit;
+  const splitGroups =
+    orderSplit === null
+      ? []
+      : orderSplitGroups(draft.lines, orderSplit, newOrder.orderId);
+  const lineOrderIds = new Map(
+    orderSplit === null
+      ? []
+      : draft.lines.map((line) => [
+          line.key,
+          newOrder.orderId + splitGroupOf(orderSplit, line.key),
+        ]),
+  );
+  const splitWarned = splitGroups.filter((group) => group.needsSplit);
+
   // 商品の列。入れる段階は真ん中、会計の段階は左に押し出す（RegisterStrip）
   const orderPanel = (
     <OrderPanel
@@ -1226,7 +1417,8 @@ const CashierV2 = ({
       couponStatus={coupon}
       discount={newOrder.discount}
       coffeeCups={newOrder.getCoffeeCups().length}
-      needsSplit={shouldSplitOrder(newOrder.menus)}
+      needsSplit={needsSplit}
+      lineOrderIds={lineOrderIds}
       canCancelPayment={canLeavePayment(draft)}
       onSelect={(index) => updateDraft((current) => selectLine(current, index))}
       onRemove={(index) => updateDraft((current) => removeLine(current, index))}
@@ -1237,7 +1429,8 @@ const CashierV2 = ({
         updateDraft((current) => toggleSpecial(current, couponApplied))
       }
       onOpenMemo={openMemo}
-      onGoPay={startPayment}
+      onGoPay={() => startPayment(false)}
+      onGoSplitPay={() => startPayment(true)}
       onCancelPayment={cancelPayment}
     />
   );
@@ -1250,6 +1443,7 @@ const CashierV2 = ({
             <div className="flex min-w-0 items-center gap-5">
               <OrderIdDisplay
                 orderId={newOrder.orderId}
+                count={orderSplit?.count ?? 1}
                 isNeedManualOrderId={isNeedManualOrderId}
                 manualOrderId={manualOrderId}
                 onOrderIdOverride={overrideOrderId}
@@ -1375,6 +1569,23 @@ const CashierV2 = ({
                   prepaid={prepaid}
                   tenders={split.tenders}
                   context={context}
+                  orderSplit={
+                    orderSplit === null
+                      ? null
+                      : {
+                          groups: splitGroups.map((group) => ({
+                            orderId: group.orderId,
+                            items: splitItemsText(group.lines),
+                            points: group.lines.length,
+                          })),
+                          warning:
+                            splitWarned.length > 0
+                              ? `${splitWarned.map((group) => `No.${group.orderId}`).join("・")} はまだ分割を推奨します`
+                              : "",
+                          canEdit: !squarePaymentActive,
+                        }
+                  }
+                  onEditOrderSplit={openOrderSplit}
                   bar={bar}
                   due={due}
                   deferred={
@@ -1598,10 +1809,23 @@ const CashierV2 = ({
         }}
         onClose={() => setPrepayDialog(null)}
       />
+      <OrderSplitDialog
+        open={prepayDialog?.kind === "orderSplit"}
+        lines={draft.lines}
+        initial={orderSplit}
+        firstOrderId={newOrder.orderId}
+        total={billing}
+        onConfirm={(split) => {
+          updateDraft((current) => withOrderSplit(current, split));
+          setPrepayDialog(null);
+        }}
+        onClose={() => setPrepayDialog(null)}
+      />
       <SettledDialog
         open={prepayDialog?.kind === "settled"}
-        orderId={prepayDialog?.kind === "settled" ? prepayDialog.orderId : 0}
+        orderIds={prepayDialog?.kind === "settled" ? prepayDialog.orderIds : []}
         rows={prepayDialog?.kind === "settled" ? prepayDialog.rows : []}
+        groups={prepayDialog?.kind === "settled" ? prepayDialog.groups : []}
         total={prepayDialog?.kind === "settled" ? prepayDialog.total : 0}
         lastCash={
           prepayDialog?.kind === "settled" ? prepayDialog.lastCash : null

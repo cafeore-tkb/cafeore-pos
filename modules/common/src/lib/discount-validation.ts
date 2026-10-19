@@ -20,14 +20,23 @@ export function getDiscountOrderStatus(
     return "unserved";
   }
 
+  // 分けた注文の 2 つ目以降は、支払いを持つ 1 つ目の注文で返金したかを見る
+  const isRefunded = (order: WithId<OrderEntity>) => {
+    const paid =
+      order.splitParentId === null
+        ? order
+        : allOrders.find((parent) => parent.id === order.splitParentId);
+    return paid?.isRefunded() ?? false;
+  };
+
   // 返金した注文の番号は使えない
-  if (targetOrder.isRefunded()) {
+  if (isRefunded(targetOrder)) {
     return "refunded";
   }
 
   // 既に割引として使用されているかどうかを判定する
   const isAlreadyUsed = allOrders.some(
-    (order) => order.discountOrderId === orderId && !order.isRefunded(),
+    (order) => order.discountOrderId === orderId && !isRefunded(order),
   );
 
   // 既に他のオーダーで割引として使用されている場合は使用できない

@@ -62,7 +62,7 @@ describe("[unit] orderReceipt", () => {
         { label: "お預り", amount: "￥1,500" },
         { label: "お釣り", amount: "￥250" },
       ],
-      claimNumber: "123",
+      claimNumbers: ["123"],
     });
   });
 
@@ -123,18 +123,34 @@ describe("[unit] orderReceipt", () => {
     ).toEqual([{ label: "電子マネー", amount: "￥300" }]);
   });
 
+  test("注文番号ごとに分けた注文は、全額で 1 枚にし、番号と引換券番号を全部載せる", () => {
+    const order = createOrder();
+    order.received = order.billingAmount;
+    const receipt = orderReceipt(
+      order,
+      { method: "cash" },
+      undefined,
+      [123, 124, 125],
+    );
+    expect(receipt.orderNo).toBe("No.123・124・125");
+    expect(receipt.claimNumbers).toEqual(["123", "124", "125"]);
+    expect(receipt.total).toBe(orderReceipt(order, { method: "cash" }).total);
+  });
+
   test("一括で払うときは引換券番号を載せ、何回かに分けて払う 1 回分（split）には載せない", () => {
     const order = createOrder();
     order.received = order.billingAmount;
 
-    expect(orderReceipt(order, { method: "cash" }).claimNumber).toBe("123");
+    expect(orderReceipt(order, { method: "cash" }).claimNumbers).toEqual([
+      "123",
+    ]);
     // 先にもあとにも払う額が無い 1 回分でも載せない
     for (const split of [
       { prepaid: 0, deferred: 0 },
       { prepaid: 300, deferred: 400 },
     ]) {
       expect(orderReceipt(order, { method: "cash" }, split)).not.toHaveProperty(
-        "claimNumber",
+        "claimNumbers",
       );
     }
   });
@@ -145,7 +161,15 @@ describe("[unit] claimReceipt", () => {
     expect(claimReceipt(createOrder())).toEqual({
       dateTime: "2026/11/07 10:23",
       orderNo: "No.123",
-      claimNumber: "123",
+      claimNumbers: ["123"],
+    });
+  });
+
+  test("注文番号ごとに分けた注文は、番号を全部載せる", () => {
+    expect(claimReceipt(createOrder(), [123, 124])).toEqual({
+      dateTime: "2026/11/07 10:23",
+      orderNo: "No.123・124",
+      claimNumbers: ["123", "124"],
     });
   });
 });
