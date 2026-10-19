@@ -222,7 +222,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
         <div className="flex w-[180px] shrink-0 flex-col items-center justify-center">
-          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap rounded-lg bg-slate-950 text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none shadow-sm ring-1 ring-slate-600">
+          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none">
             {timeStr}
           </time>
         </div>
