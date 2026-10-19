@@ -287,7 +287,7 @@ export function DashboardWorkspace() {
             id={`${tabId}-mobile-section`}
             value={section}
             onChange={(e) => chooseSection(e.target.value as DashboardSection)}
-            className="min-h-11 min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-3 font-bold text-sm"
+            className="min-h-11 min-w-0 flex-1 rounded-md border border-teal-200 bg-teal-50 px-3 font-bold text-sm text-teal-950"
           >
             {SECTIONS.map((item) => (
               <option key={item.id} value={item.id}>
@@ -342,10 +342,10 @@ export function DashboardWorkspace() {
                           .getElementById(`${tabId}-tab-${nextSection.id}`)
                           ?.focus();
                       }}
-                      className={`group flex min-h-14 items-center gap-3 border-l-2 px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-stone-700 ${selected ? "border-stone-900 text-stone-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
+                      className={`group flex min-h-14 items-center gap-3 border-l-2 px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-stone-700 ${selected ? "border-teal-700 bg-teal-50 text-teal-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
                     >
                       <span
-                        className={`${selected ? "text-stone-800" : "text-stone-400"}`}
+                        className={`${selected ? "text-teal-700" : "text-stone-400"}`}
                       >
                         <Icon className="h-5 w-5" aria-hidden="true" />
                       </span>

@@ -122,7 +122,7 @@ export function OrderList({ orders }: OrderListProps) {
                     key={order.id}
                     tabIndex={0}
                     aria-selected={selected?.id === order.id}
-                    className={`cursor-pointer border-t transition-colors hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${selected?.id === order.id ? "ring-2 ring-stone-700 ring-inset" : ""}`}
+                    className={`cursor-pointer border-t transition-colors hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${selected?.id === order.id ? "bg-teal-50 ring-2 ring-teal-700 ring-inset hover:bg-teal-50" : ""}`}
                     onClick={() => setSelectedId(order.id)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;

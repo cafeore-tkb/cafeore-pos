@@ -392,7 +392,7 @@ export function OperationsDashboard({
                   .getElementById(`${panelId}-mode-${MODES[next].id}`)
                   ?.focus();
               }}
-              className={`min-h-12 shrink-0 border-b-2 py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
+              className={`min-h-12 shrink-0 border-b-2 py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-teal-700 bg-teal-50 text-teal-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
             >
               {m.name}
             </button>
@@ -479,7 +479,7 @@ export function OperationsDashboard({
                               )
                               ?.focus();
                           }}
-                          className={`flex min-h-12 items-center gap-2 border-l-2 ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "border-stone-900 font-bold text-stone-900" : "border-transparent text-stone-600 hover:bg-stone-50"}`}
+                          className={`flex min-h-12 items-center gap-2 border-l-2 ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "border-teal-700 bg-teal-50 font-bold text-teal-950" : "border-transparent text-stone-600 hover:bg-stone-50"}`}
                         >
                           <Icon
                             className="h-4 w-4 shrink-0"

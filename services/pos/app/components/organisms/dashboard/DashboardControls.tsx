@@ -72,7 +72,7 @@ export function DashboardControls({
     <section
       id="dashboard-filters"
       aria-label="表示条件"
-      className="mt-5 border-stone-200 border-b pb-5"
+      className="mt-5 rounded-md border border-stone-200 bg-stone-50 p-4"
     >
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
         <div className="space-y-1">

@@ -114,7 +114,7 @@ export function AvailabilityReview({
           {statuses.map((stock) => (
             <div
               key={stock.resource.id}
-              className={`border-b py-4 ${stock.level === "critical" ? "border-rose-300 text-rose-900" : "border-stone-200 text-stone-900"}`}
+              className={`border-b px-3 py-4 ${stock.level === "critical" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-stone-200 text-stone-900"}`}
             >
               <h4 className="font-bold text-sm">{stock.resource.name}</h4>
               <p className="mt-2 font-bold text-2xl tabular-nums">
