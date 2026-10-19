@@ -32,6 +32,7 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { AggregationIntervalSelect } from "../DashboardControls";
 import { OrderStatusList } from "../MasterState";
 import { AvailabilityReview } from "./AvailabilityReview";
 import { DurationCharts, minutes } from "./DurationCharts";
@@ -324,23 +325,17 @@ export function OperationsDashboard({
             )}
           </div>
           {mode !== "inventory" && (
-            <fieldset className="flex flex-wrap items-center gap-2 border-stone-200 border-t pt-3">
-              <legend className="px-1 font-bold text-xs">
-                時系列グラフの集計間隔
-              </legend>
-              {([5, 15, 60] as const).map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  aria-pressed={intervalMinutes === minutes}
-                  disabled={mode === "floor"}
-                  onClick={() => setIntervalMinutes(minutes)}
-                  className={`min-h-10 rounded-lg border px-3 font-bold text-xs ${intervalMinutes === minutes ? "border-teal-800 bg-teal-800 text-white" : "border-stone-300 bg-white"}`}
-                >
-                  {minutes === 60 ? "1時間" : `${minutes}分`}
-                </button>
-              ))}
-            </fieldset>
+            <div className="shrink-0">
+              <AggregationIntervalSelect
+                value={intervalMinutes}
+                onChange={setIntervalMinutes}
+                options={[5, 15, 60]}
+                disabled={mode === "floor"}
+              />
+              {mode === "floor" && (
+                <p className="mt-1 text-stone-500 text-xs">現場は5分固定</p>
+              )}
+            </div>
           )}
         </div>
         {!validPeriod && (
@@ -449,7 +444,7 @@ export function OperationsDashboard({
                     role="tablist"
                     aria-label="分析グラフ"
                     aria-orientation="vertical"
-                    className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto bg-white"
+                    className="sticky top-[calc(var(--pos-status-height,0px)+var(--dashboard-nav-height,0px)+0.5rem)] flex max-h-[75vh] flex-col gap-1 overflow-y-auto bg-white"
                   >
                     {views.map((item, index) => {
                       const Icon = VIEW_ICONS[item.id] ?? BarChart3;

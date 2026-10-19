@@ -12,6 +12,7 @@ export function dashboardFinance(
   cutoff: number,
   now: number,
   selectedDate: string,
+  window?: { start: number; end: number },
 ) {
   const valid = selectedOrders.filter(
     (o) => o.cancelledAt == null || o.cancelledAt.getTime() >= cutoff,
@@ -76,12 +77,20 @@ export function dashboardFinance(
     discount: valid.reduce((n, o) => n + o.discount, 0),
     cancelled: selectedOrders.length - valid.length,
     average: valid.length ? Math.round(billing / valid.length) : 0,
-    hourly: hourly.slice(
-      0,
-      selectedDate === jstDate(now)
-        ? Number(jstClock(now).slice(0, 2)) + 1
-        : 24,
-    ),
+    hourly: window
+      ? hourly.filter((h) => {
+          const start =
+            Date.parse(`${selectedDate}T00:00:00+09:00`) + h.hour * 3600000;
+          return (
+            start < Math.min(window.end, now) && start + 3600000 > window.start
+          );
+        })
+      : hourly.slice(
+          0,
+          selectedDate === jstDate(now)
+            ? Number(jstClock(now).slice(0, 2)) + 1
+            : 24,
+        ),
     peak,
   };
 }

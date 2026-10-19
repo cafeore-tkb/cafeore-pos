@@ -15,7 +15,14 @@ import {
   Timer,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Bar,
   BarChart,
@@ -26,6 +33,7 @@ import {
   YAxis,
 } from "recharts";
 import { dashboardFinance } from "~/lib/analytics/dashboardFinance";
+import { dashboardWindow } from "~/lib/analytics/dashboardWindow";
 import { load2025Baseline } from "~/lib/analytics/historical";
 import {
   type AnalysisOrder,
@@ -35,6 +43,7 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
+import { DashboardControls } from "./DashboardControls";
 import { OrderStatusList } from "./MasterState";
 import { OrderList } from "./OrderList";
 import { AvailabilityReview } from "./operations/AvailabilityReview";
@@ -110,6 +119,25 @@ export function DashboardWorkspace() {
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceFailure, setReferenceFailure] = useState("");
   const tabId = useId();
+  const contentRef = useRef<HTMLElement>(null);
+  const navigated = useRef<DashboardSection | null>(null);
+  const [startTime, setStartTime] = useState("00:00");
+  const [endTime, setEndTime] = useState("24:00");
+  const chooseSection = (next: DashboardSection) => {
+    // Leave the old page's deep scroll position before its content height changes.
+    contentRef.current?.scrollIntoView({ block: "start" });
+    navigated.current = next;
+    setSection(next);
+  };
+  useLayoutEffect(() => {
+    if (navigated.current !== section) return;
+    contentRef.current?.scrollIntoView({ block: "start" });
+    navigated.current = null;
+  }, [section]);
+  const showFilters = () => {
+    contentRef.current?.scrollIntoView({ block: "start" });
+    contentRef.current?.focus({ preventScroll: true });
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 10_000);
@@ -147,10 +175,12 @@ export function DashboardWorkspace() {
   }, []);
 
   const sourceOrders = allOrders ?? activeOrders ?? EMPTY_ORDERS;
-  const window = useMemo(
-    () => dayWindow(selectedDate, now),
-    [selectedDate, now],
+  const selectedWindow = useMemo(
+    () => dashboardWindow(selectedDate, startTime, endTime, now),
+    [selectedDate, startTime, endTime, now],
   );
+  // Hooks remain stable while an invalid filter is being edited; the report is hidden below.
+  const window = selectedWindow ?? dayWindow(selectedDate, now);
   const cutoff = Math.min(window.end, now);
   const selectedOrders = useMemo(
     () =>
@@ -178,7 +208,10 @@ export function DashboardWorkspace() {
   );
   const comparisonReport = useMemo(() => {
     if (!referenceDate) return null;
-    const start = dayWindow(referenceDate, now).start;
+    const start =
+      dayWindow(referenceDate, now).start +
+      window.start -
+      dayWindow(selectedDate, now).start;
     return operationsReport(
       referenceOrders,
       {
@@ -195,10 +228,11 @@ export function DashboardWorkspace() {
     cutoff,
     window.start,
     intervalMinutes,
+    selectedDate,
   ]);
   const finance = useMemo(
-    () => dashboardFinance(selectedOrders, cutoff, now, selectedDate),
-    [selectedOrders, cutoff, now, selectedDate],
+    () => dashboardFinance(selectedOrders, cutoff, now, selectedDate, window),
+    [selectedOrders, cutoff, now, selectedDate, window],
   );
 
   const selectedSection =
@@ -206,7 +240,7 @@ export function DashboardWorkspace() {
   const live = isOrdersLoaded && status === "open";
 
   return (
-    <div className="min-h-full bg-white px-4 py-6 text-stone-900 sm:px-6 lg:px-10">
+    <div className="min-h-full bg-white px-4 py-6 text-stone-900 [--dashboard-nav-height:4rem] [overflow-anchor:none] sm:px-6 lg:px-10 lg:[--dashboard-nav-height:0px]">
       <div className="mx-auto max-w-[1600px]">
         <header className="border-stone-200 border-b pb-6">
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -222,20 +256,6 @@ export function DashboardWorkspace() {
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-3">
-              <label className="space-y-1">
-                <span className="block font-bold text-[11px] text-stone-600">
-                  表示する日
-                </span>
-                <input
-                  type="date"
-                  max={jstDate(now)}
-                  value={selectedDate}
-                  onChange={(event) => {
-                    if (event.target.value) setSelectedDate(event.target.value);
-                  }}
-                  className="min-h-11 rounded-md border border-stone-300 bg-white px-3 font-bold text-sm focus-visible:outline-2 focus-visible:outline-stone-700"
-                />
-              </label>
               <div className="py-2.5">
                 <div className="flex items-center gap-2 font-bold text-xs">
                   <span
@@ -256,149 +276,224 @@ export function DashboardWorkspace() {
           </div>
         </header>
 
-        <nav
-          className="grid grid-cols-12 gap-x-4 border-stone-200 border-b pt-3"
-          role="tablist"
-          aria-label="ダッシュボードの表示"
+        <div
+          className="sticky top-[var(--pos-status-height,0px)] z-20 flex items-center gap-3 border-stone-200 border-b bg-white py-2 lg:hidden"
+          aria-label="ダッシュボードの切り替え"
         >
-          {SECTIONS.map((item, index) => {
-            const Icon = item.icon;
-            const selected = section === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                id={`${tabId}-tab-${item.id}`}
-                aria-selected={selected}
-                aria-controls={`${tabId}-panel`}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => setSection(item.id)}
-                onKeyDown={(event) => {
-                  const next =
-                    event.key === "ArrowRight"
-                      ? (index + 1) % SECTIONS.length
-                      : event.key === "ArrowLeft"
-                        ? (index + SECTIONS.length - 1) % SECTIONS.length
-                        : null;
-                  if (next === null) return;
-                  event.preventDefault();
-                  const nextSection = SECTIONS[next];
-                  setSection(nextSection.id);
-                  document
-                    .getElementById(`${tabId}-tab-${nextSection.id}`)
-                    ?.focus();
-                }}
-                className={`${index < 2 ? "col-span-6" : "col-span-6 sm:col-span-3"} group flex min-h-16 items-center gap-3 border-b-2 px-1 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-stone-700 ${selected ? "border-stone-900 text-stone-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
+          <label htmlFor={`${tabId}-mobile-section`} className="sr-only">
+            表示を切り替える
+          </label>
+          <select
+            id={`${tabId}-mobile-section`}
+            value={section}
+            onChange={(e) => chooseSection(e.target.value as DashboardSection)}
+            className="min-h-11 min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-3 font-bold text-sm"
+          >
+            {SECTIONS.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={showFilters}
+            className="min-h-11 shrink-0 px-2 text-sm underline underline-offset-4"
+          >
+            表示条件へ
+          </button>
+        </div>
+        <div className="mt-6 min-w-0 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
+          <aside className="hidden lg:block">
+            <div className="sticky top-[calc(var(--pos-status-height,0px)+1rem)] max-h-[calc(100dvh-var(--pos-status-height,0px)-2rem)] overflow-y-auto">
+              <nav
+                className="flex flex-col"
+                role="tablist"
+                aria-label="ダッシュボードの表示"
+                aria-orientation="vertical"
               >
-                <span
-                  className={`${index < 2 ? "" : "hidden sm:block"} ${selected ? "text-stone-800" : "text-stone-400"}`}
-                >
-                  <Icon className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <span className="min-w-0">
-                  <span className="block font-black text-sm">{item.name}</span>
-                  <span
-                    className={`mt-0.5 hidden truncate text-[10px] sm:block lg:text-xs ${selected ? "text-stone-600" : "text-stone-500"}`}
-                  >
-                    {item.description}
-                  </span>
-                </span>
+                {SECTIONS.map((item, index) => {
+                  const Icon = item.icon;
+                  const selected = section === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      id={`${tabId}-tab-${item.id}`}
+                      aria-selected={selected}
+                      aria-controls={`${tabId}-panel`}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => chooseSection(item.id)}
+                      onKeyDown={(event) => {
+                        const next =
+                          event.key === "ArrowRight" ||
+                          event.key === "ArrowDown"
+                            ? (index + 1) % SECTIONS.length
+                            : event.key === "ArrowLeft" ||
+                                event.key === "ArrowUp"
+                              ? (index + SECTIONS.length - 1) % SECTIONS.length
+                              : null;
+                        if (next === null) return;
+                        event.preventDefault();
+                        const nextSection = SECTIONS[next];
+                        chooseSection(nextSection.id);
+                        document
+                          .getElementById(`${tabId}-tab-${nextSection.id}`)
+                          ?.focus();
+                      }}
+                      className={`group flex min-h-14 items-center gap-3 border-l-2 px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-stone-700 ${selected ? "border-stone-900 text-stone-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
+                    >
+                      <span
+                        className={`${selected ? "text-stone-800" : "text-stone-400"}`}
+                      >
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-black text-sm">
+                          {item.name}
+                        </span>
+                        <span
+                          className={`mt-0.5 hidden truncate text-[10px] sm:block lg:text-xs ${selected ? "text-stone-600" : "text-stone-500"}`}
+                        >
+                          {item.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <button
+                type="button"
+                onClick={showFilters}
+                className="mt-4 min-h-11 px-3 text-sm underline underline-offset-4"
+              >
+                表示条件へ
               </button>
-            );
-          })}
-        </nav>
-
-        <main
-          role="tabpanel"
-          id={`${tabId}-panel`}
-          aria-labelledby={`${tabId}-tab-${section}`}
-          className="min-w-0 pt-7"
-        >
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.18em]">
-                {selectedDate === jstDate(now) ? "Today" : "Archive"}
-              </p>
-              <h2 className="mt-1 font-black text-2xl tracking-tight">
-                {selectedSection.name}
-              </h2>
             </div>
-            <p className="text-stone-500 text-xs">
-              {section === "inventory" ? "在庫は現在値 / 注文の比較期間：" : ""}
-              {selectedDate} 00:00〜
-              {selectedDate === jstDate(now)
-                ? jstClock(now).slice(0, 5)
-                : "24:00"}
-            </p>
-          </div>
-
-          {section === "inventory" ? (
-            <AvailabilityReview
-              buckets={report.buckets}
-              intervalMinutes={intervalMinutes}
-            />
-          ) : !isOrdersLoaded ? (
-            <LoadingState />
-          ) : section === "records" ? (
-            <div className="space-y-5">
-              <section className="border-stone-200 border-t pt-6">
-                <h3 className="mb-3 font-bold text-lg">
-                  オーダーストップ・再開の記録
-                </h3>
-                <OrderStatusList start={window.start} end={cutoff} />
-              </section>
-              <section className="border-stone-200 border-t pt-6">
-                <h3 className="mb-3 font-bold text-lg">
-                  操作ログ・サーバー成功履歴
-                </h3>
-                <LogReview start={window.start} end={cutoff} />
-              </section>
-              <details className="border-stone-200 border-t pt-6">
-                <summary className="cursor-pointer font-bold">
-                  従来の運用分析（期間指定・引き継ぎ・CSV）
-                </summary>
-                <OperationsDashboard />
-              </details>
-            </div>
-          ) : section === "sales" ? (
-            <SalesSection report={report} finance={finance} />
-          ) : section === "details" ? (
-            <section className="border-stone-200 border-t pt-6">
-              <SectionHeading
-                icon={ReceiptText}
-                title="注文一覧"
-                description="注文番号、商品、状態から記録を探し、詳細を確認できます。"
-              />
-              <div className="mt-5">
-                <OrderList orders={selectedOrders} />
+          </aside>
+          <main
+            ref={contentRef}
+            tabIndex={-1}
+            role="tabpanel"
+            id={`${tabId}-panel`}
+            aria-label={selectedSection.name}
+            className="min-w-0 scroll-mt-[calc(var(--pos-status-height,0px)+5rem)] focus:outline-none lg:scroll-mt-[calc(var(--pos-status-height,0px)+1rem)]"
+          >
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.18em]">
+                  {selectedDate === jstDate(now) ? "Today" : "Archive"}
+                </p>
+                <h2 className="mt-1 font-black text-2xl tracking-tight">
+                  {selectedSection.name}
+                </h2>
               </div>
-            </section>
-          ) : section === "analysis" ? (
-            <AnalysisSection
-              report={report}
-              intervalMinutes={intervalMinutes}
-              onIntervalChange={setIntervalMinutes}
-            />
-          ) : (
-            <div className="space-y-5">
-              <SnapshotComparison current={report} window={window} />
-              <ComparisonSection
-                currentDate={selectedDate}
-                current={report}
-                referenceDate={referenceDate}
-                referenceDays={referenceDays}
-                reference={comparisonReport}
-                referenceInfo={referenceInfo}
-                loading={referenceLoading}
-                failure={referenceFailure}
-                intervalMinutes={intervalMinutes}
-                onReferenceDateChange={setReferenceDate}
-                onIntervalChange={setIntervalMinutes}
-              />
+              <p className="text-stone-500 text-xs">
+                {section === "inventory"
+                  ? "在庫は現在値 / 注文の比較期間："
+                  : ""}
+                {selectedDate} {startTime}〜{endTime}
+                {selectedWindow && cutoff < window.end
+                  ? `（集計は${jstClock(cutoff).slice(0, 5)}まで）`
+                  : ""}
+              </p>
             </div>
-          )}
-        </main>
+
+            <DashboardControls
+              date={selectedDate}
+              startTime={startTime}
+              endTime={endTime}
+              now={now}
+              interval={intervalMinutes}
+              showInterval={
+                section === "analysis" ||
+                section === "comparison" ||
+                section === "inventory"
+              }
+              onDate={setSelectedDate}
+              onStart={setStartTime}
+              onEnd={setEndTime}
+              onInterval={setIntervalMinutes}
+            />
+            <div className="pt-6">
+              {!selectedWindow ? (
+                <p
+                  role="alert"
+                  className="border-red-600 border-l-2 pl-3 text-red-800 text-sm"
+                >
+                  開始・終了時刻を確認してください。終了は開始より後、開始は現在より前に設定してください。
+                </p>
+              ) : section === "inventory" ? (
+                <AvailabilityReview
+                  buckets={report.buckets}
+                  intervalMinutes={intervalMinutes}
+                />
+              ) : !isOrdersLoaded ? (
+                <LoadingState />
+              ) : section === "records" ? (
+                <div className="space-y-5">
+                  <section className="border-stone-200 border-t pt-6">
+                    <h3 className="mb-3 font-bold text-lg">
+                      オーダーストップ・再開の記録
+                    </h3>
+                    <OrderStatusList start={window.start} end={cutoff} />
+                  </section>
+                  <section className="border-stone-200 border-t pt-6">
+                    <h3 className="mb-3 font-bold text-lg">
+                      操作ログ・サーバー成功履歴
+                    </h3>
+                    <LogReview start={window.start} end={cutoff} />
+                  </section>
+                  <details className="border-stone-200 border-t pt-6">
+                    <summary className="cursor-pointer font-bold">
+                      従来の運用分析（期間指定・引き継ぎ・CSV）
+                    </summary>
+                    <p className="mt-3 text-stone-500 text-xs">
+                      この詳細画面は、内部で指定した期間・集計間隔を使います。
+                    </p>
+                    <OperationsDashboard />
+                  </details>
+                </div>
+              ) : section === "sales" ? (
+                <SalesSection report={report} finance={finance} />
+              ) : section === "details" ? (
+                <section className="border-stone-200 border-t pt-6">
+                  <SectionHeading
+                    icon={ReceiptText}
+                    title="注文一覧"
+                    description="注文番号、商品、状態から記録を探し、詳細を確認できます。"
+                  />
+                  <div className="mt-5">
+                    <OrderList orders={selectedOrders} />
+                  </div>
+                </section>
+              ) : section === "analysis" ? (
+                <AnalysisSection
+                  report={report}
+                  intervalMinutes={intervalMinutes}
+                />
+              ) : (
+                <div className="space-y-5">
+                  <SnapshotComparison current={report} window={window} />
+                  <ComparisonSection
+                    currentDate={selectedDate}
+                    current={report}
+                    referenceDate={referenceDate}
+                    referenceDays={referenceDays}
+                    reference={comparisonReport}
+                    referenceInfo={referenceInfo}
+                    loading={referenceLoading}
+                    failure={referenceFailure}
+                    intervalMinutes={intervalMinutes}
+                    onReferenceDateChange={setReferenceDate}
+                  />
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );
@@ -466,7 +561,7 @@ function SalesSection({
           <SectionHeading
             icon={Activity}
             title="時間帯別の売上"
-            description="注文を受けた時間ごとの売上金額です。"
+            description="選択期間内の売上を受付時刻ごとに表示。最初・最後の時間帯は一部だけの集計になる場合があります。"
           />
           <div className="mt-5 h-80">
             <ResponsiveContainer width="100%" height="100%">
@@ -625,11 +720,9 @@ function SalesSection({
 function AnalysisSection({
   report,
   intervalMinutes,
-  onIntervalChange,
 }: {
   report: Report;
   intervalMinutes: BucketMinutes;
-  onIntervalChange: (minutes: BucketMinutes) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -660,30 +753,6 @@ function AnalysisSection({
           }
           note="期間末の未提供が対象"
         />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-stone-200 border-t pt-5">
-        <div>
-          <p className="font-bold text-sm">集計間隔</p>
-          <p className="mt-1 text-stone-500 text-xs">
-            グラフの時間単位を切り替えます。
-          </p>
-        </div>
-        <fieldset
-          className="inline-flex gap-1"
-          aria-label="分析グラフの集計間隔"
-        >
-          {([15, 30, 60] as const).map((minutes) => (
-            <button
-              key={minutes}
-              type="button"
-              aria-pressed={intervalMinutes === minutes}
-              onClick={() => onIntervalChange(minutes)}
-              className={`min-h-10 rounded-md px-4 font-bold text-xs transition ${intervalMinutes === minutes ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"}`}
-            >
-              {minutes}分
-            </button>
-          ))}
-        </fieldset>
       </div>
       <section className="border-stone-200 border-t pt-6">
         <SectionHeading
@@ -761,7 +830,6 @@ function ComparisonSection({
   failure,
   intervalMinutes,
   onReferenceDateChange,
-  onIntervalChange,
 }: {
   currentDate: string;
   current: Report;
@@ -773,7 +841,6 @@ function ComparisonSection({
   failure: string;
   intervalMinutes: BucketMinutes;
   onReferenceDateChange: (date: string) => void;
-  onIntervalChange: (minutes: BucketMinutes) => void;
 }) {
   const maximumCups = Math.max(
     1,
@@ -823,22 +890,6 @@ function ComparisonSection({
               ))}
             </select>
           </label>
-          <fieldset
-            className="inline-flex gap-1"
-            aria-label="比較グラフの集計間隔"
-          >
-            {([15, 30, 60] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={intervalMinutes === value}
-                onClick={() => onIntervalChange(value)}
-                className={`min-h-10 rounded-md px-3 font-bold text-xs transition ${intervalMinutes === value ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"}`}
-              >
-                {value}分
-              </button>
-            ))}
-          </fieldset>
         </div>
       </section>
 

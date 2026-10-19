@@ -119,4 +119,13 @@ describe("unit dashboard finance", () => {
     expect(f.hourly[9].revenue).toBe(0);
     expect(finance([]).peak).toBeNull();
   });
+  test("期間端の一部だけの時間帯とゼロ売上の枠を残す", () => {
+    const window = {
+      start: Date.parse("2026-10-19T10:15:00+09:00"),
+      end: Date.parse("2026-10-19T12:05:00+09:00"),
+    };
+    const f = dashboardFinance([], window.end, now, "2026-10-19", window);
+    expect(f.hourly.map((h) => h.label)).toEqual(["10:00", "11:00", "12:00"]);
+    expect(f.hourly.every((h) => h.revenue === 0)).toBe(true);
+  });
 });
