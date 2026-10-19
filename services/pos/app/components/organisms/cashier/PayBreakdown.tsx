@@ -21,22 +21,20 @@ type props = {
   /** 先会計（受け取った額の合計）と、その内訳 */
   prepaid: number;
   tenders: CashierTender[];
-  /** いまの小計の説明（「個別小計 2点 · 残りの商品 ¥700」）。無ければ空 */
+  /** いまの小計の説明（「小計 ¥1,100 を分割 · このあと残り ¥800」）。無ければ空 */
   context: string;
   /** 色分けの帯。出さなければ空 */
   bar: BreakdownBarSegment[];
   /** 小計（今払う額） */
   due: number;
-  /** 個別小計の会計中（小計に「個別」の札を付ける） */
-  itemsSubtotal: boolean;
   /** 小計分割中なら、あとに回した額（この小計の残り − 今払う額）。分けていなければ null */
   deferred: number | null;
   /** 現金で払うか。Square の決済手段なら、受取金額とお釣りは出さない（—） */
   cash: boolean;
   /** 受取金額（数字だけ）。入れていなければ空 */
   received: string;
-  /** 先会計の行の ×。その小計で受け取った分をまとめて返金する */
-  onRefundSubtotal: (subtotalId: number) => void;
+  /** 先会計の行の ×。受け取った分をまとめて返金する */
+  onRefund: () => void;
   /** 小計分割をやめる */
   onCancelPart: () => void;
   /** 列の下に出すキーの案内 */
@@ -57,11 +55,10 @@ export const PayBreakdown = ({
   context,
   bar,
   due,
-  itemsSubtotal,
   deferred,
   cash,
   received,
-  onRefundSubtotal,
+  onRefund,
   onCancelPart,
   hints,
 }: props) => (
@@ -100,9 +97,9 @@ export const PayBreakdown = ({
             <span className="font-bold">{formatYen(tender.amount)}</span>
             <button
               type="button"
-              onClick={() => onRefundSubtotal(tender.subtotalId)}
-              title="この小計の先払いを取り消す"
-              aria-label={`${tenderLabel(tender)} ${formatYen(tender.amount)} の小計の先払いを取り消す`}
+              onClick={onRefund}
+              title="先払いをすべて取り消す"
+              aria-label={`${tenderLabel(tender)} ${formatYen(tender.amount)} を含む先払いをすべて取り消す`}
               className="flex h-6.5 w-6.5 items-center justify-center rounded-[5px] hover:bg-stone-100"
             >
               <svg
@@ -140,7 +137,6 @@ export const PayBreakdown = ({
     </div>
     <PaySummary
       due={due}
-      itemsSubtotal={itemsSubtotal}
       deferred={deferred}
       cash={cash}
       received={received}
@@ -153,15 +149,11 @@ export const PayBreakdown = ({
 /** 小計・受取金額・お釣り。お釣りはお客さんに伝える額なので一番大きく出す */
 const PaySummary = ({
   due,
-  itemsSubtotal,
   deferred,
   cash,
   received,
   onCancelPart,
-}: Pick<
-  props,
-  "due" | "itemsSubtotal" | "deferred" | "cash" | "received" | "onCancelPart"
->) => {
+}: Pick<props, "due" | "deferred" | "cash" | "received" | "onCancelPart">) => {
   const receivedAmount = !cash || received === "" ? null : Number(received);
   const change = receivedAmount === null ? null : receivedAmount - due;
   return (
@@ -184,11 +176,6 @@ const PaySummary = ({
       )}
       <div className="flex items-baseline gap-1.5">
         <span className="font-extrabold text-[15px]">小計</span>
-        {itemsSubtotal && (
-          <span className="self-center rounded-[5px] bg-prepay px-1.75 py-px font-extrabold text-[11px] text-white">
-            個別
-          </span>
-        )}
         {deferred !== null && (
           <span className="self-center rounded-[5px] border border-prepay px-1.5 font-extrabold text-[11px] text-prepay">
             分割
