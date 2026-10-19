@@ -225,15 +225,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </FloatingStatusNotices>
       <div className="flex min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
-        <div className="flex min-h-11 w-fit shrink-0 flex-col items-center justify-center rounded-lg bg-slate-950 px-3 leading-none shadow-sm">
-          <time className="block whitespace-nowrap text-center font-bold font-mono text-[32px] text-white tabular-nums leading-9">
+        <div className="flex w-[180px] shrink-0 flex-col items-center justify-center">
+          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap rounded-lg bg-slate-950 text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none shadow-sm">
             {timeStr}
           </time>
           {lastAction && (
             <output
               aria-label="直前の操作"
               title={`直前の操作：${lastAction}`}
-              className="mt-0.5 flex w-0 min-w-full items-center gap-0.5 font-black text-[10px] text-slate-200"
+              className="flex h-3 w-full items-center justify-center gap-0.5 font-black text-[10px] text-slate-700 leading-3"
             >
               <History className="h-3 w-3 shrink-0" />
               <span className="truncate">{lastAction}</span>
