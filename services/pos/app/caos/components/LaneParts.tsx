@@ -1,4 +1,4 @@
-import { KeyRound, Star, TriangleAlert } from "lucide-react";
+import { CircleCheck, KeyRound, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
 import { useCaosLanes } from "../hooks/useCaosLanes";
 import changeDripperIcon from "../icons/change-dripper.svg";
@@ -174,7 +174,7 @@ export const LaneDripHints = ({ dripper }: { dripper: number }) => {
   );
 };
 
-/** ヘッダーの「ドリッパー」の「交代」。交代の画面を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする。閲覧だけの画面では出さない */
+/** 設定画面の「ドリッパー」の「交代」。交代の画面を開き、候補を選ぶ・名前を入れる・入れ替える・空きにする。閲覧だけの画面では出さない */
 export const LaneChooseButton: React.FC<{
   dripper: number;
   className?: string;
@@ -194,8 +194,8 @@ export const LaneChooseButton: React.FC<{
   );
 };
 
-// ヘッダーに出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（指名の無い上級生のみのカードは、どこに置いても警告の印が付く）。
-// 操作の画面では、この端末の sohosai-shift の合言葉の設定も開ける。
+// 設定画面に出す担当者のこと：どのドリッパーにも上級生がいなければ知らせる（指名の無い上級生のみのカードは、どこに置いても警告の印が付く）。
+// この端末の sohosai-shift の合言葉の設定もここから開ける。
 
 // 合言葉のボタンの色（合言葉が無ければ点線、読めなければ赤）
 const keyTone = ({
@@ -207,35 +207,51 @@ const keyTone = ({
   return "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700";
 };
 
-export const LaneHeaderStatus: React.FC = () => {
+export const LaneSettingsStatus: React.FC = () => {
   const { hasSenior, editable, openSettings, shiftFeed } = useCaosLanes();
   return (
-    <>
-      {!hasSenior && (
-        <output
-          data-no-senior
-          aria-label="上級生がいません（上級生のみのカードには警告の印が付きます）"
-          title="上級生のみのカードは、指名が無ければ上級生のドリッパーに置くものです。置くことはできますが、カードに警告の印が付きます。各ドリッパーの「交代」で上級生を入れてください"
-          className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 font-black text-[11px] text-amber-900 leading-tight"
-        >
-          <TriangleAlert className="h-4 w-4 shrink-0" />
-          {/* 幅が狭いと印だけ出す（ヘッダーに余裕が無いので。中身は title） */}
-          <span className="hidden whitespace-nowrap 2xl:inline">
-            上級生がいません（上級生のみのカードに警告の印）
-          </span>
-        </output>
-      )}
+    <div className="grid gap-2">
+      <output
+        data-no-senior={!hasSenior || undefined}
+        aria-label={
+          hasSenior
+            ? "上級生が担当に入っています"
+            : "上級生がいません（上級生のみのカードには警告の印が付きます）"
+        }
+        className={`flex min-h-[64px] items-center gap-3 rounded-xl border p-3 font-black text-[13px] leading-tight ${
+          hasSenior
+            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+            : "border-amber-300 bg-amber-50 text-amber-900"
+        }`}
+      >
+        {hasSenior ? (
+          <CircleCheck className="h-5 w-5 shrink-0" />
+        ) : (
+          <TriangleAlert className="h-5 w-5 shrink-0" />
+        )}
+        <span>
+          {hasSenior
+            ? "上級生が担当に入っています"
+            : "上級生がいません（上級生のみのカードに警告の印）"}
+        </span>
+      </output>
       {editable && (
         <button
           type="button"
           onClick={openSettings}
           title="sohosai-shift の合言葉（この端末の設定）"
-          aria-label="sohosai-shift の合言葉"
-          className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border ${keyTone(shiftFeed)}`}
+          aria-label="sohosai-shift の合言葉を入力"
+          className={`flex min-h-[56px] w-full touch-manipulation items-center gap-3 rounded-xl border px-4 text-left font-black text-[14px] ${keyTone(shiftFeed)}`}
         >
-          <KeyRound className="h-4 w-4" />
+          <KeyRound className="h-5 w-5 shrink-0" />
+          <span className="flex flex-col gap-0.5">
+            <span>合言葉入力</span>
+            <span className="font-bold text-[11px] opacity-75">
+              ドリッパー担当表を読み込むための端末設定
+            </span>
+          </span>
         </button>
       )}
-    </>
+    </div>
   );
 };

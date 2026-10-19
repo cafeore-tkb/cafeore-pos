@@ -28,7 +28,7 @@ export const MasterSheetTabGuard = ({ children }: { children: ReactNode }) => {
     : "操作するタブを確認できませんでした";
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#f0f4fa] p-6 font-sans text-[#0f172a]">
+    <main className="flex min-h-[calc(100dvh-var(--pos-status-height,0px))] items-center justify-center bg-[#f0f4fa] p-6 font-sans text-[#0f172a]">
       <section
         aria-labelledby="master-tab-title"
         aria-busy={checking}

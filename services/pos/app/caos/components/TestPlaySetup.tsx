@@ -41,7 +41,6 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
   problems,
   onSelectFiles,
   onClearData,
-  onClose,
   onStart,
 }) => {
   const orders = dataset?.orders ?? [];
@@ -90,13 +89,6 @@ export const TestPlaySetup: React.FC<TestPlaySetupProps> = ({
       >
         <div className="flex items-start justify-between gap-3">
           {floating.handle}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
-          >
-            終了
-          </button>
           <div>
             <h2 className="flex items-center gap-2 font-black text-[20px] text-slate-950">
               <CalendarClock className="h-5 w-5 text-blue-700" />

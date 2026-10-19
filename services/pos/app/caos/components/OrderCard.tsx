@@ -1,7 +1,7 @@
 import { type CaosCard, readableTextColor } from "@cafeore/common";
 import { Check, Star, TriangleAlert } from "lucide-react";
 import type React from "react";
-import { useContext } from "react";
+import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import { useCaosLanes } from "../hooks/useCaosLanes";
@@ -144,6 +144,8 @@ export const OrderCard: React.FC<
     note?: string;
     /** 開いたカードをもう一度押すと統合する相手。統合の印とその注文番号（「#012」）を出す */
     mergeInto?: CaosCard;
+    /** 管制盤 C では、統合した注文番号を + でつながず、別々の札で横に並べる */
+    parallelOrderNumbers?: boolean;
     /** 開いた（選んだ）カードを押して統合できる相手。「統合する」を重ね、data-merge-tap を付ける（押しても開いたカードを閉じない） */
     mergeTap?: boolean;
     /** ドラッグで指の下にあるとき、入れる所の線か統合の枠（hooks/useCardDrag の dropSideOn） */
@@ -158,6 +160,7 @@ export const OrderCard: React.FC<
   dragging = false,
   note,
   mergeInto,
+  parallelOrderNumbers = false,
   mergeTap = false,
   dropSide,
   className = "",
@@ -194,6 +197,16 @@ export const OrderCard: React.FC<
     </span>
   );
   const orderNo = (size: string) => noTag(orderLabel(card), size);
+  const parallelOrderNos = (fontSize: string) => (
+    <span className="flex min-w-0 shrink-0 items-center gap-0.5">
+      {cardOrderNos(card).map((no) => {
+        const label = `#${orderNoLabel(no)}`;
+        return (
+          <Fragment key={no}>{noTag(label, `shrink-0 ${fontSize}`)}</Fragment>
+        );
+      })}
+    </span>
+  );
   // 入れ直し（緊急）の理由の札
   const reasonTag = (label: string, className: string) => (
     <span
@@ -222,16 +235,19 @@ export const OrderCard: React.FC<
   );
   // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの緊急の理由と指名・上級生の札を先に縮め、商品は入らなければ省略する。
   // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
-  // 番号は縮めない。統合した長い番号（「#120+#121」）だけは杯数の札と同じ大きさで字の間を詰め、
+  // 番号は縮めない。統合した長い番号は杯数の札と同じ大きさで字の間を詰め、C では別々の札で横に並べる。
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。
   const [headline, subline] = [
-    orderNo(
-      merged
-        ? `min-w-0 truncate tracking-tighter ${text.cups}`
-        : `shrink-0 ${numberSize}`,
-    ),
+    merged && parallelOrderNumbers
+      ? parallelOrderNos(`tracking-tighter ${text.cups}`)
+      : orderNo(
+          merged
+            ? `min-w-0 truncate tracking-tighter ${text.cups}`
+            : `shrink-0 ${numberSize}`,
+        ),
     itemName(`max-w-full shrink-0 ${text.item}`),
   ];
+
   return (
     <div
       {...props}

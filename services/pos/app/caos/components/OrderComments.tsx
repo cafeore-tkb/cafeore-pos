@@ -361,7 +361,6 @@ export const CommentDock: React.FC<{
 
 const ViewingCommentWindow = ({
   viewing,
-  onDone,
 }: { viewing: ViewingComment; onDone: () => void }) => {
   const popup = useCommentPopupPosition(viewing.anchor);
   const floating = useFloatingWindow(`${viewing.label} のコメント`, true);
@@ -441,13 +440,6 @@ const ViewingCommentWindow = ({
           <X className="h-4 w-4" />
         </button>
       </header>
-      <button
-        type="button"
-        onClick={onDone}
-        className="mb-1 min-h-8 rounded border px-2 font-bold text-xs"
-      >
-        閲覧を終了
-      </button>
       <FloatingWindowScope
         value={{ active: !floating.hidden, activate: floating.restore }}
       >

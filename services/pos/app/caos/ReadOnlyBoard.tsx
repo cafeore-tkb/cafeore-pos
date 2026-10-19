@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { OrderCountLabel } from "./components/BoardParts";
 import {
-  CONTROL_VIEWS,
+  CONTROL_VIEW_BUTTONS,
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
@@ -25,10 +25,7 @@ const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, status, sound, flashKeys } = useViewBoard(
-    nowMs,
-    timelineArrivals,
-  );
+  const { cards, sound, flashKeys } = useViewBoard(nowMs, timelineArrivals);
   const [folded, setFolded] = useDeviceSetting(
     "caos-view-unassigned-folded",
     false,
@@ -54,18 +51,18 @@ export default function ReadOnlyBoard() {
   );
 
   return (
-    <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
-      <ViewHeader nowMs={nowMs} status={status} sound={sound}>
+    <div className="flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+      <ViewHeader nowMs={nowMs} sound={sound}>
         <nav aria-label="閲覧する管制盤の表示切替" className={SEGMENTS}>
-          {Object.entries(CONTROL_VIEWS).map(([key, view]) => (
+          {CONTROL_VIEW_BUTTONS.map(({ mode: key, label }) => (
             <button
               key={key}
               type="button"
               aria-pressed={mode === key}
-              onClick={() => setMode(key as ControlViewMode)}
+              onClick={() => setMode(key)}
               className={`min-h-8 min-w-8 touch-manipulation ${segmentClass(mode === key)}`}
             >
-              {view.label}
+              {label}
             </button>
           ))}
         </nav>

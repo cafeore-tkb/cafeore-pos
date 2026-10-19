@@ -151,9 +151,17 @@ export default function App() {
     if (testPlay.finished) backToLive();
     else selection.closeAuxiliary();
   };
+  const openTestPlay = () => {
+    restoreWindow("実績でテストプレイ");
+    setTestSetupOpen(true);
+  };
+  const endTestPlay = () => {
+    testPlay.finish();
+    selection.openAuxiliary("analytics");
+  };
 
   const page = (
-    <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
+    <div className="flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <TopHeader
           activeTab={panel?.kind === "auxiliary" ? panel.tab : "control"}
@@ -173,24 +181,12 @@ export default function App() {
             setTimelineCommand({ direction: "now", id: Date.now() })
           }
           followingNow={followingNow}
-          testPlaying={testPlay.isActive}
-          testProgressLabel={testPlay.remainingLabel}
-          onOpenTestPlay={() => {
-            restoreWindow("実績でテストプレイ");
-            setTestSetupOpen(true);
-          }}
-          onEndTestPlay={() => {
-            testPlay.finish();
-            selection.openAuxiliary("analytics");
-          }}
-          posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
           unsent={session.unsent}
           onOpenSearch={() => selection.openSearch("")}
           searchOpen={selection.searchDigits !== null}
           onOpenEmergency={selection.openRebrew}
           onOpenPastOrders={selection.openPastOrders}
-          lastAction={session.lastAction}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">
@@ -220,6 +216,7 @@ export default function App() {
                 }
                 lanes={lanes}
                 unassignedOrders={session.unassigned}
+                orders={session.emergency.orders}
                 looks={looks}
                 nextAvailable={session.nextAvailable}
                 selectedOrderId={selection.selectedOrderId}
@@ -278,6 +275,14 @@ export default function App() {
               >
                 <AuxiliaryContent
                   tab={saved.tab}
+                  onSelectTab={selection.openAuxiliary}
+                  testPlay={{
+                    active: testPlay.isActive,
+                    simulating: session.simulating,
+                    progressLabel: testPlay.remainingLabel,
+                    onOpen: openTestPlay,
+                    onEnd: endTestPlay,
+                  }}
                   beans={session.beans}
                   lanes={lanes}
                   looks={looks}

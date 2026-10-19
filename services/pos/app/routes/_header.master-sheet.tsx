@@ -20,7 +20,7 @@ export const meta: MetaFunction = () => {
   ];
 };
 
-// CaOS（ドリップ管制）。POS のヘッダーは付けず、画面全体を CaOS が使う。
+// CaOS（ドリップ管制）。共通の接続状態ヘッダーの下に盤面を表示する。
 // スタイルは caos.css で .caos-root の中に閉じている。
 export default function MasterSheet() {
   useFixedViewport();
