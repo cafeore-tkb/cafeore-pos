@@ -291,7 +291,7 @@ description: "提供時間モデル（stack モデル）の当日当てはめタ
   - 本文の分岐は、`!isOrdersLoaded ? <LoadingState />` より後、最後の `else`（25年度比較）より前に `section === "model" ? (<StackModelSection orders={sourceOrders} day={selectedDate} window={window} cutoff={cutoff} intervalMinutes={intervalMinutes} />)` を足す。
   - `showInterval` の条件に `section === "model"` を足す。
   - 既定のページ（`"sales"`）、ほかのページの分岐と JSX、矢印キーのロジックは変えない。
-- [ ] T028 [US1] quickstart.md §4 の #1〜#4・#7・#8 を手元で確かめる（`pnpm pos dev`）
+- [X] T028 [US1] quickstart.md §4 の #1〜#4・#7・#8 を手元で確かめる（`pnpm pos dev`）
   - #1・#2: ナビの 7 番目にあり、矢印キーで 7 ページを循環する。
   - #3: 件数不足の表示になる。
   - #4: 10 秒以内に自動で更新される（SC-002）。
@@ -375,7 +375,7 @@ description: "提供時間モデル（stack モデル）の当日当てはめタ
     - 列は「stack（杯）」（`lo〜hi`）・「件数」・「10%点」・「中央値」・「90%点」・「予測（当てはめ）」・「予測（固定）」。単位は分。
     - 予測（当てはめ）が `null` なら「当てはめ不能」と出す。
 - [X] T037 [US2] `services/pos/app/components/organisms/dashboard/stackModel/StackModelSection.tsx` の警告の下に、`StackModelScatter` と `StackModelTables` をこの順で置く（contracts/dashboard-tab-ui.md §2 の 4・5）
-- [ ] T038 [US2] quickstart.md §4 の #5（点の Tooltip）・#9（指名とコメントが出ない、すべての軸に単位がある）を手元で確かめる
+- [X] T038 [US2] quickstart.md §4 の #5（点の Tooltip）・#9（指名とコメントが出ない、すべての軸に単位がある）を手元で確かめる
 
 **Checkpoint**: User Story 1・2 がそれぞれ単独で動く
 
@@ -431,7 +431,7 @@ description: "提供時間モデル（stack モデル）の当日当てはめタ
   - 完了した区切りの終わりは `completedUntil = window.start + Math.floor((cutoff − window.start) / (intervalMinutes × 60000)) × intervalMinutes × 60000` とする。
   - ④ は `useMemo(() => stackModelTrend(②, window, completedUntil, intervalMinutes), [②, window.start, window.end, intervalMinutes, completedUntil])` とする。10 秒ごとの時計の更新では計算し直さない。
   - `cutoff > completedUntil` なら、③ の `view.fit` から `trendPointFromFit(view.fit, cutoff, true)` を作って末尾に足す。
-- [ ] T044 [US3] quickstart.md §4 の #6 を手元で確かめる（集計間隔を 15 → 60 分にすると点の間隔が変わり、最後の点が係数の欄と一致する）
+- [X] T044 [US3] quickstart.md §4 の #6 を手元で確かめる（集計間隔を 15 → 60 分にすると点の間隔が変わり、最後の点が係数の欄と一致する）
 
 **Checkpoint**: すべてのユーザーストーリーが、それぞれ単独で動く
 
@@ -454,10 +454,10 @@ description: "提供時間モデル（stack モデル）の当日当てはめタ
   - `services/pos/app/lib/analytics/stackModelFit.ts` の step halving の受け入れ条件か、`b = b1 + c1 / nStaff` を一時的に壊す。
   - `pnpm pos test:unit` で、SC-001（T012）と T007 が red になることを見る。
   - 元に戻して green に戻ることを見る。壊した状態は commit しない。
-- [ ] T048 SC-003（性能）を確かめる（quickstart.md §4「実データに近い量での確認」）
+- [X] T048 SC-003（性能）を確かめる（quickstart.md §4「実データに近い量での確認」）
   - 注文が数百〜1,000 件ある日で、ページの切り替えと表示条件の変更から 2 秒以内に表示されることを、ブラウザの Performance タブで測る。
   - 超えたときは research.md R9 の次の手段（推移のメモの見直し、Web Worker）を検討し、結果をユーザーに報告する。
-- [ ] T049 SC-004 と FR-018 を確かめる
+- [X] T049 SC-004 と FR-018 を確かめる
   - quickstart.md §4 の #10: ほかの 6 ページの表示と操作が、実装前と変わらない。
   - `grep -nE "assignee|comment" services/pos/app/lib/analytics/stackModel.ts services/pos/app/lib/analytics/stackModelFit.ts services/pos/app/components/organisms/dashboard/stackModel/*.tsx` が何も出さない。
 - [X] T050 変更の範囲を確かめる（quickstart.md §1）
