@@ -12,11 +12,14 @@ PR #1060 の main との差分とコミット履歴を2026-10-19に確認した�
 | Square内訳の「電子マネー」という表示名 | `3ac3bb75` | カード・QR以外を「その他のSquare決済」と表示する簡略化。金額・元の決済種別の記録は除外していない。決済機能の廃止ではない。 |
 | 商品別の「注文→準備完了」「準備完了→提供」から割り振り基準への置き換え | `41a24f2f` | 初回割り振り時刻の保存はDraft PR #1070へ分離。#1060は準備完了を基準にした既存指標で表示し、旧指標を削除しない。削除するなら別PRで指標名・分母・用途を明示。 |
 
+## 個別の削除PRで対応
+
+- `services/pos/app/components/organisms/dashboard/ItemBarChart.tsx`：import元がないことを再確認し、本削除PRでファイルを削除。過去JSON比較は `SnapshotComparison` に残っており、利用中の画面は変わらない。
+
 ## 未使用コードの削除候補（今回削除しない）
 
 | ファイル | 状態 | 削除時の確認事項 |
 | --- | --- | --- |
-| `services/pos/app/components/organisms/dashboard/ItemBarChart.tsx` | import元なし。ファイルは保持。 | 過去商品を固定IDで読み替える旧グラフ。限定1品をライチとブルマンの両方に加算する処理などがある。新しい過去JSON比較とは別物なので、この読み替えを復活させない。 |
 | `services/pos/app/lib/fileUpload.ts` | `useFileUpload` / `uploadAndSortOrders` の外部参照なし。ファイルは保持。 | 過去JSON比較は専用の検証付き読込へ置き換え。ファイル整形・sorted JSON生成を独立機能として残す必要があるか別PRで判断。 |
 
 ## 削除候補として扱わず入口を復元した機能
