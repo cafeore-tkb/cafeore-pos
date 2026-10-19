@@ -134,7 +134,10 @@ export function LogReview({ start, end }: { start: number; end: number }) {
       )}
       <div className="max-h-96 space-y-2 overflow-y-auto">
         {rows.slice(0, 200).map((row) => (
-          <details key={row.key} className="rounded-md border p-2 text-sm">
+          <details
+            key={row.key}
+            className="border-stone-200 border-b py-3 text-sm"
+          >
             <summary className="cursor-pointer">
               {jstClock(row.at)} ·{" "}
               {row.source === "server" ? "完了を確認" : "端末で記録"} ·{" "}

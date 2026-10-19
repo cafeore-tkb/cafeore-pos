@@ -13,16 +13,16 @@ interface OrderListProps {
   orders: WithId<OrderEntity>[] | undefined;
 }
 
-const orderRowTone = (order: OrderEntity) => {
+const orderStatusTone = (order: OrderEntity) => {
   switch (orderRecordStatus(order)) {
     case "キャンセル":
-      return "bg-red-50 hover:bg-red-100";
+      return "text-red-700";
     case "提供済み":
-      return "bg-emerald-50 hover:bg-emerald-100";
+      return "text-emerald-700";
     case "お渡し待ち":
-      return "bg-amber-50 hover:bg-amber-100";
+      return "text-amber-800";
     default:
-      return "bg-sky-50 hover:bg-sky-100";
+      return "text-stone-700";
   }
 };
 
@@ -94,12 +94,12 @@ export function OrderList({ orders }: OrderListProps) {
       </p>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,0.9fr)]">
         <div className="min-w-0 space-y-3">
-          <div className="max-h-[65vh] overflow-auto rounded-xl border bg-white">
+          <div className="max-h-[65vh] overflow-auto border-stone-200 border-y">
             <table className="w-full whitespace-nowrap text-left text-sm">
               <caption className="sr-only">
                 注文の行を選ぶと詳細を表示します
               </caption>
-              <thead className="sticky top-0 z-10 bg-stone-100">
+              <thead className="sticky top-0 z-10 bg-stone-50">
                 <tr>
                   {[
                     "オーダーNo.",
@@ -122,7 +122,7 @@ export function OrderList({ orders }: OrderListProps) {
                     key={order.id}
                     tabIndex={0}
                     aria-selected={selected?.id === order.id}
-                    className={`cursor-pointer border-t transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${orderRowTone(order)} ${selected?.id === order.id ? "ring-2 ring-stone-700 ring-inset" : ""}`}
+                    className={`cursor-pointer border-t transition-colors hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${selected?.id === order.id ? "ring-2 ring-stone-700 ring-inset" : ""}`}
                     onClick={() => setSelectedId(order.id)}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter" && event.key !== " ") return;
@@ -133,9 +133,7 @@ export function OrderList({ orders }: OrderListProps) {
                     <td className="px-5 py-3 font-bold text-stone-900">
                       #{String(order.orderId).padStart(3, "0")}
                     </td>
-                    <td
-                      className={`px-3 py-2 ${order.isCancelled() ? "text-red-700" : ""}`}
-                    >
+                    <td className={`px-3 py-2 ${orderStatusTone(order)}`}>
                       {orderRecordStatus(order)}
                     </td>
                     <td className="px-3 py-2">{order.getCups().length}</td>
@@ -193,7 +191,7 @@ export function OrderList({ orders }: OrderListProps) {
           {selected ? (
             <OrderDetail order={selected} />
           ) : (
-            <div className="rounded-xl border border-dashed p-8 text-center text-stone-500">
+            <div className="py-8 text-center text-stone-500">
               注文の行を選ぶと詳細が表示されます。
             </div>
           )}

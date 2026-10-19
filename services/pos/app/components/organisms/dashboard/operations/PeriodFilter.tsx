@@ -12,7 +12,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 const SHORTCUT =
-  "min-h-10 whitespace-nowrap rounded-lg border border-stone-300 bg-white px-3 py-2 font-bold text-xs hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-700";
+  "min-h-10 whitespace-nowrap rounded-md border border-stone-300 bg-white px-3 py-2 font-bold text-xs hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-700";
 
 /** 日付は日本時間で計算し、24:00をその日の終端として扱う。 */
 export function PeriodFilter({
@@ -71,7 +71,7 @@ export function PeriodFilter({
     } else onChange({ ...period, throughDate: date, endTime: time });
   };
   return (
-    <fieldset className="space-y-4 rounded-2xl border border-stone-200 bg-white p-3">
+    <fieldset className="space-y-4 border-stone-200 border-t pt-4">
       <legend className="px-1 font-bold text-sm">集計期間（日本時間）</legend>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={SHORTCUT} onClick={() => shiftDay(-1)}>
@@ -203,7 +203,7 @@ function TimeEndpoint({
   const hour = Number(time.slice(0, 2));
   const minute = Number(time.slice(3));
   return (
-    <div className="min-w-0 rounded-xl bg-stone-50 p-2">
+    <div className="min-w-0">
       <label className="flex flex-wrap items-center gap-2 font-bold text-xs">
         {label}日
         <input

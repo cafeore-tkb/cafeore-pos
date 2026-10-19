@@ -53,11 +53,11 @@ export function OverviewVisuals({
   return (
     <div className="space-y-4">
       <div
-        className={`flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 ${net === undefined ? "border-stone-200 bg-white" : rising ? "border-orange-200 bg-orange-50" : "border-teal-200 bg-teal-50"}`}
+        className={`flex flex-wrap items-center justify-between gap-4 border-l-2 pl-4 ${net === undefined ? "border-stone-200" : rising ? "border-orange-400" : "border-teal-500"}`}
       >
         <div className="flex items-center gap-3">
           <span
-            className={`rounded-xl bg-white p-3 ${rising ? "text-orange-600" : "text-teal-700"}`}
+            className={`py-2 ${rising ? "text-orange-600" : "text-teal-700"}`}
           >
             <TrendIcon className="h-7 w-7" />
           </span>
@@ -87,19 +87,19 @@ export function OverviewVisuals({
         <button
           type="button"
           onClick={() => onSelect("acceleration")}
-          className="min-h-10 rounded-full border border-current/15 bg-white px-4 font-bold text-sm"
+          className="min-h-10 font-bold text-sm underline underline-offset-4"
         >
           混雑のグラフ →
         </button>
       </div>
       <div className={`grid min-w-0 gap-4 ${compact ? "" : "xl:grid-cols-2"}`}>
-        <section className="min-w-0 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+        <section className="min-w-0 border-stone-200 border-t pt-5">
           <div className="flex items-center justify-between gap-2">
             <h4 className="flex items-center gap-2 font-bold">
               <Timer className="h-4 w-4 text-orange-600" />
               待っている杯数
             </h4>
-            <span className="rounded-full bg-orange-50 px-3 py-1 font-bold text-orange-800 text-xs">
+            <span className="font-bold text-stone-600 text-xs">
               最長 {longest === undefined ? "—" : `${longest.toFixed(1)}分`}
             </span>
           </div>
@@ -146,10 +146,7 @@ export function OverviewVisuals({
               />
               <ul className="grid grid-cols-2 gap-2 text-xs">
                 {waiting.map((band) => (
-                  <li
-                    key={band.name}
-                    className="flex items-center gap-2 rounded-lg bg-stone-50 px-2 py-2"
-                  >
+                  <li key={band.name} className="flex items-center gap-2 py-2">
                     <span
                       className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: band.color }}
@@ -170,7 +167,7 @@ export function OverviewVisuals({
             </div>
           )}
         </section>
-        <section className="min-w-0 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+        <section className="min-w-0 border-stone-200 border-t pt-5">
           <h4 className="flex items-center gap-2 font-bold">
             <Coffee className="h-4 w-4 text-sky-600" />
             よく出たドリンク

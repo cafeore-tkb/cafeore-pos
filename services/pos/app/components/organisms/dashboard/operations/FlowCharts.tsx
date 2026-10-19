@@ -239,7 +239,7 @@ export function FlowCharts({
         </p>
       )}
       {chart === "flow" && (
-        <details className="rounded-xl bg-stone-50 p-3">
+        <details className="border-stone-200 border-t pt-3">
           <summary className="cursor-pointer font-bold text-sm">
             注文が集中した{intervalMinutes}分を見る
           </summary>

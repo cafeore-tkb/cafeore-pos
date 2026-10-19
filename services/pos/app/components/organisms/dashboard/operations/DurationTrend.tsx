@@ -97,7 +97,7 @@ export function DurationTrend({
           </ResponsiveContainer>
         </div>
       ) : (
-        <p className="rounded-lg bg-stone-50 p-4 text-sm">
+        <p className="py-4 text-sm text-stone-500">
           {title}の記録がまだありません。
         </p>
       )}

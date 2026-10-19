@@ -235,7 +235,7 @@ export function OperationsDashboard({
   };
   return (
     <div
-      className={`space-y-5 rounded-3xl bg-[#f7f5f0] p-3 text-stone-800 sm:p-5 ${compact ? "text-sm" : ""}`}
+      className={`space-y-5 pt-5 text-stone-800 ${compact ? "text-sm" : ""}`}
     >
       <header className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -257,7 +257,7 @@ export function OperationsDashboard({
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1 basis-80">
             {mode === "floor" ? (
-              <p className="rounded-xl bg-teal-50 p-3 text-sm">
+              <p className="border-stone-300 border-l-2 pl-3 text-sm">
                 直近1時間 · 5分ごと · 自動更新
                 <br />
                 {jstDate(window.start)} {jstClock(window.start)}〜
@@ -265,7 +265,7 @@ export function OperationsDashboard({
               </p>
             ) : mode === "review" ? (
               <details>
-                <summary className="cursor-pointer rounded-xl border border-stone-200 bg-white px-3 py-2 font-bold text-xs">
+                <summary className="cursor-pointer py-2 font-bold text-xs">
                   期間を変える：{date} {startTime}〜
                   {throughDate !== date ? `${throughDate} ` : ""}
                   {endTime}
@@ -282,7 +282,7 @@ export function OperationsDashboard({
                 />
               </details>
             ) : (
-              <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
                 <label>
                   日付{" "}
                   <input
@@ -324,7 +324,7 @@ export function OperationsDashboard({
             )}
           </div>
           {mode !== "inventory" && (
-            <fieldset className="flex flex-wrap items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2">
+            <fieldset className="flex flex-wrap items-center gap-2 border-stone-200 border-t pt-3">
               <legend className="px-1 font-bold text-xs">
                 時系列グラフの集計間隔
               </legend>
@@ -397,7 +397,7 @@ export function OperationsDashboard({
                   .getElementById(`${panelId}-mode-${MODES[next].id}`)
                   ?.focus();
               }}
-              className={`min-h-12 shrink-0 rounded-t-xl border py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-stone-300 border-b-white bg-white text-teal-900" : "border-transparent border-b-stone-300 bg-[#eee9df] text-stone-500 hover:bg-stone-200"}`}
+              className={`min-h-12 shrink-0 border-b-2 py-3 font-bold focus-visible:outline-2 focus-visible:outline-teal-700 ${compact ? "flex-1 px-2 text-[11px]" : "px-4 text-xs"} ${mode === m.id ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
             >
               {m.name}
             </button>
@@ -407,7 +407,7 @@ export function OperationsDashboard({
           role="tabpanel"
           id={`${panelId}-mode-content`}
           aria-labelledby={`${panelId}-mode-${mode}`}
-          className={`space-y-5 border border-stone-300 bg-white ${compact ? "p-2" : "p-4"}`}
+          className={"space-y-5 pt-5"}
         >
           {isOrdersLoaded && validPeriod && (
             <>
@@ -417,28 +417,24 @@ export function OperationsDashboard({
                 >
                   <Metric
                     label="注文"
-                    tone="blue"
                     icon={Coffee}
                     value={`${report.received}杯`}
                     note="この期間の注文・取消前の分も含む"
                   />
                   <Metric
                     label="お渡し済み"
-                    tone="green"
                     icon={CheckCheck}
                     value={`${report.served}杯`}
                     note="この期間にお渡し・前日からの分も含む"
                   />
                   <Metric
                     label="お渡し待ち"
-                    tone="orange"
                     icon={Timer}
                     value={`${report.backlog}杯`}
                     note={`期間末の待ち・持越し${report.openingBacklog}杯を含む・取消は除く`}
                   />
                   <Metric
                     label="売上"
-                    tone="brown"
                     icon={Banknote}
                     value={money(report.revenue)}
                     note={`${report.orderCount}注文・この期間の注文分・取消は除く`}
@@ -453,7 +449,7 @@ export function OperationsDashboard({
                     role="tablist"
                     aria-label="分析グラフ"
                     aria-orientation="vertical"
-                    className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto rounded-2xl border border-stone-200 bg-white p-1.5 shadow-sm"
+                    className="sticky top-2 flex max-h-[75vh] flex-col gap-1 overflow-y-auto bg-white"
                   >
                     {views.map((item, index) => {
                       const Icon = VIEW_ICONS[item.id] ?? BarChart3;
@@ -488,7 +484,7 @@ export function OperationsDashboard({
                               )
                               ?.focus();
                           }}
-                          className={`flex min-h-12 items-center gap-2 rounded-xl ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "bg-teal-900 font-bold text-white shadow-sm" : "text-stone-600 hover:bg-stone-100"}`}
+                          className={`flex min-h-12 items-center gap-2 border-l-2 ${compact ? "flex-col px-1 py-2 text-center text-[10px]" : "px-2.5 py-3 text-left text-xs sm:text-sm"} ${view === item.id ? "border-stone-900 font-bold text-stone-900" : "border-transparent text-stone-600 hover:bg-stone-50"}`}
                         >
                           <Icon
                             className="h-4 w-4 shrink-0"
@@ -528,7 +524,7 @@ export function OperationsDashboard({
                     />
                   )}
                   {(view === "flow" || view === "acceleration") && (
-                    <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                    <section className="border-stone-200 border-t pt-5">
                       <h3 className="font-bold">{trend}</h3>
                       <p className="mt-2 text-sm">
                         直近{intervalMinutes}分：待ち{" "}
@@ -584,7 +580,7 @@ export function OperationsDashboard({
                   {view === "summary" &&
                     mode !== "owner" &&
                     mode !== "handoff" && (
-                      <section className="rounded-2xl border border-stone-200 bg-white p-5">
+                      <section className="border-stone-200 border-t pt-5">
                         <h3 className="font-bold">長く待っている注文</h3>
                         <p className="mt-1 text-sm">
                           期間末の待ち時間が長い順。予想の待ち時間ではありません。
@@ -593,7 +589,7 @@ export function OperationsDashboard({
                           {report.longest.slice(0, 8).map((v, i) => (
                             <li
                               key={`${v.number}:${i}`}
-                              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${v.minutes >= 20 ? "border-rose-200 bg-rose-50 text-rose-800" : v.minutes >= 15 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-stone-100 bg-stone-50"}`}
+                              className={`flex items-center gap-3 border-b py-2.5 ${v.minutes >= 20 ? "border-rose-200 bg-rose-50 text-rose-800" : v.minutes >= 15 ? "border-orange-200 bg-orange-50 text-orange-800" : "border-stone-100"}`}
                             >
                               <span className="font-bold font-mono">
                                 #{String(v.number).padStart(3, "0")}
@@ -613,7 +609,7 @@ export function OperationsDashboard({
                       </section>
                     )}
                   {view === "summary" && mode === "owner" && (
-                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                    <section className="space-y-3 border-stone-200 border-t pt-5">
                       <h3 className="font-bold">売上とお渡しの速さ</h3>
                       <p>
                         1注文あたり{" "}
@@ -633,7 +629,7 @@ export function OperationsDashboard({
                     </section>
                   )}
                   {view === "summary" && mode === "handoff" && (
-                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                    <section className="space-y-3 border-stone-200 border-t pt-5">
                       <h3 className="font-bold">この時間帯の引き継ぎ</h3>
                       {handoffStart < handoffEnd ? (
                         <>
@@ -662,7 +658,7 @@ export function OperationsDashboard({
                     </section>
                   )}
                   {view === "duration" && (
-                    <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5 shadow-sm">
+                    <section className="space-y-4 border-stone-200 border-t pt-5">
                       <h3 className="font-bold">お渡しまでにかかった時間</h3>
                       <div className="flex flex-wrap items-center gap-3 text-sm">
                         <label>
@@ -826,7 +822,7 @@ export function OperationsDashboard({
                     />
                   )}
                   {view === "logs" && (
-                    <section className="space-y-4 rounded-2xl border border-stone-200 bg-white p-5">
+                    <section className="space-y-4 border-stone-200 border-t pt-5">
                       <h3 className="font-bold">注文ごとの連絡</h3>
                       <p className="text-muted-foreground text-xs">
                         レジ・マスター・提供の連絡です。個人の成績表ではありません。
@@ -835,7 +831,7 @@ export function OperationsDashboard({
                         {report.comments.slice(0, 100).map((c, i) => (
                           <li
                             key={`${c.at}:${c.orderNo}:${i}`}
-                            className="rounded-md bg-stone-50 p-2 text-sm"
+                            className="border-stone-100 border-b py-2 text-sm"
                           >
                             <span className="font-bold">
                               #{String(c.orderNo).padStart(3, "0")} · {c.author}{" "}
@@ -869,7 +865,7 @@ export function OperationsDashboard({
                     </section>
                   )}
                   {view === "baseline" && (
-                    <section className="space-y-3 rounded-2xl border border-stone-200 bg-white p-5">
+                    <section className="space-y-3 border-stone-200 border-t pt-5">
                       <h3 className="font-bold">2025年との比較</h3>
                       <p className="text-sm">
                         選択した開始時刻から同じ長さの期間を比較します（2025年の開始日は下で選択）。昨年は注文ごと、今年は1杯ごとの記録です。条件が違うため、目安として比べてください。売上は全商品、杯数は飲み物だけです。
@@ -977,7 +973,7 @@ export function OperationsDashboard({
                   {extraPanels.find((item) => item.id === view)?.content}
                 </div>
               </div>
-              <details className="rounded-2xl border border-stone-200 bg-white p-5 text-xs">
+              <details className="border-stone-200 border-t pt-5 text-xs">
                 <summary className="cursor-pointer font-bold">
                   数字の見方・分かること／分からないこと
                 </summary>
@@ -996,29 +992,19 @@ export function OperationsDashboard({
     </div>
   );
 }
-const METRIC_TONES = {
-  blue: "border-sky-200 bg-sky-50 text-sky-900",
-  green: "border-teal-200 bg-teal-50 text-teal-900",
-  orange: "border-orange-200 bg-orange-50 text-orange-900",
-  brown: "border-stone-200 bg-[#eee8df] text-stone-800",
-};
 function Metric({
   label,
   value,
   note,
-  tone = "brown",
   icon: Icon = Coffee,
 }: {
   label: string;
   value: string;
   note: string;
-  tone?: keyof typeof METRIC_TONES;
   icon?: LucideIcon;
 }) {
   return (
-    <div
-      className={`relative overflow-hidden rounded-2xl border p-4 shadow-sm ${METRIC_TONES[tone]}`}
-    >
+    <div className="py-3">
       <div className="flex items-center justify-between gap-2">
         <p className="font-bold text-xs sm:text-sm">{label}</p>
         <Icon className="h-5 w-5 shrink-0 opacity-60" aria-hidden="true" />

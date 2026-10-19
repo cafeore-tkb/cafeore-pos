@@ -33,7 +33,7 @@ export function AvailabilityReview({
   ).filter((b) => b.availableMenus !== null);
   return (
     <div className="space-y-5">
-      <section className="space-y-3 rounded-xl border bg-white p-4">
+      <section className="space-y-3 border-stone-200 border-t pt-6">
         <h3 className="font-bold">POS上の計算消費量</h3>
         <p className="text-sm">
           カップ・牛乳・氷・豆など、在庫管理に登録された資材を表示します。各資材の最終棚卸し（なければ最初の入荷）より後の累計です。画面で選んだ日の消費量ではありません。入れ直しも含み、実測の廃棄量・使用量とは異なります。
@@ -99,7 +99,7 @@ export function AvailabilityReview({
           資材ごとに起点・単位が異なるため合算しません。消費量は注文時に保存した設定に基づくため、現在の1回量×回数とは一致しない場合があります。
         </p>
       </section>
-      <section className="space-y-2 rounded-xl border p-4">
+      <section className="space-y-2 border-stone-200 border-t pt-6">
         <h3 className="font-bold">いまの在庫</h3>
         <p className="text-sm">
           在庫は現在の値です。過去の期間を選んでも変わりません。数え直し・入荷は
@@ -114,7 +114,7 @@ export function AvailabilityReview({
           {statuses.map((stock) => (
             <div
               key={stock.resource.id}
-              className={`rounded-2xl border p-4 ${stock.level === "critical" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-teal-100 bg-teal-50 text-teal-950"}`}
+              className={`border-b py-4 ${stock.level === "critical" ? "border-rose-300 text-rose-900" : "border-stone-200 text-stone-900"}`}
             >
               <h4 className="font-bold text-sm">{stock.resource.name}</h4>
               <p className="mt-2 font-bold text-2xl tabular-nums">
@@ -182,7 +182,7 @@ export function AvailabilityReview({
           <p>在庫の記録がありません。残りゼロという意味ではありません。</p>
         )}
       </section>
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 border-stone-200 border-t pt-6">
         <h3 className="font-bold">メニュー数と注文の量</h3>
         <p className="text-sm">
           登録しているメニュー：

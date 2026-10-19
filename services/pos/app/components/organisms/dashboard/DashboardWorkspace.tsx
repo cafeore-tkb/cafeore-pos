@@ -206,32 +206,24 @@ export function DashboardWorkspace() {
   const live = isOrdersLoaded && status === "open";
 
   return (
-    <div className="min-h-full bg-stone-100 p-2 text-stone-900 sm:p-4 lg:p-6">
-      <div className="mx-auto max-w-[1600px] overflow-hidden rounded-[2rem] border border-stone-200 bg-[#f8f7f3] shadow-[0_24px_80px_-46px_rgba(28,25,23,0.55)]">
-        <header className="relative overflow-hidden bg-teal-950 px-4 py-6 text-white sm:px-7 lg:px-9 lg:py-8">
-          <div
-            className="-top-24 -right-16 pointer-events-none absolute h-72 w-72 rounded-full bg-teal-400/20 blur-3xl"
-            aria-hidden="true"
-          />
-          <div
-            className="-bottom-28 pointer-events-none absolute left-1/3 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl"
-            aria-hidden="true"
-          />
+    <div className="min-h-full bg-white px-4 py-6 text-stone-900 sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-[1600px]">
+        <header className="border-stone-200 border-b pb-6">
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="font-bold text-[11px] text-teal-200 uppercase tracking-[0.24em]">
+              <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.24em]">
                 Cafe Operations
               </p>
               <h1 className="mt-2 font-black text-3xl tracking-tight sm:text-4xl">
                 ダッシュボード
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-teal-100/75">
+              <p className="mt-2 max-w-2xl text-sm text-stone-500">
                 売上、注文、提供状況をひとつの画面から確認できます。
               </p>
             </div>
             <div className="flex flex-wrap items-end gap-3">
               <label className="space-y-1">
-                <span className="block font-bold text-[11px] text-teal-100">
+                <span className="block font-bold text-[11px] text-stone-600">
                   表示する日
                 </span>
                 <input
@@ -241,10 +233,10 @@ export function DashboardWorkspace() {
                   onChange={(event) => {
                     if (event.target.value) setSelectedDate(event.target.value);
                   }}
-                  className="min-h-11 rounded-xl border border-white/15 bg-white/10 px-3 font-bold text-sm text-white shadow-inner outline-none [color-scheme:dark] focus:border-teal-300"
+                  className="min-h-11 rounded-md border border-stone-300 bg-white px-3 font-bold text-sm focus-visible:outline-2 focus-visible:outline-stone-700"
                 />
               </label>
-              <div className="rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 backdrop-blur">
+              <div className="py-2.5">
                 <div className="flex items-center gap-2 font-bold text-xs">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-amber-400"}`}
@@ -256,7 +248,7 @@ export function DashboardWorkspace() {
                       ? "リアルタイム更新中"
                       : "接続待ち"}
                 </div>
-                <p className="mt-1 text-[10px] text-teal-100/65">
+                <p className="mt-1 text-[10px] text-stone-500">
                   現在 {jstClock(now).slice(0, 5)}
                 </p>
               </div>
@@ -265,7 +257,7 @@ export function DashboardWorkspace() {
         </header>
 
         <nav
-          className="grid grid-cols-12 gap-2 border-stone-200 border-b bg-white p-2 sm:p-3"
+          className="grid grid-cols-12 gap-x-4 border-stone-200 border-b pt-3"
           role="tablist"
           aria-label="ダッシュボードの表示"
         >
@@ -297,17 +289,17 @@ export function DashboardWorkspace() {
                     .getElementById(`${tabId}-tab-${nextSection.id}`)
                     ?.focus();
                 }}
-                className={`${index < 2 ? "col-span-6" : "col-span-6 sm:col-span-3"} group flex min-h-16 items-center gap-3 rounded-2xl px-3 py-3 text-left transition sm:px-4 ${selected ? "bg-teal-950 text-white shadow-lg shadow-teal-950/15" : "text-stone-500 hover:bg-stone-100 hover:text-stone-900"}`}
+                className={`${index < 2 ? "col-span-6" : "col-span-6 sm:col-span-3"} group flex min-h-16 items-center gap-3 border-b-2 px-1 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-stone-700 ${selected ? "border-stone-900 text-stone-950" : "border-transparent text-stone-500 hover:border-stone-300 hover:text-stone-900"}`}
               >
                 <span
-                  className={`${index < 2 ? "" : "hidden sm:block"} rounded-xl p-2 ${selected ? "bg-white/10 text-teal-200" : "bg-stone-100 text-stone-500 group-hover:bg-white"}`}
+                  className={`${index < 2 ? "" : "hidden sm:block"} ${selected ? "text-stone-800" : "text-stone-400"}`}
                 >
                   <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0">
                   <span className="block font-black text-sm">{item.name}</span>
                   <span
-                    className={`mt-0.5 hidden truncate text-[10px] sm:block lg:text-xs ${selected ? "text-teal-100/70" : "text-stone-400"}`}
+                    className={`mt-0.5 hidden truncate text-[10px] sm:block lg:text-xs ${selected ? "text-stone-600" : "text-stone-500"}`}
                   >
                     {item.description}
                   </span>
@@ -321,18 +313,18 @@ export function DashboardWorkspace() {
           role="tabpanel"
           id={`${tabId}-panel`}
           aria-labelledby={`${tabId}-tab-${section}`}
-          className="min-w-0 p-3 sm:p-5 lg:p-7"
+          className="min-w-0 pt-7"
         >
           <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="font-bold text-[11px] text-teal-700 uppercase tracking-[0.18em]">
+              <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.18em]">
                 {selectedDate === jstDate(now) ? "Today" : "Archive"}
               </p>
               <h2 className="mt-1 font-black text-2xl tracking-tight">
                 {selectedSection.name}
               </h2>
             </div>
-            <p className="rounded-full border border-stone-200 bg-white px-4 py-2 text-stone-500 text-xs shadow-sm">
+            <p className="text-stone-500 text-xs">
               {section === "inventory" ? "在庫は現在値 / 注文の比較期間：" : ""}
               {selectedDate} 00:00〜
               {selectedDate === jstDate(now)
@@ -350,19 +342,19 @@ export function DashboardWorkspace() {
             <LoadingState />
           ) : section === "records" ? (
             <div className="space-y-5">
-              <section className="rounded-3xl border bg-white p-5">
+              <section className="border-stone-200 border-t pt-6">
                 <h3 className="mb-3 font-bold text-lg">
                   オーダーストップ・再開の記録
                 </h3>
                 <OrderStatusList start={window.start} end={cutoff} />
               </section>
-              <section className="rounded-3xl border bg-white p-5">
+              <section className="border-stone-200 border-t pt-6">
                 <h3 className="mb-3 font-bold text-lg">
                   操作ログ・サーバー成功履歴
                 </h3>
                 <LogReview start={window.start} end={cutoff} />
               </section>
-              <details className="rounded-3xl border bg-white p-5">
+              <details className="border-stone-200 border-t pt-6">
                 <summary className="cursor-pointer font-bold">
                   従来の運用分析（期間指定・引き継ぎ・CSV）
                 </summary>
@@ -372,7 +364,7 @@ export function DashboardWorkspace() {
           ) : section === "sales" ? (
             <SalesSection report={report} finance={finance} />
           ) : section === "details" ? (
-            <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+            <section className="border-stone-200 border-t pt-6">
               <SectionHeading
                 icon={ReceiptText}
                 title="注文一覧"
@@ -428,45 +420,40 @@ function SalesSection({
     paymentTotal > 0 ? (finance.square / paymentTotal) * 100 : 0;
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-x-8 gap-y-5 xl:grid-cols-5">
         <MetricCard
           icon={Coffee}
           label="注文杯数"
           value={`${report.products.reduce((sum, product) => sum + product.received, 0)}杯`}
           note="取消を除く・ドリンクのみ"
-          tone="indigo"
         />
         <MetricCard
           icon={CircleDollarSign}
           label="売上"
           value={yen(report.revenue)}
           note={`${report.orderCount}件の注文`}
-          tone="emerald"
         />
         <MetricCard
           icon={ReceiptText}
           label="客単価"
           value={yen(finance.average)}
           note="注文1件あたり"
-          tone="sky"
         />
         <MetricCard
           icon={Banknote}
           label="現金"
           value={yen(finance.cash)}
           note={`決済内訳合計の ${cashRatio.toFixed(1)}%`}
-          tone="orange"
         />
         <MetricCard
           icon={WalletCards}
           label="Square"
           value={yen(finance.square)}
           note={`決済内訳合計の ${squareRatio.toFixed(1)}%`}
-          tone="indigo"
         />
       </div>
 
-      <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+      <section className="border-stone-200 border-t pt-6">
         <SectionHeading
           icon={Coffee}
           title="商品別の注文杯数"
@@ -475,7 +462,7 @@ function SalesSection({
         <ProductCupChart products={report.products} />
       </section>
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.7fr)]">
-        <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+        <section className="min-w-0 border-stone-200 border-t pt-6">
           <SectionHeading
             icon={Activity}
             title="時間帯別の売上"
@@ -543,7 +530,7 @@ function SalesSection({
           />
         </section>
 
-        <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+        <section className="border-stone-200 border-t pt-6">
           <SectionHeading
             icon={WalletCards}
             title="決済の内訳"
@@ -563,8 +550,8 @@ function SalesSection({
               color="bg-indigo-500"
             />
             {finance.squareDetails.length > 0 && (
-              <div className="space-y-2 rounded-2xl bg-indigo-50/70 p-3">
-                <p className="font-bold text-indigo-950 text-xs">
+              <div className="space-y-2 border-stone-200 border-t pt-4">
+                <p className="font-bold text-stone-900 text-xs">
                   Square決済の内訳
                 </p>
                 <dl className="space-y-2">
@@ -573,10 +560,10 @@ function SalesSection({
                       key={payment.type}
                       className="flex items-center justify-between gap-3 text-sm"
                     >
-                      <dt className="text-indigo-900/70">{payment.label}</dt>
+                      <dt className="text-stone-600">{payment.label}</dt>
                       <dd className="font-bold tabular-nums">
                         {yen(payment.amount)}
-                        <span className="ml-2 font-normal text-[10px] text-indigo-900/55">
+                        <span className="ml-2 font-normal text-[10px] text-stone-500">
                           {finance.square > 0
                             ? ((payment.amount / finance.square) * 100).toFixed(
                                 0,
@@ -591,7 +578,7 @@ function SalesSection({
               </div>
             )}
           </div>
-          <dl className="mt-5 space-y-2 rounded-xl bg-stone-50 p-3 text-sm">
+          <dl className="mt-5 space-y-2 border-stone-200 border-t pt-4 text-sm">
             <div className="flex justify-between gap-3">
               <dt>請求額合計（売上）</dt>
               <dd>{yen(report.revenue)}</dd>
@@ -626,7 +613,7 @@ function SalesSection({
               <dd className="font-bold">{finance.cancelled}件</dd>
             </div>
           </dl>
-          <p className="mt-5 rounded-xl bg-stone-50 p-3 text-stone-500 text-xs leading-relaxed">
+          <p className="mt-5 text-stone-500 text-xs leading-relaxed">
             売上は取消済みを除く注文時の請求額です。返金の実施状況は金額から自動控除しません。
           </p>
         </section>
@@ -646,27 +633,24 @@ function AnalysisSection({
 }) {
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-8 gap-y-5 xl:grid-cols-4">
         <MetricCard
           icon={Clock3}
           label="提供時間の中央値"
           value={minutes(report.total.p50)}
           note={`提供済み ${report.total.count}杯の実測`}
-          tone="sky"
         />
         <MetricCard
           icon={Timer}
           label="9割を渡すまで"
           value={minutes(report.total.p90)}
           note="提供済みのP90・待ち時間予測ではありません"
-          tone="indigo"
         />
         <MetricCard
           icon={Coffee}
           label="お渡し待ち"
           value={`${report.backlog}杯`}
           note="期間末・開始前の持越しを含む"
-          tone="orange"
         />
         <MetricCard
           icon={Timer}
@@ -675,10 +659,9 @@ function AnalysisSection({
             report.longest[0] ? minutes(report.longest[0].minutes) : "待ちなし"
           }
           note="期間末の未提供が対象"
-          tone="orange"
         />
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-stone-200 border-t pt-5">
         <div>
           <p className="font-bold text-sm">集計間隔</p>
           <p className="mt-1 text-stone-500 text-xs">
@@ -686,7 +669,7 @@ function AnalysisSection({
           </p>
         </div>
         <fieldset
-          className="inline-flex rounded-xl bg-stone-100 p-1"
+          className="inline-flex gap-1"
           aria-label="分析グラフの集計間隔"
         >
           {([15, 30, 60] as const).map((minutes) => (
@@ -695,14 +678,14 @@ function AnalysisSection({
               type="button"
               aria-pressed={intervalMinutes === minutes}
               onClick={() => onIntervalChange(minutes)}
-              className={`min-h-10 rounded-lg px-4 font-bold text-xs transition ${intervalMinutes === minutes ? "bg-teal-950 text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-stone-900"}`}
+              className={`min-h-10 rounded-md px-4 font-bold text-xs transition ${intervalMinutes === minutes ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"}`}
             >
               {minutes}分
             </button>
           ))}
         </fieldset>
       </div>
-      <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+      <section className="border-stone-200 border-t pt-6">
         <SectionHeading
           icon={Activity}
           title="カップステータス"
@@ -718,7 +701,7 @@ function AnalysisSection({
         </div>
       </section>
 
-      <section className="rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+      <section className="border-stone-200 border-t pt-6">
         <SectionHeading
           icon={Clock3}
           title="提供時間"
@@ -733,7 +716,7 @@ function AnalysisSection({
       </section>
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-2">
-        <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+        <section className="min-w-0 border-stone-200 border-t pt-6">
           <SectionHeading
             icon={BarChart3}
             title="提供時間の分布"
@@ -743,7 +726,7 @@ function AnalysisSection({
             <DurationCharts stats={report.total} hideBoxPlot />
           </div>
         </section>
-        <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6">
+        <section className="min-w-0 border-stone-200 border-t pt-6">
           <SectionHeading
             icon={Coffee}
             title="商品ごとの提供時間"
@@ -818,7 +801,7 @@ function ComparisonSection({
       : null;
   return (
     <div className="space-y-5">
-      <section className="flex flex-col gap-4 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+      <section className="flex flex-col gap-4 border-stone-200 border-t pt-6 lg:flex-row lg:items-end lg:justify-between">
         <SectionHeading
           icon={History}
           title="2025年度の実績と比較"
@@ -831,7 +814,7 @@ function ComparisonSection({
               value={referenceDate}
               disabled={loading || referenceDays.length === 0}
               onChange={(event) => onReferenceDateChange(event.target.value)}
-              className="min-h-10 rounded-xl border border-stone-200 bg-white px-3 font-bold disabled:opacity-50"
+              className="min-h-10 rounded-md border border-stone-300 bg-white px-3 font-bold disabled:opacity-50"
             >
               {referenceDays.map((date) => (
                 <option key={date} value={date}>
@@ -841,7 +824,7 @@ function ComparisonSection({
             </select>
           </label>
           <fieldset
-            className="inline-flex rounded-xl bg-stone-100 p-1"
+            className="inline-flex gap-1"
             aria-label="比較グラフの集計間隔"
           >
             {([15, 30, 60] as const).map((value) => (
@@ -850,7 +833,7 @@ function ComparisonSection({
                 type="button"
                 aria-pressed={intervalMinutes === value}
                 onClick={() => onIntervalChange(value)}
-                className={`min-h-10 rounded-lg px-3 font-bold text-xs transition ${intervalMinutes === value ? "bg-teal-950 text-white shadow-sm" : "text-stone-500 hover:bg-white hover:text-stone-900"}`}
+                className={`min-h-10 rounded-md px-3 font-bold text-xs transition ${intervalMinutes === value ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"}`}
               >
                 {value}分
               </button>
@@ -905,7 +888,7 @@ function ComparisonSection({
             ].map((item) => (
               <section
                 key={item.label}
-                className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+                className="min-w-0 border-stone-200 border-t pt-6"
               >
                 <SectionHeading
                   icon={Activity}
@@ -930,7 +913,7 @@ function ComparisonSection({
             ].map((item) => (
               <section
                 key={item.label}
-                className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-sm sm:p-6"
+                className="min-w-0 border-stone-200 border-t pt-6"
               >
                 <SectionHeading
                   icon={Clock3}
@@ -949,7 +932,7 @@ function ComparisonSection({
             ))}
           </div>
 
-          <p className="rounded-2xl bg-stone-200/60 p-4 text-stone-600 text-xs leading-relaxed">
+          <p className="border-stone-200 border-t pt-4 text-stone-600 text-xs leading-relaxed">
             並べたグラフの軸範囲は共通です。2025年度は注文単位、選択中の日付はカップ単位の記録です。売上は全商品、杯数はカップを作る商品のみを集計しているため、目安として比較してください。
             {referenceInfo ? ` データ: ${referenceInfo}` : ""}
           </p>
@@ -975,7 +958,7 @@ function ComparisonMetric({
   difference: string;
 }) {
   return (
-    <article className="rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+    <article className="border-stone-200 border-t pt-6">
       <p className="font-black text-stone-900">{label}</p>
       <dl className="mt-4 space-y-3 text-sm">
         <div className="flex items-end justify-between gap-3">
@@ -987,51 +970,29 @@ function ComparisonMetric({
           <dd className="font-bold text-lg tabular-nums">{referenceValue}</dd>
         </div>
       </dl>
-      <p className="mt-4 rounded-xl bg-teal-50 px-3 py-2 font-bold text-teal-900 text-xs">
+      <p className="mt-4 font-bold text-stone-700 text-xs">
         2025年度との差 {difference}
       </p>
     </article>
   );
 }
 
-const METRIC_TONES = {
-  emerald: "border-emerald-200 bg-emerald-50 text-emerald-950",
-  sky: "border-sky-200 bg-sky-50 text-sky-950",
-  indigo: "border-indigo-200 bg-indigo-50 text-indigo-950",
-  orange: "border-orange-200 bg-orange-50 text-orange-950",
-} as const;
-
 function MetricCard({
   icon: Icon,
   label,
   value,
   note,
-  tone,
-}: {
-  icon: typeof Coffee;
-  label: string;
-  value: string;
-  note: string;
-  tone: keyof typeof METRIC_TONES;
-}) {
+}: { icon: typeof Coffee; label: string; value: string; note: string }) {
   return (
-    <article
-      className={`relative overflow-hidden rounded-3xl border p-4 shadow-sm sm:p-5 ${METRIC_TONES[tone]}`}
-    >
-      <div
-        className="-top-10 -right-10 absolute h-28 w-28 rounded-full bg-white/45"
-        aria-hidden="true"
-      />
-      <div className="relative flex items-center justify-between gap-2">
+    <article className="py-2">
+      <div className="flex items-center gap-2 text-stone-600">
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="font-bold text-xs sm:text-sm">{label}</p>
-        <span className="rounded-xl bg-white/65 p-2 shadow-sm">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
       </div>
-      <p className="relative mt-4 font-black text-2xl tabular-nums tracking-tight sm:text-3xl">
+      <p className="mt-3 font-black text-2xl tabular-nums tracking-tight sm:text-3xl">
         {value}
       </p>
-      <p className="relative mt-2 text-[11px] opacity-70 sm:text-xs">{note}</p>
+      <p className="mt-2 text-stone-500 text-xs">{note}</p>
     </article>
   );
 }
@@ -1047,7 +1008,7 @@ function SectionHeading({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="rounded-xl bg-teal-50 p-2.5 text-teal-800">
+      <span className="pt-1 text-stone-500">
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
       <div>
@@ -1092,8 +1053,8 @@ function PaymentRow({
 
 function LoadingState() {
   return (
-    <div className="flex min-h-80 flex-col items-center justify-center rounded-3xl border border-stone-200 bg-white text-center shadow-sm">
-      <span className="rounded-2xl bg-teal-50 p-4 text-teal-700">
+    <div className="flex min-h-80 flex-col items-center justify-center text-center">
+      <span className="p-4 text-stone-500">
         <Radio className="h-7 w-7 animate-pulse" aria-hidden="true" />
       </span>
       <p className="mt-4 font-black">注文データを読み込んでいます</p>

@@ -38,7 +38,7 @@ export function SnapshotComparison({
     ]),
   ].sort();
   return (
-    <section className="space-y-3 rounded-3xl border border-stone-200 bg-white p-5 shadow-sm">
+    <section className="space-y-3 border-stone-200 border-t pt-6">
       <h3 className="font-black text-lg">手元の過去JSONと商品別杯数を比較</h3>
       <p className="text-sm text-stone-600">
         旧画面のorders配列を含む注文JSON、または2025年形式を読み込めます。端末内で処理し、サーバーには送りません。選択日と同じ時刻・観測済みの長さを比較します。

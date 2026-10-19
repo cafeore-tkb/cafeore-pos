@@ -47,9 +47,9 @@ export function DurationCharts({
           { label: "9割を渡すまで", value: minutes(stats.p90) },
           { label: "記録した杯数", value: `${stats.count}杯` },
         ].map((item) => (
-          <div key={item.label} className="rounded-xl bg-teal-50 p-3">
-            <p className="text-[11px] text-teal-800">{item.label}</p>
-            <p className="mt-1 font-bold text-lg text-teal-950 tabular-nums">
+          <div key={item.label} className="border-stone-200 border-b py-3">
+            <p className="text-[11px] text-stone-500">{item.label}</p>
+            <p className="mt-1 font-bold text-lg text-stone-900 tabular-nums">
               {item.value}
             </p>
           </div>
@@ -62,10 +62,7 @@ export function DurationCharts({
               stats.cdf.filter((point) => point.minutes <= limit).at(-1)
                 ?.percent ?? 0;
             return (
-              <span
-                key={limit}
-                className="rounded-full border border-teal-200 px-3 py-1.5"
-              >
+              <span key={limit} className="py-1.5">
                 {limit}分以内に <strong>{percent.toFixed(0)}%</strong> お渡し
               </span>
             );
@@ -207,7 +204,7 @@ export function DurationCharts({
       {(chart === "all" || chart === "box") && !hideBoxPlot ? (
         <div
           aria-label={`箱ひげ図：下ひげ${minutes(stats.min)}、第1四分位${minutes(stats.q1)}、中央値${minutes(stats.p50)}、第3四分位${minutes(stats.q3)}、上ひげ${minutes(stats.max)}`}
-          className="rounded-lg border p-4"
+          className="border-stone-200 border-t pt-4"
         >
           <p className="mb-3 text-muted-foreground text-xs">
             箱は「真ん中の半分」、中の線は真ん中の時間。長いほど待ち時間の差が大きいです。
