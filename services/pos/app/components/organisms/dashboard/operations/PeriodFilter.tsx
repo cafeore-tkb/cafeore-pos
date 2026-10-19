@@ -1,6 +1,7 @@
 import { jstDate } from "@cafeore/common";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { dayWindow } from "~/lib/analytics/operations";
+import { TimeWheel } from "../TimeWheel";
 
 type Period = {
   date: string;
@@ -12,7 +13,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
 const SHORTCUT =
-  "min-h-10 whitespace-nowrap rounded-lg border border-stone-300 bg-white px-3 py-2 font-bold text-xs hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-700";
+  "min-h-10 whitespace-nowrap rounded-md border border-stone-300 bg-white px-3 py-2 font-bold text-xs hover:bg-teal-50 focus-visible:outline-2 focus-visible:outline-teal-700";
 
 /** 日付は日本時間で計算し、24:00をその日の終端として扱う。 */
 export function PeriodFilter({
@@ -71,7 +72,7 @@ export function PeriodFilter({
     } else onChange({ ...period, throughDate: date, endTime: time });
   };
   return (
-    <fieldset className="space-y-4 rounded-2xl border border-stone-200 bg-white p-3">
+    <fieldset className="space-y-4 border-stone-200 border-t pt-4">
       <legend className="px-1 font-bold text-sm">集計期間（日本時間）</legend>
       <div className="flex flex-wrap gap-2">
         <button type="button" className={SHORTCUT} onClick={() => shiftDay(-1)}>
@@ -203,7 +204,7 @@ function TimeEndpoint({
   const hour = Number(time.slice(0, 2));
   const minute = Number(time.slice(3));
   return (
-    <div className="min-w-0 rounded-xl bg-stone-50 p-2">
+    <div className="min-w-0">
       <label className="flex flex-wrap items-center gap-2 font-bold text-xs">
         {label}日
         <input
@@ -233,131 +234,6 @@ function TimeEndpoint({
           onChange={(value) => onTime(`${pad(hour)}:${pad(value)}`)}
         />
       </div>
-    </div>
-  );
-}
-
-/** 指で慣性スクロールできる独立した時・分のホイール。キーボードとタップにも対応。 */
-function TimeWheel({
-  label,
-  values,
-  value,
-  onChange,
-}: {
-  label: string;
-  values: number[];
-  value: number;
-  onChange: (value: number) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const programmatic = useRef(false);
-  const initialized = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
-  const current = useRef({ values, onChange });
-  current.current = { values, onChange };
-  const index = Math.max(0, values.indexOf(value));
-  const selectedIndex = useRef(index);
-  selectedIndex.current = index;
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    let visible = false;
-    let reset: ReturnType<typeof setTimeout>;
-    const observer = new ResizeObserver(() => {
-      const nextVisible = element.clientHeight > 0;
-      if (nextVisible && !visible) {
-        programmatic.current = true;
-        element.scrollTo({
-          top: selectedIndex.current * 40,
-          behavior: "instant",
-        });
-        clearTimeout(reset);
-        reset = setTimeout(() => {
-          programmatic.current = false;
-        }, 250);
-      }
-      visible = nextVisible;
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      clearTimeout(reset);
-    };
-  }, []);
-  useEffect(() => {
-    clearTimeout(timer.current);
-    programmatic.current = true;
-    ref.current?.scrollTo({
-      top: Math.min(index, values.length - 1) * 40,
-      behavior:
-        initialized.current &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "smooth"
-          : "instant",
-    });
-    initialized.current = true;
-    const reset = setTimeout(() => {
-      programmatic.current = false;
-    }, 800);
-    return () => clearTimeout(reset);
-  }, [index, values.length]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  return (
-    <div className="relative w-16 overflow-hidden rounded-lg border border-stone-200 bg-white focus-within:ring-2 focus-within:ring-teal-700">
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="sr-only"
-      >
-        {values.map((option) => (
-          <option key={option} value={option}>
-            {pad(option)}
-          </option>
-        ))}
-      </select>
-      <div className="pointer-events-none absolute inset-x-0 top-10 h-10 border-teal-200 border-y bg-teal-50/60" />
-      <div
-        ref={ref}
-        aria-hidden="true"
-        className="relative h-30 snap-y snap-mandatory overflow-y-auto py-10 text-center [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        onPointerDown={() => {
-          programmatic.current = false;
-        }}
-        onWheel={() => {
-          programmatic.current = false;
-        }}
-        onScroll={(event) => {
-          if (programmatic.current) return;
-          const selected = Math.max(
-            0,
-            Math.min(
-              current.current.values.length - 1,
-              Math.round(event.currentTarget.scrollTop / 40),
-            ),
-          );
-          clearTimeout(timer.current);
-          timer.current = setTimeout(
-            () => current.current.onChange(current.current.values[selected]),
-            140,
-          );
-        }}
-      >
-        {values.map((option) => (
-          <button
-            type="button"
-            tabIndex={-1}
-            key={option}
-            className={`flex h-10 w-full snap-center items-center justify-center font-bold text-xl tabular-nums ${option === value ? "text-teal-950" : "text-stone-400"}`}
-            onClick={() => onChange(option)}
-          >
-            {pad(option)}
-          </button>
-        ))}
-      </div>
-      <span className="pointer-events-none absolute right-1 bottom-0 text-[10px] text-stone-400">
-        {label.endsWith("時") ? "時" : "分"}
-      </span>
     </div>
   );
 }
