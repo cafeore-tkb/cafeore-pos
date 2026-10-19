@@ -62,13 +62,37 @@ var schemaDrift = []string{}
 // 起動時に読んだビルドの番号（buildInfoFromEnv）。
 var build BuildInfo
 
+// 1インスタンスが DB に張る接続の上限の既定値。LISTEN の1本（main の ListenChanges）は別に張る。
+const defaultDBMaxOpenConns = 5
+
+// DB_MAX_OPEN_CONNS を読む。未設定なら defaultDBMaxOpenConns。
+//
+// 本番の Cloud SQL は小さいインスタンスほど max_connections が少ない
+// （db-f1-micro で 25）。Cloud Run のインスタンス数の上限 ×（これ + LISTEN の1本）が
+// そこに収まるよう、infra の gcp/cloud_run.tf から渡す。
+func dbMaxOpenConnsFromEnv() (int, error) {
+	v := os.Getenv("DB_MAX_OPEN_CONNS")
+	if v == "" {
+		return defaultDBMaxOpenConns, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("DB_MAX_OPEN_CONNS must be a positive integer: %q", v)
+	}
+	return n, nil
+}
+
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
 
-	var err error
+	maxOpenConns, err := dbMaxOpenConnsFromEnv()
+	if err != nil {
+		return err
+	}
+
 	db, err = gorm.Open(
 		postgres.New(postgres.Config{
 			DSN:                  dsn,
@@ -89,8 +113,8 @@ func initDB() error {
 
 	// Cloud Run はリクエストが増えるとインスタンスを増やす。1インスタンスが
 	// 際限なく接続を張ると、マネージド Postgres 側の上限にすぐ届く。
-	sqlDB.SetMaxOpenConns(5)
-	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(min(2, maxOpenConns))
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 	sqlDB.SetConnMaxIdleTime(5 * time.Minute)
 
