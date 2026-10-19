@@ -397,29 +397,29 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
         <ScrollArea
           axis="y"
           className="flex-1"
-          scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
+          scrollerClassName="divide-y divide-slate-200 overscroll-contain px-1 pt-1 pb-8"
         >
           {rows.map(({ orderNo, emergency, cards }) => (
             <div
               key={`${emergency}:${orderNo}`}
-              className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
+              className="flex min-h-[62px] items-stretch gap-1 py-1.5"
             >
-              <span className="flex w-16 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
-                <span className="flex items-center gap-1">
-                  {orderNoLabel(orderNo)}
+              <span className="flex w-12 shrink-0 flex-col items-center justify-center font-black font-mono text-[20px] text-slate-800 leading-none tracking-tight">
+                {orderNoLabel(orderNo)}
+                <span className="mt-1 flex min-h-4 items-center gap-0.5">
                   <OrderCommentBadge
                     cards={cards}
                     looks={looks}
                     orderNo={orderNo}
                   />
+                  {emergency && (
+                    <span className="font-sans text-[10px] text-red-600 tracking-normal">
+                      緊急
+                    </span>
+                  )}
                 </span>
-                {emergency && (
-                  <span className="mt-1 font-sans text-[11px] text-red-600">
-                    緊急
-                  </span>
-                )}
               </span>
-              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+              <div className="grid min-w-0 flex-1 grid-cols-3 gap-1">
                 {cards.map((card) => (
                   <UnassignedCard
                     key={card.key}
@@ -431,7 +431,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
                     parallelOrderNumbers
                     selected={sharesOrder(card, selectedOrderId)}
                     nowMs={nowMs}
-                    className="min-h-[60px] w-[150px]"
+                    className="min-h-[60px] min-w-0"
                   />
                 ))}
               </div>
