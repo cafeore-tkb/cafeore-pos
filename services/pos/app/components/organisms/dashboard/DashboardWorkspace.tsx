@@ -793,7 +793,7 @@ function AnalysisSection({
         </div>
       </section>
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+      <div className="min-w-0 space-y-6">
         <section className="min-w-0 border-stone-200 border-t pt-6">
           <SectionHeading
             icon={BarChart3}
@@ -808,7 +808,7 @@ function AnalysisSection({
           <SectionHeading
             icon={Coffee}
             title="商品ごとの提供時間"
-            description="注文→準備完了、準備完了→お渡し、注文→お渡しの中央値を比較します。"
+            description="抽出開始で分けた平均時間の内訳と各区間、準備完了で分けた中央値を比較します。"
           />
           <div className="mt-5">
             <ProductTimeChart products={report.products} />
