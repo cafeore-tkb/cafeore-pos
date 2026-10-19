@@ -219,10 +219,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           relayedCount={labelPrinter.relayedCount}
         />
       </FloatingStatusNotices>
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex h-full min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
-        <div className="flex w-[180px] shrink-0 flex-col items-center justify-center">
-          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none">
+        <div className="flex h-full w-[240px] shrink-0 items-center justify-center">
+          <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-white tabular-nums leading-none">
             {timeStr}
           </time>
         </div>

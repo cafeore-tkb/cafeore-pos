@@ -62,7 +62,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 最上段のヘッダーからA/C/Dを切り替えます。
 - ヘッダー全体は濃いネイビーの背景です。A/C/Dの選択中は水色で示し、時計・通知・操作ボタンのコントラストを確保します。
 - 補助情報は右側パネルに表示し、管制盤全体を隠しません。
-- 小画面の「終了」「閲覧を終了」は表示せず、右上の×で閉じます。時計は秒まで32pxの白い等幅数字で、180×44pxの領域の上下左右中央に表示します。時計専用の背景・枠線・影は付けず、時計の下に直前の操作は表示しません。
+- 小画面の「終了」「閲覧を終了」は表示せず、右上の×で閉じます。時計は秒まで48pxの白い等幅数字で、幅240px・ヘッダーの高さ全体を使う領域の上下左右中央に表示します。時計専用の背景・枠線・影は付けず、時計の下に直前の操作は表示しません。
 - iPad で画面全体が動かないよう、CaOS の 3 つの画面（`/master-sheet`・`/master-sheet/view`・`/master-sheet/libero`）を開いているあいだは、ページのスクロール・はね返り・ピンチとダブルタップの拡大を止めます（`caos.css` の `html:has(.caos-root)` で `overflow: hidden`・`overscroll-behavior: none`・`touch-action: pan-x pan-y`、盤面は `h-dvh` で見えている高さに収める。`hooks/useFixedViewport.ts` で viewport に `maximum-scale=1, user-scalable=no` を足し（入力欄を押したときの自動の拡大も止まる）、Safari の `gesturestart`・`gesturechange` を止める）。枠の中のスクロールとスクロールバー・カードのドラッグ・入力欄は今まで通りです。
 
 ### 管制盤A・C・Dの比較
