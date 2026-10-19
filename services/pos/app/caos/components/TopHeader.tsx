@@ -280,7 +280,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             className={`inline-flex max-w-full items-center gap-2 whitespace-nowrap rounded-lg border-2 px-4 py-1 text-[18px] shadow-md ${
               shiftReminderUrgent
                 ? "border-red-600 bg-red-100 text-red-800"
-                : "border-amber-900 bg-yellow-300 text-slate-950 ring-2 ring-white/90 motion-safe:animate-pulse"
+                : "border-amber-900 bg-yellow-300 text-slate-950 ring-2 ring-white/90"
             }`}
           >
             <BellRing className="h-5 w-5 shrink-0" />
