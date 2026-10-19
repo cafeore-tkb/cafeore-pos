@@ -1,6 +1,6 @@
 import { type OrderEntity, cupNeedsBrew, jstDate } from "@cafeore/common";
 
-export type BucketMinutes = 5 | 15 | 60;
+export type BucketMinutes = 5 | 15 | 30 | 60;
 export const QUARTER_MS = 15 * 60_000;
 export interface AnalysisCup {
   id: string;

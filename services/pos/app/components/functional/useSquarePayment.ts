@@ -36,7 +36,7 @@ export type SquarePaymentState = {
   idempotencyKey: string;
   /** 決済を始めた時点の注文。支払い中に画面の注文が変わっても、これを送る */
   order: OrderEntity;
-  /** 端末で受け取る額。ふつうは注文の請求額、個別小計・小計分割ではその小計（の一部）の額 */
+  /** 端末で受け取る額。ふつうは注文の請求額、小計分割ではその小計の一部の額 */
   amount: number;
   checkout: SquareCheckout | null;
   /** 進行中だった別の決済（phase が conflict のとき） */

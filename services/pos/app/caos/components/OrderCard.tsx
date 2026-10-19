@@ -10,7 +10,6 @@ import {
   cardItemName,
   cardNominee,
   cardOrderNos,
-  cardOrderParts,
   cardServedLabel,
   emergencyReasons,
   orderLabel,
@@ -21,14 +20,13 @@ import { unsupportedDrip } from "../logic/dripSupport";
 import { type DropSide, moveTargets } from "../logic/lanes";
 import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
-// カード（1 回のドリップ）。管制盤 A・C・D の未割当とドリッパーのカード、割当・詳細のパネルで共通。
+// カード（1 回のドリップ）。管制盤 A・C の未割当とドリッパーのカード、割当・詳細のパネルで共通。
 // いちばん大きく「何番が何杯か」（注文番号を左上、杯数はいつもカードの右上）、商品の略称を次の行に小さく出す
 // （どの注文から割り当てるか・何番を入れているかを番号で合わせる。1 杯のカードは統合の判断に商品が要るので、2 行目でも読める大きさにする）。
-// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）・注文ごとの段（byOrder）だけ。
+// 置き場所ごとの違いは、文字の大きさ（size）と、選択中（selected）・添え書き（note）・統合する相手（mergeInto）だけ。
 // 終わったカード（盤面では管制盤 A のタイムラインの NOW より左に出る）は、点線の枠・地の色なし・薄い文字にし、抽出中・待機と見分ける。
 // 提供の画面で提供済みにしたカップのある待機・抽出中のカードは「提供済」の札（終えるのは「次へ」だけなので、盤面に残る）。
 // 統合したカード（2 つ以上の注文が入った）は、後ろにもう 1 枚ずらして重ねた枠で見せる（管制盤 A・C）。
-// 管制盤 D（byOrder）は重ねず、入っている注文ごとの段（注文番号・コメントの印・緊急の理由・杯数）に分ける（表では元の注文の行にまたがって縦に長い）。
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
@@ -36,7 +34,7 @@ import { CommentMark, FreshCommentsContext } from "./OrderComments";
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
-// no は 1 行目の注文番号（D の統合したカードは 1 行目の商品と、段の注文番号）、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生など）。
+// no は 1 行目の注文番号、item は 2 行目の商品の略称、meta は 2 行目の札（指名・上級生など）。
 // emergencyBelow は緊急の札を 2 行目の先頭に出す（幅の狭いカード。1 行目の番号・杯数を押し出さない）
 const SM = {
   pad: "px-1 py-1",
@@ -48,7 +46,7 @@ const SM = {
   emergencyBelow: true,
 };
 const SIZES = {
-  // 管制盤 C・D と割当のパネル
+  // 管制盤 C と割当のパネル
   sm: SM,
   // 管制盤 C のドリッパーの列（カードの高さのまま番号を大きく）
   lane: {
@@ -146,8 +144,6 @@ export const OrderCard: React.FC<
     note?: string;
     /** 開いたカードをもう一度押すと統合する相手。統合の印とその注文番号（「#012」）を出す */
     mergeInto?: CaosCard;
-    /** 統合したカードを、重ねた枠でなく注文ごとの段に分けて出す（管制盤 D） */
-    byOrder?: boolean;
     /** 管制盤 C では、統合した注文番号を + でつながず、別々の札で横に並べる */
     parallelOrderNumbers?: boolean;
     /** 開いた（選んだ）カードを押して統合できる相手。「統合する」を重ね、data-merge-tap を付ける（押しても開いたカードを閉じない） */
@@ -164,7 +160,6 @@ export const OrderCard: React.FC<
   dragging = false,
   note,
   mergeInto,
-  byOrder = false,
   parallelOrderNumbers = false,
   mergeTap = false,
   dropSide,
@@ -188,13 +183,9 @@ export const OrderCard: React.FC<
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const merged = cardOrderNos(card).length > 1;
-  // 注文ごとの段（byOrder の統合したカード）。1 行目に商品、注文番号と緊急の理由は段に出す
-  const parts = byOrder && merged ? cardOrderParts(card, look) : null;
-  // Dの狭い列は統合2注文・4桁番号・新着コメントも収める。単独の3桁番号を優先して拡大。
-  const compactNumber =
-    size === "sm" && (Boolean(parts) || orderLabel(card).length > 4);
+  const compactNumber = size === "sm" && orderLabel(card).length > 4;
   const numberSize = compactNumber ? "text-[14px]" : text.no;
-  const reasons = parts ? "" : emergencyReasons(card);
+  const reasons = emergencyReasons(card);
   const served = cardServedLabel(card);
   // 注文番号の札と、商品の略称
   const noTag = (label: string, fontSize: string) => (
@@ -245,37 +236,36 @@ export const OrderCard: React.FC<
   // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの緊急の理由と指名・上級生の札を先に縮め、商品は入らなければ省略する。
   // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
   // 番号は縮めない。統合した長い番号は杯数の札と同じ大きさで字の間を詰め、C では別々の札で横に並べる。
-  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。注文ごとの段（D の統合したカード）は 1 行目が商品で、番号は段に出す
-  const [headline, subline] = parts
-    ? [itemName(text.no), null]
-    : [
-        merged && parallelOrderNumbers
-          ? parallelOrderNos(`tracking-tighter ${text.cups}`)
-          : orderNo(
-              merged
-                ? `min-w-0 truncate tracking-tighter ${text.cups}`
-                : `shrink-0 ${numberSize}`,
-            ),
-        itemName(`max-w-full shrink-0 ${text.item}`),
-      ];
+  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。
+  const [headline, subline] = [
+    merged && parallelOrderNumbers
+      ? parallelOrderNos(`tracking-tighter ${text.cups}`)
+      : orderNo(
+          merged
+            ? `min-w-0 truncate tracking-tighter ${text.cups}`
+            : `shrink-0 ${numberSize}`,
+        ),
+    itemName(`max-w-full shrink-0 ${text.item}`),
+  ];
+
   return (
     <div
       {...props}
       data-ticket-label={orderLabel(card)}
       data-merge-tap={mergeTap || undefined}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged && !parts, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
     >
       {children}
       {mergeTap && <MergeOverlay />}
       <DropMark side={dropSide} />
-      {/* 何番が何杯か（注文ごとの段では何が何杯か） */}
+      {/* 何番が何杯か */}
       <div
         className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
-        {!parts && badgeComments.length > 0 && (
+        {badgeComments.length > 0 && (
           <CommentMark
             count={badgeComments.length}
             label={orderLabel(card)}
@@ -297,48 +287,6 @@ export const OrderCard: React.FC<
           </span>
         </span>
       </div>
-      {/* 注文ごとの段（上から注文番号の小さい順）。段は上と下の端に寄せ（表では元の注文の行の高さに来る）、間の真ん中に点線 */}
-      {parts && (
-        <div className={`flex min-h-0 flex-1 flex-col ${fade}`}>
-          {parts.map((part, index) => (
-            <Fragment key={part.orderNo}>
-              {index > 0 && (
-                <div className="flex min-h-1.5 flex-1 items-center">
-                  <div className="border-(color:--caos-card-order-line) w-full border-t-2 border-dashed" />
-                </div>
-              )}
-              {/* D の表の狭い枠でも杯数をカードの外へ出さないよう、コメントの印は番号の札の右に並べ、番号は字の間を、段は札の間を詰める */}
-              <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-0.5 gap-y-1 leading-none">
-                <span className="flex min-w-0 shrink-0 items-center gap-1">
-                  {noTag(
-                    `#${orderNoLabel(part.orderNo)}`,
-                    `tracking-tighter ${numberSize}`,
-                  )}
-                  {badgeComments.some(
-                    (comment) => comment.orderNo === part.orderNo,
-                  ) && (
-                    <CommentMark
-                      count={
-                        badgeComments.filter(
-                          (comment) => comment.orderNo === part.orderNo,
-                        ).length
-                      }
-                      label={`#${orderNoLabel(part.orderNo)}`}
-                      className="h-4 w-4 shrink-0"
-                    />
-                  )}
-                </span>
-                {part.reason && reasonTag(part.reason, text.meta)}
-                <span
-                  className={`ml-auto shrink-0 whitespace-nowrap font-black font-mono ${text.cupCount}`}
-                >
-                  {part.cups}杯
-                </span>
-              </div>
-            </Fragment>
-          ))}
-        </div>
-      )}
       {/* 商品・指名・上級生のみ（縮めるのは緊急の理由のあと）・緊急の理由 */}
       <div
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
@@ -358,7 +306,7 @@ export const OrderCard: React.FC<
               {served}
             </span>
           )}
-          {/* 狭いカード（D の表の枠など）では、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
+          {/* 狭いカードでは、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
           {nominee && (
             <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
               指名 {nominee}
@@ -496,7 +444,7 @@ const MergeIcon: React.FC<{ className: string }> = ({ className }) => (
   </svg>
 );
 
-// 統合できる相手のカードに重ねる「統合する」（OrderCard の mergeTap。管制盤 A・C・D）。
+// 統合できる相手のカードに重ねる「統合する」（OrderCard の mergeTap。管制盤 A・C）。
 // 「統合する」は、隣の開いたカードの 1〜6 のボタン（z-40 のカードの中）より上に出し、押せるようにする（押すとカードの onClick）
 const MergeOverlay: React.FC = () => (
   <>

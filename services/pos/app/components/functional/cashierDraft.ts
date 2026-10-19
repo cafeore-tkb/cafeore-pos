@@ -469,7 +469,7 @@ export const setExactReceived = (
 // --------------------------------------------------
 
 /**
- * 会計の段階に進めるか（一括会計・残りを会計）。まだ払っていない商品があるとき。
+ * 会計の段階に進めるか（一括会計）。まだ払っていない商品があるとき。
  * 進むときは、まだ払っていない商品を全部 1 つの小計にする（cashierSplit の beginRest）
  */
 export const canGoPay = (draft: CashierDraft): boolean =>
@@ -505,7 +505,7 @@ export type CashierKeyIntent =
   | { type: "openAssign" }
   | { type: "openMemo" }
   /**
-   * 一括会計・残りを会計（会計の段階に進む。シールは会計を終えたときに刷る）。
+   * 一括会計（会計の段階に進む。シールは会計を終えたときに刷る）。
    * payment があれば、進んだらその決済手段を選ぶ（決済手段のキー。Square の決済手段なら決済を始める）
    */
   | { type: "goPay"; payment?: CashierPayment }

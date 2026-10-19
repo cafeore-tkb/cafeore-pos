@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Outlet, useMatches } from "react-router";
 import {
   type HeaderOutletContext,
@@ -11,16 +11,15 @@ import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function BaseHeader() {
-  const statusRef = useRef<HTMLElement>(null);
-  const [statusHeight, setStatusHeight] = useState(0);
-  useLayoutEffect(() => {
-    const element = statusRef.current;
-    if (!element) return;
-    const update = () =>
-      setStatusHeight(element.getBoundingClientRect().height);
+  const statusBarRef = useRef<HTMLElement>(null);
+  const [statusBarHeight, setStatusBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = statusBarRef.current;
+    if (!bar) return;
+    const update = () => setStatusBarHeight(bar.getBoundingClientRect().height);
     update();
     const observer = new ResizeObserver(update);
-    observer.observe(element);
+    observer.observe(bar);
     return () => observer.disconnect();
   }, []);
   const {
@@ -49,12 +48,10 @@ export default function BaseHeader() {
 
   return (
     <div
-      style={
-        { "--pos-status-height": `${statusHeight}px` } as React.CSSProperties
-      }
+      style={{ "--pos-status-height": `${statusBarHeight}px` } as CSSProperties}
     >
       <header
-        ref={statusRef}
+        ref={statusBarRef}
         data-pos-status-bar
         className={cn(
           "sticky top-0 z-30 h-2",

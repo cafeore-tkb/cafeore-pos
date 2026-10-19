@@ -98,7 +98,7 @@ export default function App() {
     session.emergency.orders !== null,
     `${session.simulating ? "practice" : "live"}:${jstDate(session.nowMs)}`,
   );
-  // 閲覧中のコメント（Aはポップアップ、C・Dは右側のチャット）：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
+  // 閲覧中のコメント（Aはポップアップ、Cは右側のチャット）：見ている注文（選んだ注文・印を押した注文）のコメントと、新しいコメントの知らせ（押すとその注文を探す）。
   // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
   const viewed = useViewedComments({
     selectedOrderId: selection.selectedOrderId,

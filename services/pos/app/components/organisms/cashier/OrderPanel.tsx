@@ -27,16 +27,6 @@ type props = {
   /** 入力中の注文の割引額と、割引の対象の杯数 */
   discount: number;
   coffeeCups: number;
-  /** ドリッパーを 3 人以上確保する注文。分けるよう知らせる */
-  needsSplit: boolean;
-  /** 払い終えた小計の行（「会計済」） */
-  paidKeys: ReadonlySet<number>;
-  /** 会計中の個別小計の行（「個別小計」）。個別小計の会計中でなければ空 */
-  currentItemKeys: ReadonlySet<number>;
-  /** 先会計（受け取った額の合計）。先払いが無ければ 0 */
-  prepaid: number;
-  /** 個別小計を選べるか（入れる段階で、まだ払っていない商品が 2 点以上） */
-  canOpenItems: boolean;
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
   canCancelPayment: boolean;
   onSelect: (index: number) => void;
@@ -46,10 +36,8 @@ type props = {
   onFocusCoupon: () => void;
   onToggleSpecial: () => void;
   onOpenMemo: () => void;
-  onOpenItems: () => void;
   onGoPay: () => void;
   onCancelPayment: () => void;
-  onRefundAll: () => void;
 };
 
 /** 指名の表示（「1st・たなか」） */
@@ -62,7 +50,7 @@ const assignText = (line: CashierLine) =>
     .join("・");
 
 /**
- * レジの真ん中の列（会計の段階では薄くしたメニューの右へ左に寄せる）。商品（削除・指名）、割引、備考、個別小計・一括会計
+ * レジの真ん中の列（会計の段階では薄くしたメニューの右へ左に寄せる）。商品（削除・指名）、割引、備考、一括会計
  *
  * 会計中は薄くして押せなくする（会計取消だけは押せる）。先払いがある間は商品を変えられない。
  */
@@ -88,16 +76,7 @@ export const OrderPanel = (props: props) => {
         <DiscountSection {...props} />
         <MemoSection {...props} />
       </div>
-      <div className="grid flex-none grid-cols-[98px_minmax(0,1fr)] gap-2 border-stone-200 border-t px-3 pt-2.5 pb-3">
-        <button
-          type="button"
-          onClick={props.onOpenItems}
-          disabled={!props.canOpenItems}
-          title="商品を選び、その分を小計として先に会計します"
-          className="h-20 rounded-[10px] border border-[#e2e0dd] bg-stone-100 font-extrabold text-sm text-stone-700 hover:bg-[#eeedeb] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-stone-100"
-        >
-          個別小計
-        </button>
+      <div className="grid flex-none border-stone-200 border-t px-3 pt-2.5 pb-3">
         {paying ? (
           <button
             type="button"
@@ -120,7 +99,7 @@ export const OrderPanel = (props: props) => {
             disabled={!canGoPay(draft)}
             className="flex h-20 items-center justify-center gap-2.5 rounded-[10px] bg-stone-900 font-black text-[21px] text-white disabled:cursor-not-allowed disabled:bg-stone-300"
           >
-            {props.prepaid > 0 ? "残りを会計" : "一括会計"}
+            一括会計
             <KeyHint inverted className="px-1.5 py-0.5 text-[11px]">
               Enter
             </KeyHint>
@@ -133,15 +112,10 @@ export const OrderPanel = (props: props) => {
 
 const LinesSection = ({
   draft,
-  needsSplit,
-  paidKeys,
-  currentItemKeys,
-  prepaid,
   onSelect,
   onRemove,
   onOpenAssign,
   onRemoveAll,
-  onRefundAll,
 }: props) => {
   const { colorSettings } = useColorSettings();
   const listRef = useRef<HTMLDivElement>(null);
@@ -161,11 +135,6 @@ const LinesSection = ({
     <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pt-3 pb-2.5">
       <div className="flex flex-none items-center gap-2.5 pl-0.5">
         <span className="font-bold text-[15px]">商品</span>
-        {needsSplit && (
-          <span className="rounded bg-red-50 px-1.5 py-0.5 font-bold text-red-700 text-xs">
-            分割を推奨
-          </span>
-        )}
         {lines.length > 0 && (
           <span className="ml-auto text-sm text-stone-600">
             {lines.length}点
@@ -179,8 +148,6 @@ const LinesSection = ({
         {lines.map((line, index) => {
           const isSelected = selected === index;
           const assign = assignText(line);
-          const paid = paidKeys.has(line.key);
-          const inCurrent = currentItemKeys.has(line.key);
           return (
             <div
               key={line.key}
@@ -189,9 +156,7 @@ const LinesSection = ({
                 "flex flex-none rounded-lg",
                 isSelected
                   ? "bg-orange-50 shadow-[inset_0_0_0_3px_var(--color-orange-600)]"
-                  : inCurrent
-                    ? "bg-white shadow-[inset_0_0_0_1px_var(--color-prepay-line)]"
-                    : "bg-white shadow-[inset_0_0_0_1px_var(--color-stone-200)]",
+                  : "bg-white shadow-[inset_0_0_0_1px_var(--color-stone-200)]",
               )}
             >
               <button
@@ -213,12 +178,7 @@ const LinesSection = ({
                   }}
                 />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span
-                    className={cn(
-                      "font-bold text-[15px] leading-[1.3]",
-                      paid && "text-stone-400",
-                    )}
-                  >
+                  <span className="font-bold text-[15px] leading-[1.3]">
                     {line.menu.name}
                   </span>
                   {assign && (
@@ -227,22 +187,7 @@ const LinesSection = ({
                     </span>
                   )}
                 </span>
-                {paid && (
-                  <span className="flex-none rounded-[5px] bg-prepay-soft px-1.75 py-0.5 font-extrabold text-[11px] text-prepay">
-                    会計済
-                  </span>
-                )}
-                {inCurrent && (
-                  <span className="flex-none rounded-[5px] bg-prepay px-1.75 py-0.5 font-extrabold text-[11px] text-white">
-                    個別小計
-                  </span>
-                )}
-                <span
-                  className={cn(
-                    "font-medium text-[15px] tabular-nums",
-                    paid && "text-stone-400",
-                  )}
-                >
+                <span className="font-medium text-[15px] tabular-nums">
                   {formatYen(line.menu.price)}
                 </span>
               </button>
@@ -255,20 +200,6 @@ const LinesSection = ({
           </div>
         )}
       </div>
-      {prepaid > 0 && draft.step === "entry" && (
-        <div className="flex flex-none items-center gap-2.5 rounded-lg bg-prepay-soft py-2.25 pr-2 pl-3">
-          <span className="flex-1 font-medium text-prepay-ink text-xs leading-normal">
-            先会計 {formatYen(prepaid)} を受け取り済み。商品は変えられません
-          </span>
-          <button
-            type="button"
-            onClick={onRefundAll}
-            className="h-7.5 whitespace-nowrap rounded-md border border-prepay-line bg-white px-2.5 font-extrabold text-prepay text-xs"
-          >
-            先払いを取り消す
-          </button>
-        </div>
-      )}
       <div className="flex flex-none gap-2">
         <button
           type="button"

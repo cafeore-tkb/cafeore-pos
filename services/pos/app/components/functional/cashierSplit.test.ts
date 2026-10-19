@@ -12,28 +12,22 @@ import {
   toggleSpecial,
 } from "./cashierDraft";
 import {
-  allocateDiscount,
   beginRest,
-  beginSubtotal,
   canLeavePayment,
+  canSplitPart,
   cancelPart,
   checkPart,
   currentSubtotal,
   displayOrder,
   dueAmount,
-  isSplittingSubtotal,
   leavePayment,
-  paidLineKeys,
-  preferDiscount,
   prepaidAmount,
   recordTender,
   removeTenders,
   setPart,
-  splitChoices,
   splitOrderForSubmit,
   splitPaymentsForOrder,
   subtotalOrder,
-  subtotalPreview,
   unpaidLines,
 } from "./cashierSplit";
 
@@ -92,42 +86,27 @@ describe("[unit] cashierSplit の小計", () => {
     );
     const subtotal = currentSubtotal(draft);
     expect(draft.step).toBe("pay");
-    expect(subtotal).toMatchObject({ kind: "rest", total: 1100, amount: 1100 });
+    expect(subtotal).toMatchObject({ total: 1100, amount: 1100 });
     expect(subtotal?.lineKeys).toEqual(keysOf(draft).slice(0, 2));
     expect(dueAmount(draft)).toBe(1100);
     // 商品が無ければ進まない
     expect(beginRest(emptyCashierDraft(), 0, 100).step).toBe("entry");
   });
 
-  test("個別小計は選んだ商品の小計にし、割り振った割引を引く", () => {
-    const start = withLines(blend, latte, cookie);
-    const [b, l, c] = keysOf(start);
-    const draft = beginSubtotal(start, "items", [c, l], 1, 100);
-    // 1 杯分の割引は並び順の blend に付く。latte・cookie の小計には付かない
-    expect(currentSubtotal(draft)).toMatchObject({
-      kind: "items",
-      lineKeys: [l, c],
-      total: 800,
-      discountCups: 0,
-      amount: 800,
-    });
-    const preferred = beginSubtotal(
-      preferDiscount(start, l),
-      "items",
-      [l],
-      1,
-      100,
-    );
-    expect(currentSubtotal(preferred)).toMatchObject({
+  test("割引は注文全体で割り引く杯数を、小計のコーヒーの杯数まで引く", () => {
+    const start = withLines(cookie, pair, blend);
+    expect(currentSubtotal(beginRest(start, 1, 100))).toMatchObject({
+      total: 1600,
       discountCups: 1,
       discount: 100,
-      amount: 500,
+      amount: 1500,
     });
-    // 選んでいない行は入らない
-    expect(beginSubtotal(start, "items", [], 1, 100)).toBe(start);
-    expect(
-      currentSubtotal(beginSubtotal(start, "items", [b, 99], 0, 100))?.lineKeys,
-    ).toEqual([b]);
+    // グッズ（cookie）には引かない
+    expect(currentSubtotal(beginRest(start, 5, 100))).toMatchObject({
+      discountCups: 3,
+      discount: 300,
+      amount: 1300,
+    });
   });
 
   test("会計の段階は、受け取る前ならやめられる（小計を外す）。途中まで払ったらやめられない", () => {
@@ -164,10 +143,8 @@ describe("[unit] cashierSplit の小計分割", () => {
     expect(dueAmount(cancelPart(part))).toBe(1100);
   });
 
-  test("受け取ったら分割をやめ、小計の残りを払う。払い終えたら商品は会計済になる", () => {
-    const start = withLines(blend, latte, cookie);
-    const [b, l, c] = keysOf(start);
-    const paying = beginSubtotal(start, "items", [b, l], 0, 100);
+  test("受け取ったら分割をやめ、小計の残りを払う。払い終えたら払っていない商品は無い", () => {
+    const paying = beginRest(withLines(blend, latte), 0, 100);
     const first = recordTender(setPart(paying, 300), cash(300, 500));
     expect(first.step).toBe("pay");
     expect(first.split.part).toBeNull();
@@ -179,237 +156,96 @@ describe("[unit] cashierSplit の小計分割", () => {
     const done = recordTender(first, cash(800, 1000));
     expect(done.step).toBe("entry");
     expect(done.split.current).toBeNull();
-    expect([...paidLineKeys(done)]).toEqual([b, l]);
-    expect(unpaidLines(done).map((line) => line.key)).toEqual([c]);
-    expect(canGoPay(done)).toBe(true);
-    // 残りを会計は、まだ払っていない商品だけ
-    expect(currentSubtotal(beginRest(done, 0, 100))?.lineKeys).toEqual([c]);
+    expect(unpaidLines(done)).toEqual([]);
+    expect(canGoPay(done)).toBe(false);
     expect(inputDigits(done, "1")).toBe(done);
     expect(toggleSpecial(done, false)).toBe(done);
   });
-});
 
-describe("[unit] cashierSplit の割り勘の分け方", () => {
-  test("会計の段階で、個別小計は商品が 2 点以上、小計分割は残りが 2 円以上なら選べる", () => {
-    expect(splitChoices(withLines(blend, latte), false)).toEqual({
-      items: "会計中ではありません",
-      part: "会計中ではありません",
-    });
-    expect(
-      splitChoices(beginRest(withLines(blend, latte), 0, 100), false),
-    ).toEqual({
-      items: null,
-      part: null,
-    });
-    expect(splitChoices(beginRest(withLines(blend), 0, 100), false)).toEqual({
-      items: "まだ払っていない商品が 1 点だけです",
-      part: null,
-    });
-    // Square で決済中は、どちらも選べない（会計取消も小計分割もできない）
-    expect(
-      splitChoices(beginRest(withLines(blend, latte), 0, 100), true),
-    ).toEqual({ items: "端末で決済中です", part: "端末で決済中です" });
-  });
-
-  test("小計を途中まで払ったら個別小計は選べない。残りが 1 円なら分けられない", () => {
+  test("会計の段階で、残りが 2 円以上なら分けられる。Square で決済中は分けられない", () => {
+    expect(canSplitPart(withLines(blend, latte), false)).toBe(false);
     const paying = beginRest(withLines(blend, latte), 0, 100);
-    const partlyPaid = recordTender(setPart(paying, 300), cash(300));
-    expect(splitChoices(partlyPaid, false)).toEqual({
-      items: "この小計を途中まで払ったので、払い終えてから選べます",
-      part: null,
-    });
-    const almost = recordTender(setPart(paying, 1099), cash(1099));
-    expect(splitChoices(almost, false).part).toBe(
-      "残りが 1 円なので分けられません",
-    );
-  });
-
-  test("小計分割の途中は、先に払う額を入れたあとも途中まで払ったあとも分割中とみなす", () => {
-    const paying = beginRest(withLines(blend, latte), 0, 100);
-    expect(isSplittingSubtotal(paying)).toBe(false);
-    const parted = setPart(paying, 300);
-    expect(isSplittingSubtotal(parted)).toBe(true);
-    expect(isSplittingSubtotal(cancelPart(parted))).toBe(false);
-    // 受け取ったあと「残りを全て会計」に進んだ（先に払う額は消える）
-    const partlyPaid = recordTender(parted, cash(300));
-    expect(partlyPaid.split.part).toBeNull();
-    expect(isSplittingSubtotal(partlyPaid)).toBe(true);
-    // 小計を払い終えたら分割中ではない
-    expect(isSplittingSubtotal(recordTender(partlyPaid, cash(800)))).toBe(
-      false,
-    );
-  });
-
-  test("個別小計を払い終えたあとの残りの会計は分割中ではない", () => {
-    const start = withLines(blend, latte, cookie);
-    const [b] = keysOf(start);
-    const done = recordTender(
-      beginSubtotal(start, "items", [b], 0, 100),
-      cash(500),
-    );
-    expect(isSplittingSubtotal(beginRest(done, 0, 100))).toBe(false);
-  });
-
-  test("個別小計を払い終えたあとの残りの会計でも選べる", () => {
-    const start = withLines(blend, latte, cookie);
-    const [b] = keysOf(start);
-    const done = recordTender(
-      beginSubtotal(start, "items", [b], 0, 100),
-      cash(500),
-    );
-    expect(splitChoices(beginRest(done, 0, 100), false)).toEqual({
-      items: null,
-      part: null,
-    });
-  });
-});
-
-describe("[unit] cashierSplit の割引", () => {
-  test("既定では並び順のコーヒーに 1 杯ずつ割り振り、グッズには振らない", () => {
-    const draft = withLines(cookie, pair, blend);
-    const [, p, b] = keysOf(draft);
-    expect([...allocateDiscount(draft, 1)]).toEqual([[p, 1]]);
-    expect([...allocateDiscount(draft, 3)]).toEqual([
-      [p, 2],
-      [b, 1],
-    ]);
-    expect([...allocateDiscount(draft, 5)]).toEqual([
-      [p, 2],
-      [b, 1],
-    ]);
-  });
-
-  test("小計に割り振った杯数を除いて、残りの行に割り振る。付け替えは小計に入れていない行だけに効く", () => {
-    const start = withLines(blend, latte, pair);
-    const [b, l, p] = keysOf(start);
-    const paid = recordTender(
-      beginSubtotal(start, "items", [b], 2, 100),
-      cash(400),
-    );
-    expect([...allocateDiscount(paid, 2)]).toEqual([[l, 1]]);
-    expect([...allocateDiscount(preferDiscount(paid, p), 2)]).toEqual([[p, 1]]);
+    expect(canSplitPart(paying, false)).toBe(true);
+    expect(canSplitPart(paying, true)).toBe(false);
+    // 途中まで払っても、続けて分けられる
     expect(
-      subtotalPreview(preferDiscount(paid, p), [l, p], 2, 100),
-    ).toMatchObject({
-      total: 1500,
-      discount: 100,
-      amount: 1400,
-    });
+      canSplitPart(recordTender(setPart(paying, 300), cash(300)), false),
+    ).toBe(true);
+    expect(
+      canSplitPart(recordTender(setPart(paying, 1099), cash(1099)), false),
+    ).toBe(false);
   });
 });
 
 describe("[unit] cashierSplit の返金", () => {
-  const twoSubtotals = () => {
-    const start = withLines(blend, latte, cookie);
-    const [b] = keysOf(start);
-    const first = recordTender(
-      beginSubtotal(start, "items", [b], 0, 100),
-      cash(500),
-    );
-    const paying = beginRest(first, 0, 100);
-    return recordTender(setPart(paying, 300), {
+  test("先払いを全部返金すると、入れる段階に戻り、商品を変えられる", () => {
+    const paying = beginRest(withLines(blend, latte), 0, 100);
+    const first = recordTender(setPart(paying, 300), cash(300));
+    const draft = recordTender(setPart(first, 300), {
       method: "square" as const,
       amount: 300,
       received: 300,
       squareCheckoutId: "c-1",
       squarePaymentType: "CARD_PRESENT" as const,
     });
-  };
-
-  test("小計の分を返金すると、その商品はまた払っていないことになる", () => {
-    const draft = twoSubtotals();
-    const [first, second] = draft.split.subtotals;
+    expect(prepaidAmount(draft.split)).toBe(600);
     const refunded = removeTenders(
-      draft,
-      draft.split.tenders
-        .filter((t) => t.subtotalId === first.id)
-        .map((t) => t.id),
-      [first.id],
-    );
-    expect(refunded.step).toBe("pay");
-    expect(refunded.split.current).toBe(second.id);
-    expect(unpaidLines(refunded)).toHaveLength(3);
-    expect(prepaidAmount(refunded.split)).toBe(300);
-  });
-
-  test("会計中の小計の分か全部を返金すると、入れる段階に戻る", () => {
-    const draft = twoSubtotals();
-    const [first, second] = draft.split.subtotals;
-    const current = removeTenders(
-      draft,
-      draft.split.tenders
-        .filter((t) => t.subtotalId === second.id)
-        .map((t) => t.id),
-      [second.id],
-    );
-    expect(current.step).toBe("entry");
-    expect(current.split.subtotals.map((s) => s.id)).toEqual([first.id]);
-    const all = removeTenders(
       draft,
       draft.split.tenders.map((t) => t.id),
       draft.split.subtotals.map((s) => s.id),
     );
-    expect(all.step).toBe("entry");
-    expect(all.split.subtotals).toEqual([]);
-    expect(canEditLines(all)).toBe(true);
+    expect(refunded.step).toBe("entry");
+    expect(refunded.split.subtotals).toEqual([]);
+    expect(prepaidAmount(refunded.split)).toBe(0);
+    expect(unpaidLines(refunded)).toHaveLength(2);
+    expect(canEditLines(refunded)).toBe(true);
   });
 });
 
 describe("[unit] cashierSplit の送る注文", () => {
   test("支払いは小計の行を指し、小計の割引はその小計を払い終えた支払いに付ける", () => {
     const start = removeLine(withLines(blend, cookie, latte, pair), 1);
-    const [, l] = keysOf(start);
-    const first = recordTender(
-      beginSubtotal(preferDiscount(start, l), "items", [l], 1, 100),
-      cash(500, 1000),
-    );
-    const paying = setPart(beginRest(first, 1, 100), 600);
-    const second = recordTender(paying, {
+    const paying = setPart(beginRest(start, 1, 100), 600);
+    const first = recordTender(paying, {
       method: "square",
       amount: 600,
       received: 600,
       squareCheckoutId: "c-1",
       squarePaymentType: "QR_CODE",
     });
+    const second = recordTender(setPart(first, 500), cash(500, 1000));
     const done = recordTender(second, cash(800));
     expect(done.split.current).toBeNull();
     expect(splitPaymentsForOrder(done)).toEqual([
-      {
-        method: "cash",
-        amount: 500,
-        received: 1000,
-        discount: 100,
-        menuIndexes: [1],
-      },
       {
         method: "square",
         amount: 600,
         received: 600,
         discount: 0,
-        menuIndexes: [0, 2],
+        menuIndexes: [0, 1, 2],
         squareCheckoutId: "c-1",
+      },
+      {
+        method: "cash",
+        amount: 500,
+        received: 1000,
+        discount: 0,
+        menuIndexes: [0, 1, 2],
       },
       {
         method: "cash",
         amount: 800,
         received: 800,
-        discount: 0,
-        menuIndexes: [0, 2],
+        discount: 100,
+        menuIndexes: [0, 1, 2],
       },
     ]);
   });
 
   test("送る注文は、お預かりを合計にし、割引を小計で引いた分にそろえる", () => {
-    const start = withLines(blend, latte);
-    const [b, l] = keysOf(start);
-    const first = recordTender(
-      beginSubtotal(start, "items", [b], 1, 100),
-      cash(400, 1000),
-    );
-    const done = recordTender(
-      beginSubtotal(first, "items", [l], 1, 100),
-      cash(600),
-    );
+    const paying = beginRest(withLines(blend, latte), 1, 100);
+    const first = recordTender(setPart(paying, 400), cash(400, 1000));
+    const done = recordTender(first, cash(600));
     const order = OrderEntity.createNew({ orderId: 3 });
     order.menus = [blend, latte];
     order.applyServiceOneCupDiscount();
@@ -427,26 +263,26 @@ describe("[unit] cashierSplit の送る注文", () => {
     const order = OrderEntity.createNew({ orderId: 42 });
     order.menus = [blend, latte, cookie];
     order.applyServiceOneCupDiscount();
-    const start = withLines(blend, latte, cookie);
-    const [, l, c] = keysOf(start);
-    // 一括会計はそのまま
-    const whole = beginRest(start, 1, 100);
-    expect(displayOrder(order, whole)).toBe(order);
-    const paying = {
-      ...beginSubtotal(preferDiscount(start, l), "items", [l, c], 1, 100),
-      received: "1000",
-    };
-    const subtotal = currentSubtotal(paying);
+    const whole = beginRest(withLines(blend, latte, cookie), 1, 100);
+    const subtotal = currentSubtotal(whole);
     if (subtotal === null) throw new Error("no subtotal");
-    const part = subtotalOrder(order, paying, subtotal, 1000);
-    expect(part.orderId).toBe(42);
-    expect(part.menus.map((m) => m.id)).toEqual(["latte", "cookie"]);
-    expect(part.billingAmount).toBe(700);
-    expect(part.getCharge()).toBe(300);
-    expect(displayOrder(order, paying).billingAmount).toBe(700);
-    // 小計分割の間は、注文全体を受取金額なしで出す
-    const split = setPart(paying, 300);
-    expect(displayOrder(order, split).billingAmount).toBe(order.billingAmount);
-    expect(displayOrder(order, split).received).toBe(0);
+    const receiptOrder = subtotalOrder(order, whole, subtotal, 1500);
+    expect(receiptOrder.orderId).toBe(42);
+    expect(receiptOrder.menus.map((m) => m.id)).toEqual([
+      "blend",
+      "latte",
+      "cookie",
+    ]);
+    expect(receiptOrder.billingAmount).toBe(1200);
+    expect(receiptOrder.getCharge()).toBe(300);
+    // 先払いが無ければそのまま
+    expect(displayOrder(order, whole)).toBe(order);
+    expect(displayOrder(order, setPart(whole, 300))).toBe(order);
+    // 先払いがあれば、注文全体を受取金額なしで出す
+    const partlyPaid = recordTender(setPart(whole, 300), cash(300));
+    expect(displayOrder(order, partlyPaid).billingAmount).toBe(
+      order.billingAmount,
+    );
+    expect(displayOrder(order, partlyPaid).received).toBe(0);
   });
 });
