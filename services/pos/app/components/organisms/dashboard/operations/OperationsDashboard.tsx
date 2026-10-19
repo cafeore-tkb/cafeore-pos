@@ -32,7 +32,7 @@ import {
   operationsReport,
 } from "~/lib/analytics/operations";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
-import { AggregationIntervalSelect } from "../DashboardControls";
+import { AggregationIntervalToggle } from "../DashboardControls";
 import { OrderStatusList } from "../MasterState";
 import { AvailabilityReview } from "./AvailabilityReview";
 import { DurationCharts, minutes } from "./DurationCharts";
@@ -326,14 +326,15 @@ export function OperationsDashboard({
           </div>
           {mode !== "inventory" && (
             <div className="shrink-0">
-              <AggregationIntervalSelect
-                value={intervalMinutes}
-                onChange={setIntervalMinutes}
-                options={[5, 15, 60]}
-                disabled={mode === "floor"}
-              />
-              {mode === "floor" && (
-                <p className="mt-1 text-stone-500 text-xs">現場は5分固定</p>
+              {mode === "floor" ? (
+                <p className="text-stone-500 text-xs">
+                  集計間隔：現場は5分固定
+                </p>
+              ) : (
+                <AggregationIntervalToggle
+                  value={intervalMinutes}
+                  onChange={setIntervalMinutes}
+                />
               )}
             </div>
           )}

@@ -3,6 +3,7 @@ import {
   Activity,
   Banknote,
   BarChart3,
+  ChevronLeft,
   CircleDollarSign,
   Clock3,
   Coffee,
@@ -23,6 +24,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router";
 import {
   Bar,
   BarChart,
@@ -243,6 +245,13 @@ export function DashboardWorkspace() {
     <div className="min-h-full bg-white px-4 py-6 text-stone-900 [--dashboard-nav-height:4rem] [overflow-anchor:none] sm:px-6 lg:px-10 lg:[--dashboard-nav-height:0px]">
       <div className="mx-auto max-w-[1600px]">
         <header className="border-stone-200 border-b pb-6">
+          <Link
+            to="/"
+            className="mb-4 inline-flex min-h-10 items-center gap-1 rounded-md px-2 font-bold text-sm text-stone-600 hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-teal-700"
+          >
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+            ルートに戻る
+          </Link>
           <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.24em]">
