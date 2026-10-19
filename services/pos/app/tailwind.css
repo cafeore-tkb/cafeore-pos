@@ -43,7 +43,7 @@
   --color-ore: #834f2f;
   /* お客さん向けの画面（cashier-mini・呼び出し画面）の差し色 */
   --color-theme-gold: #b09860;
-  /* レジの先払い（個別小計・小計分割）。撫子色を沈めた色で、先会計・小計分割の地と文字に使う */
+  /* レジの先払い（小計分割）。撫子色を沈めた色で、先会計・小計分割の地と文字に使う */
   --color-prepay: #9b5c73;
   --color-prepay-ink: #6e3b4f;
   --color-prepay-line: #d9a9ba;

@@ -30,7 +30,7 @@ const SQUARE_PAYMENT_LABEL: Partial<Record<string, string>> = {
 } satisfies Record<SquarePaymentType, string>;
 
 /**
- * 注文を何回かに分けて払うとき（個別小計・小計分割・一部金額先払い）の、この支払いの前後。
+ * 注文を何回かに分けて払うとき（小計分割・一部金額先払い）の、この支払いの前後。
  * prepaid はこの小計で先に払った額、deferred はこの小計でこのあとに払う額（分けていなければどちらも 0）
  */
 export type ReceiptSplit = { prepaid: number; deferred: number };
