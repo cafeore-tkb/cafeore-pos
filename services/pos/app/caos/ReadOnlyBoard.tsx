@@ -18,7 +18,7 @@ import { nextAvailableBays } from "./logic/queue";
 import { timelineArrivals } from "./logic/timeline";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
-// 管制盤 A・C・Dを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// 管制盤 A・Cを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
 // タイムラインに新しく入ったカードは、通知音（ヘッダーで切り替え）とそのカードの点滅で知らせる。未割当の横帯はたためる（この端末に覚える）。
 
 const noop = () => {};
@@ -37,8 +37,7 @@ export default function ReadOnlyBoard() {
     "caos-view-control-mode",
     "a",
   );
-  const mode: ControlViewMode =
-    storedMode === "c" || storedMode === "d" ? storedMode : "a";
+  const mode: ControlViewMode = storedMode === "c" ? "c" : "a";
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(

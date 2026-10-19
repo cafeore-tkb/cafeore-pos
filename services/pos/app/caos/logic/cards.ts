@@ -29,23 +29,6 @@ export const orderNoLabel = (no: number) => no.toString().padStart(3, "0");
 export const cardOrderNos = (card: CaosCard) =>
   unique(card.cups.map((cup) => cup.orderNo)).sort((a, b) => a - b);
 
-/**
- * カードに入っている注文ごとのカップの数（注文番号の小さい順）。統合したカードを注文ごとの段に分けて出す（管制盤 D の OrderCard の byOrder）。
- * reason はその注文の入れ直し（緊急）の理由（無ければ空）、comments はその注文のコメントの数（look から引く）
- */
-export const cardOrderParts = (card: CaosCard, look?: CardLook) =>
-  cardOrderNos(card).map((orderNo) => {
-    const cups = card.cups.filter((cup) => cup.orderNo === orderNo);
-    return {
-      orderNo,
-      cups: cups.length,
-      reason: cupsEmergencyReasons(cups),
-      comments:
-        look?.comments?.filter((comment) => comment.orderNo === orderNo)
-          .length ?? 0,
-    };
-  });
-
 /** 注文番号の表示（「#152」、統合したカードは「#152+#160」）。選んだ注文を指すキーにも使う */
 export const orderLabel = (card: CaosCard) =>
   cardOrderNos(card)

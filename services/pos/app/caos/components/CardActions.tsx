@@ -11,7 +11,7 @@ import { type CardAction, cardActions, cardStage } from "../logic/cardActions";
 import type { CardLook } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
 
-// ドリッパーのカード（管制盤 A・C・D）に重ねるもの：開いたカードの操作のアイコン（hooks/useCardMenu）と、
+// ドリッパーのカード（管制盤 A・C）に重ねるもの：開いたカードの操作のアイコン（hooks/useCardMenu）と、
 // 未着手の ✋ の印。アイコンは現場で作った素材（icons/。色は素材のまま）
 
 const ICONS: Record<
