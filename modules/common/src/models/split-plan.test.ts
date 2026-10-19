@@ -117,9 +117,9 @@ describe("[unit] planOrderSplit", () => {
       ["a1", "a2", "m"],
       ["a3", "b"],
     ]);
-    // 前の注文に B の 1 杯があれば、B を先頭の番号に入れる（b+A｜AA）
+    // 前の注文に B の 1 杯があれば、B を先頭の番号の先頭に入れる（b+A｜AA）
     expect(planOrderSplit(lines, [splitItemKey(B)])).toEqual([
-      ["a1", "m", "b"],
+      ["b", "a1", "m"],
       ["a2", "a3"],
     ]);
   });
@@ -176,11 +176,33 @@ describe("[unit] sortOrderLines", () => {
     ];
     // b+A｜AA
     expect(sortOrderLines(lines, [splitItemKey(B)])).toEqual([
+      "b",
       "a1",
       "m",
-      "b",
       "a2",
       "a3",
+    ]);
+  });
+
+  test("前の注文と同じ商品の 1 杯を組の先に並べる（後から入れても）", () => {
+    const lines = [line("b", B), line("a", A), line("c", C)];
+    // a+B｜C。B を先に入れても A・B の順
+    expect(sortOrderLines(lines, [splitItemKey(A)])).toEqual(["a", "b", "c"]);
+    // 2 杯と組んでも 1 杯が先（a+BB｜CC+DD）
+    const D = item("D");
+    const pairs = [line("bb", B, 2), line("a", A), line("cc", C, 2)];
+    expect(
+      sortOrderLines([...pairs, line("dd", D, 2)], [splitItemKey(A)]),
+    ).toEqual(["a", "bb", "cc", "dd"]);
+  });
+
+  test("前の注文と同じ商品の 1 杯どうしは入れた順", () => {
+    const lines = [line("b", B), line("a", A), line("c", C)];
+    // b+a｜C
+    expect(sortOrderLines(lines, [splitItemKey(A), splitItemKey(B)])).toEqual([
+      "b",
+      "a",
+      "c",
     ]);
   });
 

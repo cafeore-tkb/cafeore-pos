@@ -116,7 +116,8 @@ const brewCups = (menu: MenuEntity) =>
 
 /**
  * 明細の行を注文番号に割り振る（planCupSplit を行に当てはめる）。分けなくてよければ null。
- * 返すのは番号ごとの行の key（番号の順。番号の中は明細の順）。prev は前の注文の 1 杯の商品の印（splitItemKey）。
+ * 返すのは番号ごとの行の key（番号の順）。番号の中は、前の注文と同じ商品の 1 杯（手順 2）を先に、あとは明細の順
+ * （前の注文の 1 杯と隣り合うように。前の注文と同じ商品の 1 杯どうしは明細の順）。prev は前の注文の 1 杯の商品の印（splitItemKey）。
  *   - コーヒー 1 杯の行と、同じ商品 2 杯の行（セットなど）は、planCupSplit の 1 杯・2 杯のまとまりに当てる
  *     （2 杯のまとまりには 2 杯の行を先に当て、足りなければ 1 杯の行を 2 つ当てる）
  *   - それ以外のコーヒーの行（違う商品の組み合わせ・3 杯以上）は分けられないので、それだけで 1 つの番号にして後ろに足す
@@ -150,9 +151,15 @@ export const planOrderSplit = <K>(
 
   const take = (map: Map<string, number[]>, item: string) =>
     map.get(item)?.shift();
+  // 前の注文と同じ商品の 1 杯の行
+  const merged = new Set<number>();
   const groups = planCupSplit(cups, prev).map((group) =>
     group.flatMap((chunk) => {
-      if (chunk.size === 1) return [take(singles, chunk.item)];
+      if (chunk.size === 1) {
+        const index = take(singles, chunk.item);
+        if (chunk.merge && index !== undefined) merged.add(index);
+        return [index];
+      }
       const pair = take(pairs, chunk.item);
       return pair !== undefined
         ? [pair]
@@ -164,7 +171,7 @@ export const planOrderSplit = <K>(
     .map((group) =>
       group
         .filter((index): index is number => index !== undefined)
-        .sort((a, b) => a - b),
+        .sort((a, b) => Number(merged.has(b)) - Number(merged.has(a)) || a - b),
     )
     .filter((group) => group.length > 0);
   if (result.length <= 1) return null;
@@ -172,7 +179,7 @@ export const planOrderSplit = <K>(
 };
 
 /**
- * 明細の行を並べる順（planOrderSplit の番号の順に、番号の中は明細の順）の key。分けなくてよい（番号が 1 つで済む）
+ * 明細の行を並べる順（planOrderSplit の番号の順。番号の中は前の注文と同じ商品の 1 杯が先）の key。分けなくてよい（番号が 1 つで済む）
  * 注文は入れた順のまま。prev は前の注文の 1 杯の商品の印（splitItemKey）
  */
 export const sortOrderLines = <K>(

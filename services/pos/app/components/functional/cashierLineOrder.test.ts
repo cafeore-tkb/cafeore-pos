@@ -120,11 +120,11 @@ describe("[unit] cashierLineOrder の並べ替え", () => {
   test("分けていたときの番号の順に明細を並べ、番号・金額は変えない", () => {
     const order = newOrder(blend, blend, cookie, blend, light);
     const sorted = sortOrderForSubmit(order, ["light"]);
-    // light+blend｜blend+blend。クッキーは 1 つ目の組に入る
+    // light+blend｜blend+blend。前の注文と同じ light を先に、クッキーは 1 つ目の組に入る
     expect(namesOf(sorted)).toEqual([
+      "light",
       "blend",
       "cookie",
-      "light",
       "blend",
       "blend",
     ]);
@@ -153,7 +153,7 @@ describe("[unit] cashierLineOrder の並べ替え", () => {
     ];
     const sorted = sortOrderForSubmit(order, ["light"]);
     // light+blend｜blend+blend
-    expect(namesOf(sorted)).toEqual(["blend", "light", "blend", "blend"]);
+    expect(namesOf(sorted)).toEqual(["light", "blend", "blend", "blend"]);
     expect(sorted.payments[0].menuIndexes).toEqual([0, 1]);
   });
 
