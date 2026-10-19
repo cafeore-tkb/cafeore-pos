@@ -151,6 +151,14 @@ export default function App() {
     if (testPlay.finished) backToLive();
     else selection.closeAuxiliary();
   };
+  const openTestPlay = () => {
+    restoreWindow("実績でテストプレイ");
+    setTestSetupOpen(true);
+  };
+  const endTestPlay = () => {
+    testPlay.finish();
+    selection.openAuxiliary("analytics");
+  };
 
   const page = (
     <div className="flex h-dvh w-screen select-none overflow-hidden bg-[#f0f4fa] font-sans text-[#0f172a]">
@@ -173,16 +181,6 @@ export default function App() {
             setTimelineCommand({ direction: "now", id: Date.now() })
           }
           followingNow={followingNow}
-          testPlaying={testPlay.isActive}
-          testProgressLabel={testPlay.remainingLabel}
-          onOpenTestPlay={() => {
-            restoreWindow("実績でテストプレイ");
-            setTestSetupOpen(true);
-          }}
-          onEndTestPlay={() => {
-            testPlay.finish();
-            selection.openAuxiliary("analytics");
-          }}
           posStatus={session.posStatus}
           labelPrinter={session.labelPrinter}
           unsent={session.unsent}
@@ -280,6 +278,13 @@ export default function App() {
                 <AuxiliaryContent
                   tab={saved.tab}
                   onSelectTab={selection.openAuxiliary}
+                  testPlay={{
+                    active: testPlay.isActive,
+                    simulating: session.simulating,
+                    progressLabel: testPlay.remainingLabel,
+                    onOpen: openTestPlay,
+                    onEnd: endTestPlay,
+                  }}
                   beans={session.beans}
                   lanes={lanes}
                   looks={looks}

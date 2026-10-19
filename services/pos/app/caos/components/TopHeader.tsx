@@ -1,6 +1,4 @@
 import {
-  BarChart3,
-  CalendarClock,
   Database,
   History,
   type LucideIcon,
@@ -20,19 +18,13 @@ import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
 import { FloatingStatusNotices } from "./FloatingWindows";
-import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
+import type { AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
 
 export type NavTab = "control" | AuxiliaryTab;
 
 /** シールのプリンターがつながっているか（usePrinter の status） */
 type LabelPrinterStatus = React.ComponentProps<typeof PrinterStatus>["status"];
-
-// 画面切替。補助機能は歯車の設定画面にまとめる。
-const NAV_ITEMS = [
-  { id: "control", label: "CaOS", icon: null },
-  { id: "settings", label: AUXILIARY_TITLES.settings, icon: Settings },
-] as const;
 
 interface TopHeaderProps {
   activeTab: NavTab;
@@ -46,17 +38,13 @@ interface TopHeaderProps {
   cancelledOrderNo: number | null;
   soundEnabled: boolean;
   onToggleSound: () => void;
-  /** 実データテストの盤面を出している（「テスト」の色を変える。時計の操作は盤面の上の帯 TestBoardBanner） */
+  /** 実データテストの盤面を出している（本番の提供済み一覧は隠す） */
   simulating: boolean;
   /** 「現在」（管制盤 A のタイムラインを NOW へ戻す）を出すか */
   showTimelineNow: boolean;
   onTimelineNow: () => void;
   /** タイムラインが NOW を追っている（「現在」を押した形にする。手でスクロールしたら押していない形にして、押すと戻ることを見せる） */
   followingNow: boolean;
-  testPlaying: boolean;
-  testProgressLabel: string | null;
-  onOpenTestPlay: () => void;
-  onEndTestPlay: () => void;
   posStatus: PosConnectionStatus;
   /** この端末のシールのプリンター（つながっているか・証明書を許可するページ・刷れずに残っているシールの数と、送り直し・レジで印刷待ちのシールの数） */
   labelPrinter: {
@@ -147,14 +135,6 @@ const PRINTER_STATUS: Record<
   disconnected: { label: "未接続", tone: "ng" },
 };
 
-// 「テスト」の色。テスト中は濃い青、テストを終えてもテストの盤面のあいだは本番と見分けられる色
-const testButtonTone = (testPlaying: boolean, testBoard: boolean) => {
-  if (testPlaying) return "border-blue-700 bg-blue-700 text-white";
-  if (testBoard)
-    return "border-amber-500 bg-amber-100 text-amber-950 hover:bg-amber-200";
-  return "border-blue-300 bg-blue-50 text-blue-900 hover:bg-blue-100";
-};
-
 export const TopHeader: React.FC<TopHeaderProps> = ({
   activeTab,
   controlViewMode,
@@ -169,10 +149,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   showTimelineNow,
   onTimelineNow,
   followingNow,
-  testPlaying,
-  testProgressLabel,
-  onOpenTestPlay,
-  onEndTestPlay,
   posStatus,
   labelPrinter,
   unsent,
@@ -247,85 +223,89 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
       </FloatingStatusNotices>
       <div className="flex min-w-0 items-center gap-2">
-        {/* 時計は画面の左上に固定し、表示切替より先に読めるようにする。 */}
-        <div className="flex w-[118px] shrink-0 flex-col leading-none">
-          <div className="font-bold font-mono text-[#0f172a] text-[24px] tracking-tight">
+        {/* 左側は時計、A/C/D、現在の順。 */}
+        <div className="flex min-h-11 w-[132px] shrink-0 flex-col justify-center rounded-lg bg-slate-950 px-3 leading-none shadow-sm">
+          <time className="font-black font-mono text-[30px] text-white tabular-nums tracking-tight">
             {timeStr}
-          </div>
-          <output
-            aria-label="直前の操作"
-            title={lastAction ? `直前の操作：${lastAction}` : undefined}
-            className={`mt-1 flex min-w-0 items-center gap-0.5 font-black text-[11px] ${lastAction ? "text-slate-950" : "text-slate-400"}`}
-          >
-            <History className="h-3 w-3 shrink-0" />
-            <span className="truncate">{lastAction ?? "直前の操作なし"}</span>
-          </output>
+          </time>
+          {lastAction && (
+            <output
+              aria-label="直前の操作"
+              title={`直前の操作：${lastAction}`}
+              className="mt-1 flex min-w-0 items-center gap-0.5 font-black text-[10px] text-slate-200"
+            >
+              <History className="h-3 w-3 shrink-0" />
+              <span className="truncate">{lastAction}</span>
+            </output>
+          )}
         </div>
 
-        <nav
+        <fieldset
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
-          aria-label="画面切替"
+          aria-label="管制盤の表示切替"
         >
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active =
-              activeTab === item.id ||
-              (item.id === "settings" &&
-                (activeTab === "bays" || activeTab === "beans"));
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onSelectTab(item.id)}
-                aria-pressed={active}
-                title={item.label}
-                className={`flex h-10 min-w-10 touch-manipulation items-center justify-center gap-1 rounded-md px-2 font-black text-[11px] ${active ? "bg-slate-950 text-white shadow-sm" : "bg-white text-slate-600 hover:bg-slate-50"}`}
-              >
-                {Icon && <Icon className="h-4 w-4" />}
-                <span className={item.id === "control" ? "" : "sr-only"}>
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-          {activeTab === "control" && (
-            <fieldset
-              className="ml-0.5 flex min-w-0 items-center gap-0.5 border-slate-300 border-l pl-1"
-              aria-label="管制盤の表示切替"
-            >
-              {Object.entries(CONTROL_VIEWS).map(([mode, view]) => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={controlViewMode === mode}
-                  onClick={() =>
-                    onSelectControlViewMode(mode as ControlViewMode)
-                  }
-                  className={`h-10 min-w-9 touch-manipulation rounded-md font-black text-[12px] ${controlViewMode === mode ? "bg-blue-700 text-white" : "bg-white text-slate-600"}`}
-                >
-                  {view.label}
-                </button>
-              ))}
-            </fieldset>
-          )}
-        </nav>
-
-        <div className="flex items-center gap-2">
-          {showTimelineNow && (
+          {Object.entries(CONTROL_VIEWS).map(([mode, view]) => (
             <button
+              key={mode}
               type="button"
-              onClick={onTimelineNow}
-              aria-pressed={followingNow}
-              title={
-                followingNow ? "現在時刻を追っています" : "現在時刻へ戻って追う"
-              }
-              className="group flex h-10 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-500 bg-white font-black text-[11px] text-red-600 leading-none aria-pressed:bg-red-500 aria-pressed:text-white"
+              aria-pressed={activeTab === "control" && controlViewMode === mode}
+              onClick={() => {
+                onSelectControlViewMode(mode as ControlViewMode);
+                onSelectTab("control");
+              }}
+              className={`h-10 min-w-10 touch-manipulation rounded-md font-black text-[14px] ${activeTab === "control" && controlViewMode === mode ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-600"}`}
             >
-              <span className="h-2 w-2 rounded-full bg-red-500 group-aria-pressed:bg-white" />
-              現在
+              {view.label}
             </button>
+          ))}
+        </fieldset>
+
+        {showTimelineNow && (
+          <button
+            type="button"
+            onClick={onTimelineNow}
+            aria-pressed={followingNow}
+            title={
+              followingNow ? "現在時刻を追っています" : "現在時刻へ戻って追う"
+            }
+            className="group flex h-11 w-12 shrink-0 touch-manipulation flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-500 bg-white font-black text-[11px] text-red-600 leading-none aria-pressed:bg-red-500 aria-pressed:text-white"
+          >
+            <span className="h-2 w-2 rounded-full bg-red-500 group-aria-pressed:bg-white" />
+            現在
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => onSelectTab("settings")}
+          aria-pressed={
+            activeTab === "settings" ||
+            activeTab === "bays" ||
+            activeTab === "beans"
+          }
+          title="設定"
+          className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 aria-pressed:border-slate-950 aria-pressed:bg-slate-950 aria-pressed:text-white"
+        >
+          <Settings className="h-5 w-5" />
+          <span className="sr-only">設定</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleSound}
+          title={soundEnabled ? "通知音 ON" : "通知音 消音"}
+          className={`flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-lg border text-xs transition-colors ${
+            soundEnabled
+              ? "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700"
+              : "border-red-200 bg-red-50 text-red-500"
+          }`}
+        >
+          {soundEnabled ? (
+            <Volume2 className="h-4 w-4" />
+          ) : (
+            <VolumeX className="h-4 w-4" />
           )}
-        </div>
+        </button>
       </div>
 
       <output
@@ -350,7 +330,27 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <Search className="mb-0.5 h-4 w-4" />
           番号
         </button>
-        {/* 注文の接続とシールのプリンター。ヘッダーの幅を使わないよう上下に重ねる */}
+        {!simulating && (
+          <button
+            type="button"
+            onClick={onOpenPastOrders}
+            className="h-11 shrink-0 touch-manipulation whitespace-nowrap rounded-lg border border-slate-300 bg-slate-100 px-3 font-bold text-slate-700 text-sm hover:bg-slate-200"
+          >
+            提供済み一覧
+          </button>
+        )}
+        {/* 緊急（入れ直し）は接続状況より左に置く。 */}
+        {onOpenEmergency && (
+          <button
+            type="button"
+            onClick={onOpenEmergency}
+            className="flex h-11 shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-800 bg-red-600 px-3 font-black text-[15px] text-white shadow-xs hover:bg-red-700"
+          >
+            <EmergencyIcon className="h-5 w-5" />
+            緊急
+          </button>
+        )}
+        {/* 注文の接続とシールのプリンターは右端に上下で重ねる。 */}
         <div className="flex flex-col gap-0.5 [&>output]:h-[21px] [&>output]:min-h-0">
           <PosStatusBadge
             status={posStatus}
@@ -362,62 +362,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             tone={PRINTER_STATUS[labelPrinter.status].tone}
           />
         </div>
-        <button
-          type="button"
-          onClick={testPlaying ? onEndTestPlay : onOpenTestPlay}
-          className={`flex h-11 min-w-11 touch-manipulation flex-col items-center justify-center whitespace-nowrap rounded-lg border px-1 font-black text-[11px] leading-none shadow-xs ${testButtonTone(testPlaying, simulating)}`}
-          title={
-            testPlaying
-              ? "テストプレイを終了して実績を表示"
-              : "過去の実データでテストプレイ"
-          }
-        >
-          {/* ヘッダーの並びを詰めないよう、印の下に小さく */}
-          {testPlaying ? (
-            <BarChart3 className="mb-0.5 h-4 w-4" />
-          ) : (
-            <CalendarClock className="mb-0.5 h-4 w-4" />
-          )}
-          <span>
-            {testPlaying ? `終了 ${testProgressLabel || ""}` : "テスト"}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={onToggleSound}
-          title={soundEnabled ? "通知音 ON" : "通知音 消音"}
-          className={`flex h-11 w-11 touch-manipulation items-center justify-center rounded-lg border text-xs transition-colors ${
-            soundEnabled
-              ? "border-[#cbd5e1] bg-[#f1f5f9] text-slate-700"
-              : "border-red-200 bg-red-50 text-red-500"
-          }`}
-        >
-          {soundEnabled ? (
-            <Volume2 className="h-4 w-4" />
-          ) : (
-            <VolumeX className="h-4 w-4" />
-          )}
-        </button>
-        {!simulating && (
-          <button
-            type="button"
-            onClick={onOpenPastOrders}
-            className="h-11 shrink-0 touch-manipulation whitespace-nowrap rounded-lg border border-slate-300 bg-slate-100 px-3 font-bold text-slate-700 text-sm hover:bg-slate-200"
-          >
-            過去の注文
-          </button>
-        )}
-        {/* 緊急（入れ直し）。右端に置き、右手で押しても盤面を隠さない */}
-        {onOpenEmergency && (
-          <button
-            type="button"
-            onClick={onOpenEmergency}
-            className="flex h-11 shrink-0 touch-manipulation items-center gap-1 whitespace-nowrap rounded-lg border-2 border-red-800 bg-red-600 px-3 font-black text-[15px] text-white shadow-xs hover:bg-red-700"
-          >
-            <EmergencyIcon className="h-5 w-5" />
-            緊急
-          </button>
-        )}
       </div>
     </header>
   );

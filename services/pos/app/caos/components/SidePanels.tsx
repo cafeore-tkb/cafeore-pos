@@ -8,7 +8,15 @@ import {
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
-import { ArrowRight, Bean, ListChecks, Undo2, X } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Bean,
+  CalendarClock,
+  ListChecks,
+  Undo2,
+  X,
+} from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import {
@@ -459,7 +467,14 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 
 const SettingsHome: React.FC<{
   onSelectTab: (tab: "bays" | "beans") => void;
-}> = ({ onSelectTab }) => (
+  testPlay: {
+    active: boolean;
+    simulating: boolean;
+    progressLabel: string | null;
+    onOpen: () => void;
+    onEnd: () => void;
+  };
+}> = ({ onSelectTab, testPlay }) => (
   <div className="grid gap-4">
     <section>
       <h3 className="mb-2 font-black text-[13px] text-slate-600">
@@ -500,6 +515,36 @@ const SettingsHome: React.FC<{
           </span>
           <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
         </button>
+        <button
+          type="button"
+          onClick={testPlay.active ? testPlay.onEnd : testPlay.onOpen}
+          className={`flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border px-4 text-left font-black text-[15px] shadow-xs ${
+            testPlay.active
+              ? "border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
+              : testPlay.simulating
+                ? "border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          {testPlay.active ? (
+            <BarChart3 className="h-5 w-5" />
+          ) : (
+            <CalendarClock className="h-5 w-5 text-blue-700" />
+          )}
+          <span className="flex flex-col gap-0.5">
+            <span>{testPlay.active ? "テストを終了" : "実データテスト"}</span>
+            <span
+              className={`font-bold text-[11px] ${testPlay.active ? "text-blue-100" : "text-slate-500"}`}
+            >
+              {testPlay.active
+                ? `残り ${testPlay.progressLabel || "--:--"}・終了後に実績を表示`
+                : "過去の注文データでテストプレイ"}
+            </span>
+          </span>
+          <ArrowRight
+            className={`ml-auto h-5 w-5 ${testPlay.active ? "text-blue-100" : "text-slate-400"}`}
+          />
+        </button>
       </div>
     </section>
   </div>
@@ -509,11 +554,13 @@ export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
     onSelectTab: (tab: "bays" | "beans") => void;
+    testPlay: React.ComponentProps<typeof SettingsHome>["testPlay"];
     /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
   } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, onSelectTab, beans, lanes, ...analytics }) => {
-  if (tab === "settings") return <SettingsHome onSelectTab={onSelectTab} />;
+> = ({ tab, onSelectTab, testPlay, beans, lanes, ...analytics }) => {
+  if (tab === "settings")
+    return <SettingsHome onSelectTab={onSelectTab} testPlay={testPlay} />;
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;
