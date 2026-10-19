@@ -16,7 +16,7 @@ import { PrinterStatus } from "~/components/molecules/PrinterStatus";
 import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { orderNoLabel } from "../logic/cards";
-import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
+import { CONTROL_VIEW_BUTTONS, type ControlViewMode } from "./ControlWorkspace";
 import { FloatingStatusNotices } from "./FloatingWindows";
 import type { AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
@@ -221,7 +221,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         />
       </FloatingStatusNotices>
       <div className="flex h-full min-w-0 items-center gap-2">
-        {/* 左側は時計、A/C/D、現在の順。 */}
+        {/* 左側は時計、表示切替、現在の順。 */}
         <div className="flex h-full w-[240px] shrink-0 items-center justify-center">
           <time className="grid h-full w-full shrink-0 place-items-center whitespace-nowrap text-center font-bold font-mono text-[48px] text-white tabular-nums leading-none">
             {timeStr}
@@ -232,18 +232,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 p-1"
           aria-label="管制盤の表示切替"
         >
-          {Object.entries(CONTROL_VIEWS).map(([mode, view]) => (
+          {CONTROL_VIEW_BUTTONS.map(({ mode, label }) => (
             <button
               key={mode}
               type="button"
               aria-pressed={activeTab === "control" && controlViewMode === mode}
               onClick={() => {
-                onSelectControlViewMode(mode as ControlViewMode);
+                onSelectControlViewMode(mode);
                 onSelectTab("control");
               }}
-              className={`h-10 min-w-10 touch-manipulation rounded-md font-black text-[14px] ${activeTab === "control" && controlViewMode === mode ? "bg-sky-300 text-slate-950 shadow-sm" : "bg-slate-700 text-slate-100 hover:bg-slate-600"}`}
+              className={`h-10 min-w-10 touch-manipulation whitespace-nowrap rounded-md px-2.5 font-black text-[14px] ${activeTab === "control" && controlViewMode === mode ? "bg-sky-300 text-slate-950 shadow-sm" : "bg-slate-700 text-slate-100 hover:bg-slate-600"}`}
             >
-              {view.label}
+              {label}
             </button>
           ))}
         </fieldset>

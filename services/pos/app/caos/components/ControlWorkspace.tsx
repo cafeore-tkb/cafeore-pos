@@ -13,11 +13,17 @@ import type { UnfinishedView } from "./UnfinishedOrders";
 
 // 管制盤 A・C・D。ドリッパーのカードは押すとその段階の操作のアイコンを上に出し（cardMenu）、長押しで右の詳細（待機）・緊急の入力（抽出中・終わり）のパネル
 export const CONTROL_VIEWS = {
-  a: { label: "A", timelineControls: true },
-  c: { label: "C", timelineControls: false },
+  a: { label: "タイムライン", timelineControls: true },
+  c: { label: "キュー", timelineControls: false },
   d: { label: "D", timelineControls: false },
 } as const;
 export type ControlViewMode = keyof typeof CONTROL_VIEWS;
+
+/** 操作画面・閲覧画面で選べる表示。Dの実装は残し、遷移ボタンは出さない。 */
+export const CONTROL_VIEW_BUTTONS = (["a", "c"] as const).map((mode) => ({
+  mode,
+  label: CONTROL_VIEWS[mode].label,
+}));
 
 // 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
 export interface ControlViewProps {
