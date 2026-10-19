@@ -357,7 +357,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
     : [];
   return (
     <section
-      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${allOrders?.active ? "bg-slate-50" : unassignedAreaBackground(unfinished)}`}
+      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${allOrders?.active ? "bg-[#eef2f7]" : unassignedAreaBackground(unfinished)}`}
     >
       <PanelHeader
         heightClassName={unfinished ? "h-14" : undefined}

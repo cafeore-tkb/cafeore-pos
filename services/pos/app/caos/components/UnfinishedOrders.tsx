@@ -33,7 +33,7 @@ export interface UnfinishedView {
 
 /** タブラベル・見出し・表示領域で共通の背景色。 */
 export const unassignedAreaBackground = (view?: UnfinishedView) =>
-  view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
+  view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-[#eef6ff]";
 
 const TAB =
   "relative flex h-12 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
@@ -125,7 +125,7 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unassigned")
             : view.onSelectTab("unassigned")
         }
-        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-white ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-[#eef6ff] ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
       >
         {icon}
         {label}
@@ -212,7 +212,7 @@ export const UnassignedHeading: React.FC<{
           role="tab"
           aria-selected={allTab.active}
           onClick={allTab.onSelect}
-          className={`${TAB} min-w-0 flex-1 justify-center bg-slate-50 px-1.5 ${allTab.active ? TAB_ON : TAB_OFF}`}
+          className={`${TAB} min-w-0 flex-1 justify-center bg-[#eef2f7] px-1.5 ${allTab.active ? TAB_ON : TAB_OFF}`}
         >
           <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
           一覧

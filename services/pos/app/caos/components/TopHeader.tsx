@@ -19,7 +19,7 @@ import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import type { PosConnectionStatus } from "../hooks/usePosOrders";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEWS, type ControlViewMode } from "./ControlWorkspace";
-import { FloatingStatusNotices, FloatingWindowTray } from "./FloatingWindows";
+import { FloatingStatusNotices } from "./FloatingWindows";
 import { AUXILIARY_TITLES, type AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
 
@@ -328,7 +328,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      <FloatingWindowTray />
       <output
         aria-live="polite"
         aria-atomic="true"
