@@ -36,7 +36,7 @@ export const unassignedAreaBackground = (view?: UnfinishedView) =>
   view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
 
 const TAB =
-  "relative flex h-12 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
+  "relative flex h-12 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
 const TAB_ON = "text-slate-950";
 const TAB_OFF = "text-slate-600 hover:text-slate-950";
 
@@ -112,7 +112,10 @@ export const UnassignedHeading: React.FC<{
       </>
     );
   return (
-    <div role="tablist" className={`caos-folder-tabs flex gap-1 ${className}`}>
+    <div
+      role="tablist"
+      className={`caos-folder-tabs flex gap-1 ${allTab ? "min-w-0 flex-1" : ""} ${className}`}
+    >
       <button
         type="button"
         role="tab"
@@ -122,31 +125,35 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unassigned")
             : view.onSelectTab("unassigned")
         }
-        className={`${TAB} bg-white ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-white ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
       >
         {icon}
         {label}
-        <span
-          className="caos-tab-time"
-          title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
-        >
-          NEXT→
-          {nextBayId === undefined ? (
-            "—"
-          ) : (
-            <span className="caos-order-digits">
-              <RollingNumber
-                value={nextBayId}
-                label={`ドリッパー ${dripperLabel(nextBayId)}`}
-              />
-              <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
+        {!allTab && (
+          <>
+            <span
+              className="caos-tab-time"
+              title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
+            >
+              NEXT→
+              {nextBayId === undefined ? (
+                "—"
+              ) : (
+                <span className="caos-order-digits">
+                  <RollingNumber
+                    value={nextBayId}
+                    label={`ドリッパー ${dripperLabel(nextBayId)}`}
+                  />
+                  <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
+                </span>
+              )}
             </span>
-          )}
-        </span>
-        <RollingOrderNumber
-          value={smallestUnassigned}
-          className={unassignedNumberTone}
-        />
+            <RollingOrderNumber
+              value={smallestUnassigned}
+              className={unassignedNumberTone}
+            />
+          </>
+        )}
         <span className="caos-tab-count">
           <RollingNumber
             value={unassignedCounts.orders}
@@ -169,12 +176,12 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unfinished")
             : view.onSelectTab("unfinished")
         }
-        className={`${TAB} bg-[#f5ede3] ${!allTab?.active && view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-[#f5ede3] ${!allTab?.active && view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
-        <RollingOrderNumber value={smallestUnserved} />
-        {view.rows.some((row) => row.late) && (
+        {!allTab && <RollingOrderNumber value={smallestUnserved} />}
+        {!allTab && view.rows.some((row) => row.late) && (
           <img
             src={servingOverdueIcon}
             alt="提供待ち15分以上"
@@ -185,9 +192,11 @@ export const UnassignedHeading: React.FC<{
           <RollingNumber value={view.rows.length} />件{" "}
           <RollingNumber value={unservedCups} />杯
         </span>
-        <span className={`caos-tab-time ${longestTimeTone}`}>
-          最長 <RollingClock seconds={longestWaitSec} />
-        </span>
+        {!allTab && (
+          <span className={`caos-tab-time ${longestTimeTone}`}>
+            最長 <RollingClock seconds={longestWaitSec} />
+          </span>
+        )}
         {view.badge > 0 && (
           <output
             aria-label={`未提供に新しい知らせ ${view.badge} 件`}
@@ -203,7 +212,7 @@ export const UnassignedHeading: React.FC<{
           role="tab"
           aria-selected={allTab.active}
           onClick={allTab.onSelect}
-          className={`${TAB} bg-slate-50 ${allTab.active ? TAB_ON : TAB_OFF}`}
+          className={`${TAB} min-w-0 flex-1 justify-center bg-slate-50 px-1.5 ${allTab.active ? TAB_ON : TAB_OFF}`}
         >
           <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
           一覧

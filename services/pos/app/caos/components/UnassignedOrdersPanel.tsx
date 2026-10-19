@@ -204,7 +204,7 @@ const AllOrdersList: React.FC<{
           <span className="mt-1.5 flex flex-wrap gap-1">
             {order.cups.map((cup, index) => (
               <span
-                key={cup.cupId ?? `${order.id}:${index}`}
+                key={cup.id ?? `${order.id}:${index}`}
                 className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-[12px] text-slate-700"
               >
                 {cup.item.abbr}
