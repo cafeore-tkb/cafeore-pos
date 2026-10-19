@@ -188,7 +188,6 @@ export default function App() {
           searchOpen={selection.searchDigits !== null}
           onOpenEmergency={selection.openRebrew}
           onOpenPastOrders={selection.openPastOrders}
-          lastAction={session.lastAction}
         />
 
         <main className="flex flex-1 flex-col gap-2 overflow-hidden p-2">

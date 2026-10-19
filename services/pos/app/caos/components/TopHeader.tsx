@@ -1,6 +1,5 @@
 import {
   Database,
-  History,
   type LucideIcon,
   Printer,
   Search,
@@ -64,8 +63,6 @@ interface TopHeaderProps {
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
   onOpenPastOrders: () => void;
-  /** この画面が直前にした操作の名前（しばらくたつと null） */
-  lastAction: string | null;
 }
 
 // 接続の札の色（枠・点）。注文の接続とシールのプリンターで共通
@@ -156,7 +153,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   searchOpen,
   onOpenEmergency,
   onOpenPastOrders,
-  lastAction,
 }) => {
   // 「隠す」は現在の未接続にだけ適用し、接続状態が変わったら解除する。
   const [printerWarningHidden, setPrinterWarningHidden] = useState(false);
@@ -229,16 +225,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap rounded-lg bg-slate-950 text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none shadow-sm">
             {timeStr}
           </time>
-          {lastAction && (
-            <output
-              aria-label="直前の操作"
-              title={`直前の操作：${lastAction}`}
-              className="flex h-3 w-full items-center justify-center gap-0.5 font-black text-[10px] text-slate-700 leading-3"
-            >
-              <History className="h-3 w-3 shrink-0" />
-              <span className="truncate">{lastAction}</span>
-            </output>
-          )}
         </div>
 
         <fieldset
