@@ -248,6 +248,7 @@ export const operationsReport = (
       prep: number[];
       handoff: number[];
       total: number[];
+      brewStages: { wait: number; serve: number; total: number }[];
     }
   >();
   const outlierCups: { orderNo: number; product: string; minutes: number }[] =
@@ -263,6 +264,7 @@ export const operationsReport = (
         prep: [],
         handoff: [],
         total: [],
+        brewStages: [],
       };
       product.received++;
       if (cup.orderTiming) proxyCups++;
@@ -285,6 +287,12 @@ export const operationsReport = (
           order.created,
           minutesBetween(cup.served, validStart, cutoff),
         );
+      // 3打刻が揃った同じ杯だけを使う。平均の和が全体平均になるよう母集団を揃える。
+      const startWait = minutesBetween(validStart, order.created, cutoff);
+      const brewServe = minutesBetween(cup.served, validStart, cutoff);
+      if (startWait !== null && brewServe !== null && total !== null) {
+        product.brewStages.push({ wait: startWait, serve: brewServe, total });
+      }
       if (prep !== null) product.prep.push(prep);
       if (handoff !== null) product.handoff.push(handoff);
       if (total !== null) {
@@ -315,6 +323,22 @@ export const operationsReport = (
     prep: distribution(value.prep),
     handoff: distribution(value.handoff),
     total: distribution(value.total),
+    brewStages: {
+      count: value.brewStages.length,
+      excluded: value.received - value.brewStages.length,
+      waitMean: value.brewStages.length
+        ? value.brewStages.reduce((sum, cup) => sum + cup.wait, 0) /
+          value.brewStages.length
+        : null,
+      serveMean: value.brewStages.length
+        ? value.brewStages.reduce((sum, cup) => sum + cup.serve, 0) /
+          value.brewStages.length
+        : null,
+      totalMean: value.brewStages.length
+        ? value.brewStages.reduce((sum, cup) => sum + cup.total, 0) /
+          value.brewStages.length
+        : null,
+    },
   }));
   const total = distribution(outlierCups.map((cup) => cup.minutes));
   const completed = buckets.filter((b) => b.complete);

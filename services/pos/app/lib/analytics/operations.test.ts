@@ -581,3 +581,129 @@ describe("今年の抽出開始時刻による区間分析", () => {
     });
   });
 });
+
+describe("商品別の抽出開始を境にした平均時間", () => {
+  test("同じ提供済みの杯で2区間を集計し、平均の和を全体平均に一致させる", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("a", null, T + 12 * 60000), brewStarted: T },
+          { ...cup("b", null, T), brewStarted: T },
+          { ...cup("c", null, T + 12 * 60000), brewStarted: T + 12 * 60000 },
+          cup("開始未記録", null, T + 30 * 60000),
+          { ...cup("未提供"), brewStarted: T + 2 * 60000 },
+        ]),
+      ],
+      window,
+    );
+    const phases = r.products[0].brewStages;
+    expect(phases).toEqual({
+      count: 3,
+      excluded: 2,
+      waitMean: 4,
+      serveMean: 4,
+      totalMean: 8,
+    });
+    expect((phases.waitMean ?? 0) + (phases.serveMean ?? 0)).toBeCloseTo(
+      phases.totalMean ?? 0,
+    );
+    // 既存の提供時間統計では、抽出開始のない提供済みも従来どおり含む。
+    expect(r.products[0].total.count).toBe(4);
+    expect(r.products[0].pending).toBe(1);
+  });
+
+  test("実測0分を残し、逆転・未来・集計終端ちょうどの提供や開始欠損を除外する", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("0分", null, T), brewStarted: T },
+          { ...cup("注文前に開始", null, T + 60000), brewStarted: T - 1 },
+          {
+            ...cup("提供後に開始", null, T + 60000),
+            brewStarted: T + 2 * 60000,
+          },
+          { ...cup("提供が集計終端", null, window.end), brewStarted: T },
+          {
+            ...cup("開始が未来", null, window.end + 60000),
+            brewStarted: window.end,
+          },
+          cup("開始が欠損", null, T + 60000),
+        ]),
+      ],
+      window,
+    );
+    expect(r.products[0].brewStages).toEqual({
+      count: 1,
+      excluded: 5,
+      waitMean: 0,
+      serveMean: 0,
+      totalMean: 0,
+    });
+    const beforeServe = operationsReport(
+      [
+        order("2", T, [
+          {
+            ...cup("未観測", null, T + 10 * 60000),
+            brewStarted: T + 5 * 60000,
+          },
+        ]),
+      ],
+      { ...window, now: T + 8 * 60000 },
+    );
+    expect(beforeServe.products[0].brewStages).toMatchObject({
+      count: 0,
+      excluded: 1,
+      waitMean: null,
+      serveMean: null,
+      totalMean: null,
+    });
+  });
+
+  test("商品・期間を分け、取り消しと期間外の注文を混ぜない。未計測はnullにする", () => {
+    const r = operationsReport(
+      [
+        order("1", T, [
+          { ...cup("a", null, T + 10 * 60000), brewStarted: T + 4 * 60000 },
+        ]),
+        order("2", T, [
+          {
+            ...cup("b", null, T + 20 * 60000),
+            product: "アイス",
+            brewStarted: T + 5 * 60000,
+          },
+        ]),
+        order("3", T, [{ ...cup("未計測", null, T + 60000), product: "牛乳" }]),
+        order(
+          "4",
+          T,
+          [{ ...cup("取消", null, T + 60000), brewStarted: T }],
+          T + 60000,
+        ),
+        order("5", T - 60000, [
+          { ...cup("期間外", null, T + 60000), brewStarted: T },
+        ]),
+      ],
+      window,
+    );
+    expect(r.products.map((p) => [p.name, p.brewStages])).toEqual([
+      [
+        "ブレンド",
+        { count: 1, excluded: 0, waitMean: 4, serveMean: 6, totalMean: 10 },
+      ],
+      [
+        "アイス",
+        { count: 1, excluded: 0, waitMean: 5, serveMean: 15, totalMean: 20 },
+      ],
+      [
+        "牛乳",
+        {
+          count: 0,
+          excluded: 1,
+          waitMean: null,
+          serveMean: null,
+          totalMean: null,
+        },
+      ],
+    ]);
+  });
+});

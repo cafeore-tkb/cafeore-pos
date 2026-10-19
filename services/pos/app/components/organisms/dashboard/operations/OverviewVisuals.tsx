@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import type { operationsReport } from "~/lib/analytics/operations";
 import { ChartValues } from "./ChartValues";
+import { ProductBrewTimeCharts } from "./ProductBrewTimeCharts";
 
 type Report = ReturnType<typeof operationsReport>;
 const WAIT_BANDS = [
@@ -252,7 +253,7 @@ export function OverviewVisuals({
   );
 }
 
-/** 各区間の中央値を並列表示する。中央値同士を足して総時間にはしない。 */
+/** 抽出開始で分けた平均の内訳と、従来の準備完了で分けた中央値を表示する。中央値は加算しない。 */
 export function ProductTimeChart({
   products,
 }: { products: Report["products"] }) {
@@ -272,7 +273,9 @@ export function ProductTimeChart({
       </p>
     );
   return (
-    <div>
+    <div className="space-y-6">
+      <ProductBrewTimeCharts products={products} />
+      <h4 className="font-bold">準備完了で分けた提供時間（中央値）</h4>
       <div
         style={{ height: Math.max(260, data.length * 74) }}
         aria-label="商品別の注文から準備完了・準備完了からお渡し・全体の時間の真ん中の値"
