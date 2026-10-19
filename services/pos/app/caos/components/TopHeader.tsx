@@ -177,7 +177,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       data-caos-layer
-      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-[#e2e8f0] border-b bg-white px-2 shadow-xs"
+      className="relative flex h-[56px] shrink-0 select-none items-center justify-between gap-2 border-slate-700 border-b bg-slate-900 px-2 shadow-md"
     >
       {/* まだ送れていない盤面の操作と、つながらないシールのプリンター（証明書を許可するページの案内）・刷れずに残っているシール。
           ヘッダーの下に重ねて出す（ヘッダーの並びを詰めない） */}
@@ -222,13 +222,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <div className="flex min-w-0 items-center gap-2">
         {/* 左側は時計、A/C/D、現在の順。 */}
         <div className="flex w-[180px] shrink-0 flex-col items-center justify-center">
-          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap rounded-lg bg-slate-950 text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none shadow-sm">
+          <time className="grid h-11 w-full shrink-0 place-items-center whitespace-nowrap rounded-lg bg-slate-950 text-center font-bold font-mono text-[32px] text-white tabular-nums leading-none shadow-sm ring-1 ring-slate-600">
             {timeStr}
           </time>
         </div>
 
         <fieldset
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-600 bg-slate-800 p-1"
           aria-label="管制盤の表示切替"
         >
           {Object.entries(CONTROL_VIEWS).map(([mode, view]) => (
@@ -240,7 +240,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 onSelectControlViewMode(mode as ControlViewMode);
                 onSelectTab("control");
               }}
-              className={`h-10 min-w-10 touch-manipulation rounded-md font-black text-[14px] ${activeTab === "control" && controlViewMode === mode ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-600"}`}
+              className={`h-10 min-w-10 touch-manipulation rounded-md font-black text-[14px] ${activeTab === "control" && controlViewMode === mode ? "bg-sky-300 text-slate-950 shadow-sm" : "bg-slate-700 text-slate-100 hover:bg-slate-600"}`}
             >
               {view.label}
             </button>
@@ -270,7 +270,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-center font-black text-[16px] leading-tight"
       >
         {cancellation && (
-          <span className="max-w-full truncate text-red-600">
+          <span className="max-w-full truncate text-red-300">
             {cancellation}
           </span>
         )}

@@ -60,6 +60,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - 時計は見やすい濃色の表示でヘッダー左端です。操作がないときの「直前の操作なし」は表示しません。左側は時計、A/C/D、現在の順、右側は設定、音量、番号、提供済み一覧、緊急、DB・プリンター接続状況の順です。歯車の「設定」に実データテスト、ドリッパー、豆残量確認、sohosai-shiftの合言葉、上級生の在席状況をまとめています。実績はヘッダーには置かず、テストプレイ終了時だけ開きます。設定から開くドリッパー一覧は1st〜6thを上から縦1列で表示します。
 - アイコンのファイル名は機能に合わせる。カード操作は `unassign.svg`（未割当に戻す）、`start-brew.svg`（着手）、`undo-brew-start.svg`（着手取消）、`finish-brew.svg`（完了）、`request-rebrew.svg`（入れ直し）、`view-comments.svg`（コメント閲覧）。`serving-overdue.svg` は未提供の時間超過、`open-dripper-settings.svg` はドリッパー設定を開く操作。未使用の別素材 `undo-brew-start-alternative.svg` は着手取消の代替素材として保管する。
 - 最上段のヘッダーからA/C/Dを切り替えます。
+- ヘッダー全体は濃いネイビーの背景です。A/C/Dの選択中は水色で示し、時計・通知・操作ボタンのコントラストを確保します。
 - 補助情報は右側パネルに表示し、管制盤全体を隠しません。
 - 小画面の「終了」「閲覧を終了」は表示せず、右上の×で閉じます。時計は秒まで32pxの等幅数字で、180×44pxの背景の上下左右中央に表示します。時計の下に直前の操作は表示しません。
 - iPad で画面全体が動かないよう、CaOS の 3 つの画面（`/master-sheet`・`/master-sheet/view`・`/master-sheet/libero`）を開いているあいだは、ページのスクロール・はね返り・ピンチとダブルタップの拡大を止めます（`caos.css` の `html:has(.caos-root)` で `overflow: hidden`・`overscroll-behavior: none`・`touch-action: pan-x pan-y`、盤面は `h-dvh` で見えている高さに収める。`hooks/useFixedViewport.ts` で viewport に `maximum-scale=1, user-scalable=no` を足し（入力欄を押したときの自動の拡大も止まる）、Safari の `gesturestart`・`gesturechange` を止める）。枠の中のスクロールとスクロールバー・カードのドラッグ・入力欄は今まで通りです。
