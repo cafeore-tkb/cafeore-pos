@@ -24,9 +24,8 @@ import { menuColor } from "./MenuPanel";
 type props = {
   draft: CashierDraft;
   couponStatus: CouponStatus;
-  /** 入力中の注文の割引額と、割引の対象の杯数 */
+  /** 入力中の注文の割引額 */
   discount: number;
-  coffeeCups: number;
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
   canCancelPayment: boolean;
   onSelect: (index: number) => void;
@@ -253,7 +252,6 @@ const discountMessage = ({
   draft,
   couponStatus,
   discount,
-  coffeeCups,
 }: props): { text: string; tone: "ok" | "bad" | "neutral" } => {
   if (draft.special) {
     return {
@@ -267,20 +265,32 @@ const discountMessage = ({
   switch (couponStatus.kind) {
     case "empty":
       return {
-        text: "3桁を入れると前回の注文を照合します（1杯 −¥100）",
+        text: "3桁を入れると前回の注文を照合します（1会計 −¥100）",
         tone: "neutral",
       };
     case "partial":
       return { text: `あと ${couponStatus.remaining} 桁`, tone: "neutral" };
     case "available": {
-      const cups = couponStatus.order.getCoffeeCups();
-      const names = cups.map((cup) => cup.name).join("・");
-      const limit =
-        cups.length > coffeeCups ? ` 今回は${coffeeCups}杯まで` : "";
-      return {
-        text: `${cups.length}杯分 −${formatYen(discount)}（${names}）${limit}`,
-        tone: "ok",
-      };
+      // 前回の注文に何杯あっても、割り引くのは 1 会計につき 1 杯分
+      const names = couponStatus.order
+        .getCoffeeCups()
+        .map((cup) => cup.name)
+        .join("・");
+      if (names === "") {
+        return {
+          text: "前回の注文にコーヒーが無いので割引できません",
+          tone: "bad",
+        };
+      }
+      return discount > 0
+        ? {
+            text: `1会計 −${formatYen(discount)}（前回：${names}）`,
+            tone: "ok",
+          }
+        : {
+            text: `コーヒーを入れると割引します（前回：${names}）`,
+            tone: "neutral",
+          };
     }
     case "already_used":
       return {

@@ -326,11 +326,12 @@ describe("[unit] order entity", () => {
       estimateTime: -1,
     });
 
+    // 前回の注文に 2 杯あっても、割り引くのは 1 会計につき 1 杯分
     order.applyDiscount(previousOrder);
     expect(order.discountOrderId).toBe(99999);
-    expect(order.discountOrderCups).toBe(2);
-    expect(order.discount).toBe(200);
-    expect(order.billingAmount).toBe(700);
+    expect(order.discountOrderCups).toBe(1);
+    expect(order.discount).toBe(100);
+    expect(order.billingAmount).toBe(800);
 
     order.menus.pop();
     expect(order.discount).toBe(100);
@@ -341,6 +342,34 @@ describe("[unit] order entity", () => {
     expect(order.discount).toBe(100);
     expect(order.total).toBe(500);
     expect(order.billingAmount).toBe(400);
+
+    // 今回の注文にコーヒーが無ければ割り引かない
+    order.menus = [milkItem];
+    expect(order.discount).toBe(0);
+    expect(order.billingAmount).toBe(100);
+  });
+
+  test("上限を入れる前に保存した注文は、保存した杯数のまま割り引く", () => {
+    const menus = [coffeeItem, coffeeItem];
+    const saved = OrderEntity.fromOrder({
+      id: "1",
+      orderId: 10,
+      createdAt: new Date(),
+      readyAt: null,
+      servedAt: null,
+      menus,
+      total: 600,
+      comments: [],
+      billingAmount: 400,
+      received: 400,
+      discountOrderId: 9,
+      discountOrderCups: 2,
+      DISCOUNT_PER_CUP: 100,
+      discount: 200,
+      estimateTime: -1,
+    });
+    expect(saved.discount).toBe(200);
+    expect(saved.billingAmount).toBe(400);
   });
 
   test("addComment", () => {
