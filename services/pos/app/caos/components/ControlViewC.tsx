@@ -227,6 +227,7 @@ const LaneCard: React.FC<{
       card={card}
       look={look}
       size="lane"
+      parallelOrderNumbers
       selected={selected}
       data-queued-ticket={card.key}
       data-search-key={card.key}

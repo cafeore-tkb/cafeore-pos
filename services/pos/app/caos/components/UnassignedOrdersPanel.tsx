@@ -55,6 +55,7 @@ const UnassignedCard: React.FC<{
   nowMs: number;
   readOnly?: boolean;
   className?: string;
+  parallelOrderNumbers?: boolean;
 }> = ({
   card,
   looks,
@@ -64,6 +65,7 @@ const UnassignedCard: React.FC<{
   nowMs,
   readOnly = false,
   className = "",
+  parallelOrderNumbers = false,
 }) => {
   const isOpen = !readOnly && pick.isOpen(card);
   const isMergeCandidate = !readOnly && pick.canMergeWith(card);
@@ -72,6 +74,7 @@ const UnassignedCard: React.FC<{
       card={card}
       look={looks.get(card.key)}
       size={size}
+      parallelOrderNumbers={parallelOrderNumbers}
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
       mergeTap={isMergeCandidate}
@@ -113,13 +116,15 @@ const DragGhost: React.FC<{
   pick: UnassignedPick;
   looks: CardLooks;
   size: "sm" | "queue" | "md";
-}> = ({ pick, looks, size }) =>
+  parallelOrderNumbers?: boolean;
+}> = ({ pick, looks, size, parallelOrderNumbers = false }) =>
   pick.drag.source &&
   pick.drag.ghost(
     <OrderCard
       card={pick.drag.source}
       look={looks.get(pick.drag.source.key)}
       size={size}
+      parallelOrderNumbers={parallelOrderNumbers}
     />,
     dropTargetLabel(pick.drag.target),
   );
@@ -399,7 +404,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
               key={`${emergency}:${orderNo}`}
               className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
             >
-              <span className="flex w-20 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
+              <span className="flex w-16 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
                 <span className="flex items-center gap-1">
                   {orderNoLabel(orderNo)}
                   <OrderCommentBadge
@@ -423,6 +428,7 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
                     pick={pick}
                     readOnly={readOnly}
                     size="sm"
+                    parallelOrderNumbers
                     selected={sharesOrder(card, selectedOrderId)}
                     nowMs={nowMs}
                     className="min-h-[60px] w-[150px]"
@@ -434,7 +440,9 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
           {rows.length === 0 && <EmptyNote />}
         </ScrollArea>
       )}
-      {!readOnly && <DragGhost pick={pick} looks={looks} size="sm" />}
+      {!readOnly && (
+        <DragGhost pick={pick} looks={looks} size="sm" parallelOrderNumbers />
+      )}
     </section>
   );
 };
