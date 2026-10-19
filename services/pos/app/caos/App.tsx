@@ -38,6 +38,10 @@ import { useCardMenu } from "./hooks/useCardMenu";
 import { useCommentNotices } from "./hooks/useCommentNotices";
 import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
+import {
+  OrderHighlightsContext,
+  useOrderHighlightState,
+} from "./hooks/useOrderHighlights";
 import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
 import { useServedCardAlert } from "./hooks/useServedCardAlert";
@@ -68,6 +72,16 @@ export default function App() {
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
+  const highlight = useOrderHighlightState(
+    session.cards,
+    `${session.simulating ? "practice" : "live"}:${jstDate(session.nowMs)}`,
+    (cardKey) =>
+      setTimelineCommand({ direction: "card", cardKey, id: performance.now() }),
+  );
+  const selectOrder = (label: string | null, orderId?: string) => {
+    selection.selectOrder(label);
+    if (label) highlight.selectLabel(label, orderId);
+  };
   // 管制盤 A のタイムラインが NOW を追っているか（ヘッダーの「現在」の見た目）
   const [followingNow, setFollowingNow] = useState(true);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
@@ -78,7 +92,7 @@ export default function App() {
     open: selection.openSearch,
     setDigits: selection.setSearchDigits,
     close: selection.closeSearch,
-    selectOrder: selection.selectOrder,
+    selectOrder,
     showOnTimeline: view.timelineControls
       ? (cardKey) =>
           setTimelineCommand({ direction: "card", cardKey, id: Date.now() })
@@ -145,6 +159,7 @@ export default function App() {
   const backToLive = () => {
     session.reset();
     selection.clear();
+    highlight.clear();
   };
   // 補助のパネルを閉じる。テストを終えたあとなら本番の盤面に戻す（テストの盤面のまま戻し忘れないように）
   const closeAuxiliary = () => {
@@ -395,8 +410,12 @@ export default function App() {
   );
   // コメントの中身（右下・未提供の行・パネル）の下に、スタンプで返すボタンを出す
   return (
-    <StampReplyContext.Provider value={stampReply}>
-      {page}
-    </StampReplyContext.Provider>
+    <OrderHighlightsContext.Provider
+      value={view.timelineControls ? highlight : null}
+    >
+      <StampReplyContext.Provider value={stampReply}>
+        {page}
+      </StampReplyContext.Provider>
+    </OrderHighlightsContext.Provider>
   );
 }

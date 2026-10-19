@@ -1,10 +1,7 @@
-import {
-  type CaosCard,
-  caosDripperAllowed,
-  dripperLabel,
-} from "@cafeore/common";
-import { RotateCcw, Sparkles, X } from "lucide-react";
+import { type CaosCard, caosDripperAllowed } from "@cafeore/common";
+import { RotateCcw } from "lucide-react";
 import type React from "react";
+import { useMemo } from "react";
 import {
   type DropTarget,
   dropSideOn,
@@ -13,9 +10,10 @@ import {
   useCardDrag,
   useCardHold,
 } from "../hooks/useCardDrag";
+import { useOrderHighlights } from "../hooks/useOrderHighlights";
 import { useTimelineScroll } from "../hooks/useTimelineScroll";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
-import { cardName, orderLabel, sharesOrder } from "../logic/cards";
+import { orderLabel, sharesOrder } from "../logic/cards";
 import { laneActive, laneCards, pendingNominatedCups } from "../logic/lanes";
 import { laneStatus } from "../logic/queue";
 import { positionTickets, timeMarkers, timelineRange } from "../logic/timeline";
@@ -24,7 +22,12 @@ import { CardOverlay } from "./CardActions";
 import type { ControlViewProps } from "./ControlWorkspace";
 import { LaneChangeButton } from "./LaneParts";
 import { OrderCard } from "./OrderCard";
+import { OrderHighlightMarks } from "./OrderHighlightMarks";
 import { ScrollArea } from "./ScrollArea";
+import {
+  TimelineOrderHighlights,
+  useTimelineHighlightVisibility,
+} from "./TimelineOrderHighlights";
 
 // 管制盤 A のタイムライン。6 列（1st〜6th）の抽出中・待機・終わったカードを、時刻の位置に並べる。
 // 左端はドリッパーの番号（列の状態のインジケーター）と担当者。
@@ -93,7 +96,6 @@ export const DispatchBoard: React.FC<
   unassignedOrders,
   looks,
   selectedOrderId,
-  onSelectOrder,
   cardMenu,
   onHoldCard,
   onMoveTicket,
@@ -108,6 +110,9 @@ export const DispatchBoard: React.FC<
   onFollowNowChange,
   fill = false,
 }) => {
+  const highlight = useOrderHighlights();
+  // 位置監視の更新で再描画されても配列参照を保ち、監視の再登録ループを防ぐ。
+  const highlightCards = useMemo(() => lanes.flatMap(laneCards), [lanes]);
   const range = timelineRange(nowMs);
   // 時刻（エポックのミリ秒）の横の位置。表示する範囲の始まりからの差で決める
   const toX = (ms: number) => ((ms - range.startMs) / 1000) * PIXELS_PER_SEC;
@@ -122,6 +127,11 @@ export const DispatchBoard: React.FC<
     cardInsetPx: STICKY_LEFT_WIDTH + 24,
     command: timelineCommand,
     onFollowingChange: onFollowNowChange,
+  });
+  const outsideHighlights = useTimelineHighlightVisibility({
+    containerRef: scroll.containerRef,
+    cards: highlightCards,
+    stickyWidth: STICKY_LEFT_WIDTH,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
   const height = HEIGHTS[fill ? "fill" : "fixed"];
@@ -149,16 +159,6 @@ export const DispatchBoard: React.FC<
   // ドラッグ（タイムラインのカードか、下の横帯の未割当のカード）で指の下の落とす先
   const dropTarget = drag.target ?? pick?.drag.target ?? null;
 
-  // 選んだ注文のカード（列ごと）
-  const matchingTickets = lanes.flatMap((lane) =>
-    laneCards(lane)
-      .filter((card) => sharesOrder(card, selectedOrderId))
-      .map(
-        (card) =>
-          `ドリッパー ${dripperLabel(lane.id)}: ${cardName(card)} ${card.cups.length}杯`,
-      ),
-  );
-
   return (
     <div
       className={`relative flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs ${height.board}`}
@@ -170,31 +170,6 @@ export const DispatchBoard: React.FC<
         >
           <RotateCcw className="h-3 w-3" />
           <span>過去の抽出履歴を表示中</span>
-        </div>
-      )}
-
-      {/* 選んだ注文（同じ注文のカードがどの列にあるか）。目盛りの上に重ね、下の列をずらさない */}
-      {selectedOrderId && (
-        <div className="absolute inset-x-0 top-0 z-[70] flex h-[30px] select-none items-center justify-between bg-amber-500 px-3 font-bold text-white text-xs shadow-xs">
-          <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap">
-            <span className="flex items-center gap-1 rounded bg-amber-600 px-2 font-black font-mono text-[17px]">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>{selectedOrderId}</span>
-            </span>
-            <span>連動:</span>
-            <span className="rounded bg-amber-600/90 px-2 py-0.5 font-normal text-amber-100">
-              {matchingTickets.join(" ＋ ") || "オーダー詳細表示"}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => onSelectOrder(null)}
-            className="flex h-[26px] min-w-[52px] cursor-pointer touch-manipulation items-center justify-center gap-1 rounded-lg bg-amber-700 px-2 font-bold text-[11px] transition-colors hover:bg-amber-800"
-          >
-            <X className="h-3.5 w-3.5" />
-            <span>解除</span>
-          </button>
         </div>
       )}
 
@@ -213,7 +188,12 @@ export const DispatchBoard: React.FC<
               style={{ width: STICKY_LEFT_WIDTH }}
               className="sticky left-0 isolate z-[60] flex h-full shrink-0 touch-none items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
             >
-              {scroll.isFollowingNow ? (
+              {highlight?.orders.length ? (
+                <TimelineOrderHighlights
+                  followingNow={scroll.isFollowingNow}
+                  onNow={scroll.toNow}
+                />
+              ) : scroll.isFollowingNow ? (
                 "ドリッパー / 抽出担当"
               ) : (
                 // 手でスクロールして NOW の追従をやめているあいだ（閲覧だけの画面にはヘッダーの「現在」が無いので、ここで戻す）
@@ -291,6 +271,10 @@ export const DispatchBoard: React.FC<
                         dripper={bay.id}
                         className="max-w-full font-black text-[18px] text-slate-950 leading-tight"
                       />
+                      <OrderHighlightMarks
+                        cards={laneCards(bay)}
+                        outside={outsideHighlights}
+                      />
                     </div>
                   </div>
 
@@ -327,6 +311,7 @@ export const DispatchBoard: React.FC<
                             card={ticket}
                             look={looks.get(ticket.key)}
                             selected={sharesOrder(ticket, selectedOrderId)}
+                            data-timeline-highlight-card={ticket.key}
                             data-search-key={ticket.key}
                             // 待機・抽出中のカードは、ドラッグで落とすと前・後ろ・統合の目印になる（useCardDrag の dropTargetAt）
                             data-queued-ticket={
