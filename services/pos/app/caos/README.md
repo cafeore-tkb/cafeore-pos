@@ -61,6 +61,7 @@ POS の画面の1つとして `/master-sheet` で配信します（<https://cafe
 - アイコンのファイル名は機能に合わせる。カード操作は `unassign.svg`（未割当に戻す）、`start-brew.svg`（着手）、`undo-brew-start.svg`（着手取消）、`finish-brew.svg`（完了）、`request-rebrew.svg`（入れ直し）、`view-comments.svg`（コメント閲覧）。`serving-overdue.svg` は未提供の時間超過、`open-dripper-settings.svg` はドリッパー設定を開く操作。未使用の別素材 `undo-brew-start-alternative.svg` は着手取消の代替素材として保管する。
 - 最上段のヘッダーからA/C/Dを切り替えます。
 - 補助情報は右側パネルに表示し、管制盤全体を隠しません。
+- 小画面の「終了」「閲覧を終了」は表示せず、右上の×で閉じます。時計は秒まで32pxの等幅数字で表示し、文字の幅に合わせた枠で左右の余白を揃えます。
 - iPad で画面全体が動かないよう、CaOS の 3 つの画面（`/master-sheet`・`/master-sheet/view`・`/master-sheet/libero`）を開いているあいだは、ページのスクロール・はね返り・ピンチとダブルタップの拡大を止めます（`caos.css` の `html:has(.caos-root)` で `overflow: hidden`・`overscroll-behavior: none`・`touch-action: pan-x pan-y`、盤面は `h-dvh` で見えている高さに収める。`hooks/useFixedViewport.ts` で viewport に `maximum-scale=1, user-scalable=no` を足し（入力欄を押したときの自動の拡大も止まる）、Safari の `gesturestart`・`gesturechange` を止める）。枠の中のスクロールとスクロールバー・カードのドラッグ・入力欄は今まで通りです。
 
 ### 管制盤A・C・Dの比較

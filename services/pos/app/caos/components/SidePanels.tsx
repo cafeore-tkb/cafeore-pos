@@ -63,7 +63,7 @@ export const SidePanel: React.FC<{
   onClose: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, footer, children }) => {
+}> = ({ title, footer, children }) => {
   const panelRef = useRef<HTMLElement | null>(null);
   const floating = useFloatingWindow(
     typeof title === "string" ? title : "操作パネル",
@@ -82,13 +82,6 @@ export const SidePanel: React.FC<{
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         {floating.handle}
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
-        >
-          終了
-        </button>
         <button
           type="button"
           onClick={floating.hide}
