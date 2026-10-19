@@ -50,7 +50,7 @@ import { ScrollArea } from "./ScrollArea";
 import {
   UnassignedHeading,
   UnfinishedList,
-  unassignedAreaBackground,
+  orderTabsAreaBackground,
 } from "./UnfinishedOrders";
 
 // 管制盤 D：紙のマスターシートと同じく、列はドリッパー、行は注文番号（logic/sheet.ts）。
@@ -497,7 +497,7 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
       ) : (
         <aside
           data-return-target
-          className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${unassignedAreaBackground(unfinished)} ${LINE}`}
+          className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border-2 shadow-xs ${orderTabsAreaBackground} ${LINE}`}
         >
           {dragSource?.kind === "ticket" && (
             <div
@@ -520,11 +520,14 @@ export const ControlViewD: React.FC<ControlViewProps> = ({
               unassignedOrders={unassignedOrders}
               view={unfinished}
               label="注文内容"
+              compact={Boolean(unfinished)}
               className={unfinished ? "text-[13px]" : undefined}
             />
-            <span className="ml-auto font-black text-[12px] text-slate-700">
-              未割り振り <OrderCountLabel cards={unassignedOrders} />
-            </span>
+            {!unfinished && (
+              <span className="ml-auto font-black text-[12px] text-slate-700">
+                未割り振り <OrderCountLabel cards={unassignedOrders} />
+              </span>
+            )}
           </PanelHeader>
 
           {unfinished?.tab === "unfinished" ? (

@@ -31,9 +31,8 @@ export interface UnfinishedView {
   onSelectOrder: (orderNo: number) => void;
 }
 
-/** タブラベル・見出し・表示領域で共通の背景色。 */
-export const unassignedAreaBackground = (view?: UnfinishedView) =>
-  view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-[#eef6ff]";
+/** 注文タブの表示領域。タブ固有色を広げず、どの表示でも同じ地色にする。 */
+export const orderTabsAreaBackground = "bg-slate-50";
 
 const TAB =
   "relative flex h-12 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
@@ -57,6 +56,8 @@ export const UnassignedHeading: React.FC<{
   };
   /** 「未割当」のタブの名前（D は「注文内容」） */
   label?: string;
+  /** 狭い欄では補助情報を省き、タブを均等幅にする */
+  compact?: boolean;
   className?: string;
 }> = ({
   view,
@@ -64,8 +65,10 @@ export const UnassignedHeading: React.FC<{
   nextBayId,
   allTab,
   label = "未割当",
+  compact = false,
   className = "text-[15px]",
 }) => {
+  const isCompact = compact || Boolean(allTab);
   const unassignedCounts = orderAndCupCounts(unassignedOrders);
   const unassignedNumberTone =
     unassignedCounts.orders >= 10 ? "text-red-600" : "";
@@ -114,7 +117,7 @@ export const UnassignedHeading: React.FC<{
   return (
     <div
       role="tablist"
-      className={`caos-folder-tabs flex gap-1 ${allTab ? "min-w-0 flex-1" : ""} ${className}`}
+      className={`caos-folder-tabs flex gap-1 ${isCompact ? "min-w-0 flex-1" : ""} ${className}`}
     >
       <button
         type="button"
@@ -125,11 +128,11 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unassigned")
             : view.onSelectTab("unassigned")
         }
-        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-[#eef6ff] ${!allTab?.active && view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unassigned" ? `bg-[#eaf3fb] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         {icon}
         {label}
-        {!allTab && (
+        {!isCompact && (
           <>
             <span
               className="caos-tab-time"
@@ -176,12 +179,12 @@ export const UnassignedHeading: React.FC<{
             ? allTab.onSelectBase("unfinished")
             : view.onSelectTab("unfinished")
         }
-        className={`${TAB} ${allTab ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} bg-[#f5ede3] ${!allTab?.active && view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unfinished" ? `bg-[#f1eff8] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
-        {!allTab && <RollingOrderNumber value={smallestUnserved} />}
-        {!allTab && view.rows.some((row) => row.late) && (
+        {!isCompact && <RollingOrderNumber value={smallestUnserved} />}
+        {!isCompact && view.rows.some((row) => row.late) && (
           <img
             src={servingOverdueIcon}
             alt="提供待ち15分以上"
@@ -192,7 +195,7 @@ export const UnassignedHeading: React.FC<{
           <RollingNumber value={view.rows.length} />件{" "}
           <RollingNumber value={unservedCups} />杯
         </span>
-        {!allTab && (
+        {!isCompact && (
           <span className={`caos-tab-time ${longestTimeTone}`}>
             最長 <RollingClock seconds={longestWaitSec} />
           </span>
@@ -212,7 +215,7 @@ export const UnassignedHeading: React.FC<{
           role="tab"
           aria-selected={allTab.active}
           onClick={allTab.onSelect}
-          className={`${TAB} min-w-0 flex-1 justify-center bg-[#eef2f7] px-1.5 ${allTab.active ? TAB_ON : TAB_OFF}`}
+          className={`${TAB} min-w-0 flex-1 justify-center px-1.5 ${allTab.active ? `bg-[#edf3f1] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
         >
           <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
           一覧
