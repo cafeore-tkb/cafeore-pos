@@ -5,12 +5,10 @@ import {
   addCupEmergencies,
   cancelCupEmergency,
   cupNeedsBrew,
-  getCupEmergencyReasons,
   requestLabelPrint,
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import useSWR from "swr";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
 import { labelPrintableWidth } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
@@ -136,17 +134,10 @@ export const orderByNo = <O extends CaosOrderInput>(
 /** 緊急の入力を開いたときの値（カップやカードから開けば、その注文番号とカップ） */
 export type EmergencyInitial = { orderNo: number; cupIds: string[] };
 
-// 理由の候補（前の日までも含めてよく使う順。GET /api/cup-emergencies/reasons）。取れなければ前に取れたもののまま
-const fetchReasons = async () => {
-  const result = await getCupEmergencyReasons();
-  if (result.error !== undefined) throw new Error(result.error);
-  return result.data;
-};
-
 /**
  * 緊急の入力：注文番号・入れ直すカップ・理由。initial はカップやカードから開いたときの注文番号とカップ。
  * 入れ直せるのは番号の注文の抽出が要るカップと、initial のカップのあるほかの注文（注文をまたいで統合したカード）の抽出が要るカップ。
- * 番号を変えると、ほかの注文は外し、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。理由の候補は開くたびに読み直す。
+ * 番号を変えると、ほかの注文は外し、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。
  * 注文は POS の注文（OrderEntity）か、実データテストの練習の盤面の注文
  */
 export const useEmergencyDraft = <O extends CaosOrderInput>(
@@ -172,7 +163,6 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
       ]
     : [];
   const cups = scope.flatMap(brewCupsOf);
-  const { data: reasons = [] } = useSWR("cup-emergency-reasons", fetchReasons);
   return {
     orderNo,
     changeOrderNo: (value: string) => {
@@ -197,7 +187,6 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
       ),
     reason,
     setReason,
-    reasons,
     /** 入れ直すカップ（addEmergency に渡す。理由は reason） */
     selected: cups
       .filter((cup) => picked.includes(cup.cupId))
