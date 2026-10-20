@@ -50,6 +50,7 @@ export function OrderCommentPanel({
   const [bottomInset, setBottomInset] = useState(0);
   const [focusedComment, setFocusedComment] = useState<string | null>(null);
   const scrolledComment = useRef<string | null>(null);
+  const submitting = useRef(false);
   const historyRef = useRef<HTMLDivElement>(null);
   const followBottom = useRef(true);
   // iPadのソフトウェアキーボードで送信欄が隠れないよう、表示可能な高さへ収める。
@@ -114,17 +115,23 @@ export function OrderCommentPanel({
   };
   const sendText = async (text: string, clearDraft = false) => {
     const content = text.trim();
-    if (blocked || locked || !content || !target) return false;
+    if (blocked || locked || submitting.current || !content || !target)
+      return false;
     // 宛先はawaitの前に固定。成功時に、後から書いた別の下書きを消さない。
     const { id } = target;
+    submitting.current = true;
     setSendMessage(null);
-    if (!(await send(id, content))) {
-      setSendMessage({ orderId: id, ok: false });
-      return false;
+    try {
+      if (!(await send(id, content))) {
+        setSendMessage({ orderId: id, ok: false });
+        return false;
+      }
+      if (clearDraft) composer.sentDraft(id, content);
+      setSendMessage({ orderId: id, ok: true });
+      return true;
+    } finally {
+      submitting.current = false;
     }
-    if (clearDraft) composer.sentDraft(id, content);
-    setSendMessage({ orderId: id, ok: true });
-    return true;
   };
   const footer =
     !choosing && target ? (
