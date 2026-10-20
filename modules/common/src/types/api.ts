@@ -346,7 +346,9 @@ export interface paths {
     get: operations["getMasterState"];
     /**
      * オーダーストップ・再開
-     * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+     * @description 状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+     * expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+     * 履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
      * オーダーストップの状態を書くのはここだけ。
      */
     post: operations["updateMasterState"];
@@ -936,9 +938,17 @@ export interface components {
       created_at: string;
       type: string;
     };
+    /** @description 確認した受付状態。履歴なしは type=operational、created_at=null。 */
+    MasterStateExpected: {
+      /** @enum {string} */
+      type: "stop" | "operational";
+      /** Format: date-time */
+      created_at: string | null;
+    };
     MasterStateUpdateRequest: {
       /** @enum {string} */
       type: "stop" | "operational";
+      expected?: components["schemas"]["MasterStateExpected"];
     };
     /**
      * @description 背景色を設定する対象の種類
@@ -2914,7 +2924,9 @@ export interface operations {
   };
   /**
    * オーダーストップ・再開
-   * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+   * @description 状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+   * expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+   * 履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
    * オーダーストップの状態を書くのはここだけ。
    */
   updateMasterState: {
@@ -2932,6 +2944,12 @@ export interface operations {
       };
       /** @description type が stop でも operational でもない */
       400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 確認後に受付状態が変わりました */
+      409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

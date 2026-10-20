@@ -16,6 +16,7 @@ import type { useCaosOutboxSender } from "../hooks/useCaosOutbox";
 import { orderNoLabel } from "../logic/cards";
 import { CONTROL_VIEW_BUTTONS, type ControlViewMode } from "./ControlWorkspace";
 import { FloatingStatusNotices } from "./FloatingWindows";
+import { OrderStopControl } from "./OrderStopControl";
 import type { AuxiliaryTab } from "./SidePanels";
 import { UnsentOps } from "./UnsentOps";
 
@@ -318,6 +319,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             提供済み一覧
           </button>
         )}
+        {!simulating && <OrderStopControl />}
         {/* 緊急（入れ直し）は接続状況より左に置く。 */}
         {onOpenEmergency && (
           <button

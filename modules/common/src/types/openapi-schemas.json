@@ -800,6 +800,23 @@
       }
     }
   },
+  "MasterStateExpected": {
+    "type": "object",
+    "description": "確認した受付状態。履歴なしは type=operational、created_at=null。",
+    "required": ["type", "created_at"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": ["stop", "operational"],
+        "x-enum-varnames": ["ExpectedStop", "ExpectedOperational"]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
   "MasterStateUpdateRequest": {
     "type": "object",
     "required": ["type"],
@@ -807,6 +824,9 @@
       "type": {
         "type": "string",
         "enum": ["stop", "operational"]
+      },
+      "expected": {
+        "$ref": "#/components/schemas/MasterStateExpected"
       }
     }
   },
