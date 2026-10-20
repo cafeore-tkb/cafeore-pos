@@ -28,13 +28,13 @@ func toItemTypeResponse(itemType *models.ItemType) models.ItemTypeResponse {
 	// 抽出しない種類は上級生のみにもアイスにもならない
 	brew := itemType.BrewRequired()
 	return models.ItemTypeResponse{
-		Id:            openapi_types.UUID(itemType.ID),
-		Name:          itemType.Name,
-		DisplayName:   itemType.DisplayName,
-		MakesCup:      itemType.CreatesCup(),
-		NeedsBrew:     brew,
-		SeniorOnly:    brew && itemType.SeniorOnly,
-		IcedBrew:      brew && itemType.IcedBrew,
+		Id:             openapi_types.UUID(itemType.ID),
+		Name:           itemType.Name,
+		DisplayName:    itemType.DisplayName,
+		MakesCup:       itemType.CreatesCup(),
+		NeedsBrew:      brew,
+		SeniorOnly:     brew && itemType.SeniorOnly,
+		IcedBrew:       brew && itemType.IcedBrew,
 		ServeWithSnack: itemType.ServeWithSnack,
 	}
 }

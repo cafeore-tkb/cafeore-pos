@@ -325,8 +325,8 @@ describe("[unit] planMasterImport", () => {
       emptySnapshot,
     );
     expect(plan.problems).toEqual([
-      "item_types.csv 2行目・makes_cup / needs_brew / senior_only / iced_brew: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
-      "item_types.csv 3行目・needs_brew / senior_only / iced_brew: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+      "item_types.csv 2行目・makes_cup / needs_brew / senior_only / iced_brew / serve_with_snack: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+      "item_types.csv 3行目・needs_brew / senior_only / iced_brew / serve_with_snack: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
     ]);
     expect(plan.calls[2].body).toEqual({
       name: "others",
@@ -337,6 +337,17 @@ describe("[unit] planMasterImport", () => {
       iced_brew: false,
       serve_with_snack: false,
     });
+  });
+
+  test("rejects a legacy item type missing only serve_with_snack", () => {
+    const { id, serve_with_snack, ...legacy } = hotType;
+    const plan = planMasterImport(
+      rowsOf({ item_types: [legacy] }),
+      emptySnapshot,
+    );
+    expect(plan.problems).toEqual([
+      "item_types.csv 2行目・serve_with_snack: 値がありません。この列が無いのは種類の扱いが入る前のファイルなので、書き出し直したファイルを使ってください",
+    ]);
   });
 
   test("refuses ambiguous references to existing rows", () => {
