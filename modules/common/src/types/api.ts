@@ -97,8 +97,9 @@ export interface paths {
      * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
      * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
      * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-     * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-     * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+     * id は入れ直しの id。入れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+     * 消えた入れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+     * 緊急を取り消す・注文の編集や削除で入れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
      * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
      */
     post: operations["createLabelPrintRequest"];
@@ -300,6 +301,7 @@ export interface paths {
      * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
      * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
      * レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+     * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の入れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
      */
     delete: operations["deleteCupEmergency"];
   };
@@ -1985,8 +1987,9 @@ export interface operations {
    * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
    * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
    * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-   * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-   * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+   * id は入れ直しの id。入れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+   * 消えた入れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+   * 緊急を取り消す・注文の編集や削除で入れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
    * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
    */
   createLabelPrintRequest: {
@@ -2006,8 +2009,8 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 入れ直しが無い（取り消した）。頼みは作らない */
-      404: {
+      /** @description 入れ直しが無い（取り消した・注文の編集や削除で消えた）。頼みは作らない。頼んだ端末はそのシールを捨てる */
+      410: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2734,6 +2737,7 @@ export interface operations {
    * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
    * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
    * レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+   * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の入れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
    */
   deleteCupEmergency: {
     parameters: {

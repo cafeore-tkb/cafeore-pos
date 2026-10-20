@@ -163,7 +163,8 @@ func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	}
 }
 
-// publishCupEmergencyCancelled は入れ直しを取り消したことを、このインスタンスの画面へ配り、ほかのインスタンスへ DB の通知で知らせる。
+// publishCupEmergencyCancelled は入れ直しを取り消した（注文の編集・削除で消えたときも）ことを、このインスタンスの画面へ配り、
+// ほかのインスタンスへ DB の通知で知らせる。
 // 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す（注文の一覧から消えたことでは消さない）。
 // 知らせを受け損ねた画面はシールを刷ってしまうが、刷るべきシールを刷らないよりよいので、送り直しはしない。
 func publishCupEmergencyCancelled(db *gorm.DB, hub *Hub, id uuid.UUID) {
@@ -234,11 +235,8 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 				window[i].Removed = true
 			}
 		}
-		if err := deleteCupEmergencies(tx, "id = ?", id); err != nil {
-			return err
-		}
-		// レジに頼んだ代理印刷も消す（まだ刷れていなければ、レジは刷らない。label_print.go）
-		if err := tx.Delete(&models.LabelPrintRequest{}, "id = ?", id).Error; err != nil {
+		// レジに頼んだ代理印刷もいっしょに消える
+		if _, err := deleteCupEmergencies(tx, "id = ?", id); err != nil {
 			return err
 		}
 		return recordCaosEmergency(tx, "emergency.cancel", now, window, []uuid.UUID{id}, reason)
@@ -246,13 +244,31 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 	return orderID, resourceIDs, err
 }
 
-// deleteCupEmergencies は where に合う入れ直しを、入れ直しで減らした在庫ごと消す（外部キーが無いので。models.CupEmergency）。
-func deleteCupEmergencies(tx *gorm.DB, where string, args ...any) error {
-	if err := tx.Where("cup_emergency_id IN (?)", tx.Model(&models.CupEmergency{}).Select("id").Where(where, args...)).
-		Delete(&models.CupEmergencyStockUsage{}).Error; err != nil {
-		return err
+// deleteCupEmergencies は where に合う入れ直しを、入れ直しで減らした在庫と、レジに頼んだ代理印刷ごと消し（外部キーが無いので。
+// models.CupEmergency）、消した入れ直しの id を返す。呼ぶ側は、コミットしたら消した id を publishCupEmergencyCancelled で知らせる
+// （画面は、端末に残っているそのシールを消す）。
+//
+// 入れ直しの行を消してから頼みを消す。頼みの受付（label_print.go）は入れ直しの行を FOR SHARE で読んでから頼みを足すので、
+// 受付が先ならここで頼みも消え、ここが先なら受付は行が無くて頼みを作らない（消えた緊急のシールの頼みが残らない）。
+func deleteCupEmergencies(tx *gorm.DB, where string, args ...any) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := tx.Model(&models.CupEmergency{}).Where(where, args...).Pluck("id", &ids).Error; err != nil {
+		return nil, err
 	}
-	return tx.Where(where, args...).Delete(&models.CupEmergency{}).Error
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if err := tx.Where("cup_emergency_id IN ?", ids).Delete(&models.CupEmergencyStockUsage{}).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Where("id IN ?", ids).Delete(&models.CupEmergency{}).Error; err != nil {
+		return nil, err
+	}
+	// まだ刷れていなければ、レジは刷らない（label_print.go）
+	if err := tx.Where("id IN ?", ids).Delete(&models.LabelPrintRequest{}).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // checkStockAlerts は入れ直しで増減した在庫の通知を確かめる（応答を書いてから呼ぶ）。
