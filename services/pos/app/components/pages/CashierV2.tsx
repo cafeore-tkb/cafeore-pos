@@ -1247,7 +1247,6 @@ const CashierV2 = ({
       draft={viewDraft}
       couponStatus={coupon}
       discount={newOrder.discount}
-      coffeeCups={newOrder.getCoffeeCups().length}
       canCancelPayment={canLeavePayment(draft)}
       onSelect={(index) => updateDraft((current) => selectLine(current, index))}
       onRemove={(index) => updateDraft((current) => removeLine(current, index))}
