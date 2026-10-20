@@ -102,10 +102,6 @@ func migrate(db *gorm.DB) error {
 			return fmt.Errorf("failed to migrate legacy stock usages: %w", err)
 		}
 
-		if err := backfillLegacyOrderCups(tx); err != nil {
-			return fmt.Errorf("failed to backfill order cups: %w", err)
-		}
-
 		for _, sql := range valueRenames {
 			if err := tx.Exec(sql).Error; err != nil {
 				return fmt.Errorf("failed to rename values: %w", err)
@@ -260,23 +256,4 @@ var itemTypeBackfills = []itemTypeBackfill{
 	{column: "needs_brew", value: false, names: []string{"milk", "others"}},
 	{column: "senior_only", value: true, names: []string{"limited"}},
 	{column: "iced_brew", value: true, names: []string{"ice", "iceOre"}},
-}
-
-// カップを持たない旧注文だけ、現在のメニュー構成から補完する。
-// 既にカップがある注文のID・状態・構成には触れず、再実行しても増やさない。
-func backfillLegacyOrderCups(tx *gorm.DB) error {
-	return tx.Exec(`
- INSERT INTO order_cups (id, order_id, order_menu_id, item_id, position, ready_at, served_at)
- SELECT uuid_generate_v4(), o.id, om.id, i.id,
-        row_number() OVER (PARTITION BY o.id ORDER BY om.id, i.id, n.value) - 1,
-        COALESCE(o.ready_at, o.served_at), o.served_at
- FROM orders o
- JOIN order_menus om ON om.order_id = o.id
- JOIN menu_items mi ON mi.menu_id = om.menu_id
- JOIN items i ON i.id = mi.item_id AND i.deleted_at IS NULL
- LEFT JOIN item_types it ON it.id = i.item_type_id AND it.deleted_at IS NULL
- CROSS JOIN LATERAL generate_series(1, mi.quantity) AS n(value)
- WHERE COALESCE(it.makes_cup, true)
-   AND NOT EXISTS (SELECT 1 FROM order_cups c WHERE c.order_id = o.id)
- `).Error
 }
