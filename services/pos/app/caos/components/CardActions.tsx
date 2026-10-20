@@ -10,6 +10,7 @@ import viewCommentsIcon from "../icons/view-comments.svg";
 import { type CardAction, cardActions, cardStage } from "../logic/cardActions";
 import type { CardLook } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
+import { CardActionButton, CardActionTray } from "./CardActionTray";
 import { DiscardSuggestion } from "./DiscardSuggestion";
 
 // ドリッパーのカード（管制盤 A・C）に重ねるもの：開いたカードの操作のアイコン（hooks/useCardMenu）と、
@@ -56,8 +57,8 @@ export const CardOverlay: React.FC<{
   inset?: string;
 }> = ({ card, lane, look, nowMs, menu, inset = "0px" }) => {
   const ready = cardStage(card, lane) === "ready";
-  const servedRecovery = card.status === "brewing" && caosCardServed(card);
   const discard = look?.discardCandidates ?? [];
+  const servedRecovery = card.status === "brewing" && caosCardServed(card);
   return (
     <>
       {ready && (
@@ -78,63 +79,56 @@ export const CardOverlay: React.FC<{
           onConfirm={look?.discard}
         />
       )}
-      {servedRecovery && discard.length === 0 && menu && !menu.isOpen(card) && (
-        <button
-          type="button"
-          aria-label="提供済み：抽出を終える（待機の先頭を始める）"
-          title="提供済み：確認なしで抽出を終える"
-          style={{ left: `max(calc(${inset} + 4px), calc(50% - 20px))` }}
-          className="absolute bottom-0 z-[90] flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-white shadow-lg active:scale-90"
-          onClick={(event) => {
-            event.stopPropagation();
-            menu.run(card, "finish", event.currentTarget);
-          }}
-        >
-          <Icon
-            src={finishBrewIcon}
-            className="caos-served-finish h-full w-full"
-          />
-        </button>
+      {discard.length === 0 && servedRecovery && menu && !menu.isOpen(card) && (
+        <CardActionTray inset={inset}>
+          <CardActionButton
+            aria-label="提供済み：抽出を終える（待機の先頭を始める）"
+            title="提供済み：確認なしで抽出を終える"
+            onClick={(event) => {
+              event.stopPropagation();
+              menu.run(card, "finish", event.currentTarget);
+            }}
+          >
+            <Icon
+              src={finishBrewIcon}
+              className="caos-served-finish h-full w-full"
+            />
+          </CardActionButton>
+        </CardActionTray>
       )}
       {menu?.isOpen(card) && (
-        <div
-          style={{ left: inset }}
-          className="pointer-events-none absolute inset-y-0 right-0 z-[90] flex items-center justify-center"
-        >
-          <div className="pointer-events-auto flex shrink-0 gap-3 rounded-2xl bg-slate-950/70 p-2 shadow-xl">
-            {cardActions(card, lane, {
-              nowMs,
-              comments: Boolean(look?.comments?.length),
-            }).map(({ action, disabled }) => {
-              const target = action.startsWith("assign:")
-                ? Number(action.slice(7))
-                : null;
-              const icon = ICONS[action as keyof typeof ICONS];
-              const label = target ? `${target} に再割当` : icon.label;
-              return (
-                <button
-                  key={action}
-                  type="button"
-                  disabled={disabled}
-                  aria-label={label}
-                  title={label}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    menu.run(card, action, event.currentTarget);
-                  }}
-                  className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-full bg-white font-black text-lg text-slate-950 active:scale-90 disabled:opacity-40"
-                >
-                  {target ?? (
-                    <Icon
-                      src={icon.src}
-                      className={`h-full w-full ${action === "finish" && servedRecovery ? "caos-served-finish" : ""}`}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <CardActionTray inset={inset}>
+          {cardActions(card, lane, {
+            nowMs,
+            comments: Boolean(look?.comments?.length),
+          }).map(({ action, disabled }) => {
+            const target = action.startsWith("assign:")
+              ? Number(action.slice(7))
+              : null;
+            const icon = ICONS[action as keyof typeof ICONS];
+            const label = target ? `${target} に再割当` : icon.label;
+            return (
+              <CardActionButton
+                key={action}
+                type="button"
+                disabled={disabled}
+                aria-label={label}
+                title={label}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  menu.run(card, action, event.currentTarget);
+                }}
+              >
+                {target ?? (
+                  <Icon
+                    src={icon.src}
+                    className={`h-full w-full ${action === "finish" && servedRecovery ? "caos-served-finish" : ""}`}
+                  />
+                )}
+              </CardActionButton>
+            );
+          })}
+        </CardActionTray>
       )}
     </>
   );
