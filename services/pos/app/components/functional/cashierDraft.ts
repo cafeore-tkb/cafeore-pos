@@ -178,7 +178,7 @@ export const addChordLine = (
 /**
  * 行を削除する（一覧から消す。戻すときはもう一度足す）。
  * 次の行を選ぶ（続けて Backspace で削除、Space で指名できるように）。
- * 一番下の行を消したら、↓ と同じく引換券番号の欄に移る
+ * 一番下の行を消したら、残っている一番下の行を選ぶ。行が無くなったら引換券番号の欄に移る
  */
 export const removeLine = (
   draft: CashierDraft,
@@ -186,8 +186,8 @@ export const removeLine = (
 ): CashierDraft => {
   if (!canEditLines(draft) || !draft.lines[index]) return draft;
   const lines = draft.lines.filter((_, i) => i !== index);
-  return index < lines.length
-    ? { ...draft, lines, selected: index }
+  return lines.length > 0
+    ? { ...draft, lines, selected: Math.min(index, lines.length - 1) }
     : { ...draft, lines, selected: null, zone: "coupon" };
 };
 
@@ -549,7 +549,8 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
  *   選んでいなければ、入れる段階は引換券番号（3 桁で割引できれば備考に移る）、会計の段階は受取金額
- * - Backspace: 行を選んでいれば削除（一覧から消し、次の行を選ぶ）、でなければ数字を 1 桁消す。
+ * - Backspace: 行を選んでいれば削除（一覧から消し、次の行を選ぶ。一番下なら残っている一番下の行）、
+ *   でなければ数字を 1 桁消す。
  *   押したままの繰り返しでは行を消さない（次の行まで続けて消さないよう、1 行ずつ押し直す）
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない

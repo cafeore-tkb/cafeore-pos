@@ -89,11 +89,10 @@ describe("[unit] cashierDraft の商品", () => {
     expect(removeLine(withLines(blend, coaster), 0).selected).toBe(0);
   });
 
-  test("一番下の行を削除したら、行を選ばず引換券番号の欄に移る", () => {
-    const last = removeLine(withLines(blend, coaster), 1);
-    expect(activeMenus(last)).toEqual([blend]);
-    expect(last.selected).toBeNull();
-    expect(last.zone).toBe("coupon");
+  test("一番下の行を削除したら、残っている一番下の行を選ぶ。行が無くなったら引換券番号の欄に移る", () => {
+    const last = removeLine(withLines(blend, coaster, blend), 2);
+    expect(activeMenus(last)).toEqual([blend, coaster]);
+    expect(last.selected).toBe(1);
     const only = removeLine(withLines(blend), 0);
     expect(only.lines).toEqual([]);
     expect(only.selected).toBeNull();
@@ -346,7 +345,7 @@ describe("[unit] cashierKeyIntent", () => {
     // 足した最後の行を選んでいるので、そのまま Backspace で消せる
     const removed = keys(withLines(blend, coaster), "Backspace");
     expect(activeMenus(removed)).toEqual([blend]);
-    expect(removed.selected).toBeNull();
+    expect(removed.selected).toBe(0);
     const onCoupon = focusCoupon(withLines(blend));
     expect(keys(onCoupon, "1", "2", "Backspace").coupon).toBe("1");
   });
@@ -359,6 +358,14 @@ describe("[unit] cashierKeyIntent", () => {
     const twice = keys(once, "Backspace");
     expect(activeMenus(twice)).toEqual([blend]);
     expect(twice.selected).toBe(0);
+    // 一番下から消すと 1 つ上の行に移り、最後の行を消したら引換券番号の欄に移る
+    const fromBottom = keys(withLines(blend, coaster, blend), "Backspace");
+    expect(activeMenus(fromBottom)).toEqual([blend, coaster]);
+    expect(fromBottom.selected).toBe(1);
+    const emptied = keys(fromBottom, "Backspace", "Backspace");
+    expect(emptied.lines).toEqual([]);
+    expect(emptied.selected).toBeNull();
+    expect(emptied.zone).toBe("coupon");
   });
 
   test("Backspace を押したままの繰り返しでは行を消さない。行を選んでいなければ 1 桁消す", () => {
