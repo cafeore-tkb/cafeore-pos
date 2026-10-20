@@ -1,4 +1,4 @@
-import { GripHorizontal, PanelsTopLeft } from "lucide-react";
+import { GripHorizontal } from "lucide-react";
 import {
   type CSSProperties,
   type PointerEvent,
@@ -193,35 +193,6 @@ export function useFloatingWindow(title: string, enabled = true) {
     handle,
     style,
   };
-}
-
-export function FloatingWindowTray() {
-  const manager = useContext(WindowsContext);
-  if (!manager || !Object.keys(manager.entries).length) return null;
-  return (
-    <div
-      data-caos-layer
-      data-popup-tray
-      className="flex min-w-12 max-w-[20vw] shrink items-center gap-1 overflow-x-auto"
-      aria-label="非表示の未完了パネル"
-    >
-      {Object.entries(manager.entries).map(([id, entry]) => (
-        <button
-          key={id}
-          type="button"
-          onClick={entry.restore}
-          title={`${entry.title}を再表示`}
-          aria-label={`${entry.title}を再表示`}
-          className="flex h-11 w-12 shrink-0 touch-manipulation flex-col items-center justify-center rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-900"
-        >
-          <PanelsTopLeft className="h-4 w-4" />
-          <span className="max-w-full truncate px-0.5 text-[9px]">
-            {entry.title}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** 接続エラー・未送信など、内容自身が解決時に消える通知の共通枠。 */

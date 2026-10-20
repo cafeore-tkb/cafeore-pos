@@ -1,5 +1,5 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
-import { ClipboardList, ListChecks } from "lucide-react";
+import { ClipboardList, ListChecks, Rows3 } from "lucide-react";
 import type React from "react";
 import type { UnassignedTab } from "../hooks/useUnfinishedTab";
 import servingOverdueIcon from "../icons/serving-overdue.svg";
@@ -14,7 +14,7 @@ import {
 } from "./RollingOrderNumber";
 import { ScrollArea } from "./ScrollArea";
 
-// 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列・D の右の注文内容で同じ）。
+// 未割当の欄のタブ（「未割当」と「未提供」）と、未提供の注文の一覧（管制盤 A の下の横帯・C の右の列で同じ）。
 // 未提供は、去年までのマスターシートのように、まだ提供していない注文を注文番号の順に、受けてからの時間（15 分を超えたら赤）・今の状態・コメントで並べる。
 // 行を押すとその注文を番号の検索と同じく選んで見せる。コメントにはスタンプで返せる（CommentList）。
 
@@ -31,12 +31,16 @@ export interface UnfinishedView {
   onSelectOrder: (orderNo: number) => void;
 }
 
-/** タブラベル・見出し・表示領域で共通の背景色。 */
-export const unassignedAreaBackground = (view?: UnfinishedView) =>
-  view?.tab === "unfinished" ? "bg-[#f5ede3]" : "bg-white";
+/** 選択タブと表示領域を同じ色でつなぐ。未提供は従来の薄いブラウン。 */
+export const orderTabsAreaBackground = (view?: UnfinishedView, all = false) =>
+  all
+    ? "bg-[#eef2f7]"
+    : view?.tab === "unfinished"
+      ? "bg-[#f5ede3]"
+      : "bg-[#eef6ff]";
 
 const TAB =
-  "relative flex h-12 shrink-0 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
+  "relative flex h-12 touch-manipulation items-center gap-1.5 whitespace-nowrap caos-folder-tab rounded-t-lg border px-2 font-black";
 const TAB_ON = "text-slate-950";
 const TAB_OFF = "text-slate-600 hover:text-slate-950";
 
@@ -48,16 +52,28 @@ export const UnassignedHeading: React.FC<{
   view?: UnfinishedView;
   unassignedOrders?: readonly CaosCard[];
   nextBayId?: number;
-  /** 「未割当」のタブの名前（D は「注文内容」） */
+  /** C案だけに足す、その日の全オーダー一覧タブ */
+  allTab?: {
+    active: boolean;
+    count: number;
+    onSelect: () => void;
+    onSelectBase: (tab: UnassignedTab) => void;
+  };
+  /** 「未割当」のタブの名前 */
   label?: string;
+  /** 狭い欄では補助情報を省き、タブを均等幅にする */
+  compact?: boolean;
   className?: string;
 }> = ({
   view,
   unassignedOrders = [],
   nextBayId,
+  allTab,
   label = "未割当",
+  compact = false,
   className = "text-[15px]",
 }) => {
+  const isCompact = compact || Boolean(allTab);
   const unassignedCounts = orderAndCupCounts(unassignedOrders);
   const unassignedNumberTone =
     unassignedCounts.orders >= 10 ? "text-red-600" : "";
@@ -104,37 +120,48 @@ export const UnassignedHeading: React.FC<{
       </>
     );
   return (
-    <div role="tablist" className={`caos-folder-tabs flex gap-1 ${className}`}>
+    <div
+      role="tablist"
+      className={`caos-folder-tabs flex gap-1 ${isCompact ? "min-w-0 flex-1" : ""} ${className}`}
+    >
       <button
         type="button"
         role="tab"
-        aria-selected={view.tab === "unassigned"}
-        onClick={() => view.onSelectTab("unassigned")}
-        className={`${TAB} bg-white ${view.tab === "unassigned" ? TAB_ON : TAB_OFF}`}
+        aria-selected={!allTab?.active && view.tab === "unassigned"}
+        onClick={() =>
+          allTab
+            ? allTab.onSelectBase("unassigned")
+            : view.onSelectTab("unassigned")
+        }
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unassigned" ? `bg-[#eef6ff] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         {icon}
         {label}
-        <span
-          className="caos-tab-time"
-          title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
-        >
-          NEXT→
-          {nextBayId === undefined ? (
-            "—"
-          ) : (
-            <span className="caos-order-digits">
-              <RollingNumber
-                value={nextBayId}
-                label={`ドリッパー ${dripperLabel(nextBayId)}`}
-              />
-              <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
+        {!isCompact && (
+          <>
+            <span
+              className="caos-tab-time"
+              title="次のコーヒーを最も早く始められる担当者（現在の抽出と待機を含む予測）"
+            >
+              NEXT→
+              {nextBayId === undefined ? (
+                "—"
+              ) : (
+                <span className="caos-order-digits">
+                  <RollingNumber
+                    value={nextBayId}
+                    label={`ドリッパー ${dripperLabel(nextBayId)}`}
+                  />
+                  <span>{dripperLabel(nextBayId).replace(/^\d+/, "")}</span>
+                </span>
+              )}
             </span>
-          )}
-        </span>
-        <RollingOrderNumber
-          value={smallestUnassigned}
-          className={unassignedNumberTone}
-        />
+            <RollingOrderNumber
+              value={smallestUnassigned}
+              className={unassignedNumberTone}
+            />
+          </>
+        )}
         <span className="caos-tab-count">
           <RollingNumber
             value={unassignedCounts.orders}
@@ -151,14 +178,18 @@ export const UnassignedHeading: React.FC<{
       <button
         type="button"
         role="tab"
-        aria-selected={view.tab === "unfinished"}
-        onClick={() => view.onSelectTab("unfinished")}
-        className={`${TAB} bg-[#f5ede3] ${view.tab === "unfinished" ? TAB_ON : TAB_OFF}`}
+        aria-selected={!allTab?.active && view.tab === "unfinished"}
+        onClick={() =>
+          allTab
+            ? allTab.onSelectBase("unfinished")
+            : view.onSelectTab("unfinished")
+        }
+        className={`${TAB} ${isCompact ? "min-w-0 flex-1 justify-center px-1.5" : "shrink-0"} ${!allTab?.active && view.tab === "unfinished" ? `bg-[#f5ede3] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
       >
         <ListChecks className="h-[1.1em] w-[1.1em] shrink-0" />
         未提供
-        <RollingOrderNumber value={smallestUnserved} />
-        {view.rows.some((row) => row.late) && (
+        {!isCompact && <RollingOrderNumber value={smallestUnserved} />}
+        {!isCompact && view.rows.some((row) => row.late) && (
           <img
             src={servingOverdueIcon}
             alt="提供待ち15分以上"
@@ -169,9 +200,11 @@ export const UnassignedHeading: React.FC<{
           <RollingNumber value={view.rows.length} />件{" "}
           <RollingNumber value={unservedCups} />杯
         </span>
-        <span className={`caos-tab-time ${longestTimeTone}`}>
-          最長 <RollingClock seconds={longestWaitSec} />
-        </span>
+        {!isCompact && (
+          <span className={`caos-tab-time ${longestTimeTone}`}>
+            最長 <RollingClock seconds={longestWaitSec} />
+          </span>
+        )}
         {view.badge > 0 && (
           <output
             aria-label={`未提供に新しい知らせ ${view.badge} 件`}
@@ -181,6 +214,21 @@ export const UnassignedHeading: React.FC<{
           </output>
         )}
       </button>
+      {allTab && (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={allTab.active}
+          onClick={allTab.onSelect}
+          className={`${TAB} min-w-0 flex-1 justify-center px-1.5 ${allTab.active ? `bg-[#eef2f7] ${TAB_ON}` : `bg-slate-100 ${TAB_OFF}`}`}
+        >
+          <Rows3 className="h-[1.1em] w-[1.1em] shrink-0" />
+          一覧
+          <span className="caos-tab-count">
+            <RollingNumber value={allTab.count} />件
+          </span>
+        </button>
+      )}
     </div>
   );
 };
@@ -236,7 +284,7 @@ const UnfinishedRow: React.FC<{
   </article>
 );
 
-// 横に並べる（管制盤 A の横帯）か、縦に並べる（C・D の右の列）か
+// 横に並べる（管制盤 A の横帯）か、縦に並べる（C の右の列）か
 const LIST_LAYOUT = {
   x: {
     scroller: "overscroll-x-contain",
@@ -251,7 +299,7 @@ const LIST_LAYOUT = {
 } as const;
 
 /**
- * 未提供の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C・D の右の列）
+ * 未提供の注文の一覧。axis が x なら注文を左から横に並べ（管制盤 A の横帯。スクロールバーは見出しの trackSlot）、y なら上から縦に並べる（C の右の列）
  */
 export const UnfinishedList: React.FC<{
   view: UnfinishedView;

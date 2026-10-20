@@ -7,27 +7,24 @@ import {
 import type { CashierDraft, CashierLine } from "./cashierDraft";
 
 /**
- * 個別小計と小計分割（一部先払い）
+ * 小計分割（一部金額先払い）
  *
- * 注文を「小計」に分けて、小計ごとに会計する。小計は、商品を選んだ個別小計か、まだ払っていない
- * 商品を全部入れた小計（一括会計・残りを会計）。小計は金額で分けて何回かで払える（小計分割・一部金額先払い）。
- * 受け取った分（先会計）はレジの中に覚え、注文全体を払い終えたら、支払いを全部付けて注文を 1 つ送る。
+ * 一括会計で、まだ払っていない商品を全部入れた「小計」を作って会計する。小計は金額で分けて
+ * 何回かで払える（小計分割・一部金額先払い）。受け取った分（先会計）はレジの中に覚え、
+ * 注文全体を払い終えたら、支払いを全部付けて注文を 1 つ送る。
  *
- * 割引（引換券・特殊な割引）は 1 杯 ¥100 ずつコーヒーに割り振り、その杯を含む小計で引く。
- * 既定は商品の並び順で、個別小計を選ぶときに「割引をここに」で付ける商品を選び直せる。
+ * 割引（引換券・特殊な割引）は小計を作ったときに決め、小計を払い終えた支払いに付ける。
  * 先払いがある間は、商品・割引を変えない（払った小計の額が変わらないように）。
  */
 
 /** 小計（先に会計する単位） */
 export type CashierSubtotal = {
   id: number;
-  /** items: 商品を選んだ個別小計、rest: まだ払っていない商品を全部（一括会計・残りを会計） */
-  kind: "items" | "rest";
   /** 小計に入れた行（CashierLine.key。並び順） */
   lineKeys: number[];
   /** 行の値段の合計 */
   total: number;
-  /** 割り振った割引の杯数と額（小計を作ったときに決める） */
+  /** 割引の杯数と額（小計を作ったときに決める） */
   discountCups: number;
   discount: number;
   /** 払う額（total − discount） */
@@ -57,8 +54,6 @@ export type CashierSplit = {
   current: number | null;
   /** 小計分割で、今回先に払う額。分けていなければ null */
   part: number | null;
-  /** 割引を先に付ける行（CashierLine.key）。前ほど先。ここに無い行は並び順でその後 */
-  discountFirst: number[];
   nextId: number;
 };
 
@@ -67,7 +62,6 @@ export const emptySplit = (): CashierSplit => ({
   tenders: [],
   current: null,
   part: null,
-  discountFirst: [],
   nextId: 0,
 });
 
@@ -106,8 +100,8 @@ export const currentSubtotal = (draft: CashierDraft): CashierSubtotal | null =>
         (subtotal) => subtotal.id === draft.split.current,
       ) ?? null);
 
-/** 払い終えた小計の行（「会計済」） */
-export const paidLineKeys = (draft: CashierDraft): Set<number> => {
+/** 払い終えた小計の行 */
+const paidLineKeys = (draft: CashierDraft): Set<number> => {
   const { split } = draft;
   return new Set(
     split.subtotals
@@ -123,7 +117,7 @@ export const unpaidLines = (draft: CashierDraft): CashierLine[] => {
 };
 
 /** 行の、割引の対象のコーヒーの杯数（OrderEntity.getCoffeeCups と同じ数え方） */
-export const coffeeCupsOf = (menu: MenuEntity): number =>
+const coffeeCupsOf = (menu: MenuEntity): number =>
   sum(
     menu.items.map(({ item, quantity }) =>
       item.item_type.needs_brew ? quantity : 0,
@@ -131,96 +125,30 @@ export const coffeeCupsOf = (menu: MenuEntity): number =>
   );
 
 /**
- * 割引する杯を、まだ小計に入れていない行に割り振る（CashierLine.key → 杯数）。
- *
- * totalCups は注文全体で割り引く杯数。小計に割り振った杯数を除いた残りを、
- * 「割引をここに」で選んだ行、続けて並び順の行に、行のコーヒーの杯数まで割り振る。
+ * まだ払っていない商品を全部 1 つの小計にして会計の段階に進む（一括会計）。
+ * totalCups は注文全体で割り引く杯数（小計のコーヒーの杯数まで引く）、perCup は 1 杯の割引額
  */
-export const allocateDiscount = (
+export const beginRest = (
   draft: CashierDraft,
-  totalCups: number,
-): Map<number, number> => {
-  const { split } = draft;
-  let left = Math.max(
-    totalCups - sum(split.subtotals.map((subtotal) => subtotal.discountCups)),
-    0,
-  );
-  const inSubtotal = new Set(split.subtotals.flatMap((s) => s.lineKeys));
-  const free = draft.lines.filter((line) => !inSubtotal.has(line.key));
-  const first = split.discountFirst.flatMap((key) => {
-    const line = free.find((candidate) => candidate.key === key);
-    return line ? [line] : [];
-  });
-  const rest = free.filter((line) => !split.discountFirst.includes(line.key));
-  const allocation = new Map<number, number>();
-  for (const line of [...first, ...rest]) {
-    if (left === 0) break;
-    const cups = Math.min(coffeeCupsOf(line.menu), left);
-    if (cups > 0) {
-      allocation.set(line.key, cups);
-      left -= cups;
-    }
-  }
-  return allocation;
-};
-
-/** その行に割引を先に付ける（「割引をここに」）。先払いがあっても、まだ小計に入れていない行なら付け替えられる */
-export const preferDiscount = (
-  draft: CashierDraft,
-  key: number,
-): CashierDraft => ({
-  ...draft,
-  split: {
-    ...draft.split,
-    discountFirst: [key, ...draft.split.discountFirst.filter((k) => k !== key)],
-  },
-});
-
-/** 選んだ行の小計の額と、割り振った割引（小計を作るときに決める） */
-export const subtotalPreview = (
-  draft: CashierDraft,
-  lineKeys: readonly number[],
   totalCups: number,
   perCup: number,
-) => {
-  const allocation = allocateDiscount(draft, totalCups);
-  const lines = draft.lines.filter((line) => lineKeys.includes(line.key));
+): CashierDraft => {
+  const lines = unpaidLines(draft);
+  if (draft.step !== "entry" || lines.length === 0) return draft;
+  const { split } = draft;
   const total = sum(lines.map((line) => line.menu.price));
-  const discountCups = sum(lines.map((line) => allocation.get(line.key) ?? 0));
+  const discountCups = Math.min(
+    totalCups,
+    sum(lines.map((line) => coffeeCupsOf(line.menu))),
+  );
   const discount = discountCups * perCup;
-  return {
+  const subtotal: CashierSubtotal = {
+    id: split.nextId,
+    lineKeys: lines.map((line) => line.key),
     total,
     discountCups,
     discount,
     amount: total - discount,
-    allocation,
-  };
-};
-
-/**
- * 小計を作って会計の段階に進む。lineKeys はまだ払っていない行だけ。
- * totalCups は注文全体で割り引く杯数、perCup は 1 杯の割引額
- */
-export const beginSubtotal = (
-  draft: CashierDraft,
-  kind: CashierSubtotal["kind"],
-  lineKeys: readonly number[],
-  totalCups: number,
-  perCup: number,
-): CashierDraft => {
-  const unpaid = unpaidLines(draft).map((line) => line.key);
-  const keys = unpaid.filter((key) => lineKeys.includes(key));
-  if (draft.step !== "entry" || keys.length === 0) return draft;
-  const { split } = draft;
-  const preview = subtotalPreview(draft, keys, totalCups, perCup);
-  const subtotal: CashierSubtotal = {
-    id: split.nextId,
-    kind,
-    lineKeys: keys,
-    total: preview.total,
-    discountCups: preview.discountCups,
-    discount: preview.discount,
-    amount: preview.amount,
   };
   return {
     ...draft,
@@ -237,20 +165,6 @@ export const beginSubtotal = (
     },
   };
 };
-
-/** まだ払っていない商品を全部 1 つの小計にして会計の段階に進む（一括会計・残りを会計） */
-export const beginRest = (
-  draft: CashierDraft,
-  totalCups: number,
-  perCup: number,
-): CashierDraft =>
-  beginSubtotal(
-    draft,
-    "rest",
-    unpaidLines(draft).map((line) => line.key),
-    totalCups,
-    perCup,
-  );
 
 /**
  * 会計の段階をやめて入れる段階に戻れるか（会計取消・Esc）。
@@ -346,59 +260,25 @@ export const cancelPart = (draft: CashierDraft): CashierDraft =>
       };
 
 /**
- * 小計分割の途中か（先に払う額を入れた・この小計を途中まで払った）。
- * この間は、端末に「割り勘」を並べない
+ * 小計分割・一部金額先払いに進めるか（会計欄の「小計分割・一部金額先払い」）。
+ * 先に払う額を 1 円以上残せれば（checkPart）進める。Square で決済中は進めない
  */
-export const isSplittingSubtotal = (draft: CashierDraft): boolean => {
-  const subtotal = currentSubtotal(draft);
-  return (
-    draft.split.part !== null ||
-    (subtotal !== null && subtotalPaid(draft.split, subtotal.id) > 0)
-  );
-};
-
-/** 割り勘の分け方ごとの、選べない理由。選べれば null */
-export type SplitChoices = {
-  /** 個別小計（会計の段階を抜けて、先に払う商品を選ぶ） */
-  items: string | null;
-  /** 小計分割・一部金額先払い（いまの小計を金額で分ける） */
-  part: string | null;
-};
-
-/**
- * どの分け方に進めるか（会計欄の「小計分割・一部金額先払い」と、端末で「割り勘」を選んだときのウィンドウ）。
- * 個別小計は会計取消（leavePayment）と同じく小計を途中まで払っていなければ、
- * 小計分割は先に払う額を 1 円以上残せれば（checkPart）選べる。Square で決済中はどちらも選べない
- */
-export const splitChoices = (
+export const canSplitPart = (
   draft: CashierDraft,
   squarePaymentActive: boolean,
-): SplitChoices => {
+): boolean => {
   const subtotal = currentSubtotal(draft);
-  if (draft.step !== "pay" || subtotal === null) {
-    const reason = "会計中ではありません";
-    return { items: reason, part: reason };
-  }
-  if (squarePaymentActive) {
-    const reason = "端末で決済中です";
-    return { items: reason, part: reason };
-  }
-  return {
-    items: !canLeavePayment(draft)
-      ? "この小計を途中まで払ったので、払い終えてから選べます"
-      : unpaidLines(draft).length < 2
-        ? "まだ払っていない商品が 1 点だけです"
-        : null,
-    part:
-      subtotalRemaining(draft.split, subtotal) > 1
-        ? null
-        : "残りが 1 円なので分けられません",
-  };
+  return (
+    draft.step === "pay" &&
+    subtotal !== null &&
+    !squarePaymentActive &&
+    subtotalRemaining(draft.split, subtotal) > 1
+  );
 };
 
 /**
  * 受け取った分を覚える。小計分割をやめ、受取金額を空にする。小計を払い終えたら入れる段階に戻る
- * （払い終えた小計の商品は「会計済」になる）
+ * （注文全体を払い終えたので、呼ぶ側が注文を送る）
  */
 export const recordTender = (
   draft: CashierDraft,
@@ -520,8 +400,8 @@ export const splitOrderForSubmit = (
 };
 
 /**
- * 小計だけの注文を作る。番号・時刻・割引の番号は order のまま、商品は小計の行、割引は小計に
- * 割り振った杯数、お預かりは received。レシート・お客さん向けの表示・Square の決済に使う
+ * 小計だけの注文を作る。番号・時刻・割引の番号は order のまま、商品は小計の行、割引は小計で
+ * 引いた杯数、お預かりは received。レシート・Square の決済に使う
  */
 export const subtotalOrder = (
   order: OrderEntity,
@@ -541,32 +421,13 @@ export const subtotalOrder = (
   });
 
 /**
- * お客さん向けの表示（cashier-mini）に出す注文。会計中の小計が注文の一部なら、小計に受け取った分が
- * 無く分割もしていないときだけ小計の商品と受取金額を出す。それ以外で先払いがあるときは、
- * 注文全体を受取金額なしで出す（お釣りを間違えて見せないように）
+ * お客さん向けの表示（cashier-mini）に出す注文。先払いがあるときは、注文全体を受取金額なしで出す
+ * （お釣りを間違えて見せないように）
  */
 export const displayOrder = (
   order: OrderEntity,
   draft: CashierDraft,
-): OrderEntity => {
-  const subtotal = currentSubtotal(draft);
-  const partial =
-    hasTenders(draft) ||
-    (subtotal !== null &&
-      unpaidLines(draft).some((line) => !subtotal.lineKeys.includes(line.key)));
-  if (!partial) return order;
-  if (
-    draft.step === "pay" &&
-    subtotal !== null &&
-    draft.split.part === null &&
-    subtotalPaid(draft.split, subtotal.id) === 0
-  ) {
-    return subtotalOrder(
-      order,
-      draft,
-      subtotal,
-      draft.received === "" ? 0 : Number(draft.received),
-    );
-  }
-  return OrderEntity.fromOrder({ ...order.toOrder(), received: 0 });
-};
+): OrderEntity =>
+  hasTenders(draft)
+    ? OrderEntity.fromOrder({ ...order.toOrder(), received: 0 })
+    : order;

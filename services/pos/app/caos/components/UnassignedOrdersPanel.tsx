@@ -1,11 +1,21 @@
-import { type CaosCard, canSplitCard } from "@cafeore/common";
+import {
+  type CaosCard,
+  type CaosOrderInput,
+  canSplitCard,
+  caosDayOrders,
+  getCupStatus,
+  jstClock,
+  jstDate,
+} from "@cafeore/common";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { dropTargetLabel } from "../hooks/useCardDrag";
 import type { UnassignedPick } from "../hooks/useUnassignedPick";
+import type { UnassignedTab } from "../hooks/useUnfinishedTab";
 import {
   type CardLooks,
+  labelHasOrder,
   orderNoLabel,
   sharesOrder,
   unassignedRows,
@@ -24,7 +34,7 @@ import {
   UnassignedHeading,
   UnfinishedList,
   type UnfinishedView,
-  unassignedAreaBackground,
+  orderTabsAreaBackground,
 } from "./UnfinishedOrders";
 
 // 未割当（管制盤 A の下の横帯と、管制盤 C の右の注文の列）。操作は管制盤が作る useControlPick（ドリッパーの列と共有する）。
@@ -45,6 +55,7 @@ const UnassignedCard: React.FC<{
   nowMs: number;
   readOnly?: boolean;
   className?: string;
+  parallelOrderNumbers?: boolean;
 }> = ({
   card,
   looks,
@@ -54,6 +65,7 @@ const UnassignedCard: React.FC<{
   nowMs,
   readOnly = false,
   className = "",
+  parallelOrderNumbers = false,
 }) => {
   const isOpen = !readOnly && pick.isOpen(card);
   const isMergeCandidate = !readOnly && pick.canMergeWith(card);
@@ -62,6 +74,7 @@ const UnassignedCard: React.FC<{
       card={card}
       look={looks.get(card.key)}
       size={size}
+      parallelOrderNumbers={parallelOrderNumbers}
       selected={selected}
       mergeInto={isOpen ? pick.partner : undefined}
       mergeTap={isMergeCandidate}
@@ -103,13 +116,15 @@ const DragGhost: React.FC<{
   pick: UnassignedPick;
   looks: CardLooks;
   size: "sm" | "queue" | "md";
-}> = ({ pick, looks, size }) =>
+  parallelOrderNumbers?: boolean;
+}> = ({ pick, looks, size, parallelOrderNumbers = false }) =>
   pick.drag.source &&
   pick.drag.ghost(
     <OrderCard
       card={pick.drag.source}
       look={looks.get(pick.drag.source.key)}
       size={size}
+      parallelOrderNumbers={parallelOrderNumbers}
     />,
     dropTargetLabel(pick.drag.target),
   );
@@ -133,7 +148,84 @@ type UnassignedProps = {
   /** 「未提供」のタブ（操作の画面だけ） */
   unfinished?: UnfinishedView;
   nextAvailable?: NextAvailable;
+  /** C案だけに表示する、その日の全オーダー一覧 */
+  allOrders?: AllOrdersTab;
 };
+
+type AllOrdersTab = {
+  orders: readonly CaosOrderInput[];
+  active: boolean;
+  onSelect: () => void;
+  onSelectBase: (tab: UnassignedTab) => void;
+};
+
+const AllOrdersList: React.FC<{
+  orders: readonly CaosOrderInput[];
+  selectedOrderId: string | null;
+  onSelectOrder: (orderNo: number) => void;
+}> = ({ orders, selectedOrderId, onSelectOrder }) => (
+  <ScrollArea
+    axis="y"
+    className="flex-1"
+    scrollerClassName="grid auto-rows-max content-start gap-1.5 p-2 pb-8"
+  >
+    {orders.map((order) => {
+      const statuses = order.cups.map(getCupStatus);
+      const served = statuses.every((status) => status === "served");
+      const ready = statuses.every((status) => status !== "preparing");
+      const status = served ? "提供済み" : ready ? "提供待ち" : "準備中";
+      const tone = served
+        ? "border-slate-200 bg-slate-100 text-slate-600"
+        : ready
+          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+          : "border-blue-200 bg-blue-50 text-blue-800";
+      return (
+        <button
+          key={order.id}
+          type="button"
+          onClick={() => onSelectOrder(order.orderId)}
+          className={`rounded-lg border-2 bg-white p-2 text-left ${
+            labelHasOrder(selectedOrderId, order.orderId)
+              ? "border-amber-400 ring-2 ring-amber-300"
+              : "border-slate-300"
+          }`}
+        >
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-black font-mono text-[22px] text-slate-950 leading-none">
+              {orderNoLabel(order.orderId)}
+            </span>
+            <span
+              className={`rounded-md border px-1.5 py-0.5 font-black text-[11px] ${tone}`}
+            >
+              {status}
+            </span>
+            <span className="font-bold text-[12px] text-slate-500">
+              {order.cups.length}杯
+            </span>
+            <span className="ml-auto font-bold font-mono text-[12px] text-slate-500">
+              {jstClock(order.createdAt.getTime())}
+            </span>
+          </span>
+          <span className="mt-1.5 flex flex-wrap gap-1">
+            {order.cups.map((cup, index) => (
+              <span
+                key={cup.id ?? `${order.id}:${index}`}
+                className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-bold text-[12px] text-slate-700"
+              >
+                {cup.item.abbr}
+              </span>
+            ))}
+          </span>
+        </button>
+      );
+    })}
+    {orders.length === 0 && (
+      <div className="rounded-md border border-dashed py-8 text-center text-slate-400 text-xs">
+        今日のオーダーはありません
+      </div>
+    )}
+  </ScrollArea>
+);
 
 /** 未割当の横帯をたたむか（閲覧だけの画面。たたむと見出しの行だけにする） */
 export interface UnassignedFold {
@@ -167,7 +259,7 @@ export const UnassignedStrip: React.FC<
   const Chevron = folded ? ChevronUp : ChevronDown;
   return (
     <section
-      className={`flex flex-col overflow-hidden rounded-lg border border-slate-300 ${unassignedAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
+      className={`flex flex-col overflow-hidden border border-slate-300 ${orderTabsAreaBackground(unfinished)} shadow-xs ${folded ? "" : "h-full"}`}
     >
       <header
         className={`flex ${unfinished ? "h-14" : "h-10"} shrink-0 items-center gap-2 border-slate-300 border-b bg-slate-100 px-2`}
@@ -260,11 +352,17 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
   unfinished,
   readOnly = false,
   nextAvailable,
+  allOrders,
 }) => {
   const rows = unassignedRows(orders);
+  const todaysOrders = allOrders
+    ? caosDayOrders(allOrders.orders, jstDate(nowMs)).sort(
+        (a, b) => a.orderId - b.orderId,
+      )
+    : [];
   return (
     <section
-      className={`flex h-full flex-col overflow-hidden rounded-lg border border-slate-300 shadow-xs ${unassignedAreaBackground(unfinished)}`}
+      className={`flex h-full flex-col overflow-hidden border border-slate-300 shadow-xs ${orderTabsAreaBackground(unfinished, allOrders?.active)}`}
     >
       <PanelHeader
         heightClassName={unfinished ? "h-14" : undefined}
@@ -275,37 +373,53 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
           view={unfinished}
           nextBayId={nextAvailable?.[0]?.bayId}
           unassignedOrders={orders}
+          allTab={
+            allOrders
+              ? {
+                  active: allOrders.active,
+                  count: todaysOrders.length,
+                  onSelect: allOrders.onSelect,
+                  onSelectBase: allOrders.onSelectBase,
+                }
+              : undefined
+          }
         />
       </PanelHeader>
-      {unfinished?.tab === "unfinished" ? (
+      {allOrders?.active && unfinished ? (
+        <AllOrdersList
+          orders={todaysOrders}
+          selectedOrderId={selectedOrderId}
+          onSelectOrder={unfinished.onSelectOrder}
+        />
+      ) : unfinished?.tab === "unfinished" ? (
         <UnfinishedList view={unfinished} axis="y" />
       ) : (
         <ScrollArea
           axis="y"
           className="flex-1"
-          scrollerClassName="divide-y divide-slate-200 overscroll-contain px-2 pt-1 pb-8"
+          scrollerClassName="divide-y divide-slate-200 overscroll-contain px-1 pt-1 pb-8"
         >
           {rows.map(({ orderNo, emergency, cards }) => (
             <div
               key={`${emergency}:${orderNo}`}
-              className="flex min-h-[62px] items-stretch gap-1.5 py-1.5"
+              className="flex min-h-[62px] items-stretch gap-1 py-1.5"
             >
-              <span className="flex w-20 shrink-0 flex-col items-center justify-center font-black font-mono text-[17px] text-slate-700 leading-none">
-                <span className="flex items-center gap-1">
-                  {orderNoLabel(orderNo)}
+              <span className="flex w-12 shrink-0 flex-col items-center justify-center font-black font-mono text-[20px] text-slate-800 leading-none tracking-tight">
+                {orderNoLabel(orderNo)}
+                <span className="mt-1 flex min-h-4 items-center gap-0.5">
                   <OrderCommentBadge
                     cards={cards}
                     looks={looks}
                     orderNo={orderNo}
                   />
+                  {emergency && (
+                    <span className="font-sans text-[10px] text-red-600 tracking-normal">
+                      緊急
+                    </span>
+                  )}
                 </span>
-                {emergency && (
-                  <span className="mt-1 font-sans text-[11px] text-red-600">
-                    緊急
-                  </span>
-                )}
               </span>
-              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+              <div className="grid min-w-0 flex-1 grid-cols-3 gap-1">
                 {cards.map((card) => (
                   <UnassignedCard
                     key={card.key}
@@ -314,9 +428,10 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
                     pick={pick}
                     readOnly={readOnly}
                     size="sm"
+                    parallelOrderNumbers
                     selected={sharesOrder(card, selectedOrderId)}
                     nowMs={nowMs}
-                    className="min-h-[60px] w-[150px]"
+                    className="min-h-[60px] min-w-0"
                   />
                 ))}
               </div>
@@ -325,7 +440,9 @@ export const OrderQueuePanel: React.FC<UnassignedProps> = ({
           {rows.length === 0 && <EmptyNote />}
         </ScrollArea>
       )}
-      {!readOnly && <DragGhost pick={pick} looks={looks} size="sm" />}
+      {!readOnly && (
+        <DragGhost pick={pick} looks={looks} size="sm" parallelOrderNumbers />
+      )}
     </section>
   );
 };

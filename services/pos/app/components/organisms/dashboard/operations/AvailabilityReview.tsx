@@ -33,7 +33,73 @@ export function AvailabilityReview({
   ).filter((b) => b.availableMenus !== null);
   return (
     <div className="space-y-5">
-      <section className="space-y-2 rounded-xl border p-4">
+      <section className="space-y-3 border-stone-200 border-t pt-6">
+        <h3 className="font-bold">POS上の計算消費量</h3>
+        <p className="text-sm">
+          カップ・牛乳・氷・豆など、在庫管理に登録された資材を表示します。各資材の最終棚卸し（なければ最初の入荷）より後の累計です。画面で選んだ日の消費量ではありません。入れ直しも含み、実測の廃棄量・使用量とは異なります。
+        </p>
+        {isLoading ? (
+          <p>消費量を読み込み中…</p>
+        ) : error ? (
+          <p role="alert">消費量を取得できません。</p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full whitespace-nowrap text-left text-sm tabular-nums">
+              <thead>
+                <tr>
+                  {[
+                    "資材",
+                    "集計の起点（JST）",
+                    "計算消費量",
+                    "使用回数",
+                    "1回あたりの現在設定量",
+                  ].map((c) => (
+                    <th key={c} scope="col" className="p-2">
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {statuses.map((s) => (
+                  <tr key={s.resource.id} className="border-t">
+                    <th scope="row" className="p-2">
+                      {s.resource.name}
+                    </th>
+                    <td className="p-2">
+                      {s.counted_at
+                        ? new Date(s.counted_at).toLocaleString("ja-JP", {
+                            timeZone: "Asia/Tokyo",
+                          })
+                        : "未棚卸し・起点なし"}
+                    </td>
+                    <td className="p-2">
+                      {s.counted_at
+                        ? `${s.consumed.toLocaleString("ja-JP", { maximumFractionDigits: 3 })} ${s.resource.unit}`
+                        : "未計測"}
+                    </td>
+                    <td className="p-2">
+                      {s.counted_at ? `${s.servings}回` : "未計測"}
+                    </td>
+                    <td className="p-2">
+                      {s.resource.per_serving} {s.resource.unit}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!statuses.length && (
+              <p className="py-3">
+                登録された資材がありません。在庫管理で対象資材を登録してください。
+              </p>
+            )}
+          </div>
+        )}
+        <p className="text-stone-500 text-xs">
+          資材ごとに起点・単位が異なるため合算しません。消費量は注文時に保存した設定に基づくため、現在の1回量×回数とは一致しない場合があります。
+        </p>
+      </section>
+      <section className="space-y-2 border-stone-200 border-t pt-6">
         <h3 className="font-bold">いまの在庫</h3>
         <p className="text-sm">
           在庫は現在の値です。過去の期間を選んでも変わりません。数え直し・入荷は
@@ -48,7 +114,7 @@ export function AvailabilityReview({
           {statuses.map((stock) => (
             <div
               key={stock.resource.id}
-              className={`rounded-2xl border p-4 ${stock.level === "critical" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-teal-100 bg-teal-50 text-teal-950"}`}
+              className={`border-b px-3 py-4 ${stock.level === "critical" ? "border-rose-300 bg-rose-50 text-rose-900" : "border-stone-200 text-stone-900"}`}
             >
               <h4 className="font-bold text-sm">{stock.resource.name}</h4>
               <p className="mt-2 font-bold text-2xl tabular-nums">
@@ -116,7 +182,7 @@ export function AvailabilityReview({
           <p>在庫の記録がありません。残りゼロという意味ではありません。</p>
         )}
       </section>
-      <section className="space-y-3 rounded-xl border p-4">
+      <section className="space-y-3 border-stone-200 border-t pt-6">
         <h3 className="font-bold">メニュー数と注文の量</h3>
         <p className="text-sm">
           登録しているメニュー：
@@ -167,17 +233,31 @@ export function AvailabilityReview({
               aria-label={`売れるメニュー数と${intervalMinutes}分ごとの注文杯数の関係`}
             >
               <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ bottom: 12, right: 20 }}>
+                <ScatterChart
+                  accessibilityLayer
+                  margin={{ top: 12, bottom: 28, left: 24, right: 20 }}
+                >
                   <CartesianGrid stroke="#e7e5e4" strokeDasharray="3 3" />
                   <XAxis
                     type="number"
                     dataKey="availableMenus"
+                    label={{
+                      value: "販売可能数の時間加重平均（品）",
+                      position: "bottom",
+                      offset: 4,
+                    }}
                     name="売れるメニュー"
                     unit="品"
                   />
                   <YAxis
                     type="number"
                     dataKey="received"
+                    label={{
+                      value: `注文（杯/${intervalMinutes}分）`,
+                      angle: -90,
+                      position: "insideLeft",
+                      offset: -12,
+                    }}
                     name={`${intervalMinutes}分の注文`}
                     unit="杯"
                   />

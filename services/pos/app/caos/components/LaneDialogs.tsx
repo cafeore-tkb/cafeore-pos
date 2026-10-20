@@ -123,13 +123,6 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
       >
         <header className="flex items-center justify-between border-slate-200 border-b bg-slate-50 px-5 py-3">
           {floating.handle}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
-          >
-            終了
-          </button>
           <div className="min-w-0">
             <h2 className="font-black text-[18px] text-slate-950">
               {ordinal} の交代
@@ -334,7 +327,6 @@ interface ShiftFeedSettingsProps {
 
 export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
   shiftFeed,
-  onClose,
 }) => {
   const { feedKey, feed, loading, fetchedAt } = shiftFeed;
   const [input, setInput] = useState("");
@@ -366,13 +358,6 @@ export const ShiftFeedSettings: React.FC<ShiftFeedSettingsProps> = ({
       >
         <header className="flex items-center justify-between border-slate-200 border-b bg-slate-50 px-5 py-3">
           {floating.handle}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
-          >
-            終了
-          </button>
           <h2 className="flex items-center gap-1.5 font-black text-[18px] text-slate-950">
             <KeyRound className="h-5 w-5" />
             sohosai-shift の合言葉

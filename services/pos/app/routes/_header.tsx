@@ -1,3 +1,4 @@
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { Outlet, useMatches } from "react-router";
 import {
   type HeaderOutletContext,
@@ -10,6 +11,17 @@ import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
 
 export default function BaseHeader() {
+  const statusBarRef = useRef<HTMLElement>(null);
+  const [statusBarHeight, setStatusBarHeight] = useState(0);
+  useEffect(() => {
+    const bar = statusBarRef.current;
+    if (!bar) return;
+    const update = () => setStatusBarHeight(bar.getBoundingClientRect().height);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
   const {
     isOnline,
     isDeviceOnline,
@@ -35,10 +47,14 @@ export default function BaseHeader() {
   const outletContext: HeaderOutletContext = { connectionIssues: issues };
 
   return (
-    <div>
+    <div
+      style={{ "--pos-status-height": `${statusBarHeight}px` } as CSSProperties}
+    >
       <header
+        ref={statusBarRef}
+        data-pos-status-bar
         className={cn(
-          "sticky top-0 z-10 h-2",
+          "sticky top-0 z-30 h-2",
           "flex items-center justify-center",
           isOnline && "bg-green-600",
           isWsDisconnected && "bg-orange-600",

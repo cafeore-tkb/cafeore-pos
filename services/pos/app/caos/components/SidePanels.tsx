@@ -8,7 +8,15 @@ import {
   caosDripperAllowed,
   dripperLabel,
 } from "@cafeore/common";
-import { ArrowRight, Undo2, X } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Bean,
+  CalendarClock,
+  ListChecks,
+  Undo2,
+  X,
+} from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import {
@@ -43,6 +51,7 @@ import {
   LaneChangeButton,
   LaneChooseButton,
   LaneName,
+  LaneSettingsStatus,
 } from "./LaneParts";
 import { OrderCard, SplitCupButtons } from "./OrderCard";
 import { CommentList } from "./OrderComments";
@@ -54,7 +63,7 @@ export const SidePanel: React.FC<{
   onClose: () => void;
   footer?: React.ReactNode;
   children: React.ReactNode;
-}> = ({ title, onClose, footer, children }) => {
+}> = ({ title, footer, children }) => {
   const panelRef = useRef<HTMLElement | null>(null);
   const floating = useFloatingWindow(
     typeof title === "string" ? title : "操作パネル",
@@ -73,13 +82,6 @@ export const SidePanel: React.FC<{
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         {floating.handle}
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 shrink-0 rounded border border-slate-300 px-2 font-bold text-xs"
-        >
-          終了
-        </button>
         <button
           type="button"
           onClick={floating.hide}
@@ -304,7 +306,7 @@ const MoveCardButtons: React.FC<
   );
 };
 
-// 待機のカードの詳細（管制盤 C・D）。別のドリッパーへ・先頭へ・待機の先頭へ・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
+// 待機のカードの詳細（管制盤 C）。別のドリッパーへ・先頭へ・待機の先頭へ・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
 // 入れ直し（緊急）の取り消し。
 // パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<
@@ -411,7 +413,7 @@ export const RebrewPanel: React.FC<
   );
 };
 
-// 列の操作（管制盤 A・C・D のドリッパーの番号を押して開く）。担当者の交代と、この列の待機を全部別のドリッパーへ移す（並びのまま最後へ）。
+// 列の操作（管制盤 A・C のドリッパーの番号を押して開く）。担当者の交代と、この列の待機を全部別のドリッパーへ移す（並びのまま最後へ）。
 // パネルの外を押すと閉じる
 export const LanePanel: React.FC<{
   lane: Lane;
@@ -446,22 +448,112 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助のタブ（ドリッパー・豆残量確認・実績）。右のパネルで開く
-export type AuxiliaryTab = "bays" | "beans" | "analytics";
+// 補助の画面。普段使う入口は設定にまとめ、実績はテスト終了時だけ開く。
+export type AuxiliaryTab = "settings" | "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
+  settings: "設定",
   bays: "ドリッパー",
   beans: "豆残量確認",
   analytics: "実績",
 };
 
+const SettingsHome: React.FC<{
+  onSelectTab: (tab: "bays" | "beans") => void;
+  testPlay: {
+    active: boolean;
+    simulating: boolean;
+    progressLabel: string | null;
+    onOpen: () => void;
+    onEnd: () => void;
+  };
+}> = ({ onSelectTab, testPlay }) => (
+  <div className="grid gap-4">
+    <section>
+      <h3 className="mb-2 font-black text-[13px] text-slate-600">
+        担当者の設定
+      </h3>
+      <LaneSettingsStatus />
+    </section>
+    <section>
+      <h3 className="mb-2 font-black text-[13px] text-slate-600">
+        管制盤の設定
+      </h3>
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={() => onSelectTab("bays")}
+          className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+        >
+          <ListChecks className="h-5 w-5 text-blue-700" />
+          <span className="flex flex-col gap-0.5">
+            <span>ドリッパー</span>
+            <span className="font-bold text-[11px] text-slate-500">
+              担当者の交代と各レーンの状況
+            </span>
+          </span>
+          <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectTab("beans")}
+          className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+        >
+          <Bean className="h-5 w-5 text-amber-700" />
+          <span className="flex flex-col gap-0.5">
+            <span>豆残量確認</span>
+            <span className="font-bold text-[11px] text-slate-500">
+              残量と待機中の使用予定を確認
+            </span>
+          </span>
+          <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+        </button>
+        <button
+          type="button"
+          onClick={testPlay.active ? testPlay.onEnd : testPlay.onOpen}
+          className={`flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border px-4 text-left font-black text-[15px] shadow-xs ${
+            testPlay.active
+              ? "border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
+              : testPlay.simulating
+                ? "border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                : "border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+          }`}
+        >
+          {testPlay.active ? (
+            <BarChart3 className="h-5 w-5" />
+          ) : (
+            <CalendarClock className="h-5 w-5 text-blue-700" />
+          )}
+          <span className="flex flex-col gap-0.5">
+            <span>{testPlay.active ? "テストを終了" : "実データテスト"}</span>
+            <span
+              className={`font-bold text-[11px] ${testPlay.active ? "text-blue-100" : "text-slate-500"}`}
+            >
+              {testPlay.active
+                ? `残り ${testPlay.progressLabel || "--:--"}・終了後に実績を表示`
+                : "過去の注文データでテストプレイ"}
+            </span>
+          </span>
+          <ArrowRight
+            className={`ml-auto h-5 w-5 ${testPlay.active ? "text-blue-100" : "text-slate-400"}`}
+          />
+        </button>
+      </div>
+    </section>
+  </div>
+);
+
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
+    onSelectTab: (tab: "bays" | "beans") => void;
+    testPlay: React.ComponentProps<typeof SettingsHome>["testPlay"];
     /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;
   } & React.ComponentProps<typeof AnalyticsView>
-> = ({ tab, beans, lanes, ...analytics }) => {
+> = ({ tab, onSelectTab, testPlay, beans, lanes, ...analytics }) => {
+  if (tab === "settings")
+    return <SettingsHome onSelectTab={onSelectTab} testPlay={testPlay} />;
   if (tab === "beans") return <BeanQueueView {...beans} />;
   if (tab === "analytics")
     return <AnalyticsView lanes={lanes} {...analytics} />;

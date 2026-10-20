@@ -12,6 +12,20 @@ import {
 interface OrderListProps {
   orders: WithId<OrderEntity>[] | undefined;
 }
+
+const orderStatusTone = (order: OrderEntity) => {
+  switch (orderRecordStatus(order)) {
+    case "キャンセル":
+      return "text-red-700";
+    case "提供済み":
+      return "text-emerald-700";
+    case "お渡し待ち":
+      return "text-amber-800";
+    default:
+      return "text-stone-700";
+  }
+};
+
 /** 選択期間の注文記録。記録の参照のみで、注文や提供状態は変更しない。 */
 export function OrderList({ orders }: OrderListProps) {
   const searchId = useId();
@@ -78,17 +92,17 @@ export function OrderList({ orders }: OrderListProps) {
           ? "注文を読み込んでいます…"
           : `${filtered.length}件 / 期間内 ${orders.length}件`}
       </p>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(20rem,0.9fr)]">
         <div className="min-w-0 space-y-3">
-          <div className="max-h-[65vh] overflow-auto rounded-xl border bg-white">
+          <div className="max-h-[65vh] overflow-auto border-stone-200 border-y">
             <table className="w-full whitespace-nowrap text-left text-sm">
               <caption className="sr-only">
-                注文を選ぶと詳細を表示します
+                注文の行を選ぶと詳細を表示します
               </caption>
-              <thead className="sticky top-0 z-10 bg-stone-100">
+              <thead className="sticky top-0 z-10 bg-stone-50">
                 <tr>
                   {[
-                    "注文",
+                    "オーダーNo.",
                     "状態",
                     "杯数",
                     "請求額",
@@ -106,21 +120,20 @@ export function OrderList({ orders }: OrderListProps) {
                 {shown.map((order) => (
                   <tr
                     key={order.id}
-                    className={`border-t ${selected?.id === order.id ? "bg-amber-50" : ""}`}
+                    tabIndex={0}
+                    aria-selected={selected?.id === order.id}
+                    className={`cursor-pointer border-t transition-colors hover:bg-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-700 focus-visible:outline-offset-[-2px] ${selected?.id === order.id ? "bg-teal-50 ring-2 ring-teal-700 ring-inset hover:bg-teal-50" : ""}`}
+                    onClick={() => setSelectedId(order.id)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      setSelectedId(order.id);
+                    }}
                   >
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        aria-pressed={selected?.id === order.id}
-                        className="min-h-11 rounded px-2 font-bold text-amber-900 underline underline-offset-4"
-                        onClick={() => setSelectedId(order.id)}
-                      >
-                        #{String(order.orderId).padStart(3, "0")}
-                      </button>
+                    <td className="px-5 py-3 font-bold text-stone-900">
+                      #{String(order.orderId).padStart(3, "0")}
                     </td>
-                    <td
-                      className={`px-3 py-2 ${order.isCancelled() ? "text-red-700" : ""}`}
-                    >
+                    <td className={`px-3 py-2 ${orderStatusTone(order)}`}>
                       {orderRecordStatus(order)}
                     </td>
                     <td className="px-3 py-2">{order.getCups().length}</td>
@@ -178,8 +191,8 @@ export function OrderList({ orders }: OrderListProps) {
           {selected ? (
             <OrderDetail order={selected} />
           ) : (
-            <div className="rounded-xl border border-dashed p-8 text-center text-stone-500">
-              注文番号を押すと詳細が表示されます。
+            <div className="py-8 text-center text-stone-500">
+              注文の行を選ぶと詳細が表示されます。
             </div>
           )}
         </div>

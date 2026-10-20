@@ -60,8 +60,6 @@ html:has(.caos-root) body {
   --caos-merge: oklch(48.8% 0.243 264.376);
   /* 統合したカード（OrderCard）の後ろに重ねたもう 1 枚の枠の線（管制盤 A・C） */
   --caos-card-stack-line: oklch(55.4% 0.046 257.417);
-  /* 統合したカードを注文ごとに分けた段の区切りの点線（管制盤 D）。地の色（商品の色）に合わせた文字色を薄くして、どの地でも見える */
-  --caos-card-order-line: color-mix(in oklch, currentColor 40%, transparent);
 }
 
 /* 新しく入ったカード・抽出を始めた行（hooks/useViewBoard）を、数秒（4 秒。FLASH_MS と同じ）だけ水色の輪で点滅させる */
@@ -109,7 +107,7 @@ html:has(.caos-root) body {
 }
 
 /* Folder Tab：選択中の下辺をコンテンツ色で覆い、タブと表示領域を一体化する。
-   Dの太い罫線も同じ境界幅を使う。通知バッジの位置には影響しない。 */
+   通知バッジの位置には影響しない。 */
 .caos-root .caos-folder-tabs {
   align-self: stretch;
   align-items: flex-end;

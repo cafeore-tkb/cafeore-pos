@@ -41,7 +41,7 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
   const refunds = refundSections(order);
   return (
     <article
-      className="space-y-5 rounded-xl border bg-white p-4"
+      className="space-y-5 border-stone-200 border-t pt-4"
       aria-label={`注文${order.orderId}の詳細`}
     >
       <header className="flex flex-wrap items-center justify-between gap-2 border-stone-200 border-b pb-3">
@@ -49,7 +49,7 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
           #{String(order.orderId).padStart(3, "0")}
         </h2>
         <span
-          className={`rounded-full px-3 py-1 text-sm ${order.isCancelled() ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}
+          className={`font-bold text-sm ${order.isCancelled() ? "text-red-800" : "text-stone-700"}`}
         >
           {orderRecordStatus(order)}
         </span>
@@ -132,7 +132,10 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
         {order.cups.length ? (
           <div className="space-y-2">
             {order.cups.map((cup, i) => (
-              <div key={cup.id} className="rounded-lg bg-stone-50 p-3 text-sm">
+              <div
+                key={cup.id}
+                className="border-stone-100 border-b py-3 text-sm"
+              >
                 <p className="font-bold">
                   {i + 1}. {cup.item.name}
                   {cup.dripper ? ` · ${cup.dripper}番` : ""}
@@ -174,7 +177,7 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
           {order.comments.map((comment, i) => (
             <div
               key={`${comment.createdAt.getTime()}-${i}`}
-              className="rounded-lg bg-amber-50 p-3 text-sm"
+              className="border-stone-200 border-l-2 pl-3 text-sm"
             >
               <p className="text-stone-500">
                 {

@@ -27,7 +27,7 @@ export function PastOrdersPanel({
   const pages = Math.max(1, Math.ceil(served.length / PAGE_SIZE));
   const current = Math.min(page, pages - 1);
   return (
-    <SidePanel title="過去の注文" onClose={onClose}>
+    <SidePanel title="提供済み一覧" onClose={onClose}>
       <p className="mb-2 font-bold text-slate-600 text-xs">
         提供済み {served.length}件 · 注文番号の新しい順
       </p>
@@ -101,7 +101,7 @@ export function PastOrdersPanel({
       ) : (
         pages > 1 && (
           <nav
-            aria-label="過去の注文のページ"
+            aria-label="提供済み一覧のページ"
             className="mt-3 flex items-center justify-between gap-2 font-bold text-xs"
           >
             <button

@@ -47,7 +47,7 @@ const swallowNextClick = () => {
   window.addEventListener("pointerdown", stop, true);
 };
 
-// いまドラッグしているカードの数（管制盤 A・C・D の全部のドラッグで 1 つ。2 本の指で別々に掴んでも数える）。
+// いまドラッグしているカードの数（管制盤 A・C の全部のドラッグで 1 つ。2 本の指で別々に掴んでも数える）。
 // 1 枚でもドラッグしているあいだは「統合する」を出さない
 let draggingCount = 0;
 const dragListeners = new Set<() => void>();
@@ -73,7 +73,7 @@ const isBayButton = (element: Element): element is HTMLElement =>
   element instanceof HTMLElement && element.matches("button[data-bay-target]");
 
 /**
- * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C・D で共通。
+ * ドラッグで指の下にあるドリッパー（data-bay-target を持つ列・1〜6 のボタン）。管制盤 A・C で共通。
  * 1〜6 のボタンが下にあれば、そのボタンだけで決める（下の列に落ちない）。
  * 運んでいるカード（card）を置けないドリッパー（指名の番号でない列。caosDripperAllowed）は null
  */
@@ -120,7 +120,7 @@ export interface DropTarget {
 }
 
 /**
- * 落とす先（管制盤 A・C・D）。1〜6 のボタンが下にあればそのボタン（列の最後）。列の待機・抽出中のカード（data-queued-ticket）の上なら、
+ * 落とす先（管制盤 A・C）。1〜6 のボタンが下にあればそのボタン（列の最後）。列の待機・抽出中のカード（data-queued-ticket）の上なら、
  * 左の端はそのカードの前・右の端は後ろ・真ん中は統合（運んでいるカード card と統合できる（caosMergePair。cards から引く。
  * 運んでいるのが抽出中なら相手を抽出中のカードに入れる）ときだけ。できなければ近いほうの端。logic/lanes の dropSideAt）。
  * 同じ列の中の入れ替えにも使う。ほかは列（最後。bayTargetAt）。置けない列は null。
@@ -365,7 +365,7 @@ export const useCardDrag = <S, T>(handlers: {
 };
 
 /**
- * 長押しだけ（ドラッグしないカード。管制盤 C のドリッパーの列・A と D の終わったカード）。useCardDrag と同じ決まりで、動かしたら長押しにならない。
+ * 長押しだけ（ドラッグしないカード。管制盤 C のドリッパーの列・A の終わったカード）。useCardDrag と同じ決まりで、動かしたら長押しにならない。
  * press をカードの onPointerDown に、suppressClick を onClickCapture に渡す
  */
 export const useCardHold = <S,>(onHold?: (source: S) => void) => {

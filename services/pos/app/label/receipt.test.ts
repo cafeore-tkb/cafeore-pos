@@ -129,7 +129,7 @@ describe("[unit] orderReceipt", () => {
     order.received = order.billingAmount;
 
     expect(orderReceipt(order, { method: "cash" }).claimNumber).toBe("123");
-    // 個別小計（金額では分けていない）でも載せない
+    // 先にもあとにも払う額が無い 1 回分でも載せない
     for (const split of [
       { prepaid: 0, deferred: 0 },
       { prepaid: 300, deferred: 400 },

@@ -5,7 +5,7 @@ import { orderLabel } from "../logic/cards";
 import { useCaosStateLog } from "./useCaosStateLog";
 
 /**
- * 操作パネル。選択中の1つを表示し、ほかは入力を保って非表示にする。明示的な終了・取消で除く。
+ * 操作パネル。選択中の1つだけを表示し、別の画面を開いたら置き換える。
  * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
  */
@@ -53,12 +53,7 @@ export const useBoardSelection = (
       return {
         panel: next,
         panels: next
-          ? [
-              ...state.panels.filter(
-                (item) => panelKey(item) !== panelKey(next),
-              ),
-              next,
-            ]
+          ? [next]
           : state.panels.filter(
               (item) =>
                 !state.panel || panelKey(item) !== panelKey(state.panel),

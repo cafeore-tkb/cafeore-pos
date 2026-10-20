@@ -114,7 +114,7 @@ export const OpenCommentsContext = createContext<
 >(null);
 
 /**
- * コメントのある注文のカードの印。カード（OrderCard）の左上の角に重ねる（className で置き場所と大きさを替える。D の統合したカードの段では小さく並べる）。
+ * コメントのある注文のカードの印。カード（OrderCard）の注文番号の右側に並べる（className で置き場所と大きさを替える）。
  * 押すと（OpenCommentsContext があれば）label の注文のコメントを押した位置の近くに出す（カードを押したとき（掴む・開く）とは別。選択を外してもコメントを読めるように）
  */
 export const CommentMark: React.FC<{
@@ -361,7 +361,6 @@ export const CommentDock: React.FC<{
 
 const ViewingCommentWindow = ({
   viewing,
-  onDone,
 }: { viewing: ViewingComment; onDone: () => void }) => {
   const popup = useCommentPopupPosition(viewing.anchor);
   const floating = useFloatingWindow(`${viewing.label} のコメント`, true);
@@ -441,13 +440,6 @@ const ViewingCommentWindow = ({
           <X className="h-4 w-4" />
         </button>
       </header>
-      <button
-        type="button"
-        onClick={onDone}
-        className="mb-1 min-h-8 rounded border px-2 font-bold text-xs"
-      >
-        閲覧を終了
-      </button>
       <FloatingWindowScope
         value={{ active: !floating.hidden, activate: floating.restore }}
       >

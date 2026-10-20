@@ -1,4 +1,4 @@
-import type { CaosCard, CaosPlace } from "@cafeore/common";
+import type { CaosCard, CaosOrderInput, CaosPlace } from "@cafeore/common";
 import type React from "react";
 import type { CardMenu } from "../hooks/useCardMenu";
 import type { TimelineCommand } from "../hooks/useTimelineScroll";
@@ -7,24 +7,30 @@ import type { Lane } from "../logic/lanes";
 import type { NextAvailable } from "../logic/queue";
 import { ControlViewA } from "./ControlViewA";
 import { ControlViewC } from "./ControlViewC";
-import { ControlViewD } from "./ControlViewD";
 import type { UnassignedFold } from "./UnassignedOrdersPanel";
 import type { UnfinishedView } from "./UnfinishedOrders";
 
-// 管制盤 A・C・D。ドリッパーのカードは押すとその段階の操作のアイコンを上に出し（cardMenu）、長押しで右の詳細（待機）・緊急の入力（抽出中・終わり）のパネル
+// 管制盤 A・C。ドリッパーのカードは押すとその段階の操作のアイコンを上に出し（cardMenu）、長押しで右の詳細（待機）・緊急の入力（抽出中・終わり）のパネル
 export const CONTROL_VIEWS = {
-  a: { label: "A", timelineControls: true },
-  c: { label: "C", timelineControls: false },
-  d: { label: "D", timelineControls: false },
+  a: { label: "タイムライン", timelineControls: true },
+  c: { label: "キュー", timelineControls: false },
 } as const;
 export type ControlViewMode = keyof typeof CONTROL_VIEWS;
 
-// 管制盤 A・C・D に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
+/** 操作画面・閲覧画面で選べる表示。 */
+export const CONTROL_VIEW_BUTTONS = (["a", "c"] as const).map((mode) => ({
+  mode,
+  label: CONTROL_VIEWS[mode].label,
+}));
+
+// 管制盤 A・C に渡すもの（どれも同じ盤面・同じ操作で、見せ方だけが違う）
 export interface ControlViewProps {
   /** 6 列のドリッパー（終わり・抽出中・待機） */
   lanes: Lane[];
   /** 未割当のカード（注文番号の順） */
   unassignedOrders: CaosCard[];
+  /** その日の注文一覧（C案の「一覧」。操作画面だけで渡す） */
+  orders?: readonly CaosOrderInput[];
   /** カードの色・豆と、分けた注文 */
   looks: CardLooks;
   nextAvailable: NextAvailable;
@@ -60,13 +66,13 @@ export interface ControlViewProps {
   onMergeOrders: (firstKey: string, intoKey: string) => void;
   /** 統合の解除（統合した未割当・待機のカードから cupId の 1 杯を外して未割当に戻す） */
   onSplitCup: (card: CaosCard, cupId: string) => void;
-  /** 閲覧だけの画面（/master-sheet/view、A・C・D共通）。空きスロット・交代・割当操作を出さず、カードのタップ・長押し・ドラッグで盤面を変更しない */
+  /** 閲覧だけの画面（/master-sheet/view、A・C共通）。空きスロット・交代・割当操作を出さず、カードのタップ・長押し・ドラッグで盤面を変更しない */
   readOnly?: boolean;
-  /** 点滅させるカード（key。閲覧だけの画面で、新しく割り当てた・抽出を始めたカード。管制盤 A・C・D） */
+  /** 点滅させるカード（key。閲覧だけの画面で、新しく割り当てた・抽出を始めたカード。管制盤 A・C） */
   flashKeys?: ReadonlySet<string>;
   /** 未割当の欄の「未提供」のタブ（操作の画面だけ。渡したときだけ、未割当の欄の見出しを「未割当」「未提供」のタブにする） */
   unfinished?: UnfinishedView;
-  /** C・Dの右の注文一覧に代えて表示するコメントチャット */
+  /** Cの右の注文一覧に代えて表示するコメントチャット */
   commentsPanel?: React.ReactNode;
   /** 未割当の横帯をたたむか（管制盤 A。渡したときだけ、横帯のヘッダーに「たたむ」「ひらく」を出す） */
   unassignedFold?: UnassignedFold;
@@ -77,7 +83,6 @@ export interface ControlViewProps {
 const VIEWS: Record<ControlViewMode, React.FC<ControlViewProps>> = {
   a: ControlViewA,
   c: ControlViewC,
-  d: ControlViewD,
 };
 
 export const ControlWorkspace: React.FC<

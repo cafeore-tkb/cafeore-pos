@@ -6,7 +6,7 @@ import { checkPart } from "../../functional/cashierSplit";
 import { BackspaceIcon } from "./PayPanel";
 
 /**
- * 先払い（個別小計・小計分割）のダイアログ
+ * 先払い（小計分割）のダイアログ
  *
  * どれもキーで操作できる（数字・Backspace で金額、Enter で主のボタン、Esc で戻る）。
  * 開いている間はレジのキー操作を止めているので、キーはここで受け取る。
@@ -279,185 +279,6 @@ const ReceivedChange = ({
 );
 
 // --------------------------------------------------
-// 個別小計（商品を選ぶ）
-// --------------------------------------------------
-
-/** 個別小計で選べる商品の行 */
-export type SubtotalItemRow = {
-  key: number;
-  /** 真ん中の列の番号（数字キーで選ぶ） */
-  number: number;
-  name: string;
-  price: number;
-  /** 割り振った割引の額。無ければ 0 */
-  discount: number;
-  /** 「割引をここに」を出す（割引があり、コーヒーで、まだ割り振っていない行） */
-  canPreferDiscount: boolean;
-};
-
-export const SubtotalItemsDialog = ({
-  open,
-  rows,
-  remaining,
-  onPreferDiscount,
-  onConfirm,
-  onClose,
-}: {
-  open: boolean;
-  /** まだ払っていない商品 */
-  rows: SubtotalItemRow[];
-  /** 注文の残り（先会計を引いた額） */
-  remaining: number;
-  onPreferDiscount: (key: number) => void;
-  onConfirm: (keys: number[]) => void;
-  onClose: () => void;
-}) => {
-  const [selected, setSelected] = useState<number[]>([]);
-  useEffect(() => {
-    if (open) setSelected([]);
-  }, [open]);
-  const toggle = (key: number) =>
-    setSelected((current) =>
-      current.includes(key)
-        ? current.filter((k) => k !== key)
-        : [...current, key],
-    );
-  const picked = rows.filter((row) => selected.includes(row.key));
-  const amount = picked.reduce((acc, row) => acc + row.price - row.discount, 0);
-  const ok = picked.length > 0;
-  const confirm = () => {
-    if (ok) onConfirm(picked.map((row) => row.key));
-  };
-
-  useDialogKeys(open, (key) => {
-    if (/^[1-9]$/.test(key)) {
-      const row = rows.find((candidate) => candidate.number === Number(key));
-      if (row) toggle(row.key);
-      return true;
-    }
-    if (key === "Enter") {
-      confirm();
-      return true;
-    }
-    if (key === "Escape") {
-      onClose();
-      return true;
-    }
-    return false;
-  });
-
-  return (
-    <PrepayDialogShell
-      open={open}
-      width={440}
-      title="個別小計"
-      sub="先に会計する商品を選んでください（数字キーでも選べます）"
-    >
-      <div className="flex max-h-[260px] flex-col gap-1.5 overflow-auto">
-        {rows.map((row) => {
-          const on = selected.includes(row.key);
-          return (
-            <div
-              key={row.key}
-              className={cn(
-                "flex h-11.5 flex-none items-center rounded-lg border-[1.5px]",
-                on
-                  ? "border-prepay bg-prepay-tint"
-                  : "border-stone-200 bg-white",
-              )}
-            >
-              <button
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggle(row.key)}
-                className="flex h-full min-w-0 flex-1 items-center gap-3 pr-3.5 pl-3.5 text-left"
-              >
-                <span
-                  className={cn(
-                    "flex h-5 w-5 flex-none items-center justify-center rounded-[5px] border-2",
-                    on
-                      ? "border-prepay bg-prepay"
-                      : "border-stone-300 bg-white",
-                  )}
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M3 8.5l3 3 7-7"
-                      stroke="#fff"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                <span className="w-2.5 text-[11px] text-stone-400">
-                  {row.number}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-extrabold text-[15px]">
-                  {row.name}
-                </span>
-                {row.discount > 0 && (
-                  <span className="flex-none rounded bg-green-50 px-1.5 py-0.5 font-bold text-green-700 text-xs tabular-nums">
-                    割引 {formatYen(-row.discount)}
-                  </span>
-                )}
-                <span className="flex-none font-bold text-[15px] tabular-nums">
-                  {formatYen(row.price)}
-                </span>
-              </button>
-              {row.canPreferDiscount && (
-                <button
-                  type="button"
-                  onClick={() => onPreferDiscount(row.key)}
-                  title="割引をこの商品に付け替えます"
-                  className="mr-2 h-8 flex-none rounded-md border border-green-700 bg-white px-2 font-bold text-green-700 text-xs"
-                >
-                  割引をここに
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 gap-y-0.5 rounded-lg border border-stone-200 bg-stone-50 px-3.5 py-3 tabular-nums">
-        <span className="font-extrabold text-sm">個別小計</span>
-        <span className="text-right font-extrabold text-2xl">
-          {formatYen(amount)}
-        </span>
-        <span className="font-bold text-prepay text-xs">残りの商品</span>
-        <span className="text-right font-extrabold text-[13px] text-prepay">
-          {formatYen(remaining - amount)}
-        </span>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className={buttonClass.secondary}
-        >
-          戻る
-        </button>
-        <button
-          type="button"
-          onClick={confirm}
-          disabled={!ok}
-          className={buttonClass.primary}
-        >
-          この小計で会計
-          <EnterTag />
-        </button>
-      </div>
-    </PrepayDialogShell>
-  );
-};
-
-// --------------------------------------------------
 // 小計分割・一部金額先払い（金額を入れる）
 // --------------------------------------------------
 
@@ -470,7 +291,7 @@ export const PartAmountDialog = ({
   onClose,
 }: {
   open: boolean;
-  /** 分ける小計の見出し（「小計」「個別小計の残り」など） */
+  /** 分ける小計の見出し（「小計」「小計の残り」） */
   baseLabel: string;
   /** 分ける小計（の残り） */
   base: number;
@@ -554,137 +375,7 @@ export const PartAmountDialog = ({
 };
 
 // --------------------------------------------------
-// 割り勘の分け方を選ぶ（お客さんが端末で「割り勘」を選んだ）
-// --------------------------------------------------
-
-/** 分け方のボタン。押せないときは理由を出す */
-const SplitChoiceButton = ({
-  keyLabel,
-  title,
-  sub,
-  blocked,
-  onClick,
-}: {
-  /** 押すキー（1・2） */
-  keyLabel: string;
-  /** 題。行を折るときは、ここで分けたところだけで折る */
-  title: string[];
-  sub: string;
-  /** 押せない理由。押せれば null */
-  blocked: string | null;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={blocked !== null}
-    className="flex min-h-28 flex-col items-start gap-1.5 rounded-[10px] border border-prepay-line bg-white px-4 py-3.5 text-left hover:bg-prepay-tint disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white"
-  >
-    <span className="flex w-full items-start gap-2">
-      <span className="font-extrabold text-base text-prepay">
-        {title.map((part) => (
-          <span key={part} className="inline-block">
-            {part}
-          </span>
-        ))}
-      </span>
-      <span className="flex-1" />
-      <span className="mt-0.5 rounded border border-prepay-line px-1 font-bold text-[10px] text-prepay leading-[15px]">
-        {keyLabel}
-      </span>
-    </span>
-    <span className="text-[13px] text-stone-600 leading-[1.5]">{sub}</span>
-    {blocked && (
-      <span className="font-bold text-red-700 text-xs">{blocked}</span>
-    )}
-  </button>
-);
-
-/**
- * お客さんが端末で「割り勘」を選んだ。分け方を「個別小計」（商品で分ける）か
- * 「小計分割・一部金額先払い」（金額で分ける）から選ぶ。1・2 のキーでも選べる
- */
-export const SplitChoiceDialog = ({
-  open,
-  due,
-  itemsBlocked,
-  partBlocked,
-  onItems,
-  onPart,
-  onClose,
-}: {
-  open: boolean;
-  /** 今払う額 */
-  due: number;
-  /** 個別小計・小計分割を選べない理由。選べれば null */
-  itemsBlocked: string | null;
-  partBlocked: string | null;
-  onItems: () => void;
-  onPart: () => void;
-  onClose: () => void;
-}) => {
-  useDialogKeys(open, (key) => {
-    if (key === "1") {
-      if (itemsBlocked === null) onItems();
-      return true;
-    }
-    if (key === "2") {
-      if (partBlocked === null) onPart();
-      return true;
-    }
-    if (key === "Escape") {
-      onClose();
-      return true;
-    }
-    return false;
-  });
-
-  return (
-    <PrepayDialogShell
-      open={open}
-      width={540}
-      title="割り勘"
-      sub="お客さんが端末で選びました。分け方を選んでください"
-      aside={
-        <span className="font-bold text-sm text-stone-600 tabular-nums">
-          小計 {formatYen(due)}
-        </span>
-      }
-    >
-      <div className="grid grid-cols-2 gap-2.5">
-        <SplitChoiceButton
-          keyLabel="1"
-          title={["個別小計"]}
-          sub="先に払う商品を選んで、その分を会計します"
-          blocked={itemsBlocked}
-          onClick={onItems}
-        />
-        <SplitChoiceButton
-          keyLabel="2"
-          title={["小計分割・", "一部金額先払い"]}
-          sub="いまの小計を金額で分けて、先に払う額を入れます"
-          blocked={partBlocked}
-          onClick={onPart}
-        />
-      </div>
-      <div className="flex items-center justify-end gap-3">
-        <span className="text-stone-500 text-xs">
-          戻ると、端末にまた決済手段を出します
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className={buttonClass.secondary}
-        >
-          戻る
-        </button>
-      </div>
-    </PrepayDialogShell>
-  );
-};
-
-// --------------------------------------------------
-// 受け取ったあと（金額で分けた・個別小計を払い終えた）
+// 受け取ったあと（金額で分けた）
 // --------------------------------------------------
 
 /** 受け取った支払い */
@@ -702,7 +393,6 @@ export type ReceivedTender = {
 export const PartPaidDialog = ({
   open,
   tender,
-  remainingLabel,
   remaining,
   final,
   onSplit,
@@ -710,8 +400,6 @@ export const PartPaidDialog = ({
 }: {
   open: boolean;
   tender: ReceivedTender | null;
-  /** 「残り」「個別小計の残り」 */
-  remainingLabel: string;
   /** 小計の残り */
   remaining: number;
   /** 小計の残りが注文全体の残り（最後の会計） */
@@ -757,7 +445,7 @@ export const PartPaidDialog = ({
         />
       )}
       <div className="flex items-baseline justify-between rounded-lg bg-prepay-soft px-3.5 py-3 text-prepay-ink">
-        <span className="font-extrabold text-sm">{remainingLabel}</span>
+        <span className="font-extrabold text-sm">残り</span>
         <span className="font-black text-2xl text-prepay tabular-nums">
           {formatYen(remaining)}
         </span>
@@ -802,83 +490,6 @@ export const PartPaidDialog = ({
   );
 };
 
-/** 個別小計を払い終えたあと。続けて個別小計か、残りを全て会計を選ぶ */
-export const SubtotalPaidDialog = ({
-  open,
-  tender,
-  remainingCount,
-  remaining,
-  canMoreItems,
-  onMoreItems,
-  onPayRest,
-}: {
-  open: boolean;
-  tender: ReceivedTender | null;
-  /** まだ払っていない商品の数と、注文の残り */
-  remainingCount: number;
-  remaining: number;
-  /** 続けて個別小計を選べるか（まだ払っていない商品が 2 点以上） */
-  canMoreItems: boolean;
-  onMoreItems: () => void;
-  onPayRest: () => void;
-}) => {
-  useDialogKeys(open, (key) => {
-    if (key === "Enter") {
-      onPayRest();
-      return true;
-    }
-    return key === "Escape";
-  });
-
-  return (
-    <PrepayDialogShell
-      open={open}
-      width={440}
-      large
-      icon={<CheckIcon />}
-      title={`${formatYen(tender?.amount ?? 0)} を受け取りました`}
-      aside={
-        <span className="font-bold text-sm text-stone-600">
-          {tender?.methodLabel}
-        </span>
-      }
-    >
-      {tender?.cash && tender.cash.change > 0 && (
-        <ReceivedChange
-          received={tender.cash.received}
-          change={tender.cash.change}
-        />
-      )}
-      <div className="flex items-baseline justify-between rounded-lg bg-prepay-soft px-3.5 py-3 text-prepay-ink">
-        <span className="font-extrabold text-sm">
-          残りの商品 {remainingCount}点
-        </span>
-        <span className="font-black text-2xl text-prepay tabular-nums">
-          {formatYen(remaining)}
-        </span>
-      </div>
-      <div className="flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onMoreItems}
-          disabled={!canMoreItems}
-          className={buttonClass.secondary}
-        >
-          続けて個別小計
-        </button>
-        <button
-          type="button"
-          onClick={onPayRest}
-          className={buttonClass.primary}
-        >
-          残りを全て会計
-          <EnterTag />
-        </button>
-      </div>
-    </PrepayDialogShell>
-  );
-};
-
 // --------------------------------------------------
 // 先払いの返金（取り消し）
 // --------------------------------------------------
@@ -904,15 +515,12 @@ type RefundStatus =
 
 export const RefundDialog = ({
   open,
-  all,
   rows,
   refundSquare,
   onFinish,
   onClose,
 }: {
   open: boolean;
-  /** 先払いをすべて返金する（「先払いを取り消す」）。でなければ、その小計の分だけ（先会計の ×） */
-  all: boolean;
   rows: RefundRow[];
   /** Square の決済を全額返金する */
   refundSquare: (checkoutId: string) => Promise<SquareRefundResult>;
@@ -983,9 +591,7 @@ export const RefundDialog = ({
       open={open}
       width={440}
       icon={<WarningIcon />}
-      title={
-        all ? "先払いをすべて返金しますか" : "この小計の先払いを取り消しますか"
-      }
+      title="先払いをすべて返金しますか"
     >
       <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-stone-200 bg-stone-200">
         {rows.map((row) => {
@@ -1074,9 +680,7 @@ export const RefundDialog = ({
       <p className="m-0 text-[13px] text-stone-500 leading-[1.6]">
         {finished
           ? "返金が済みました。残りの額が戻っています。"
-          : all
-            ? "注文はまだ登録していません。返金が済むと、商品を変えられるようになります。"
-            : "この小計で受け取った分をまとめて返します。ほかの小計の先払いはそのままです。"}
+          : "注文はまだ登録していません。返金が済むと、商品を変えられるようになります。"}
       </p>
       <div className="flex justify-end gap-2">
         {stage === "confirm" && (

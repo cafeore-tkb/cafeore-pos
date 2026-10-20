@@ -73,6 +73,7 @@ export const orderSchema = z.object({
   billingAmount: z.number(), // total - discount
   received: z.number(), // お預かり金額
   discountOrderId: z.number().nullable(),
+  // 割り引く杯数。引換券では 1 会計につき 1 杯まで（上限を入れる前に保存した注文は、前回の注文の杯数のまま）
   discountOrderCups: z.number(),
   DISCOUNT_PER_CUP: z.number(),
   discount: z.number(), // min(this.getCoffeeCups(), discountOrderCups) * DISCOUNT_PER_CUP
@@ -122,6 +123,8 @@ export type OrderComment = z.infer<typeof commentSchema>;
 
 // 途中から割引額を変更する場合はこの値を変更する
 const STATIC_DISCOUNT_PER_CUP = 100;
+// 引換券で割り引く杯数の上限。前回の注文に何杯あっても、1 会計につき 1 杯分（100 円）まで
+const MAX_COUPON_DISCOUNT_CUPS = 1;
 
 class CommentEntity implements OrderComment {
   constructor(
@@ -468,12 +471,15 @@ export class OrderEntity implements Order {
   }
 
   /**
-   * 割引を適用する
+   * 割引を適用する。前回のオーダーに何杯あっても、割り引くのは 1 会計につき 1 杯分まで
    * @param previousOrder 割引の参照となる前回のオーダー
    */
   applyDiscount(previousOrder: OrderEntity) {
     this._discountOrderId = previousOrder.orderId;
-    this._discountOrderCups = previousOrder.getCoffeeCups().length;
+    this._discountOrderCups = Math.min(
+      previousOrder.getCoffeeCups().length,
+      MAX_COUPON_DISCOUNT_CUPS,
+    );
   }
 
   /**

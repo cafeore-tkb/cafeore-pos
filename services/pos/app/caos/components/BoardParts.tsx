@@ -9,7 +9,7 @@ import { clockLabel } from "../logic/format";
 import type { LanePhase, LaneStatus } from "../logic/queue";
 import { useFloatingWindow } from "./FloatingWindows";
 
-// 管制盤 A・C・D で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
+// 管制盤 A・C で共通の部品（パネルの見出し・列の番号と状態・右上の確かめ・知らせ（「次へ」の確かめ・統合と上級生のみの知らせ）・空きスロット・次に空く・長く待っている未割当の札）
 
 /** パネルの見出し（アイコン・題・右に添えるもの）。題の代わりにタブを置くときは icon・title を渡さない */
 export const PanelHeader: React.FC<{
@@ -96,7 +96,7 @@ const FORGOTTEN = {
 };
 
 /**
- * ドリッパーの番号（数字だけ。担当者の名前を広く出せるよう細くする）を、列の状態のインジケーターにしたもの（管制盤 A・C・D の列の見出し）。
+ * ドリッパーの番号（数字だけ。担当者の名前を広く出せるよう細くする）を、列の状態のインジケーターにしたもの（管制盤 A・C の列の見出し）。
  * 番号の地の色と札で状態（空き・待機・抽出中・まもなく・継続中・要確認）を、抽出中は残り、要確認は予定を過ぎた時間も（札の下に）出す。
  * そのドリッパーを待っている指名（未割当）があれば、角に「指名 2」（杯数）を付ける。
  * 押すと列の操作（担当者の交代・待機をまとめて移す）を開く（onOpenLane を渡したときだけ）
@@ -319,14 +319,6 @@ export const LongWaitTag: React.FC<{ card: CaosCard; nowMs: number }> = ({
     )
   );
 };
-
-/** ドリッパーに置いたカードの場所の札（「3rd 2番目」）。カードを包む relative の枠の右上に重ねる（管制盤 D の表） */
-export const PlaceTag: React.FC<{ label?: string }> = ({ label }) =>
-  label && (
-    <span className="-top-2 absolute right-1 z-20 whitespace-nowrap rounded-full bg-slate-900 px-1.5 py-0.5 font-black font-mono text-[12px] text-white leading-none shadow-xs">
-      {label}
-    </span>
-  );
 
 /**
  * テストの盤面を出しているあいだ（実データテスト中・終えたあと）、盤面の上に出し続ける帯。「本番に戻る」で cafeore-pos の注文の盤面に戻る。

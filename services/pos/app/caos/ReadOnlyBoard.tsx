@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import { useCurrentTime } from "~/components/functional/useCurrentTime";
 import { OrderCountLabel } from "./components/BoardParts";
 import {
-  CONTROL_VIEWS,
+  CONTROL_VIEW_BUTTONS,
   type ControlViewMode,
   ControlWorkspace,
 } from "./components/ControlWorkspace";
@@ -18,17 +18,14 @@ import { nextAvailableBays } from "./logic/queue";
 import { timelineArrivals } from "./logic/timeline";
 
 // 閲覧だけの管制盤（/master-sheet/view）。操作の画面（App.tsx）と同じ cafeore-pos の盤面（useLiveBoard）を、
-// 管制盤 A・C・Dを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
+// 管制盤 A・Cを切り替えて映すだけ（終わったカードは出さず、抽出中・待機だけ）。カップへの書き込み（PUT /api/caos/cups）も「次へ」も送らない。
 // タイムラインに新しく入ったカードは、通知音（ヘッダーで切り替え）とそのカードの点滅で知らせる。未割当の横帯はたためる（この端末に覚える）。
 
 const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, status, sound, flashKeys } = useViewBoard(
-    nowMs,
-    timelineArrivals,
-  );
+  const { cards, sound, flashKeys } = useViewBoard(nowMs, timelineArrivals);
   const [folded, setFolded] = useDeviceSetting(
     "caos-view-unassigned-folded",
     false,
@@ -37,8 +34,7 @@ export default function ReadOnlyBoard() {
     "caos-view-control-mode",
     "a",
   );
-  const mode: ControlViewMode =
-    storedMode === "c" || storedMode === "d" ? storedMode : "a";
+  const mode: ControlViewMode = storedMode === "c" ? "c" : "a";
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(
@@ -55,18 +51,18 @@ export default function ReadOnlyBoard() {
   );
 
   return (
-    <div className="flex h-dvh w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
-      <ViewHeader nowMs={nowMs} status={status} sound={sound}>
+    <div className="flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+      <ViewHeader nowMs={nowMs} sound={sound}>
         <nav aria-label="閲覧する管制盤の表示切替" className={SEGMENTS}>
-          {Object.entries(CONTROL_VIEWS).map(([key, view]) => (
+          {CONTROL_VIEW_BUTTONS.map(({ mode: key, label }) => (
             <button
               key={key}
               type="button"
               aria-pressed={mode === key}
-              onClick={() => setMode(key as ControlViewMode)}
+              onClick={() => setMode(key)}
               className={`min-h-8 min-w-8 touch-manipulation ${segmentClass(mode === key)}`}
             >
-              {view.label}
+              {label}
             </button>
           ))}
         </nav>
