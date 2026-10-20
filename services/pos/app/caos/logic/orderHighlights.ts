@@ -1,6 +1,6 @@
 import type { CaosCard } from "@cafeore/common";
 
-export const ORDER_HIGHLIGHT_COLORS = ["#C2410C", "#A16207"] as const;
+export const ORDER_HIGHLIGHT_COLORS = ["#F59E0B", "#EA580C"] as const;
 export interface HighlightOrder {
   id: string;
   no: number;

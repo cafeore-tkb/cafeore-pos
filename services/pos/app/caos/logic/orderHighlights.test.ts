@@ -69,10 +69,10 @@ describe("[unit] 注文ハイライト", () => {
       { id: "c", no: 14, color: null },
     ]);
     expect(highlightFrame(get("bc"), selected)).toBe(
-      "linear-gradient(90deg, #A16207 0%, #A16207 50%, transparent 50%, transparent 100%)",
+      "linear-gradient(90deg, #EA580C 0%, #EA580C 50%, transparent 50%, transparent 100%)",
     );
     expect(highlightFrame(get("ab"), selected)).toContain(
-      "#C2410C 50%, #A16207 50%",
+      "#F59E0B 50%, #EA580C 50%",
     );
     expect(highlightFrame(get("a"), [selected[1]])).toBeNull();
   });
@@ -101,7 +101,7 @@ describe("[unit] 注文ハイライト", () => {
       cups: get("ab").cups.filter((cup) => cup.orderId === "b"),
     };
     expect(highlightFrame(split, selected)).toBe(
-      "linear-gradient(90deg, #A16207 0%, #A16207 100%)",
+      "linear-gradient(90deg, #EA580C 0%, #EA580C 100%)",
     );
     // カップが盤面から消えた場合も、選択自体を削除する処理はない。
     expect(selected).toHaveLength(2);
