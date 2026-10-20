@@ -62,8 +62,11 @@ export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
   footer?: React.ReactNode;
+  icon?: React.ReactNode;
+  contentClassName?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
-}> = ({ title, footer, children }) => {
+}> = ({ title, footer, icon, contentClassName = "p-4", style, children }) => {
   const panelRef = useRef<HTMLElement | null>(null);
   const floating = useFloatingWindow(
     typeof title === "string" ? title : "操作パネル",
@@ -76,11 +79,23 @@ export const SidePanel: React.FC<{
         floating.ref.current = element;
       }}
       data-popup-hidden={floating.hidden}
-      style={floating.style}
+      style={{
+        ...style,
+        ...floating.style,
+        // コメント入力中のキーボード表示では、移動済みのパネルも表示範囲へ戻す。
+        ...(typeof style?.bottom === "number" && style.bottom > 0
+          ? {
+              top: 56,
+              bottom: style.bottom,
+              maxHeight: `calc(100dvh - ${style.bottom + 56}px)`,
+            }
+          : {}),
+      }}
       className="fade-in-75 slide-in-from-right caos-side-panel fixed top-[56px] right-0 bottom-0 z-[150] flex w-(--caos-side-panel-width) animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         {floating.handle}
+        {icon}
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
         <button
           type="button"
@@ -91,7 +106,7 @@ export const SidePanel: React.FC<{
           <X className="h-5 w-5" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className={`min-h-0 flex-1 overflow-y-auto ${contentClassName}`}>
         <FloatingWindowScope
           value={{ active: !floating.hidden, activate: floating.restore }}
         >

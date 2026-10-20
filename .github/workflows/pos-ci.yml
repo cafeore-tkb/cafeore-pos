@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: './.github/actions/setup-deps'
-      - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts
+      - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts app/caos/logic/orderCommentComposer.test.ts
 
   # api-ci の lint と見分けるため、ジョブ名は biome にしている。
   # biome.json がリポジトリ直下にあるので、ルートで実行する。
