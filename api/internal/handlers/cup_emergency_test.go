@@ -177,18 +177,21 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("queued = %v, want [%v %v]", queued, cardE, cardB)
 	}
 
-	// 入れ直しは入れ直しどうしでだけ 1 枚のカードにできる（緊急でないカップと同じカードにすると、緊急の取り消しと食い違う）。最大 2 杯
+	// 通常と入れ直しも同じカードにできる。最大 2 杯の制約は維持する。
 	o3 := f.createOrder(t, 3, line(f.blend))
 	o4 := f.createOrder(t, 4, line(f.blend))
-	if code, body := f.put(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest || !strings.Contains(body, "緊急") {
-		t.Fatalf("a cup on an emergency card = %d: %s", code, body)
-	}
-	if code, body := f.addEmergencies(t, o3.OrderCups[0].ID); code != http.StatusCreated {
-		t.Fatalf("POST = %d: %s", code, body)
-	}
-	f.mustPut(t, write([]uuid.UUID{f.emergencies(t, o3.OrderCups[0].ID)[0].ID}, unassigned, placed(1, cardE, false)))
+	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false)))
 	if code, _ := f.put(t, write(ids(o4.OrderCups[0]), unassigned, placed(1, cardE, false))); code != http.StatusBadRequest {
 		t.Fatalf("third cup on a card = %d, want 400", code)
+	}
+	// 待機の緊急だけを取り消しても、統合相手の通常カップは同じ状態で残る。
+	before := f.cup(t, o3.OrderCups[0].ID)
+	if code, body := f.cancelEmergency(t, e2); code != http.StatusNoContent {
+		t.Fatalf("cancel mixed emergency = %d: %s", code, body)
+	}
+	after := f.cup(t, o3.OrderCups[0].ID)
+	if !sameCaosState(&after, caosCupState(&before)) {
+		t.Fatalf("normal cup changed on cancellation: %+v", after)
 	}
 
 	// 指名のあるカップの入れ直しは、その番号のドリッパーにしか置けない
@@ -604,5 +607,75 @@ func TestCupEmergencyReasonsOnDB(t *testing.T) {
 	}
 	if got, want := strings.Join(get(), ","), "温度,こぼした,倒した,割れた,味が薄い"; got != want {
 		t.Fatalf("reasons = %s, want %s", got, want)
+	}
+}
+
+// 通常と入れ直しを統合しても、それぞれの行・理由と抽出状態を保持する。
+func TestCupEmergencyMixedMergeOnDB(t *testing.T) {
+	for _, mode := range []string{"unassigned", "queued", "normal-brewing", "emergency-brewing"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newCaosFixture(t, openCaosTestDB(t))
+			original := f.createOrder(t, 1, line(f.blend))
+			normal := f.createOrder(t, 2, line(f.blend))
+			body, _ := json.Marshal(map[string]any{"order_cup_ids": ids(original.OrderCups[0]), "reason": "抽出ミス"})
+			response := callWithParams(t, f.caos.CreateCupEmergencies, http.MethodPost, string(body), nil)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("POST = %d: %s", response.Code, response.Body.String())
+			}
+			e := f.emergencies(t, original.OrderCups[0].ID)[0].ID
+			n := normal.OrderCups[0].ID
+			card := uuid.New()
+			if mode == "unassigned" {
+				f.mustPut(t, write([]uuid.UUID{n, e}, unassigned, map[string]any{"dripper": nil, "drip_id": card, "insert_before": nil, "start_brew": false}))
+			} else {
+				first, second := n, e
+				if mode == "emergency-brewing" {
+					first, second = e, n
+				}
+				brewing := mode != "queued"
+				f.mustPut(t, write([]uuid.UUID{first}, unassigned, placed(2, card, brewing)))
+				f.wait()
+				f.mustPut(t, write([]uuid.UUID{second}, unassigned, placed(2, card, false)))
+			}
+			rows, err := readCaosUnits(f.db, "c.drip_id = ?", card)
+			if err != nil || len(rows) != 2 || !sameCaosState(&rows[0].OrderCup, caosCupState(&rows[1].OrderCup)) {
+				t.Fatalf("mixed card = %+v: %v", rows, err)
+			}
+			if got := f.emergencies(t, original.OrderCups[0].ID)[0]; got.Reason != "抽出ミス" {
+				t.Fatalf("reason = %q", got.Reason)
+			}
+			if mode == "unassigned" || mode == "queued" {
+				before := f.cup(t, n)
+				if code, body := f.cancelEmergency(t, e); code != http.StatusNoContent {
+					t.Fatalf("cancel = %d: %s", code, body)
+				}
+				after := f.cup(t, n)
+				if !sameCaosState(&after, caosCupState(&before)) {
+					t.Fatalf("normal cup changed: %+v", after)
+				}
+				f.mustPut(t, write([]uuid.UUID{n}, f.state(t, n), toUnassigned))
+			} else {
+				started := f.cup(t, n).BrewStartedAt
+				if started == nil || !timeEqual(started, f.emergencies(t, original.OrderCups[0].ID)[0].BrewStartedAt) {
+					t.Fatal("start time was not inherited")
+				}
+				if code, _ := f.cancelEmergency(t, e); code != http.StatusBadRequest {
+					t.Fatalf("cancel brewing = %d", code)
+				}
+				if code, _ := f.put(t, write([]uuid.UUID{n}, f.state(t, n), toUnassigned)); code != http.StatusBadRequest {
+					t.Fatalf("split brewing = %d", code)
+				}
+				f.wait()
+				if code := f.next(t, 2, &card); code != http.StatusNoContent {
+					t.Fatalf("next = %d", code)
+				}
+				if f.cup(t, n).BrewFinishedAt == nil || f.emergencies(t, original.OrderCups[0].ID)[0].BrewFinishedAt == nil {
+					t.Fatal("both units must finish")
+				}
+				if f.cup(t, original.OrderCups[0].ID).BrewFinishedAt != nil {
+					t.Fatal("original brew was changed")
+				}
+			}
+		})
 	}
 }
