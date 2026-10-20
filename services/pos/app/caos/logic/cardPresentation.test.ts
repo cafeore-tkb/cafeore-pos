@@ -4,6 +4,7 @@ import {
   cardNomination,
   cardNumberParts,
   fittingCardLabels,
+  isMergedOrderCard,
 } from "./cardPresentation";
 
 const labels = [
@@ -46,6 +47,37 @@ describe("[unit] カードのラベル優先順位", () => {
     expect(fit.productWidth).toBe(88);
     expect([...fit.visible]).toEqual(["lane"]);
     expect(fit.compact.has("lane")).toBe(true);
+  });
+  test("商品名より先にレーン指名と提供済みの幅を確保する", () => {
+    const fit = fittingCardLabels(
+      120,
+      300,
+      [...labels, { key: "served", width: 60, priority: 0 }],
+      4,
+    );
+    expect(fit.productWidth).toBe(24);
+    expect([...fit.visible]).toEqual(["lane", "served"]);
+    expect(fit.wrapRequired).toBe(false);
+  });
+  test("極端に狭い幅でも必須札は隠さず折り返す", () => {
+    const fit = fittingCardLabels(
+      80,
+      48,
+      [...labels, { key: "served", width: 60, priority: 0 }],
+      4,
+    );
+    expect(fit.productWidth).toBe(0);
+    expect([...fit.visible]).toEqual(["lane", "served"]);
+    expect(fit.wrapRequired).toBe(true);
+  });
+  test("レーン指名と自由記述の指名が収まる幅なら両方を残す", () => {
+    const fit = fittingCardLabels(
+      200,
+      48,
+      [labels[0], { key: "name", width: 100, priority: 1 }],
+      4,
+    );
+    expect([...fit.visible]).toEqual(["lane", "name"]);
   });
 });
 
@@ -90,6 +122,19 @@ const [mixed] = buildCaosCards([
 ]);
 
 describe("[unit] カードの番号と指名", () => {
+  test("同じ注文の通常と緊急の2杯には複数注文の統合表示を付けない", () => {
+    expect(isMergedOrderCard(mixed)).toBe(false);
+  });
+  test("同一注文の通常2杯と、異なる注文の2杯を区別する", () => {
+    const normalCups = mixed.cups.map((cup) => ({ ...cup, emergency: false }));
+    expect(isMergedOrderCard({ ...mixed, cups: normalCups })).toBe(false);
+    expect(
+      isMergedOrderCard({
+        ...mixed,
+        cups: normalCups.map((cup, i) => ({ ...cup, orderId: `order-${i}` })),
+      }),
+    ).toBe(true);
+  });
   test("同一注文の1000番でも緊急と通常を別の番号要素にする", () => {
     expect(cardNumberParts(mixed)).toEqual([
       { id: "a", no: 1000, emergency: true },

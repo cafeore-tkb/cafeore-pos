@@ -7,7 +7,11 @@ import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import { useCaosLanes } from "../hooks/useCaosLanes";
 import { useCardLayout } from "../hooks/useCardLayout";
 import { useOrderHighlights } from "../hooks/useOrderHighlights";
-import { cardNomination, cardNumberParts } from "../logic/cardPresentation";
+import {
+  cardNomination,
+  cardNumberParts,
+  isMergedOrderCard,
+} from "../logic/cardPresentation";
 import {
   type CardLook,
   cardItemName,
@@ -193,7 +197,7 @@ export const OrderCard: React.FC<
   );
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
-  const merged = card.cups.length > 1;
+  const merged = isMergedOrderCard(card);
   const compactNumber = size === "sm" && orderLabel(card).length > 4;
   const numberSize = compactNumber ? "text-[14px]" : text.no;
   const reasons = emergencyReasons(card);
@@ -326,6 +330,7 @@ export const OrderCard: React.FC<
   return (
     <div
       {...props}
+      role={props.role ?? "group"}
       onClickCapture={(event) => {
         props.onClickCapture?.(event);
         if (event.isPropagationStopped() || event.defaultPrevented) return;
@@ -388,7 +393,7 @@ export const OrderCard: React.FC<
           </span>
         </span>
       </div>
-      {/* 2行目。レーン指名を確保し、札は全文が入るものだけ表示する。 */}
+      {/* レーン指名・提供済みを確保し、ほかの札は幅に合わせて省略する。 */}
       <div
         ref={detailRef}
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
@@ -405,7 +410,7 @@ export const OrderCard: React.FC<
             {nomination.lane}
           </span>
         )}
-        {!nomination.lane && nomination.text && (
+        {nomination.text && (
           <span
             data-card-label="name"
             data-priority="1"

@@ -16,6 +16,10 @@ export const cardNumberParts = (card: CaosCard) =>
       Number(b.emergency) - Number(a.emergency),
   );
 
+/** 同じ注文の2杯や入れ直しは、複数注文を統合したカードとは区別する。 */
+export const isMergedOrderCard = (card: CaosCard) =>
+  new Set(card.cups.map((cup) => cup.orderId)).size > 1;
+
 /** 自由記述より、割当先が分かるレーンの番号を優先する。 */
 export function cardNomination(card: CaosCard) {
   const lanes = [
@@ -40,20 +44,22 @@ export interface CardLabelWidth {
   priority: number;
 }
 
-/** レーン名・上級生アイコンを先に残し、接頭語・補助札は幅に合わせて省略する。 */
+/** 指名レーンと提供済みの状態を確保し、補助札は残りの幅で省略する。 */
 export function fittingCardLabels(
   available: number,
   product: number,
   labels: readonly CardLabelWidth[],
   gap: number,
 ) {
-  const lane = labels.find((label) => label.key === "lane");
+  const required = (label: CardLabelWidth) =>
+    label.key === "lane" || label.key === "served";
+  const requiredWidth = labels
+    .filter(required)
+    .reduce((sum, label) => sum + (label.compactWidth ?? label.width) + gap, 0);
+  const wrapRequired = requiredWidth > available;
   const productWidth = Math.max(
     0,
-    Math.min(
-      product,
-      available - (lane ? (lane.compactWidth ?? lane.width) + gap : 0),
-    ),
+    Math.min(product, available - requiredWidth),
   );
   const visible = new Set<string>();
   const compact = new Set<string>();
@@ -64,12 +70,16 @@ export function fittingCardLabels(
       visible: new Set(labels.map((label) => label.key)),
       compact,
       productWidth,
+      wrapRequired,
     };
   let used = productWidth;
-  const sorted = [...labels].sort((a, b) => a.priority - b.priority);
+  const sorted = [...labels].sort(
+    (a, b) =>
+      Number(required(b)) - Number(required(a)) || a.priority - b.priority,
+  );
   for (const label of sorted) {
     const width = label.compactWidth ?? label.width;
-    if (label.key === "lane" || used + gap + width <= available) {
+    if (required(label) || used + gap + width <= available) {
       visible.add(label.key);
       if (label.compactWidth !== undefined) compact.add(label.key);
       used += gap + width;
@@ -85,5 +95,5 @@ export function fittingCardLabels(
       compact.delete(label.key);
     }
   }
-  return { visible, compact, productWidth };
+  return { visible, compact, productWidth, wrapRequired };
 }

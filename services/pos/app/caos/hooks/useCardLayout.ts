@@ -23,10 +23,7 @@ export function useCardLayout() {
         const gap = Number.parseFloat(getComputedStyle(head).columnGap) || 0;
         const children = [...head.children] as HTMLElement[];
         const width = () =>
-          children.reduce(
-            (sum, node) => sum + node.getBoundingClientRect().width,
-            0,
-          ) +
+          children.reduce((sum, node) => sum + node.offsetWidth, 0) +
           gap * (children.length - 1);
         apply(1);
         const hashes = [
@@ -66,11 +63,11 @@ export function useCardLayout() {
     const widths = labels.map((label) => {
       const long = label.querySelector<HTMLElement>("[data-label-long]");
       if (long) long.style.display = "inline";
-      const width = label.getBoundingClientRect().width;
+      const width = label.offsetWidth;
       let compactWidth: number | undefined;
       if (long) {
         long.style.display = "none";
-        compactWidth = label.getBoundingClientRect().width;
+        compactWidth = label.offsetWidth;
         long.style.display = "inline";
       }
       return {
@@ -83,14 +80,14 @@ export function useCardLayout() {
     const gap = Number.parseFloat(getComputedStyle(detail).columnGap) || 0;
     const layout = fittingCardLabels(
       detail.clientWidth,
-      Math.ceil(
-        Math.max(product.scrollWidth, product.getBoundingClientRect().width),
-      ) + 1,
+      Math.max(product.scrollWidth, product.offsetWidth) + 1,
       widths,
       gap,
     );
     product.style.flex = "0 1 auto";
     product.style.width = `${layout.productWidth}px`;
+    // 必須札だけでも収まらない幅では、状態を隠す代わりに折り返す。
+    detail.style.flexWrap = layout.wrapRequired ? "wrap" : "nowrap";
     for (const label of labels) {
       const key = label.dataset.cardLabel ?? "";
       label.style.display = layout.visible.has(key) ? "inline-flex" : "none";
