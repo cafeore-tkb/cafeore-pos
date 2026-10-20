@@ -175,18 +175,20 @@ export const addChordLine = (
   return addLine({ ...draft, lines }, menu);
 };
 
-/** 行を削除する（一覧から消す。戻すときはもう一度足す）。選んでいた行は外す */
+/**
+ * 行を削除する（一覧から消す。戻すときはもう一度足す）。
+ * 次の行を選ぶ（続けて Backspace で削除、Space で指名できるように）。
+ * 一番下の行を消したら、↓ と同じく引換券番号の欄に移る
+ */
 export const removeLine = (
   draft: CashierDraft,
   index: number,
 ): CashierDraft => {
   if (!canEditLines(draft) || !draft.lines[index]) return draft;
-  return {
-    ...draft,
-    lines: draft.lines.filter((_, i) => i !== index),
-    selected: null,
-    zone: "coupon",
-  };
+  const lines = draft.lines.filter((_, i) => i !== index);
+  return index < lines.length
+    ? { ...draft, lines, selected: index }
+    : { ...draft, lines, selected: null, zone: "coupon" };
 };
 
 /** 全部の行を削除する */
@@ -528,7 +530,7 @@ type KeyContext = {
   held?: readonly string[];
   /** 押しているキーで足した行。同時押しがそろったら同時押しの商品に置き換える */
   heldLineKeys?: readonly number[];
-  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さない */
+  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さず、行も消さない */
   repeat?: boolean;
   /** 引換券番号を過去の注文と照らし合わせる（inputDigits） */
   checkCoupon?: (coupon: string) => CouponStatus;
@@ -547,7 +549,8 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
  *   選んでいなければ、入れる段階は引換券番号（3 桁で割引できれば備考に移る）、会計の段階は受取金額
- * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
+ * - Backspace: 行を選んでいれば削除（一覧から消し、次の行を選ぶ）、でなければ数字を 1 桁消す。
+ *   押したままの繰り返しでは行を消さない（次の行まで続けて消さないよう、1 行ずつ押し直す）
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない
  * - Space: 選んでいる行の指名・備考を開く
@@ -594,11 +597,10 @@ export const cashierKeyIntent = (
   }
   switch (key) {
     case "Backspace":
-      return update(
-        draft.selected !== null
-          ? removeLine(draft, draft.selected)
-          : deleteDigit(draft),
-      );
+      if (draft.selected !== null) {
+        return repeat ? NONE : update(removeLine(draft, draft.selected));
+      }
+      return update(deleteDigit(draft));
     case "ArrowRight":
       return canGoPay(draft) ? { type: "goPay" } : NONE;
     case "ArrowLeft":

@@ -82,12 +82,22 @@ const keys = (draft: CashierDraft, ...pressed: string[]) =>
   }, draft);
 
 describe("[unit] cashierDraft の商品", () => {
-  test("削除した行は一覧から消し、送る商品からも外す。選んでいた行は外す", () => {
-    const draft = removeLine(withLines(blend, coaster), 0);
-    expect(draft.lines).toHaveLength(1);
-    expect(activeMenus(draft)).toEqual([coaster]);
-    expect(draft.selected).toBeNull();
-    expect(draft.zone).toBe("coupon");
+  test("削除した行は一覧から消し、送る商品からも外す。次の行を選ぶ", () => {
+    const draft = removeLine(withLines(blend, coaster, blend), 1);
+    expect(activeMenus(draft)).toEqual([blend, blend]);
+    expect(draft.selected).toBe(1);
+    expect(removeLine(withLines(blend, coaster), 0).selected).toBe(0);
+  });
+
+  test("一番下の行を削除したら、行を選ばず引換券番号の欄に移る", () => {
+    const last = removeLine(withLines(blend, coaster), 1);
+    expect(activeMenus(last)).toEqual([blend]);
+    expect(last.selected).toBeNull();
+    expect(last.zone).toBe("coupon");
+    const only = removeLine(withLines(blend), 0);
+    expect(only.lines).toEqual([]);
+    expect(only.selected).toBeNull();
+    expect(only.zone).toBe("coupon");
   });
 
   test("全削除はすべての行を消す", () => {
@@ -339,6 +349,31 @@ describe("[unit] cashierKeyIntent", () => {
     expect(removed.selected).toBeNull();
     const onCoupon = focusCoupon(withLines(blend));
     expect(keys(onCoupon, "1", "2", "Backspace").coupon).toBe("1");
+  });
+
+  test("Backspace で行を削除すると次の行を選ぶので、続けて Backspace で消せる", () => {
+    const draft = selectLine(withLines(blend, coaster, blend), 0);
+    const once = keys(draft, "Backspace");
+    expect(activeMenus(once)).toEqual([coaster, blend]);
+    expect(once.selected).toBe(0);
+    const twice = keys(once, "Backspace");
+    expect(activeMenus(twice)).toEqual([blend]);
+    expect(twice.selected).toBe(0);
+  });
+
+  test("Backspace を押したままの繰り返しでは行を消さない。行を選んでいなければ 1 桁消す", () => {
+    const draft = selectLine(withLines(blend, coaster), 0);
+    expect(
+      cashierKeyIntent(draft, "Backspace", { menus, payments, repeat: true })
+        .type,
+    ).toBe("none");
+    const onCoupon = inputDigits(focusCoupon(withLines(blend)), "12");
+    const intent = cashierKeyIntent(onCoupon, "Backspace", {
+      menus,
+      payments,
+      repeat: true,
+    });
+    expect(intent.type === "update" && intent.draft.coupon).toBe("1");
   });
 
   test("数字のキーも、割引できない 3 桁なら備考に移らず、次の数字で打ち直す", () => {
