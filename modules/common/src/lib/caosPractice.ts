@@ -197,8 +197,6 @@ const allUnits = (orders: CaosPracticeOrder[]): PracticeUnit[] =>
     }),
   );
 
-const isEmergency = (unit: PracticeUnit) => unit.row !== unit.cup;
-
 /** ドリッパーで抽出を始める・終える時刻（サーバーの caosBrewAt）。now が、同じドリッパーでいちばん遅く終えた抽出より前なら、その終えた時刻 */
 const brewAt = (orders: CaosPracticeOrder[], dripper: number, now: Date) =>
   new Date(
@@ -389,17 +387,13 @@ export const applyCaosPracticeWrites = (
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。入れ直しは入れ直しどうしだけ
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。通常と入れ直しも同じカードにできる
   for (const dripId of touched) {
     const units = allUnits(next).filter((unit) => unit.row.dripId === dripId);
     if (units.length > CAOS_MAX_CUPS)
       return { error: `1 枚のカードは ${CAOS_MAX_CUPS} 杯までです` };
     if (units.some((unit) => !sameState(unit.row, units[0].row)))
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
-    if (units.some((unit) => isEmergency(unit) !== isEmergency(units[0])))
-      return {
-        error: "緊急（入れ直し）と緊急でないカップは同じカードにできません",
-      };
     // 指名なしのカップは、どの番号のカップとも同じカードにできる（サーバーの checkCaosCardNomination は番号の種類を数える）
     const nominations = units.flatMap((unit) => unit.nominated ?? []);
     if (new Set(nominations).size > 1)

@@ -318,6 +318,68 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(looks.get("m8")?.split).toBeUndefined();
   });
 
+  test("同一注文の通常と緊急の混在カードも、通常の分割に1枚として数える", () => {
+    const mixed = buildCaosCards([
+      order(8, [
+        {
+          dripId: "mixed-8",
+          dripper: 2,
+          dripperPosition: 1,
+          emergencies: [
+            {
+              id: "emergency-8",
+              createdAt: T0,
+              reason: "抽出ミス",
+              dripId: "mixed-8",
+              dripper: 2,
+              dripperPosition: 1,
+              brewStartedAt: null,
+              brewFinishedAt: null,
+            },
+          ],
+        },
+        {},
+      ]),
+    ]);
+    const looks = cardLooks(mixed, [], new Map());
+    // 元の2杯に入れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
+    expect(looks.get("mixed-8")?.split).toEqual({ total: 2, cups: 2 });
+    expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
+  });
+
+  test("他注文の緊急を混ぜても通常の分割数に入れず、通常の杯だけを数える", () => {
+    const mixed = buildCaosCards([
+      order(8, [{ dripId: "mixed-8-9", dripper: 2, dripperPosition: 1 }, {}]),
+      order(9, [
+        {
+          dripId: "original-9",
+          dripper: 3,
+          dripperPosition: 1,
+          brewStartedAt: T0,
+          brewFinishedAt: T0,
+          emergencies: [
+            {
+              id: "emergency-9",
+              createdAt: T0,
+              reason: "抽出ミス",
+              dripId: "mixed-8-9",
+              dripper: 2,
+              dripperPosition: 1,
+              brewStartedAt: null,
+              brewFinishedAt: null,
+            },
+          ],
+        },
+      ]),
+    ]);
+    const looks = cardLooks(mixed, [], new Map());
+    expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
+    // #9の通常抽出は1枚だけ。緊急が別カードにあっても分割扱いにしない。
+    expect(looks.get("original-9")?.split).toBeUndefined();
+    // 複数注文を含むカードそのものへは、従来どおり分割の札を付けない。
+    expect(looks.get("mixed-8-9")?.split).toBeUndefined();
+  });
+
   test("注文を選ぶと、その注文の入った統合したカードも当たる（統合したカードを選ぶと中の注文のカードも）", () => {
     const merged = cards.find((card) => card.key === "m");
     if (!merged) throw new Error("統合したカードが無い");
