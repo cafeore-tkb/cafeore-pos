@@ -148,6 +148,12 @@ export const sendCaosOutboxRequest = (
   pressedAt: number,
 ): Promise<CaosResult> => {
   switch (request.kind) {
+    case "discard":
+      return send(
+        apiClient.POST("/api/caos/discard", {
+          body: { ...request.request, press: pressOf(pressedAt) },
+        }),
+      );
     case "cups":
       return putCaosCups(request.writes, pressedAt);
     case "next":

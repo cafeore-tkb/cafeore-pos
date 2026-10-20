@@ -1,5 +1,6 @@
 import {
   type CaosCupsWrite,
+  type CaosDiscardRequest,
   type CaosPracticeOrder,
   type CaosPracticeResult,
   type ItemType,
@@ -9,6 +10,7 @@ import {
   applyCaosPracticeWrites,
   buildCaosCards,
   cancelCaosPracticeEmergency,
+  discardCaosPracticeCups,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -137,6 +139,10 @@ export const useTestPlay = ({
     cards,
     /** 実績に出す、届いた注文（提供時間は練習の結果） */
     salesOrders,
+    discardCups: (request: CaosDiscardRequest, _label: string) =>
+      commit(
+        discardCaosPracticeCups(practiceRef.current, request, practiceNow()),
+      ),
     runWrites: (writes: CaosCupsWrite[], label: string) => {
       caosLog("practice.operation.requested", {
         label,

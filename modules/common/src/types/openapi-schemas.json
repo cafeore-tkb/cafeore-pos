@@ -1239,6 +1239,32 @@
       }
     }
   },
+  "CaosDiscardRequest": {
+    "type": "object",
+    "description": "元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。",
+    "required": ["cup_ids", "before", "drip_id"],
+    "properties": {
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 2,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "before": {
+        "$ref": "#/components/schemas/CaosCupState"
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
+      }
+    }
+  },
   "CaosCupsWriteRequest": {
     "type": "object",
     "required": ["writes"],
