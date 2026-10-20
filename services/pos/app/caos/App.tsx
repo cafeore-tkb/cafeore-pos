@@ -80,7 +80,8 @@ export default function App() {
   );
   const selectOrder = (label: string | null, orderId?: string) => {
     selection.selectOrder(label);
-    if (label) highlight.selectLabel(label, orderId);
+    if (label !== null) highlight.selectLabel(label, orderId);
+    else highlight.clear();
   };
   // 管制盤 A のタイムラインが NOW を追っているか（ヘッダーの「現在」の見た目）
   const [followingNow, setFollowingNow] = useState(true);
@@ -116,7 +117,7 @@ export default function App() {
   // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
   const viewed = useViewedComments({
     selectedOrderId: selection.selectedOrderId,
-    selectOrder: selection.selectOrder,
+    selectOrder,
     cards: session.cards,
     looks,
     hidden:

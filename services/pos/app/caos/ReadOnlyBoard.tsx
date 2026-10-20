@@ -84,7 +84,6 @@ export default function ReadOnlyBoard() {
           selectedOrderId={null}
           nowMs={nowMs}
           timelineCommand={null}
-          onSelectOrder={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
           onOpenEmptySlot={noop}

@@ -10,6 +10,7 @@ import {
   useAnyCardDragging,
   useCardDrag,
 } from "./useCardDrag";
+import { useOrderHighlights } from "./useOrderHighlights";
 import { useOutsidePress } from "./useOutsidePress";
 
 /**
@@ -36,12 +37,13 @@ export const useUnassignedPick = ({
   orders: readonly CaosCard[];
   /** ドリッパーに置いたカード（ドラッグで統合する相手を引く） */
   placed?: readonly CaosCard[];
-  onSelectOrder: (orderId: string | null) => void;
+  onSelectOrder?: (orderId: string | null) => void;
   onAssignToBay: (card: CaosCard, bayId: number, place?: CaosPlace) => void;
   onMergeOrders?: (firstKey: string, intoKey: string) => void;
   onSplitCup?: (card: CaosCard, cupId: string) => void;
   onCancelEmergency?: (card: CaosCard) => void;
 }) => {
+  const highlight = useOrderHighlights();
   const [openKey, setOpenKey] = useState<string | null>(null);
   useCaosStateLog("ui.unassigned-menu.changed", { openKey });
   const openCard = orders.find((order) => order.key === openKey);
@@ -58,7 +60,7 @@ export const useUnassignedPick = ({
       }),
     onBegin: (card) => {
       // Same as tapping another card: switching cards drops the old selection.
-      if (openKey && openKey !== card.key) onSelectOrder(null);
+      if (openKey && openKey !== card.key) onSelectOrder?.(null);
       setOpenKey(card.key);
     },
     onDrop: (card, target) => {
@@ -80,7 +82,7 @@ export const useUnassignedPick = ({
       ),
     () => {
       setOpenKey(null);
-      onSelectOrder(null);
+      onSelectOrder?.(null);
     },
   );
 
@@ -126,7 +128,9 @@ export const useUnassignedPick = ({
         setOpenKey(null);
         return;
       }
-      onSelectOrder(orderLabel(card));
+      onSelectOrder?.(orderLabel(card));
+      // 操作の選択と強調は別管理。ラベルで引き直さず、カードの注文IDを選ぶ。
+      highlight?.selectCard(card);
       setOpenKey(card.key);
     },
   };

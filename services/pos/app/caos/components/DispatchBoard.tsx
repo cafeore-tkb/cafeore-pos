@@ -85,7 +85,10 @@ const tickClass = (marker: { isHour: boolean; isMajor: boolean }) => {
 };
 
 export const DispatchBoard: React.FC<
-  Omit<ControlViewProps, "nextAvailable" | "onAssignToBay"> & {
+  Omit<
+    ControlViewProps,
+    "nextAvailable" | "onAssignToBay" | "onSelectOrder"
+  > & {
     /** 未割当のカードの操作（下の横帯と共有。開いた未割当のカードを、押した抽出中のカードに統合する） */
     pick?: UnassignedPick;
     /** 残りの高さを使い、列を高くする */
