@@ -12,6 +12,7 @@ import {
 import { Button } from "~/components/ui/button";
 import discardBrewIcon from "../icons/discard-brew.svg";
 import { orderNoLabel } from "../logic/cards";
+import { CardActionButton, CardActionTray } from "./CardActionTray";
 
 /** 元の抽出を破棄する候補と確認画面。保存方法の合意前なので確定操作は未接続。 */
 export const DiscardSuggestion = ({
@@ -25,24 +26,23 @@ export const DiscardSuggestion = ({
   if (cups.length === 0) return null;
   return (
     <>
-      <button
-        type="button"
-        aria-label={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
-        title={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
-        style={{ left: `max(calc(${inset} + 4px), calc(50% - 20px))` }}
-        className="absolute bottom-0 z-[90] flex h-10 w-10 touch-manipulation items-center justify-center rounded-full bg-white shadow-lg active:scale-90"
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen(true);
-        }}
-      >
-        <img
-          src={discardBrewIcon}
-          alt=""
-          className="h-full w-full rounded-full bg-white"
-          draggable={false}
-        />
-      </button>
+      <CardActionTray inset={inset}>
+        <CardActionButton
+          aria-label={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
+          title={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+        >
+          <img
+            src={discardBrewIcon}
+            alt=""
+            className="h-full w-full rounded-full bg-white"
+            draggable={false}
+          />
+        </CardActionButton>
+      </CardActionTray>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent
           className="z-[200]"
