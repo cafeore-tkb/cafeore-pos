@@ -72,7 +72,11 @@ export const CardOverlay: React.FC<{
         </span>
       )}
       {discard.length > 0 && menu && !menu.isOpen(card) && (
-        <DiscardSuggestion cups={discard} inset={inset} />
+        <DiscardSuggestion
+          cups={discard}
+          inset={inset}
+          onConfirm={look?.discard}
+        />
       )}
       {servedRecovery && discard.length === 0 && menu && !menu.isOpen(card) && (
         <button

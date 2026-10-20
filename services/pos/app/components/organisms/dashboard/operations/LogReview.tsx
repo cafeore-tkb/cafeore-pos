@@ -17,6 +17,7 @@ const EVENT_NAMES: Record<string, string> = {
   "lanes.change": "担当者交代",
   "lanes.swap": "担当者の入替",
   "lanes.seniors": "担当者属性の更新",
+  "brew.discard": "元の抽出を破棄",
   "emergency.add": "入れ直しを追加",
   "emergency.cancel": "入れ直しを取消",
   "cups.update": "割当・移動・統合",

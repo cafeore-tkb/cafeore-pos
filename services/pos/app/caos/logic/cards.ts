@@ -3,6 +3,7 @@ import {
   type ColorSetting,
   type StockResource,
   canMergeCards,
+  caosDiscardCandidates,
   resolveItemColor,
 } from "@cafeore/common";
 import { type BeanIndex, cardBean } from "./beans";
@@ -143,8 +144,9 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文） */
 export interface CardLook {
-  /** 入れ直しを登録した元の抽出。確定処理を接続する前の表示確認用。 */
+  /** 入れ直しを登録した元の抽出。 */
   discardCandidates?: CaosCard["cups"];
+  discard?: (ids: string[]) => boolean;
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ（ほかの注文と統合したカードに入った分も 1 枚と数える） */
@@ -174,10 +176,8 @@ export const cardLooks = (
   beanIndex: BeanIndex,
   comments: CommentsByOrder | null = null,
   offSenior: (card: CaosCard) => boolean = () => false,
+  onDiscard?: (card: CaosCard, ids: string[]) => boolean,
 ): CardLooks => {
-  const rebrews = cards
-    .flatMap((card) => card.cups)
-    .filter((cup) => cup.emergency);
   // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
@@ -201,20 +201,10 @@ export const cardLooks = (
     cards.map((card) => [
       card.key,
       {
-        discardCandidates:
-          card.status === "brewing" || card.status === "queued"
-            ? card.cups.filter(
-                (cup) =>
-                  !cup.emergency &&
-                  rebrews.some(
-                    (redo) =>
-                      redo.cupId === cup.cupId &&
-                      redo.emergencyReason.trim() !== "ラベル再発行" &&
-                      redo.orderedAt.getTime() >=
-                        (card.startedAt ?? cup.orderedAt).getTime(),
-                  ),
-              )
-            : [],
+        discardCandidates: caosDiscardCandidates(cards, card),
+        discard: onDiscard
+          ? (ids: string[]) => onDiscard(card, ids)
+          : undefined,
         color: cardColor(card, settings),
         split: splitOf(card),
         bean: cardBean(card, beanIndex),

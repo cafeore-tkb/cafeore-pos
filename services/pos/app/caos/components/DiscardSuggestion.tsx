@@ -14,13 +14,15 @@ import discardBrewIcon from "../icons/discard-brew.svg";
 import { orderNoLabel } from "../logic/cards";
 import { CardActionButton, CardActionTray } from "./CardActionTray";
 
-/** 元の抽出を破棄する候補と確認画面。保存方法の合意前なので確定操作は未接続。 */
+/** 元の抽出を破棄する候補と確認画面。確定は既存の永続送信キューへ渡す。 */
 export const DiscardSuggestion = ({
   cups,
   inset,
+  onConfirm,
 }: {
   cups: CaosCard["cups"];
   inset: string;
+  onConfirm?: (ids: string[]) => boolean;
 }) => {
   const [open, setOpen] = useState(false);
   if (cups.length === 0) return null;
@@ -65,7 +67,13 @@ export const DiscardSuggestion = ({
           </ul>
           <AlertDialogFooter>
             <AlertDialogCancel>戻る</AlertDialogCancel>
-            <Button variant="destructive" disabled>
+            <Button
+              variant="destructive"
+              disabled={!onConfirm}
+              onClick={() => {
+                if (onConfirm?.(cups.map((cup) => cup.id))) setOpen(false);
+              }}
+            >
               元の{cups.length}杯を破棄
             </Button>
           </AlertDialogFooter>

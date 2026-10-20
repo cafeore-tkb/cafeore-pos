@@ -13,3 +13,5 @@ export * from "./caosShiftFeed";
 export * from "./jst";
 export * from "./caosPractice";
 export * from "./openapi-enum";
+
+export * from "./caos-discard";

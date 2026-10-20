@@ -1,5 +1,6 @@
 import {
   type CaosCupsWrite,
+  type CaosDiscardRequest,
   type CaosOutboxOp,
   applyCaosOutboxOps,
   buildCaosCards,
@@ -88,6 +89,8 @@ export const useLiveBoard = ({
     /** 最後に通った操作で端末に残した操作の id */
     lastEnqueued: () => enqueued.current,
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
+    discardCups: (request: CaosDiscardRequest, label: string) =>
+      run(label, { kind: "discard", request }),
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),
     /** 「次へ」を送る。before は先に当てる書き込み（押した待機のカードを待機の先頭へ）。決まりに合えば true */

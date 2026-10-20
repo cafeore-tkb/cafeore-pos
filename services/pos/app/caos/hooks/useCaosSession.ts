@@ -16,6 +16,7 @@ import {
   caosNextLocked,
   caosRebrewMergePair,
   caosRebrewsTogether,
+  caosStateJSON,
   dripperLabel,
   jstClock,
   jstDate,
@@ -176,8 +177,28 @@ export const useCaosSession = () => {
         comments,
         // 練習には担当者がいないので出さない
         (card) => !testing && seniorOnlyOffSenior(card, people),
+        (card, ids) => {
+          const ok = source.discardCups(
+            {
+              cup_ids: ids,
+              before: caosStateJSON(card.state),
+              drip_id: newDripId(),
+            },
+            `破棄 ${orderLabel(card)}`,
+          );
+          if (ok) toast("元の抽出の破棄を受け付けました");
+          return ok;
+        },
       ),
-    [cards, colorSettings, beanIndex, comments, testing, people],
+    [
+      cards,
+      colorSettings,
+      beanIndex,
+      comments,
+      testing,
+      people,
+      source.discardCups,
+    ],
   );
   // 豆残量確認に出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
