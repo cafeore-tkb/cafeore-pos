@@ -17,7 +17,6 @@ import { hasCancelLabel } from "~/label/cancel-label";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import type { ConnectionIssue } from "../../functional/connectionIssues";
-import { useCurrentTime } from "../../functional/useCurrentTime";
 import { CancelOrderButton } from "../../molecules/CancelOrderButton";
 import { RefundOrderButton } from "../../molecules/RefundOrderButton";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
@@ -344,10 +343,9 @@ const OrderDetail = ({
 }) => {
   const { colorSettings } = useColorSettings();
   const [comment, setComment] = useState("");
-  // 提供までの時間（まだならいままで）を進める
-  const now = useCurrentTime(1000);
   const status = STATUS[order.status];
-  const elapsed = orderElapsedTime(order, now);
+  // 提供までの時間。提供済みの注文だけに出すので、時計は進めない
+  const elapsed = orderElapsedTime(order);
   const refundStatus = order.squareRefundStatus;
 
   const addComment = () => {
@@ -416,8 +414,9 @@ const OrderDetail = ({
           >
             {status.text}
           </span>
-          {/* キャンセルした注文はもう作らないので、提供までの時間（遅れの赤）は出さない */}
-          {!order.isCancelled() && (
+          {/* キャンセルした注文はもう作らないので、提供までの時間（遅れの赤）は出さない。
+              まだ提供していない注文は左の状態（未提供・提供待ち）でわかるので、時間も出さない */}
+          {!order.isCancelled() && order.servedAt !== null && (
             <span
               className={cn(
                 "rounded-lg px-2.5 py-1.25 font-bold text-sm tabular-nums",
@@ -426,9 +425,7 @@ const OrderDetail = ({
                   : "bg-slate-100 text-slate-700",
               )}
             >
-              {order.servedAt === null
-                ? "未提供"
-                : `${elapsed.m}分${elapsed.ss}秒`}
+              {`${elapsed.m}分${elapsed.ss}秒`}
             </span>
           )}
         </span>
