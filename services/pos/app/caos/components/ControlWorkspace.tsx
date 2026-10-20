@@ -39,8 +39,8 @@ export interface ControlViewProps {
   /** 今（エポックのミリ秒。実データテストでは練習の時計） */
   nowMs: number;
   timelineCommand: TimelineCommand | null;
-  /** 注文を選ぶ（null で外す） */
-  onSelectOrder: (orderId: string | null) => void;
+  /** 未割当の操作対象を選ぶ（null で外す）。閲覧画面では省略する。 */
+  onSelectOrder?: (orderId: string | null) => void;
   /** ドリッパーのカードの上に出す操作（hooks/useCardMenu。押すと開く）。閲覧だけの画面では渡さない（押しても何もしない） */
   cardMenu?: CardMenu;
   /**

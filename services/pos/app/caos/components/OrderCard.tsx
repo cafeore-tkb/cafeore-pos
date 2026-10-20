@@ -5,6 +5,7 @@ import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import { useCaosLanes } from "../hooks/useCaosLanes";
+import { useOrderHighlights } from "../hooks/useOrderHighlights";
 import {
   type CardLook,
   cardItemName,
@@ -18,6 +19,7 @@ import {
 import { commentKey } from "../logic/comments";
 import { unsupportedDrip } from "../logic/dripSupport";
 import { type DropSide, moveTargets } from "../logic/lanes";
+import { cardOrders, highlightFrame } from "../logic/orderHighlights";
 import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C の未割当とドリッパーのカード、割当・詳細のパネルで共通。
@@ -30,7 +32,7 @@ import { CommentMark, FreshCommentsContext } from "./OrderComments";
 // 大きさ・枠・操作（クリック・ドラッグ）は className と div の props で渡し、上に重ねるもの（1〜6 のボタンなど）は children。
 //
 // 色の役目を分ける：地の色は商品の色（色の設定。look.color）だけに使い、意味（指名・選択中）は地の色に頼らず、
-// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、選択中は外側の黄の輪だけ（札は付けない）。同じ注文は、選ぶとどこにあっても選択中になる。
+// 枠の形・札の文字で出す（指名は黒い点線の枠と「指名 2nd」、注文ハイライトは数字と外側のオレンジ系2色の枠。統合の片側だけの強調もできる。商品の地色と操作対象の状態は変えない。
 // 入れ直しは赤い「緊急」の札と理由）。
 // 商品の色が意味の色と近くても見分けられる。
 
@@ -168,6 +170,9 @@ export const OrderCard: React.FC<
   children,
   ...props
 }) => {
+  const highlight = useOrderHighlights();
+  const frame = highlight ? highlightFrame(card, highlight.orders) : null;
+  const highlighted = highlight ? frame !== null : selected;
   const freshComments = useContext(FreshCommentsContext);
   const freshKeys = new Set(freshComments.map(commentKey));
   const badgeComments =
@@ -179,7 +184,7 @@ export const OrderCard: React.FC<
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
-  const surface = surfaceOf(done, nominee !== "", selected, look?.color);
+  const surface = surfaceOf(done, nominee !== "", highlighted, look?.color);
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
   const merged = cardOrderNos(card).length > 1;
@@ -187,24 +192,46 @@ export const OrderCard: React.FC<
   const numberSize = compactNumber ? "text-[14px]" : text.no;
   const reasons = emergencyReasons(card);
   const served = cardServedLabel(card);
-  // 注文番号の札と、商品の略称
-  const noTag = (label: string, fontSize: string) => (
+  // 番号そのものを着色する。番号単独の選択は、カードの業務操作を呼ばない。
+  const noTag = (order: { id: string; no: number }, fontSize: string) => {
+    const color = highlight?.orders.find((item) => item.id === order.id)?.color;
+    const label = `#${orderNoLabel(order.no)}`;
+    const className = `rounded ${color ? "bg-white" : "bg-black/10"} ${size === "sm" ? "px-0.5" : "px-1"} py-0.5 font-black font-mono ${fontSize}`;
+    return highlight ? (
+      <button
+        type="button"
+        key={order.id}
+        data-order-highlight-number={order.id}
+        aria-label={`注文 ${label}だけをハイライト`}
+        aria-pressed={Boolean(color)}
+        className={`${className} cursor-pointer focus-visible:outline-2 focus-visible:outline-slate-900`}
+        style={{ color }}
+        title={label}
+        onClick={(event) => {
+          event.stopPropagation();
+          highlight.selectCard(card, order.id, event.detail === 0);
+        }}
+      >
+        {label}
+      </button>
+    ) : (
+      <span key={order.id} className={className} title={label}>
+        {label}
+      </span>
+    );
+  };
+  const orderNo = (fontSize: string) => (
     <span
-      className={`rounded bg-black/10 ${size === "sm" ? "px-0.5" : "px-1"} py-0.5 font-black font-mono ${fontSize}`}
-      title={label}
+      className={`flex min-w-0 items-center ${parallelOrderNumbers ? "gap-0.5" : "gap-px"}`}
     >
-      {label}
-    </span>
-  );
-  const orderNo = (size: string) => noTag(orderLabel(card), size);
-  const parallelOrderNos = (fontSize: string) => (
-    <span className="flex min-w-0 shrink-0 items-center gap-0.5">
-      {cardOrderNos(card).map((no) => {
-        const label = `#${orderNoLabel(no)}`;
-        return (
-          <Fragment key={no}>{noTag(label, `shrink-0 ${fontSize}`)}</Fragment>
-        );
-      })}
+      {cardOrders(card).map((order, index) => (
+        <Fragment key={order.id}>
+          {index > 0 && !parallelOrderNumbers && (
+            <span aria-hidden="true">+</span>
+          )}
+          {noTag(order, fontSize)}
+        </Fragment>
+      ))}
     </span>
   );
   // 入れ直し（緊急）の理由の札
@@ -238,24 +265,41 @@ export const OrderCard: React.FC<
   // 番号は縮めない。統合した長い番号は杯数の札と同じ大きさで字の間を詰め、C では別々の札で横に並べる。
   // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。
   const [headline, subline] = [
-    merged && parallelOrderNumbers
-      ? parallelOrderNos(`tracking-tighter ${text.cups}`)
-      : orderNo(
-          merged
-            ? `min-w-0 truncate tracking-tighter ${text.cups}`
-            : `shrink-0 ${numberSize}`,
-        ),
+    orderNo(
+      merged
+        ? `min-w-0 tracking-tighter ${text.cups}`
+        : `shrink-0 ${numberSize}`,
+    ),
     itemName(`max-w-full shrink-0 ${text.item}`),
   ];
 
   return (
     <div
       {...props}
+      onClickCapture={(event) => {
+        props.onClickCapture?.(event);
+        if (event.isPropagationStopped() || event.defaultPrevented) return;
+        const target = event.target as HTMLElement;
+        if (target.closest("button, a, input, select, textarea")) return;
+        highlight?.selectCard(card);
+      }}
       data-ticket-label={orderLabel(card)}
+      data-order-highlight-card={highlight ? card.key : undefined}
+      data-order-highlight-active={frame ? "true" : undefined}
       data-merge-tap={mergeTap || undefined}
       style={{ ...surface.style, ...style }}
-      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, selected)} ${selected ? "z-10 ring-4 ring-amber-500 ring-offset-2" : ""} ${className}`}
+      className={`relative flex min-w-0 select-none flex-col justify-center gap-1 rounded-lg transition-[box-shadow] ${text.pad} ${surface.className} ${shadowOf(merged, highlighted)} ${highlighted ? `z-10 ${highlight ? "" : "ring-4 ring-amber-500 ring-offset-2"}` : ""} ${className}`}
     >
+      {frame && (
+        <>
+          <span aria-hidden="true" className="caos-highlight-halo" />
+          <span
+            aria-hidden="true"
+            className="caos-highlight-frame"
+            style={{ backgroundImage: frame }}
+          />
+        </>
+      )}
       {children}
       {mergeTap && <MergeOverlay />}
       <DropMark side={dropSide} />
