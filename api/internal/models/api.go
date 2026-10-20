@@ -45,6 +45,12 @@ const (
 	Printed LabelPrintClaimResponseStatus = "printed"
 )
 
+// Defines values for MasterStateExpectedType.
+const (
+	ExpectedOperational MasterStateExpectedType = "operational"
+	ExpectedStop        MasterStateExpectedType = "stop"
+)
+
 // Defines values for MasterStateUpdateRequestType.
 const (
 	Operational MasterStateUpdateRequestType = "operational"
@@ -620,6 +626,15 @@ type LabelPrintRequestResponse struct {
 	Job LabelPrintJob `json:"job"`
 }
 
+// MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
+type MasterStateExpected struct {
+	CreatedAt *time.Time              `json:"created_at"`
+	Type      MasterStateExpectedType `json:"type"`
+}
+
+// MasterStateExpectedType defines model for MasterStateExpected.Type.
+type MasterStateExpectedType string
+
 // MasterStateResponse defines model for MasterStateResponse.
 type MasterStateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -628,7 +643,9 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type MasterStateUpdateRequestType `json:"type"`
+	// Expected 確認した受付状態。履歴なしは type=operational、created_at=null。
+	Expected *MasterStateExpected         `json:"expected,omitempty"`
+	Type     MasterStateUpdateRequestType `json:"type"`
 }
 
 // MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.

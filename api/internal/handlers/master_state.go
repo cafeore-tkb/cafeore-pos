@@ -57,27 +57,54 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 		return
 	}
 
-	if req.Type != models.Stop && req.Type != models.Operational {
+	if (req.Type != models.Stop && req.Type != models.Operational) || (req.Expected != nil && req.Expected.Type != "stop" && req.Expected.Type != "operational") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": `type は "stop" か "operational" にしてください`})
 		return
 	}
 
-	// 同じ状態を続けて送られたときは通知しない。初めてなら無いのが普通なので、
-	// First で「record not found」をログに出さないよう Find で読む。
-	// 読めなかったら空と比べた誤った通知になるので、通知だけしない
-	var last models.MasterState
-	lastErr := h.db.Order("created_at DESC").Limit(1).Find(&last).Error
-	if lastErr != nil {
-		log.Printf("activity: failed to load master state before update: %v", lastErr)
-	}
-
-	state := models.MasterState{
-		Type:      string(req.Type),
-		CreatedAt: time.Now(),
-	}
-
-	if err := h.db.Create(&state).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var state models.MasterState
+	changed := false
+	conflict := errors.New("受付状態が変わりました。最新の状態を確認してください")
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		// 古いマスター画面からの更新も同じロックを取り、比較と保存を一体にする。
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "pos:master-state").Error; err != nil {
+			return err
+		}
+		var last models.MasterState
+		if err := tx.Order("created_at DESC").Limit(1).Find(&last).Error; err != nil {
+			return err
+		}
+		exists := !last.CreatedAt.IsZero()
+		if expected := req.Expected; expected != nil {
+			if !exists {
+				if expected.CreatedAt != nil || expected.Type != "operational" {
+					return conflict
+				}
+			} else if expected.CreatedAt == nil || !expected.CreatedAt.Equal(last.CreatedAt) || string(expected.Type) != last.Type {
+				return conflict
+			}
+		}
+		if exists && last.Type == string(req.Type) {
+			state = last
+			return nil
+		}
+		at := time.Now().UTC().Truncate(time.Microsecond)
+		if exists && !at.After(last.CreatedAt) {
+			at = last.CreatedAt.Add(time.Microsecond)
+		}
+		state = models.MasterState{Type: string(req.Type), CreatedAt: at}
+		if err := tx.Create(&state).Error; err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	if err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, conflict) {
+			code = http.StatusConflict
+		}
+		c.JSON(code, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -86,7 +113,7 @@ func (h *MasterStateHandler) UpdateMasterStatus(c *gin.Context) {
 	broadcastMasterState(h.db, h.hub)
 	// ほかのインスタンスにつないでいる画面にも届くよう、DB の通知で知らせる（order_listener.go）
 	notifyMasterStateChanged(h.db)
-	if lastErr == nil && last.Type != state.Type {
+	if changed {
 		h.activity.Post(masterStateChangedMessage(state.Type))
 	}
 }

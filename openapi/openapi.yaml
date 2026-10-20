@@ -1343,7 +1343,9 @@ paths:
     post:
       summary: オーダーストップ・再開
       description: |
-        記録を1件足し、WebSocket の master_state で全端末に配信する。
+        状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+        expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+        履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
         オーダーストップの状態を書くのはここだけ。
       operationId: updateMasterState
       tags:
@@ -1361,6 +1363,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
+        '409':
+          description: 確認後に受付状態が変わりました
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '400':
           description: type が stop でも operational でもない
           content:
@@ -2946,16 +2954,28 @@ components:
           format: date-time
         type:
           type: string
-    MasterStateUpdateRequest:
+    MasterStateExpected:
       type: object
-      required:
-        - type
+      description: 確認した受付状態。履歴なしは type=operational、created_at=null。
+      required: [type, created_at]
       properties:
         type:
           type: string
-          enum:
-            - stop
-            - operational
+          enum: [stop, operational]
+          x-enum-varnames: [ExpectedStop, ExpectedOperational]
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+    MasterStateUpdateRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [stop, operational]
+        expected:
+          $ref: '#/components/schemas/MasterStateExpected'
     ColorTargetType:
       type: string
       description: 背景色を設定する対象の種類
