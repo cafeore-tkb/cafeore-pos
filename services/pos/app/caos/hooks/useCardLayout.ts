@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { fittingCardLabels } from "../logic/cardPresentation";
 
-/** 2行のまま、番号の衝突と札の途中切れを防ぐ。状態はDOM内に閉じ、時計の更新で再計測しない。 */
+/** 通常は2行に収め、必須札だけでも収まらない場合は折り返す。時計の更新では再計測しない。 */
 export function useCardLayout() {
   const headlineRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
