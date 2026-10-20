@@ -103,7 +103,7 @@ export function OrderInfoCard({
                 <CupButton busy={!!cup.busy} onClick={cup.onClick}>
                   <Card
                     className={cn(
-                      "h-full p-3 transition-all duration-200",
+                      "relative h-full p-3 transition-all duration-200",
                       cup.gray && "bg-gray-200 text-gray-500",
                       cup.servable &&
                         "shadow-md ring-4 ring-green-500 ring-offset-2",
@@ -111,19 +111,19 @@ export function OrderInfoCard({
                     )}
                     style={cupStyle(cup)}
                   >
+                    {colorScreen === "serve" &&
+                      cup.item_type.serve_with_snack && (
+                        <span
+                          role="img"
+                          aria-label="お菓子をつける"
+                          title="お菓子をつける"
+                          className="-top-2 -left-2 pointer-events-none absolute z-10 inline-flex rounded-full bg-white p-0.5 shadow-sm ring-1 ring-black/10"
+                        >
+                          <BiscuitIcon className="h-6 w-auto" />
+                        </span>
+                      )}
                     <h3 className="text-center font-bold text-3xl">
                       {cup.abbr}
-                      {colorScreen === "serve" &&
-                        cup.item_type.serve_with_snack && (
-                          <span
-                            role="img"
-                            aria-label="お菓子をつける"
-                            title="お菓子をつける"
-                            className="ml-1 inline-flex align-middle"
-                          >
-                            <BiscuitIcon className="h-6 w-auto" />
-                          </span>
-                        )}
                     </h3>
                     {cup.servable && (
                       <p
