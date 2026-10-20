@@ -684,6 +684,8 @@ export interface components {
       senior_only: boolean;
       /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
       iced_brew: boolean;
+      /** @description この種類のアイテムにお菓子をつける */
+      serve_with_snack: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
@@ -705,6 +707,11 @@ export interface components {
        * @default false
        */
       iced_brew?: boolean;
+      /**
+       * @description お菓子をつける。省略したら false
+       * @default false
+       */
+      serve_with_snack?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
@@ -719,6 +726,8 @@ export interface components {
       senior_only?: boolean;
       /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
       iced_brew?: boolean;
+      /** @description お菓子をつける。省略したら今の値のまま */
+      serve_with_snack?: boolean;
     };
     MenuInfo: {
       /**
