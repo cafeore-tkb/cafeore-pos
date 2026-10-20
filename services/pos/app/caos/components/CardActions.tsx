@@ -10,6 +10,7 @@ import viewCommentsIcon from "../icons/view-comments.svg";
 import { type CardAction, cardActions, cardStage } from "../logic/cardActions";
 import type { CardLook } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
+import { DiscardSuggestion } from "./DiscardSuggestion";
 
 // ドリッパーのカード（管制盤 A・C）に重ねるもの：開いたカードの操作のアイコン（hooks/useCardMenu）と、
 // 未着手の ✋ の印。アイコンは現場で作った素材（icons/。色は素材のまま）
@@ -56,6 +57,7 @@ export const CardOverlay: React.FC<{
 }> = ({ card, lane, look, nowMs, menu, inset = "0px" }) => {
   const ready = cardStage(card, lane) === "ready";
   const servedRecovery = card.status === "brewing" && caosCardServed(card);
+  const discard = look?.discardCandidates ?? [];
   return (
     <>
       {ready && (
@@ -69,7 +71,10 @@ export const CardOverlay: React.FC<{
           )}
         </span>
       )}
-      {servedRecovery && menu && !menu.isOpen(card) && (
+      {discard.length > 0 && menu && !menu.isOpen(card) && (
+        <DiscardSuggestion cups={discard} inset={inset} />
+      )}
+      {servedRecovery && discard.length === 0 && menu && !menu.isOpen(card) && (
         <button
           type="button"
           aria-label="提供済み：抽出を終える（待機の先頭を始める）"

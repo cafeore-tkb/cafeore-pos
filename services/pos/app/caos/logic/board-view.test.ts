@@ -125,6 +125,47 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
   });
 
+  test("入れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
+    const emergency = {
+      id: "redo",
+      createdAt: new Date(T0.getTime() + 60_000),
+      reason: "抽出ミス",
+      dripper: null,
+      dripperPosition: null,
+      dripId: null,
+      brewStartedAt: null,
+      brewFinishedAt: null,
+    };
+    const source = order(1000, [
+      {
+        dripper: 1,
+        dripId: "original",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        emergencies: [emergency],
+      },
+    ]);
+    const other = order(1001, [
+      { dripper: 1, dripId: "original", dripperPosition: 1, brewStartedAt: T0 },
+    ]);
+    const candidates = () => {
+      const board = buildCaosCards([source, other]);
+      return cardLooks(board, [], new Map())
+        .get("original")
+        ?.discardCandidates?.map((cup) => cup.id);
+    };
+    expect(candidates()).toEqual(["cup-1000-0"]);
+    source.cups[0].emergencies[0].reason = "ラベル再発行";
+    expect(candidates()).toEqual([]);
+    source.cups[0].emergencies = [];
+    expect(candidates()).toEqual([]);
+    emergency.reason = "抽出ミス";
+    source.cups[0].emergencies = [emergency];
+    source.cups[0].brewFinishedAt = new Date(T0.getTime() + 120_000);
+    other.cups[0].brewFinishedAt = source.cups[0].brewFinishedAt;
+    expect(candidates()).toEqual([]);
+  });
+
   test("ヘッダーの数は注文の数（統合したカードは中の注文をみな、分けた注文は 1 つ）と杯数", () => {
     // #3+#4 の統合（2 注文・2 杯）と #2（1 注文・1 杯）
     expect(orderAndCupCounts(unassigned)).toEqual({ orders: 3, cups: 3 });
