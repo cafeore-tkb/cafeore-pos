@@ -202,3 +202,65 @@ func TestConcurrentCashierStateBroadcastsMatchSavedOrder(t *testing.T) {
 		t.Fatalf("last broadcast %v differs from saved %v", last.CashierState.EdittingOrder["orderId"], got.EdittingOrder["orderId"])
 	}
 }
+
+func TestMasterStatusCompareAndSet(t *testing.T) {
+	api := newTestAPI(t)
+	expect := func(state *models.MasterStateResponse) map[string]any {
+		if state == nil {
+			return map[string]any{"type": "operational", "created_at": nil}
+		}
+		return map[string]any{"type": state.Type, "created_at": state.CreatedAt}
+	}
+	var initial, stopped, resumed models.MasterStateResponse
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "operational", "expected": expect(nil)}).expect(http.StatusCreated).decode(&initial)
+	api.nextBroadcast()
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "stop", "expected": expect(&initial)}).expect(http.StatusCreated).decode(&stopped)
+	api.nextBroadcast()
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "operational", "expected": expect(&stopped)}).expect(http.StatusCreated).decode(&resumed)
+	api.nextBroadcast()
+	// 同じoperationalへ戻っていても、過去の確認時点の操作は通さない。
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "stop", "expected": expect(&initial)}).expect(http.StatusConflict)
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "stop", "expected": expect(nil)}).expect(http.StatusConflict)
+	api.noBroadcast()
+	// 従来の画面の形式も使え、同じ状態の連打では履歴を増やさない。
+	api.do(http.MethodPost, "/api/master-status", map[string]any{"type": "operational"}).expect(http.StatusCreated)
+	api.nextBroadcast()
+	if n := api.count(&models.MasterState{}, ""); n != 3 {
+		t.Fatalf("history=%d", n)
+	}
+	if !resumed.CreatedAt.After(stopped.CreatedAt) {
+		t.Fatal("version must increase")
+	}
+	for _, bad := range []any{map[string]any{"type": "stop", "expected": map[string]any{"type": "invalid", "created_at": nil}}, map[string]any{"type": "invalid"}} {
+		api.do(http.MethodPost, "/api/master-status", bad).expect(http.StatusBadRequest)
+	}
+	api.noBroadcast()
+}
+
+func TestMasterStatusConcurrentCompareAndSet(t *testing.T) {
+	api := newTestAPI(t)
+	req := map[string]any{"type": "stop", "expected": map[string]any{"type": "operational", "created_at": nil}}
+	codes := make(chan int, 2)
+	for range 2 {
+		go func() { codes <- api.do(http.MethodPost, "/api/master-status", req).Code }()
+	}
+	success, conflict := 0, 0
+	for range 2 {
+		switch <-codes {
+		case http.StatusCreated:
+			success++
+		case http.StatusConflict:
+			conflict++
+		default:
+			t.Fatal("unexpected response")
+		}
+	}
+	if success != 1 || conflict != 1 {
+		t.Fatalf("success=%d conflict=%d", success, conflict)
+	}
+	if n := api.count(&models.MasterState{}, ""); n != 1 {
+		t.Fatalf("history=%d", n)
+	}
+	api.nextBroadcast()
+	api.noBroadcast()
+}
