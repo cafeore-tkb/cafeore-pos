@@ -78,7 +78,7 @@ func TestCaosBrewTimesOnDB(t *testing.T) {
 		t.Fatalf("brew times = %+v, want %+v", got, want)
 	}
 
-	// 入れ直しのカードも数える（入れ直しの行の時刻）
+	// 淹れ直しのカードも数える（淹れ直しの行の時刻）
 	order := f.createOrder(t, 99, line(f.blend))
 	for i := range caosBrewTimeCards {
 		if code, body := f.addEmergencies(t, order.OrderCups[0].ID); code != http.StatusCreated {

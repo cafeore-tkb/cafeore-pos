@@ -15,7 +15,7 @@ const (
 	caosBrewTimeMinCards = 5
 )
 
-// GET /api/caos/brew-times - 「次へ」で終えたカード（同じ drip_id のカップと入れ直し。caosUnits）の抽出時間を、杯数ごとに、
+// GET /api/caos/brew-times - 「次へ」で終えたカード（同じ drip_id のカップと淹れ直し。caosUnits）の抽出時間を、杯数ごとに、
 // 終えたのが新しいカードから caosBrewTimeCards 枚までの中央値で返す（日はまたぐ）。CaOS の画面が予定の時刻に使う。
 // 終えたカードが caosBrewTimeMinCards 枚に足りない杯数は返さない（画面は初めの値を使う）。
 func (h *CaosHandler) GetCaosBrewTimes(c *gin.Context) {
