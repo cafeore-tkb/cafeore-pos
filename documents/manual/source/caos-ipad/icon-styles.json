@@ -1,0 +1,338 @@
+{
+  "AlertTriangle": {
+    "className": "h-4 w-4 text-amber-700",
+    "context": "text-slate-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "ArrowLeft": {
+    "className": "h-4 w-4",
+    "context": "text-slate-600",
+    "capture": null,
+    "source": "services/pos/app/caos/components/OrderChatPanel.tsx"
+  },
+  "ArrowLeftRight": {
+    "className": "h-4 w-4 shrink-0 text-slate-500",
+    "context": "text-slate-800",
+    "capture": "arrow-left-right.png",
+    "source": "services/pos/app/caos/components/LaneDialogs.tsx"
+  },
+  "ArrowRight": {
+    "className": "h-4 w-4",
+    "context": "text-white",
+    "capture": "arrow-right.png",
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "ArrowRightLeft": {
+    "className": "h-4 w-4 text-blue-700",
+    "context": "text-slate-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "Banknote": {
+    "className": "h-5 w-5 text-emerald-700",
+    "context": "text-slate-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "BarChart3": {
+    "className": "h-5 w-5",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "Bean": {
+    "className": "h-5 w-5 text-amber-700",
+    "context": "text-slate-900",
+    "capture": "bean.png",
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "BellRing": {
+    "className": "h-5 w-5 shrink-0",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/TopHeader.tsx"
+  },
+  "CalendarClock": {
+    "className": "h-5 w-5 text-blue-700",
+    "context": "",
+    "capture": "calendar-clock.png",
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "Check": {
+    "className": "h-4 w-4 text-slate-400",
+    "context": "text-slate-400",
+    "capture": null,
+    "source": "services/pos/app/caos/components/OrderCard.tsx"
+  },
+  "CheckCircle2": {
+    "className": "h-4 w-4 text-indigo-700",
+    "context": "text-slate-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "ChevronDown": {
+    "className": "h-4 w-4 transition-transform  ",
+    "context": "text-red-600",
+    "capture": null,
+    "source": "services/pos/app/caos/components/UnsentOps.tsx"
+  },
+  "ChevronRight": {
+    "className": "h-4 w-4",
+    "context": "",
+    "capture": "chevron-right.png",
+    "source": "services/pos/app/caos/components/OrderComments.tsx"
+  },
+  "ChevronUp": {
+    "className": "h-4 w-4",
+    "context": "text-slate-700 bg-white",
+    "capture": null,
+    "source": "services/pos/app/caos/components/UnassignedOrdersPanel.tsx"
+  },
+  "CircleAlert": {
+    "className": "h-5 w-5",
+    "context": "text-slate-950 bg-red-50",
+    "capture": null,
+    "source": "services/pos/app/caos/components/OperationNotices.tsx"
+  },
+  "CircleCheck": {
+    "className": "h-5 w-5 shrink-0",
+    "context": "",
+    "capture": "circle-check.png",
+    "source": "services/pos/app/caos/components/LaneParts.tsx"
+  },
+  "ClipboardList": {
+    "className": "h-[1.1em] w-[1.1em] shrink-0",
+    "context": "",
+    "capture": "clipboard-list.png",
+    "source": "services/pos/app/caos/components/UnfinishedOrders.tsx"
+  },
+  "Clock3": {
+    "className": "h-3 w-3",
+    "context": "",
+    "capture": "clock3.png",
+    "source": "services/pos/app/caos/components/BoardParts.tsx"
+  },
+  "Coffee": {
+    "className": "h-3.5 w-3.5",
+    "context": "text-slate-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "Delete": {
+    "className": "h-7 w-7",
+    "context": "",
+    "capture": "delete.png",
+    "source": "services/pos/app/caos/components/OrderSearchPanel.tsx"
+  },
+  "Eye": {
+    "className": "size-5 shrink-0",
+    "context": "text-sky-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/ReadOnlyTabNotice.tsx"
+  },
+  "FileJson": {
+    "className": "h-4 w-4",
+    "context": "text-slate-800",
+    "capture": null,
+    "source": "services/pos/app/caos/components/TestPlaySetup.tsx"
+  },
+  "GripHorizontal": {
+    "className": "h-5 w-5",
+    "context": "text-slate-500",
+    "capture": "grip-horizontal.png",
+    "source": "services/pos/app/caos/components/FloatingWindows.tsx"
+  },
+  "HandHeart": {
+    "className": "h-5 w-5 text-slate-600",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/ReactionIcon.tsx"
+  },
+  "Info": {
+    "className": "h-5 w-5",
+    "context": "text-slate-950 bg-white",
+    "capture": null,
+    "source": "services/pos/app/caos/components/OperationNotices.tsx"
+  },
+  "KeyRound": {
+    "className": "h-5 w-5 shrink-0",
+    "context": "",
+    "capture": "key-round.png",
+    "source": "services/pos/app/caos/components/LaneParts.tsx"
+  },
+  "ListChecks": {
+    "className": "h-5 w-5 text-blue-700",
+    "context": "text-slate-900",
+    "capture": "list-checks.png",
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "LoaderCircle": {
+    "className": "size-8 text-slate-600",
+    "context": "bg-white",
+    "capture": null,
+    "source": "services/pos/app/caos/components/MasterSheetTabGuard.tsx"
+  },
+  "MessageSquareText": {
+    "className": "h-3/5 w-3/5",
+    "context": "",
+    "capture": "message-square-text.png",
+    "source": "services/pos/app/caos/components/OrderComments.tsx"
+  },
+  "Mic": {
+    "className": "h-5 w-5",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/VoiceComment.tsx"
+  },
+  "Pause": {
+    "className": "h-4 w-4",
+    "context": "text-amber-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/BoardParts.tsx"
+  },
+  "Play": {
+    "className": "h-4 w-4",
+    "context": "text-amber-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/BoardParts.tsx"
+  },
+  "Plus": {
+    "className": "h-4 w-4 shrink-0",
+    "context": "",
+    "capture": "plus.png",
+    "source": "services/pos/app/caos/components/BoardParts.tsx"
+  },
+  "Printer": {
+    "className": "h-4 w-4 ",
+    "context": "",
+    "capture": "printer.png",
+    "source": "services/pos/app/caos/components/TopHeader.tsx"
+  },
+  "RefreshCw": {
+    "className": "h-4 w-4  ",
+    "context": "text-slate-800",
+    "capture": null,
+    "source": "services/pos/app/caos/components/LaneDialogs.tsx"
+  },
+  "RotateCcw": {
+    "className": "h-3 w-3",
+    "context": "text-amber-900",
+    "capture": null,
+    "source": "services/pos/app/caos/components/DispatchBoard.tsx"
+  },
+  "Rows3": {
+    "className": "h-[1.1em] w-[1.1em] shrink-0",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/UnfinishedOrders.tsx"
+  },
+  "Search": {
+    "className": "mb-0.5 h-4 w-4",
+    "context": "text-slate-700",
+    "capture": "search.png",
+    "source": "services/pos/app/caos/components/TopHeader.tsx"
+  },
+  "Send": {
+    "className": "h-4 w-4",
+    "context": "bg-(color:--caos-comment) text-white",
+    "capture": null,
+    "source": "services/pos/app/caos/components/OrderCommentPanel.tsx"
+  },
+  "Settings": {
+    "className": "h-5 w-5",
+    "context": "text-slate-700",
+    "capture": "settings.png",
+    "source": "services/pos/app/caos/components/TopHeader.tsx"
+  },
+  "ShieldAlert": {
+    "className": "size-8 text-slate-600",
+    "context": "bg-white",
+    "capture": null,
+    "source": "services/pos/app/caos/components/MasterSheetTabGuard.tsx"
+  },
+  "ShoppingCart": {
+    "className": "h-3.5 w-3.5",
+    "context": "text-slate-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "Siren": {
+    "className": "h-4 w-4 ",
+    "context": "",
+    "capture": "siren.png",
+    "source": "services/pos/app/components/molecules/EmergencyForm.tsx"
+  },
+  "Square": {
+    "className": "caos-voice-recording pointer-events-none h-6 w-6 fill-current",
+    "context": "",
+    "capture": null,
+    "source": "services/pos/app/caos/components/VoiceComment.tsx"
+  },
+  "Star": {
+    "className": "h-3.5 w-3.5 fill-current",
+    "context": "text-amber-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/LaneParts.tsx"
+  },
+  "Target": {
+    "className": "h-4 w-4 text-emerald-700",
+    "context": "text-slate-500",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "Timer": {
+    "className": "mr-1 inline h-3.5 w-3.5",
+    "context": "text-blue-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/AnalyticsView.tsx"
+  },
+  "Trash2": {
+    "className": "h-4 w-4",
+    "context": "text-red-700",
+    "capture": null,
+    "source": "services/pos/app/caos/components/TestPlaySetup.tsx"
+  },
+  "TriangleAlert": {
+    "className": "h-5 w-5 shrink-0",
+    "context": "",
+    "capture": "triangle-alert.png",
+    "source": "services/pos/app/caos/components/LaneParts.tsx"
+  },
+  "Undo2": {
+    "className": "h-5 w-5",
+    "context": "text-red-700",
+    "capture": null,
+    "source": "services/pos/app/caos/components/SidePanels.tsx"
+  },
+  "UserMinus": {
+    "className": "h-4 w-4",
+    "context": "text-slate-800",
+    "capture": "user-minus.png",
+    "source": "services/pos/app/caos/components/LaneDialogs.tsx"
+  },
+  "UserRound": {
+    "className": "h-4 w-4 shrink-0 text-slate-500",
+    "context": "text-slate-950",
+    "capture": null,
+    "source": "services/pos/app/caos/components/LaneDialogs.tsx"
+  },
+  "Volume2": {
+    "className": "h-4 w-4 ",
+    "context": "",
+    "capture": "volume2.png",
+    "source": "services/pos/app/caos/components/ViewHeader.tsx"
+  },
+  "VolumeX": {
+    "className": "h-4 w-4",
+    "context": "bg-white text-slate-600",
+    "capture": null,
+    "source": "services/pos/app/caos/components/ViewHeader.tsx"
+  },
+  "X": {
+    "className": "h-5 w-5",
+    "context": "text-slate-500",
+    "capture": "x.png",
+    "source": "services/pos/app/caos/components/UnsentOps.tsx"
+  }
+}

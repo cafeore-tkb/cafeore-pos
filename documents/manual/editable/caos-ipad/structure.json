@@ -1,0 +1,45 @@
+{
+  "pages": [
+    {
+      "file": "page-01.svg",
+      "paragraphs": 14,
+      "images": 1
+    },
+    {
+      "file": "page-02.svg",
+      "paragraphs": 16,
+      "images": 1
+    },
+    {
+      "file": "page-03.svg",
+      "paragraphs": 11,
+      "images": 1
+    },
+    {
+      "file": "page-04.svg",
+      "paragraphs": 5,
+      "images": 1
+    },
+    {
+      "file": "page-05.svg",
+      "paragraphs": 11,
+      "images": 2
+    },
+    {
+      "file": "page-06.svg",
+      "paragraphs": 14,
+      "images": 1
+    },
+    {
+      "file": "page-07.svg",
+      "paragraphs": 11,
+      "images": 2
+    },
+    {
+      "file": "page-08.svg",
+      "paragraphs": 26,
+      "images": 1
+    }
+  ],
+  "fonts": ["\"Noto Sans JP\", \"Noto Sans CJK JP\", sans-serif"]
+}

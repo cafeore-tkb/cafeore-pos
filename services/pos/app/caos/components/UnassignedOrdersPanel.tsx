@@ -234,9 +234,10 @@ export interface UnassignedFold {
 }
 
 /**
- * 管制盤 A の下の横帯。C の注文の列（unassignedRows）を倒した形で、注文ごとに 1 列（上に番号、その下に同じ注文のカードを縦に）を
- * 左端から古い順に並べる。同じ注文のカードは右へ折り返さず、すべて同じ番号の下へ縦に積む。
- * 注文のまとまりは、列（上の番号）と余白で見せる。全件を見る横スクロールバーはヘッダーの「未割当」の右に置く。
+ * 管制盤 A の下の未割当一覧。注文番号ごとにカードを最大3列で折り返す。
+ * 注文同士は左から古い順に1段へ並べ、ヘッダーのバーで横スクロールする。
+ * 下に続くカードは右のバーで縦スクロールでき、注文を分割せず全件にアクセスできる。
+ * 注文のまとまりは、上の番号と余白で見せる。未提供タブは従来どおり横スクロール。
  * fold を渡すと、ヘッダーの右に「たたむ」「ひらく」を出し、たたんだらヘッダーだけにする。
  */
 export const UnassignedStrip: React.FC<
@@ -288,53 +289,65 @@ export const UnassignedStrip: React.FC<
       )}
       {!folded && unfinished?.tab !== "unfinished" && (
         <ScrollArea
-          axis="x"
-          trackSlot={trackSlot}
-          className="flex-1"
-          scrollerClassName="overscroll-x-contain"
+          axis="y"
+          className="min-h-0 flex-1"
+          scrollerClassName="overscroll-y-contain"
         >
-          {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
-          <div className="flex min-h-full w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
-            {columns.map(({ orderNo, emergency, cards }) => (
-              <div
-                key={`${emergency}:${orderNo}`}
-                className="flex shrink-0 flex-col gap-0.5"
-              >
-                <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
-                  <span className="flex items-center gap-1">
-                    {orderNoLabel(orderNo)}
-                    <OrderCommentBadge
-                      cards={cards}
-                      looks={looks}
-                      orderNo={orderNo}
-                    />
-                  </span>
-                  {emergency && (
-                    <span className="font-sans text-[12px] text-red-600">
-                      緊急
+          <ScrollArea
+            axis="x"
+            trackSlot={trackSlot}
+            className="min-h-full"
+            scrollerClassName="overscroll-x-contain"
+          >
+            {/* 注文の間は広く、注文の中は狭く空ける（まとまりは色でなく並びと余白で見せる）。 */}
+            <div className="flex w-max min-w-full items-start gap-5 px-2 pt-1.5 pb-[40px]">
+              {columns.map(({ orderNo, emergency, cards }) => (
+                <div
+                  key={`${emergency}:${orderNo}`}
+                  data-unassigned-order={orderNo}
+                  className="flex shrink-0 flex-col gap-0.5"
+                >
+                  <div className="flex h-[32px] items-center justify-center gap-1.5 font-black font-mono text-[24px] text-slate-800 leading-none">
+                    <span className="flex items-center gap-1">
+                      {orderNoLabel(orderNo)}
+                      <OrderCommentBadge
+                        cards={cards}
+                        looks={looks}
+                        orderNo={orderNo}
+                      />
                     </span>
-                  )}
+                    {emergency && (
+                      <span className="font-sans text-[12px] text-red-600">
+                        緊急
+                      </span>
+                    )}
+                  </div>
+                  {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・待ち時間の札はカードの外へ出る） */}
+                  <div
+                    className="grid gap-1.5 whitespace-nowrap"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.min(cards.length, 3)}, 180px)`,
+                    }}
+                  >
+                    {cards.map((card) => (
+                      <UnassignedCard
+                        key={card.key}
+                        card={card}
+                        looks={looks}
+                        pick={pick}
+                        size="queue"
+                        selected={sharesOrder(card, selectedOrderId)}
+                        nowMs={nowMs}
+                        readOnly={readOnly}
+                        className="min-h-[62px]"
+                      />
+                    ))}
+                  </div>
                 </div>
-                {/* 切り取らない（選択中の黄の輪・開いたカードの 1〜6 のボタン・待ち時間の札はカードの外へ出る） */}
-                <div className="flex w-[180px] flex-col gap-1.5 whitespace-nowrap">
-                  {cards.map((card) => (
-                    <UnassignedCard
-                      key={card.key}
-                      card={card}
-                      looks={looks}
-                      pick={pick}
-                      size="queue"
-                      selected={sharesOrder(card, selectedOrderId)}
-                      nowMs={nowMs}
-                      readOnly={readOnly}
-                      className="min-h-[62px]"
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-            {columns.length === 0 && <EmptyNote />}
-          </div>
+              ))}
+              {columns.length === 0 && <EmptyNote />}
+            </div>
+          </ScrollArea>
         </ScrollArea>
       )}
       {!readOnly && <DragGhost pick={pick} looks={looks} size="queue" />}

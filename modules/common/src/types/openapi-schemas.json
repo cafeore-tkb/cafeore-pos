@@ -800,6 +800,23 @@
       }
     }
   },
+  "MasterStateExpected": {
+    "type": "object",
+    "description": "確認した受付状態。履歴なしは type=operational、created_at=null。",
+    "required": ["type", "created_at"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": ["stop", "operational"],
+        "x-enum-varnames": ["ExpectedStop", "ExpectedOperational"]
+      },
+      "created_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      }
+    }
+  },
   "MasterStateUpdateRequest": {
     "type": "object",
     "required": ["type"],
@@ -807,6 +824,9 @@
       "type": {
         "type": "string",
         "enum": ["stop", "operational"]
+      },
+      "expected": {
+        "$ref": "#/components/schemas/MasterStateExpected"
       }
     }
   },
@@ -1236,6 +1256,32 @@
         "type": "integer",
         "format": "int64",
         "description": "送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻"
+      }
+    }
+  },
+  "CaosDiscardRequest": {
+    "type": "object",
+    "description": "元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。",
+    "required": ["cup_ids", "before", "drip_id"],
+    "properties": {
+      "cup_ids": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 2,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "before": {
+        "$ref": "#/components/schemas/CaosCupState"
+      },
+      "drip_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "press": {
+        "$ref": "#/components/schemas/CaosPress"
       }
     }
   },

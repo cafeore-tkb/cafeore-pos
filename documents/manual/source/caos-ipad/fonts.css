@@ -1,0 +1,15 @@
+/* Noto Sans JP (SIL OFL 1.1): 原稿の文字を含む静的TrueType。fonts/OFL.txt参照。 */
+@font-face {
+  font-family: "Noto Sans JP";
+  font-style: normal;
+  font-weight: 400;
+  src: url("fonts/NotoSansJP-Regular.ttf") format("truetype");
+  font-display: block;
+}
+@font-face {
+  font-family: "Noto Sans JP";
+  font-style: normal;
+  font-weight: 700 900;
+  src: url("fonts/NotoSansJP-Bold.ttf") format("truetype");
+  font-display: block;
+}

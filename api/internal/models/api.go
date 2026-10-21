@@ -45,6 +45,12 @@ const (
 	Printed LabelPrintClaimResponseStatus = "printed"
 )
 
+// Defines values for MasterStateExpectedType.
+const (
+	ExpectedOperational MasterStateExpectedType = "operational"
+	ExpectedStop        MasterStateExpectedType = "stop"
+)
+
 // Defines values for MasterStateUpdateRequestType.
 const (
 	Operational MasterStateUpdateRequestType = "operational"
@@ -205,6 +211,23 @@ type CaosCupsWriteRequest struct {
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press  *CaosPress      `json:"press,omitempty"`
 	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosDiscardRequest 元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。
+type CaosDiscardRequest struct {
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
+	DripId openapi_types.UUID   `json:"drip_id"`
+
+	// Press 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+	// 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+	// - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+	//   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+	// - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
+	Press *CaosPress `json:"press,omitempty"`
 }
 
 // CaosHumanLogEntry defines model for CaosHumanLogEntry.
@@ -620,6 +643,15 @@ type LabelPrintRequestResponse struct {
 	Job LabelPrintJob `json:"job"`
 }
 
+// MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
+type MasterStateExpected struct {
+	CreatedAt *time.Time              `json:"created_at"`
+	Type      MasterStateExpectedType `json:"type"`
+}
+
+// MasterStateExpectedType defines model for MasterStateExpected.Type.
+type MasterStateExpectedType string
+
 // MasterStateResponse defines model for MasterStateResponse.
 type MasterStateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -628,7 +660,9 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type MasterStateUpdateRequestType `json:"type"`
+	// Expected 確認した受付状態。履歴なしは type=operational、created_at=null。
+	Expected *MasterStateExpected         `json:"expected,omitempty"`
+	Type     MasterStateUpdateRequestType `json:"type"`
 }
 
 // MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
@@ -1262,6 +1296,9 @@ type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
 // WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
 type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// DiscardCaosCupsJSONRequestBody defines body for DiscardCaosCups for application/json ContentType.
+type DiscardCaosCupsJSONRequestBody = CaosDiscardRequest
 
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest

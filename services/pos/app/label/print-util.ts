@@ -1,4 +1,4 @@
-import type { OrderEntity } from "@cafeore/common";
+import type { LabelPrintRequestResult, OrderEntity } from "@cafeore/common";
 import {
   useCallback,
   useEffect,
@@ -16,12 +16,18 @@ import type {
 import { emergencyLabelJob, orderLabelJob } from "./order-label";
 import {
   addPendingPrint,
+  cancelPendingPrint,
   isPrintSettled,
   readPendingPrints,
   removePendingPrint,
   subscribePendingPrints,
   withPendingPrintsLock,
 } from "./pending-prints";
+import {
+  type RelayBackoff,
+  canRelayNow,
+  recordRelayResult,
+} from "./print-relay";
 import type { ReceiptPayment, ReceiptSplit } from "./receipt";
 import {
   claimReceiptJob,
@@ -80,14 +86,15 @@ const countPendingPrints = () => readPendingPrints().length;
  * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
  *
  * relay を渡すと（CaOS・マスターの緊急）、直接刷れなかったシールはすぐ relay でレジに頼み（代理印刷。print-relay）、
- * 頼めたら端末には残さない（刷るのは代理印刷のレジ）。頼めなかったら（API につながらない）端末に残し、
- * 送り直すたびに、直接刷れなければもう一度頼む（つながっていないあいだも、頼むのは一定の間隔で続ける）。
+ * 頼めたら端末には残さない（刷るのは代理印刷のレジ）。頼めなかったら（API につながらない・断られた）端末に残し、
+ * 送り直すたびに、直接刷れなければもう一度頼む（つながっていないあいだも頼み続ける。頼めないたびに間を延ばす。relayRetryDelay）。
+ * 入れ直しが消えていたら（gone。取り消した・注文の編集や削除で消えた）、そのシールは捨てる（刷らず、もう頼まない）。
  */
 export const usePrinter = (
   createPrinter: CreateLabelPrinter,
   width: number,
   onActivity?: (event: string, details: Record<string, unknown>) => void,
-  relay?: (id: string, job: PrintJob) => Promise<boolean>,
+  relay?: (id: string, job: PrintJob) => Promise<LabelPrintRequestResult>,
 ) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
   const pendingCount = useSyncExternalStore(
@@ -95,11 +102,21 @@ export const usePrinter = (
     countPendingPrints,
     () => 0,
   );
+  const relayBackoff = useRef<RelayBackoff>(new Map());
 
-  /** 直接刷れなかったシールをレジに頼む（relay があるときだけ。取り消した緊急のシールは頼まない）。頼めたら true */
+  /**
+   * 直接刷れなかったシールをレジに頼む（relay があるときだけ。取り消した緊急のシール・頼めなかった後で間をあけているシールは頼まない）。
+   * 頼んだ結果を返す（頼まなかったら null）。gone なら、そのシールは端末から捨てる
+   */
   const handOver = useCallback(
-    async (job: PrintJob, id: string) =>
-      relay !== undefined && !isPrintSettled(id) && relay(id, job),
+    async (job: PrintJob, id: string) => {
+      if (relay === undefined || isPrintSettled(id)) return null;
+      if (!canRelayNow(relayBackoff.current, id, Date.now())) return null;
+      const result = await relay(id, job);
+      recordRelayResult(relayBackoff.current, id, result, Date.now());
+      if (result === "gone") cancelPendingPrint(id);
+      return result;
+    },
     [relay],
   );
 
@@ -114,9 +131,14 @@ export const usePrinter = (
         return;
       }
       const id = pendingId ?? crypto.randomUUID();
-      if (await handOver(job, id)) {
+      const relayed = await handOver(job, id);
+      if (relayed === "requested") {
         removePendingPrint(id);
         onActivity?.("printer.print.relayed", { emergencyId: pendingId });
+        return;
+      }
+      if (relayed === "gone") {
+        onActivity?.("printer.print.discarded", { emergencyId: pendingId });
         return;
       }
       onActivity?.("printer.print.queued", { emergencyId: pendingId });
@@ -144,17 +166,22 @@ export const usePrinter = (
             if (!readPendingPrints().some((p) => p.id === pending.id)) continue;
             onActivity?.("printer.resend.requested", { pendingId: pending.id });
             const printed = direct && (await print(pending.job));
-            const relayed =
-              !printed && (await handOver(pending.job, pending.id));
+            const relayed = printed
+              ? null
+              : await handOver(pending.job, pending.id);
             onActivity?.(
               printed
                 ? "printer.resend.succeeded"
-                : relayed
+                : relayed === "requested"
                   ? "printer.resend.relayed"
-                  : "printer.resend.pending",
+                  : relayed === "gone"
+                    ? "printer.resend.discarded"
+                    : "printer.resend.pending",
               { pendingId: pending.id },
             );
-            if (printed || relayed) removePendingPrint(pending.id);
+            // gone は handOver が捨てている
+            if (printed || relayed === "requested")
+              removePendingPrint(pending.id);
           }
         });
       } finally {
@@ -165,7 +192,7 @@ export const usePrinter = (
   );
 
   /** 残りを送り直す。つながっていなければ、つなぎ直す（つながったら送る）。relay があれば、つながるのを待たずにレジに頼む */
-  const retry = useCallback(() => {
+  const resend = useCallback(() => {
     if (status === "connected") void sendPending(true);
     else {
       if (relay) void sendPending(false);
@@ -173,12 +200,18 @@ export const usePrinter = (
     }
   }, [status, relay, sendPending, reconnect]);
 
+  /** 「もう一度刷る」。人が押したので、頼めなかった後で間をあけているシールも、すぐ頼み直す */
+  const retry = useCallback(() => {
+    relayBackoff.current.clear();
+    resend();
+  }, [resend]);
+
   // つながったらすぐ送る（開き直したときの残りも）。あとは残っているあいだ一定の間隔で
   useEffect(() => {
     if (status === "connected") void sendPending(true);
   }, [status, sendPending]);
 
-  useRetryInterval(pendingCount > 0, retry);
+  useRetryInterval(pendingCount > 0, resend);
 
   /** 注文のシールを刷る。刷るシールが無い（抽出が要るものが無い）注文は、紙を送るだけになるので送らない */
   const printOrderLabel = useCallback(

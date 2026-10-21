@@ -1,0 +1,4 @@
+この最終稿に必要な検査（lint、diff）を実行した記録があり、最終稿のハッシュが記録と合いました。合格の判定ではありません。完了報告を付けるときは、この出力の2行目を写してください。
+yomiyasu-check: executed via=verify run=20261021T002522Z-86d93706 attempt=1 final=sha256:51de48e5c3ad mode=rewrite doc_type=manual reader=general checks=lint,diff meaning_risk=22 replay=skipped
+記録: /workspace/cafeore-pos/.yomiyasu/runs/20261021T002522Z-86d93706/attempt-1.json
+記録の中身: 見直し候補 最終稿 36件、直した箇所 27か所（原文の件数と元と後は run の出力にあります）

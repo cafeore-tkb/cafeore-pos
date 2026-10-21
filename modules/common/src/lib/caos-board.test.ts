@@ -308,7 +308,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ],
     });
 
-    // 入れ直しは入れ直しどうしでだけ統合できる（緊急でないカップと同じカードにすると、緊急の取り消しと食い違う）。
+    // 通常と入れ直しも、同じ商品・互換性のある指名なら統合できる。
     // 指名は、同じ番号か片方だけ
     const nominated = cup({ item: blend, line: "line-2" });
     const free = cup({ item: blend, line: "line-3" });
@@ -332,7 +332,8 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       return card;
     };
     const redoCard = cardOf("e2");
-    expect(canMergeCards(redoCard, cardOf(nominated.id))).toBe(false);
+    expect(canMergeCards(redoCard, cardOf(nominated.id))).toBe(true);
+    // free は同じ注文の通常カップと2杯にまとまっているため追加できない。
     expect(canMergeCards(cardOf(free.id), redoCard)).toBe(false);
     expect(canMergeCards(cardOf("e3"), redoCard)).toBe(true);
     expect(mergeWrites(cardOf("e3"), redoCard, newId)).toHaveProperty("writes");

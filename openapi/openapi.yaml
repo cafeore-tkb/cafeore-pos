@@ -377,8 +377,9 @@ paths:
         受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
         （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
         刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-        id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-        緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+        id は入れ直しの id。入れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+        消えた入れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+        緊急を取り消す・注文の編集や削除で入れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
         job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
       operationId: createLabelPrintRequest
       tags:
@@ -398,8 +399,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: 入れ直しが無い（取り消した）。頼みは作らない
+        '410':
+          description: 入れ直しが無い（取り消した・注文の編集や削除で消えた）。頼みは作らない。頼んだ端末はそのシールを捨てる
           content:
             application/json:
               schema:
@@ -1033,6 +1034,32 @@ paths:
           description: 不正なログ
         '413':
           description: リクエストが大きすぎる
+  /api/caos/discard:
+    post:
+      operationId: DiscardCaosCups
+      summary: 入れ直し元の抽出を破棄して終了する
+      tags: [caos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaosDiscardRequest'
+      responses:
+        '204':
+          description: 破棄を記録しました
+        '400':
+          description: 対象または状態が不正です
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 対象が変更されました
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/caos/cups:
     put:
       summary: CaOS が決めたことを注文のカップに書く
@@ -1052,7 +1079,7 @@ paths:
         抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
         時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
         抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
-        抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
+        抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。通常終了は「次へ」、入れ直し元の破棄は POST /api/caos/discard。
 
         確かめること：
         - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
@@ -1096,7 +1123,7 @@ paths:
         そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
         時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
         カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-        カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+        カードの通常終了はこの「次へ」（入れ直し元の破棄は POST /api/caos/discard）（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
         start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
         start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
         drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -1198,6 +1225,7 @@ paths:
         取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
         画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
         レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+        注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の入れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
       operationId: deleteCupEmergency
       tags:
         - caos
@@ -1343,7 +1371,9 @@ paths:
     post:
       summary: オーダーストップ・再開
       description: |
-        記録を1件足し、WebSocket の master_state で全端末に配信する。
+        状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+        expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+        履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
         オーダーストップの状態を書くのはここだけ。
       operationId: updateMasterState
       tags:
@@ -1361,6 +1391,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MasterStateResponse'
+        '409':
+          description: 確認後に受付状態が変わりました
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '400':
           description: type が stop でも operational でもない
           content:
@@ -2946,16 +2982,28 @@ components:
           format: date-time
         type:
           type: string
-    MasterStateUpdateRequest:
+    MasterStateExpected:
       type: object
-      required:
-        - type
+      description: 確認した受付状態。履歴なしは type=operational、created_at=null。
+      required: [type, created_at]
       properties:
         type:
           type: string
-          enum:
-            - stop
-            - operational
+          enum: [stop, operational]
+          x-enum-varnames: [ExpectedStop, ExpectedOperational]
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+    MasterStateUpdateRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [stop, operational]
+        expected:
+          $ref: '#/components/schemas/MasterStateExpected'
     ColorTargetType:
       type: string
       description: 背景色を設定する対象の種類
@@ -3337,6 +3385,25 @@ components:
           type: integer
           format: int64
           description: 送った時刻（端末の時計、エポックのミリ秒）。送り直すたびにそのときの時刻
+    CaosDiscardRequest:
+      type: object
+      description: 元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。
+      required: [cup_ids, before, drip_id]
+      properties:
+        cup_ids:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            type: string
+            format: uuid
+        before:
+          $ref: '#/components/schemas/CaosCupState'
+        drip_id:
+          type: string
+          format: uuid
+        press:
+          $ref: '#/components/schemas/CaosPress'
     CaosCupsWriteRequest:
       type: object
       required: [writes]

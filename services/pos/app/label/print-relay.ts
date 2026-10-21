@@ -1,6 +1,7 @@
 import {
   type LabelPrintClaim,
   type LabelPrintRequest,
+  type LabelPrintRequestResult,
   claimLabelPrint,
   getLabelPrintRequests,
   markLabelPrinted,
@@ -22,6 +23,7 @@ import type { PrinterConnectionStatus } from "./infra/printer";
  * 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかったシールを、サーバー（POST /api/label-print-requests）に頼み、
  * 代理印刷をオンにしたレジが刷る。頼むのは print-util の usePrinter（relay）、刷るのはレジの useLabelPrintProxy。
  * レジは刷る前に引き受け（claim）、引き受けたレジだけが刷る（代理印刷のレジが何台あっても 1 枚だけ刷る）。
+ * 頼めなければ、頼む端末は未印刷に残して間をあけて頼み直す（relayRetryDelay）。入れ直しが消えていたら（410）、そのシールは捨てる。
  */
 
 /** 刷れなかった・ほかのレジが刷っている頼みを、もう一度引き受けにいくまでの間（ミリ秒） */
@@ -29,6 +31,42 @@ export const PROXY_RETRY_MS = 10_000;
 
 /** 頼みの一覧を読み直す間隔（ミリ秒）。配信を受け損ねたとき（ほかのインスタンスの知らせが届かないなど）のため */
 const QUEUE_REFRESH_MS = 30_000;
+
+/** 頼めなかった（つながらない・断られた）シールを、もう一度頼むまでの間（ミリ秒）。頼めないたびに倍にし、最長で RELAY_RETRY_MAX_MS */
+export const RELAY_RETRY_MIN_MS = 10_000;
+export const RELAY_RETRY_MAX_MS = 5 * 60_000;
+
+/** failures 回続けて頼めなかったあと、次に頼むまでの間（ミリ秒） */
+export const relayRetryDelay = (failures: number) =>
+  Math.min(
+    RELAY_RETRY_MIN_MS * 2 ** Math.max(0, failures - 1),
+    RELAY_RETRY_MAX_MS,
+  );
+
+/**
+ * 頼む端末（print-util の usePrinter）が、頼めなかったシール（id）ごとに覚えておく、続けて頼めなかった回数と、次に頼んでよい時刻。
+ * このタブのメモリだけに持つ（開き直したら、すぐ頼み直してよい）
+ */
+export type RelayBackoff = Map<string, { failures: number; retryAt: number }>;
+
+/** 今そのシールを頼んでよいか（頼めなかった後、間をあけている間は false） */
+export const canRelayNow = (backoff: RelayBackoff, id: string, now: number) =>
+  (backoff.get(id)?.retryAt ?? 0) <= now;
+
+/** 頼んだ結果を覚える。頼めなければ次に頼む時刻を延ばし、受け取ってもらえた・もう頼めない（gone）なら忘れる */
+export const recordRelayResult = (
+  backoff: RelayBackoff,
+  id: string,
+  result: LabelPrintRequestResult,
+  now: number,
+) => {
+  if (result !== "retry") {
+    backoff.delete(id);
+    return;
+  }
+  const failures = (backoff.get(id)?.failures ?? 0) + 1;
+  backoff.set(id, { failures, retryAt: now + relayRetryDelay(failures) });
+};
 
 export type ProxyDeps = {
   /** 刷るレジ（ページを開くたびに作る id） */
