@@ -1,0 +1,17 @@
+{
+  "pages": 8,
+  "markdown_blocks_verified_in_pdf_and_svg": 79,
+  "svg_text_objects": 108,
+  "embedded_images": 10,
+  "fonts": {
+    "AAAAAA+NotoSansJP-Bold": {
+      "format": "Type0",
+      "embedded_bytes": 48996
+    },
+    "BAAAAA+NotoSansJP-Regular": {
+      "format": "Type0",
+      "embedded_bytes": 128680
+    }
+  },
+  "illustrator_application_test": "not performed"
+}

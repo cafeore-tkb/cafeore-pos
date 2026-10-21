@@ -1,0 +1,412 @@
+{
+  "lucide": [
+    {
+      "name": "AlertTriangle",
+      "label": "注意",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "ArrowLeft",
+      "label": "前へ／戻る",
+      "sources": ["services/pos/app/caos/components/OrderChatPanel.tsx"]
+    },
+    {
+      "name": "ArrowLeftRight",
+      "label": "担当の交代",
+      "sources": ["services/pos/app/caos/components/LaneDialogs.tsx"]
+    },
+    {
+      "name": "ArrowRight",
+      "label": "次へ／進む",
+      "sources": ["services/pos/app/caos/components/SidePanels.tsx"]
+    },
+    {
+      "name": "ArrowRightLeft",
+      "label": "担当を入れ替え",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "Banknote",
+      "label": "売上・会計",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "BarChart3",
+      "label": "実績・グラフ",
+      "sources": [
+        "services/pos/app/caos/components/SidePanels.tsx",
+        "services/pos/app/caos/components/AnalyticsView.tsx"
+      ]
+    },
+    {
+      "name": "Bean",
+      "label": "豆の残量",
+      "sources": [
+        "services/pos/app/caos/components/SidePanels.tsx",
+        "services/pos/app/caos/components/BeanQueueView.tsx"
+      ]
+    },
+    {
+      "name": "BellRing",
+      "label": "シフト・通知",
+      "sources": ["services/pos/app/caos/components/TopHeader.tsx"]
+    },
+    {
+      "name": "CalendarClock",
+      "label": "日時・予定",
+      "sources": [
+        "services/pos/app/caos/components/SidePanels.tsx",
+        "services/pos/app/caos/components/TestPlaySetup.tsx"
+      ]
+    },
+    {
+      "name": "Check",
+      "label": "確定・完了",
+      "sources": ["services/pos/app/caos/components/OrderCard.tsx"]
+    },
+    {
+      "name": "CheckCircle2",
+      "label": "完了の状態",
+      "sources": [
+        "services/pos/app/caos/components/AnalyticsView.tsx",
+        "services/pos/app/caos/components/OperationNotices.tsx"
+      ]
+    },
+    {
+      "name": "ChevronDown",
+      "label": "開く／下へ",
+      "sources": [
+        "services/pos/app/caos/components/UnsentOps.tsx",
+        "services/pos/app/caos/components/UnassignedOrdersPanel.tsx"
+      ]
+    },
+    {
+      "name": "ChevronRight",
+      "label": "詳細／右へ",
+      "sources": [
+        "services/pos/app/caos/components/OrderComments.tsx",
+        "services/pos/app/caos/components/OrderCommentPanel.tsx"
+      ]
+    },
+    {
+      "name": "ChevronUp",
+      "label": "閉じる／上へ",
+      "sources": ["services/pos/app/caos/components/UnassignedOrdersPanel.tsx"]
+    },
+    {
+      "name": "CircleAlert",
+      "label": "注意・未確認",
+      "sources": ["services/pos/app/caos/components/OperationNotices.tsx"]
+    },
+    {
+      "name": "CircleCheck",
+      "label": "確認済み",
+      "sources": ["services/pos/app/caos/components/LaneParts.tsx"]
+    },
+    {
+      "name": "ClipboardList",
+      "label": "未割当の一覧",
+      "sources": ["services/pos/app/caos/components/UnfinishedOrders.tsx"]
+    },
+    {
+      "name": "Clock3",
+      "label": "経過・待ち時間",
+      "sources": [
+        "services/pos/app/caos/components/BoardParts.tsx",
+        "services/pos/app/caos/components/AnalyticsView.tsx"
+      ]
+    },
+    {
+      "name": "Coffee",
+      "label": "抽出・杯数",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "Delete",
+      "label": "数字を消す",
+      "sources": [
+        "services/pos/app/caos/components/OrderSearchPanel.tsx",
+        "services/pos/app/caos/components/OrderCommentPanel.tsx"
+      ]
+    },
+    {
+      "name": "Eye",
+      "label": "閲覧／見た",
+      "sources": [
+        "services/pos/app/caos/components/ReadOnlyTabNotice.tsx",
+        "services/pos/app/caos/components/ReactionIcon.tsx",
+        "services/pos/app/caos/components/ViewHeader.tsx",
+        "services/pos/app/caos/components/MasterSheetTabGuard.tsx"
+      ]
+    },
+    {
+      "name": "FileJson",
+      "label": "データ読込み",
+      "sources": ["services/pos/app/caos/components/TestPlaySetup.tsx"]
+    },
+    {
+      "name": "GripHorizontal",
+      "label": "動かす取っ手",
+      "sources": ["services/pos/app/caos/components/FloatingWindows.tsx"]
+    },
+    {
+      "name": "HandHeart",
+      "label": "ごめん",
+      "sources": ["services/pos/app/caos/components/ReactionIcon.tsx"]
+    },
+    {
+      "name": "Info",
+      "label": "説明・情報",
+      "sources": ["services/pos/app/caos/components/OperationNotices.tsx"]
+    },
+    {
+      "name": "KeyRound",
+      "label": "合言葉の設定",
+      "sources": [
+        "services/pos/app/caos/components/LaneParts.tsx",
+        "services/pos/app/caos/components/LaneDialogs.tsx"
+      ]
+    },
+    {
+      "name": "ListChecks",
+      "label": "未提供の一覧",
+      "sources": [
+        "services/pos/app/caos/components/SidePanels.tsx",
+        "services/pos/app/caos/components/UnfinishedOrders.tsx"
+      ]
+    },
+    {
+      "name": "LoaderCircle",
+      "label": "処理中・待機",
+      "sources": [
+        "services/pos/app/caos/components/MasterSheetTabGuard.tsx",
+        "services/pos/app/caos/components/OperationNotices.tsx"
+      ]
+    },
+    {
+      "name": "MessageSquareText",
+      "label": "注文コメント",
+      "sources": [
+        "services/pos/app/caos/components/OrderComments.tsx",
+        "services/pos/app/caos/components/TopHeader.tsx",
+        "services/pos/app/caos/components/OrderChatPanel.tsx",
+        "services/pos/app/caos/components/OrderCommentPanel.tsx"
+      ]
+    },
+    {
+      "name": "Mic",
+      "label": "音声で入力",
+      "sources": ["services/pos/app/caos/components/VoiceComment.tsx"]
+    },
+    {
+      "name": "Pause",
+      "label": "練習を一時停止",
+      "sources": ["services/pos/app/caos/components/BoardParts.tsx"]
+    },
+    {
+      "name": "Play",
+      "label": "練習を開始",
+      "sources": [
+        "services/pos/app/caos/components/BoardParts.tsx",
+        "services/pos/app/caos/components/TestPlaySetup.tsx"
+      ]
+    },
+    {
+      "name": "Plus",
+      "label": "追加・空き枠",
+      "sources": ["services/pos/app/caos/components/BoardParts.tsx"]
+    },
+    {
+      "name": "Printer",
+      "label": "印刷・接続状態",
+      "sources": ["services/pos/app/caos/components/TopHeader.tsx"]
+    },
+    {
+      "name": "RefreshCw",
+      "label": "再取得・再送",
+      "sources": ["services/pos/app/caos/components/LaneDialogs.tsx"]
+    },
+    {
+      "name": "RotateCcw",
+      "label": "やり直す",
+      "sources": ["services/pos/app/caos/components/DispatchBoard.tsx"]
+    },
+    {
+      "name": "Rows3",
+      "label": "一覧・表示形式",
+      "sources": ["services/pos/app/caos/components/UnfinishedOrders.tsx"]
+    },
+    {
+      "name": "Search",
+      "label": "注文番号で検索",
+      "sources": ["services/pos/app/caos/components/TopHeader.tsx"]
+    },
+    {
+      "name": "Send",
+      "label": "コメント送信",
+      "sources": ["services/pos/app/caos/components/OrderCommentPanel.tsx"]
+    },
+    {
+      "name": "Settings",
+      "label": "設定を開く",
+      "sources": ["services/pos/app/caos/components/TopHeader.tsx"]
+    },
+    {
+      "name": "ShieldAlert",
+      "label": "操作の競合・保護",
+      "sources": ["services/pos/app/caos/components/MasterSheetTabGuard.tsx"]
+    },
+    {
+      "name": "ShoppingCart",
+      "label": "注文・受付",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "Siren",
+      "label": "緊急登録を開く",
+      "sources": ["services/pos/app/components/molecules/EmergencyForm.tsx"]
+    },
+    {
+      "name": "Square",
+      "label": "録音・練習の停止",
+      "sources": ["services/pos/app/caos/components/VoiceComment.tsx"]
+    },
+    {
+      "name": "Star",
+      "label": "上級生のみ",
+      "sources": [
+        "services/pos/app/caos/components/LaneParts.tsx",
+        "services/pos/app/caos/components/OrderCard.tsx"
+      ]
+    },
+    {
+      "name": "Target",
+      "label": "現在位置・対象",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "Timer",
+      "label": "抽出の経過",
+      "sources": ["services/pos/app/caos/components/AnalyticsView.tsx"]
+    },
+    {
+      "name": "Trash2",
+      "label": "削除・取消",
+      "sources": [
+        "services/pos/app/caos/components/TestPlaySetup.tsx",
+        "services/pos/app/caos/components/LaneDialogs.tsx"
+      ]
+    },
+    {
+      "name": "TriangleAlert",
+      "label": "警告・緊急",
+      "sources": [
+        "services/pos/app/caos/components/LaneParts.tsx",
+        "services/pos/app/caos/components/OrderCard.tsx",
+        "services/pos/app/caos/components/OperationNotices.tsx"
+      ]
+    },
+    {
+      "name": "Undo2",
+      "label": "元へ戻す",
+      "sources": ["services/pos/app/caos/components/SidePanels.tsx"]
+    },
+    {
+      "name": "UserMinus",
+      "label": "担当者を外す",
+      "sources": ["services/pos/app/caos/components/LaneDialogs.tsx"]
+    },
+    {
+      "name": "UserRound",
+      "label": "担当者・名前",
+      "sources": ["services/pos/app/caos/components/LaneDialogs.tsx"]
+    },
+    {
+      "name": "Volume2",
+      "label": "通知音あり",
+      "sources": [
+        "services/pos/app/caos/components/ViewHeader.tsx",
+        "services/pos/app/caos/components/TopHeader.tsx"
+      ]
+    },
+    {
+      "name": "VolumeX",
+      "label": "通知音なし",
+      "sources": [
+        "services/pos/app/caos/components/ViewHeader.tsx",
+        "services/pos/app/caos/components/TopHeader.tsx"
+      ]
+    },
+    {
+      "name": "X",
+      "label": "閉じる・解除",
+      "sources": [
+        "services/pos/app/caos/components/UnsentOps.tsx",
+        "services/pos/app/caos/components/BoardParts.tsx",
+        "services/pos/app/caos/components/OrderComments.tsx",
+        "services/pos/app/caos/components/SidePanels.tsx",
+        "services/pos/app/caos/components/TestPlaySetup.tsx",
+        "services/pos/app/caos/components/OperationNotices.tsx",
+        "services/pos/app/caos/components/LaneDialogs.tsx"
+      ]
+    }
+  ],
+  "svg": [
+    {
+      "name": "change-dripper",
+      "label": "担当者の交代",
+      "source": "services/pos/app/caos/icons/change-dripper.svg"
+    },
+    {
+      "name": "discard-brew",
+      "label": "元の抽出を破棄",
+      "source": "services/pos/app/caos/icons/discard-brew.svg"
+    },
+    {
+      "name": "finish-brew",
+      "label": "抽出を終える",
+      "source": "services/pos/app/caos/icons/finish-brew.svg"
+    },
+    {
+      "name": "open-dripper-settings",
+      "label": "担当者の設定",
+      "source": "services/pos/app/caos/icons/open-dripper-settings.svg"
+    },
+    {
+      "name": "request-rebrew",
+      "label": "入れ直しを登録",
+      "source": "services/pos/app/caos/icons/request-rebrew.svg"
+    },
+    {
+      "name": "serving-overdue",
+      "label": "15分超の提供待ち",
+      "source": "services/pos/app/caos/icons/serving-overdue.svg"
+    },
+    {
+      "name": "start-brew",
+      "label": "抽出を始める",
+      "source": "services/pos/app/caos/icons/start-brew.svg"
+    },
+    {
+      "name": "unassign",
+      "label": "未割当に戻す",
+      "source": "services/pos/app/caos/icons/unassign.svg"
+    },
+    {
+      "name": "undo-brew-start-alternative",
+      "label": "未使用の予備素材",
+      "source": "services/pos/app/caos/icons/undo-brew-start-alternative.svg"
+    },
+    {
+      "name": "undo-brew-start",
+      "label": "未着手に戻す",
+      "source": "services/pos/app/caos/icons/undo-brew-start.svg"
+    },
+    {
+      "name": "view-comments",
+      "label": "コメントを見る",
+      "source": "services/pos/app/caos/icons/view-comments.svg"
+    }
+  ],
+  "reactions": ["OK", "見た", "ごめん", "済み", "来て！", "待って"]
+}
