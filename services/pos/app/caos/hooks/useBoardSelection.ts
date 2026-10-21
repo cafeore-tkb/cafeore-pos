@@ -7,7 +7,7 @@ import { useCaosStateLog } from "./useCaosStateLog";
 /**
  * 操作パネル。選択中の1つだけを表示し、別の画面を開いたら置き換える。
  * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
- * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）
+ * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）、comment は任意の注文へのコメント入力
  */
 export type OpenPanel =
   | { kind: "detail"; key: string }
@@ -17,6 +17,7 @@ export type OpenPanel =
   | { kind: "auxiliary"; tab: AuxiliaryTab }
   | { kind: "search"; digits: string }
   | { kind: "pastOrders" }
+  | { kind: "comment" }
   | null;
 
 const panelKey = (item: NonNullable<OpenPanel>) =>
@@ -159,6 +160,7 @@ export const useBoardSelection = (
     /** 緊急の入力を番号から開く（ヘッダーの「緊急」。カードからは openCard） */
     openRebrew: () => setPanel({ kind: "rebrew", key: null }),
     openPastOrders: () => setPanel({ kind: "pastOrders" }),
+    openComment: () => setPanel({ kind: "comment" }),
     /** 緊急の入力を閉じる（カードから開いていたら、注文の選択も外す） */
     closeRebrew: () => {
       close("rebrew");
