@@ -5,12 +5,17 @@ import { Fragment, useContext } from "react";
 import { TwoStepButton } from "~/components/molecules/TwoStepButton";
 import { useBayPadPlacement } from "../hooks/useBayPadPlacement";
 import { useCaosLanes } from "../hooks/useCaosLanes";
+import { useCardLayout } from "../hooks/useCardLayout";
 import { useOrderHighlights } from "../hooks/useOrderHighlights";
+import {
+  cardNomination,
+  cardNumberParts,
+  isMergedOrderCard,
+} from "../logic/cardPresentation";
 import {
   type CardLook,
   cardItemName,
   cardNominee,
-  cardOrderNos,
   cardServedLabel,
   emergencyReasons,
   orderLabel,
@@ -19,7 +24,7 @@ import {
 import { commentKey } from "../logic/comments";
 import { unsupportedDrip } from "../logic/dripSupport";
 import { type DropSide, moveTargets } from "../logic/lanes";
-import { cardOrders, highlightFrame } from "../logic/orderHighlights";
+import { highlightFrame } from "../logic/orderHighlights";
 import { CommentMark, FreshCommentsContext } from "./OrderComments";
 
 // カード（1 回のドリップ）。管制盤 A・C の未割当とドリッパーのカード、割当・詳細のパネルで共通。
@@ -45,7 +50,6 @@ const SM = {
   cupCount: "px-0.5 text-[18px]",
   meta: "text-[12px]",
   item: "text-[14px]",
-  emergencyBelow: true,
 };
 const SIZES = {
   // 管制盤 C と割当のパネル
@@ -56,7 +60,6 @@ const SIZES = {
     no: "text-[20px]",
     cupCount: "px-0.5 text-[20px]",
     item: "text-[16px]",
-    emergencyBelow: false,
   },
   // 管制盤 A の未割当。注文番号・杯数を遠目でも拾え、商品名も読み取りやすい大きさ
   queue: {
@@ -65,7 +68,6 @@ const SIZES = {
     cups: "px-1.5 text-[20px]",
     cupCount: "px-1.5 text-[26px]",
     meta: "text-[15px]",
-    emergencyBelow: false,
     item: "text-[16px]",
   },
   // 管制盤 A のタイムライン
@@ -75,7 +77,6 @@ const SIZES = {
     cups: "px-1.5 text-[18px]",
     cupCount: "px-1.5 text-[24px]",
     meta: "text-[13px]",
-    emergencyBelow: false,
     item: "text-[16px]",
   },
   // 詳細のパネル
@@ -85,7 +86,6 @@ const SIZES = {
     cups: "px-2 text-[24px]",
     cupCount: "px-2 text-[30px]",
     meta: "text-[15px]",
-    emergencyBelow: false,
     item: "text-[20px]",
   },
 };
@@ -98,15 +98,16 @@ const surfaceOf = (
   nominated: boolean,
   selected: boolean,
   color?: string,
+  emergency = false,
 ) => {
   if (done)
     return {
       className: `border-2 border-slate-300 border-dashed bg-slate-50 text-slate-400 ${selected ? "" : "opacity-40"}`,
     };
-  const backgroundColor = color ?? "#ffffff";
+  const backgroundColor = emergency ? "#DC2626" : (color ?? "#ffffff");
   // 地の色は --caos-card-bg に入れ、統合したカードの後ろの 1 枚（shadowOf）にも同じ色を使う
   return {
-    className: `bg-(color:--caos-card-bg) ${nominated ? "border-[3px] border-slate-900 border-dashed" : "border-2 border-slate-300"}`,
+    className: `bg-(color:--caos-card-bg) ${nominated ? `border-[3px] border-dashed ${emergency ? "border-white" : "border-slate-900"}` : "border-2 border-slate-300"}`,
     style: {
       "--caos-card-bg": backgroundColor,
       color: readableTextColor(backgroundColor),
@@ -171,6 +172,9 @@ export const OrderCard: React.FC<
   ...props
 }) => {
   const highlight = useOrderHighlights();
+  const { headlineRef, detailRef } = useCardLayout();
+  const nomination = cardNomination(card);
+  const numberParts = cardNumberParts(card);
   const frame = highlight ? highlightFrame(card, highlight.orders) : null;
   const highlighted = highlight ? frame !== null : selected;
   const freshComments = useContext(FreshCommentsContext);
@@ -184,76 +188,123 @@ export const OrderCard: React.FC<
   const text = SIZES[size];
   const done = card.status === "done";
   const nominee = cardNominee(card);
-  const surface = surfaceOf(done, nominee !== "", highlighted, look?.color);
+  const surface = surfaceOf(
+    done,
+    nominee !== "",
+    highlighted,
+    look?.color,
+    card.emergency,
+  );
   const fade = dragging ? "opacity-30" : "";
   const name = cardItemName(card);
-  const merged = cardOrderNos(card).length > 1;
+  const merged = isMergedOrderCard(card);
   const compactNumber = size === "sm" && orderLabel(card).length > 4;
   const numberSize = compactNumber ? "text-[14px]" : text.no;
   const reasons = emergencyReasons(card);
   const served = cardServedLabel(card);
   // 番号そのものを着色する。番号単独の選択は、カードの業務操作を呼ばない。
-  const noTag = (order: { id: string; no: number }, fontSize: string) => {
+  const noTag = (
+    order: { id: string; no: number; emergency: boolean },
+    fontSize: string,
+  ) => {
     const color = highlight?.orders.find((item) => item.id === order.id)?.color;
     const label = `#${orderNoLabel(order.no)}`;
     const className = `rounded ${color ? "bg-white" : "bg-black/10"} ${size === "sm" ? "px-0.5" : "px-1"} py-0.5 font-black font-mono ${fontSize}`;
     return highlight ? (
       <button
         type="button"
-        key={order.id}
+        key={`${order.id}:${order.emergency}`}
         data-order-highlight-number={order.id}
-        aria-label={`注文 ${label}だけをハイライト`}
+        aria-label={`注文 ${label}${order.emergency ? "（緊急）" : ""}だけをハイライト`}
         aria-pressed={Boolean(color)}
-        className={`${className} cursor-pointer focus-visible:outline-2 focus-visible:outline-slate-900`}
-        style={{ color }}
-        title={label}
+        className={`${className} inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap focus-visible:outline-2 focus-visible:outline-slate-900`}
+        style={{
+          color,
+          fontSize: `var(--caos-number-size, ${numberPixels}px)`,
+          paddingInline: `calc(${numberPadding}px * var(--caos-content-scale, 1))`,
+        }}
+        title={`${label}${order.emergency ? "（緊急）" : ""}`}
         onClick={(event) => {
           event.stopPropagation();
           highlight.selectCard(card, order.id, event.detail === 0);
         }}
       >
-        {label}
+        {order.emergency ? (
+          <>
+            <TriangleAlert
+              aria-hidden="true"
+              className="h-[0.9em] w-[0.9em] shrink-0"
+            />
+            {orderNoLabel(order.no)}
+          </>
+        ) : (
+          <>
+            <span data-card-hash aria-hidden="true">
+              #
+            </span>
+            {orderNoLabel(order.no)}
+          </>
+        )}
       </button>
     ) : (
-      <span key={order.id} className={className} title={label}>
-        {label}
+      <span
+        key={`${order.id}:${order.emergency}`}
+        className={`${className} inline-flex shrink-0 items-center whitespace-nowrap`}
+        style={{
+          fontSize: `var(--caos-number-size, ${numberPixels}px)`,
+          paddingInline: `calc(${numberPadding}px * var(--caos-content-scale, 1))`,
+        }}
+        title={`${label}${order.emergency ? "（緊急）" : ""}`}
+      >
+        {order.emergency ? (
+          <>
+            <TriangleAlert
+              aria-hidden="true"
+              className="h-[0.9em] w-[0.9em] shrink-0"
+            />
+            {orderNoLabel(order.no)}
+          </>
+        ) : (
+          <>
+            <span data-card-hash aria-hidden="true">
+              #
+            </span>
+            {orderNoLabel(order.no)}
+          </>
+        )}
       </span>
     );
   };
   const orderNo = (fontSize: string) => (
     <span
-      className={`flex min-w-0 items-center ${parallelOrderNumbers ? "gap-0.5" : "gap-px"}`}
+      className={`flex shrink-0 items-center ${parallelOrderNumbers ? "gap-0.5" : "gap-px"}`}
     >
-      {cardOrders(card).map((order, index) => (
-        <Fragment key={order.id}>
+      {numberParts.map((order, index) => (
+        <Fragment key={`${order.id}:${order.emergency}`}>
           {index > 0 && !parallelOrderNumbers && (
-            <span aria-hidden="true">+</span>
+            <span
+              aria-hidden="true"
+              className="text-[0.7em]"
+              style={{ fontSize: "calc(var(--caos-number-size) * 0.7)" }}
+            >
+              +
+            </span>
           )}
           {noTag(order, fontSize)}
         </Fragment>
       ))}
     </span>
   );
-  // 入れ直し（緊急）の理由の札
-  const reasonTag = (label: string, className: string) => (
-    <span
-      title={label}
-      className={`min-w-0 shrink truncate rounded bg-red-50 px-1 py-0.5 font-black text-red-700 ${className}`}
-    >
-      {label}
-    </span>
-  );
-  // 入れ直し（緊急）の札
-  const emergencyTag = (className: string) =>
-    card.emergency && (
-      <span
-        className={`shrink-0 whitespace-nowrap rounded-md border-2 border-red-800 bg-red-600 py-0.5 font-black text-white ${className}`}
-      >
-        緊急
-      </span>
-    );
+  const emergencyCount = card.cups.filter((cup) => cup.emergency).length;
+  const emergencyLabel =
+    emergencyCount === card.cups.length
+      ? "緊急"
+      : `緊急${emergencyCount}/${card.cups.length}`;
+  const labelClass =
+    "shrink-0 items-center gap-0.5 whitespace-nowrap rounded px-1 py-0.5 font-black";
   const itemName = (size: string) => (
     <span
+      data-card-product
       className={`min-w-0 truncate font-black tracking-tight ${size}`}
       title={name}
     >
@@ -262,20 +313,24 @@ export const OrderCard: React.FC<
   );
   // 1 行目にいちばん大きく出す注文番号と、2 行目の商品（2 行目では、後ろの緊急の理由と指名・上級生の札を先に縮め、商品は入らなければ省略する。
   // 1 杯のカードは統合の判断に商品が要るので、狭いカードでも商品を残す）。
-  // 番号は縮めない。統合した長い番号は杯数の札と同じ大きさで字の間を詰め、C では別々の札で横に並べる。
-  // それでも入らなければ省略する（杯数の札をカードの外へ押し出さない）。
-  const [headline, subline] = [
-    orderNo(
-      merged
-        ? `min-w-0 tracking-tighter ${text.cups}`
-        : `shrink-0 ${numberSize}`,
-    ),
-    itemName(`max-w-full shrink-0 ${text.item}`),
-  ];
+  // 番号行は#の省略を先に行い、それでも入らなければ番号・杯数・余白を一緒に縮める。
+  const numberClass = numberParts.length > 1 ? text.cups : numberSize;
+  const numberPixels = Number(numberClass.match(/text-\[(\d+)px\]/)?.[1] ?? 16);
+  const cupPixels = Number(text.cupCount.match(/text-\[(\d+)px\]/)?.[1] ?? 18);
+  const numberPadding =
+    numberParts.length > 1
+      ? Number(text.cups.match(/px-([\d.]+)/)?.[1] ?? 1) * 4
+      : size === "sm"
+        ? 2
+        : 4;
+  const cupPadding = Number(text.cupCount.match(/px-([\d.]+)/)?.[1] ?? 0.5) * 4;
+  const headline = orderNo(numberClass);
+  const subline = itemName(text.item);
 
   return (
     <div
       {...props}
+      role={props.role ?? "group"}
       onClickCapture={(event) => {
         props.onClickCapture?.(event);
         if (event.isPropagationStopped() || event.defaultPrevented) return;
@@ -283,6 +338,7 @@ export const OrderCard: React.FC<
         if (target.closest("button, a, input, select, textarea")) return;
         highlight?.selectCard(card);
       }}
+      aria-label={`${orderLabel(card)} ${name} ${card.cups.length}杯${nominee ? ` 指名 ${nominee}` : ""}${card.seniorOnly ? " 上級生のみ" : ""}${card.emergency ? ` ${emergencyLabel} ${reasons}` : ""}`}
       data-ticket-label={orderLabel(card)}
       data-order-highlight-card={highlight ? card.key : undefined}
       data-order-highlight-active={frame ? "true" : undefined}
@@ -305,7 +361,10 @@ export const OrderCard: React.FC<
       <DropMark side={dropSide} />
       {/* 何番が何杯か */}
       <div
-        className={`flex min-w-0 shrink-0 items-center ${size === "sm" ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
+        ref={headlineRef}
+        data-number-size={numberPixels}
+        data-cup-size={cupPixels}
+        className={`flex min-w-0 shrink-0 items-center gap-1 leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
@@ -316,67 +375,110 @@ export const OrderCard: React.FC<
             className={size === "sm" ? "h-4 w-4 shrink-0" : "h-5 w-5 shrink-0"}
           />
         )}
-        {/* 杯数はいつも右上（緊急の札・終わりの印はその左。幅の狭いカードの緊急の札は 2 行目） */}
+        {/* 杯数はいつも右上。完了の印はその左、緊急の札は2行目。 */}
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {!text.emergencyBelow && emergencyTag(text.cups)}
           {done && (
             <Check className="h-4 w-4 text-slate-400">
               <title>完了</title>
             </Check>
           )}
           <span
+            style={{
+              fontSize: `var(--caos-cup-size, ${cupPixels}px)`,
+              paddingInline: `calc(${cupPadding}px * var(--caos-content-scale, 1))`,
+            }}
             className={`whitespace-nowrap rounded-md border-2 py-0.5 font-black font-mono ${text.cupCount} ${cupsClass(card.cups.length, done)}`}
           >
             {card.cups.length}杯
           </span>
         </span>
       </div>
-      {/* 商品・指名・上級生のみ（縮めるのは緊急の理由のあと）・緊急の理由 */}
+      {/* レーン指名・提供済みを確保し、ほかの札は幅に合わせて省略する。 */}
       <div
+        ref={detailRef}
         className={`flex min-w-0 shrink-0 items-center gap-1 overflow-hidden leading-none ${text.meta} ${fade}`}
       >
-        <span className="flex max-w-full shrink-0 items-center gap-1">
-          {text.emergencyBelow && emergencyTag("px-1")}
-          {/* 統合する相手は 2 行目の先頭（1 行目は番号・緊急・杯数でいっぱいになる。右下は「取り消す」が重なる） */}
-          {mergeInto && (
-            <span className="bg-(color:--caos-merge) inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-black font-mono text-white">
-              <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
-              {orderLabel(mergeInto)}
-            </span>
-          )}
-          {subline}
-          {served && (
-            <span className="shrink-0 whitespace-nowrap rounded border border-slate-900 bg-white px-1 py-0.5 font-black text-slate-900">
-              {served}
-            </span>
-          )}
-          {/* 狭いカードでは、指名・上級生の札は切らずに省略する（1 つの注文の番号は縮めない） */}
-          {nominee && (
-            <span className="min-w-0 truncate rounded bg-slate-900 px-1 py-0.5 font-black text-white">
-              指名 {nominee}
-            </span>
-          )}
-          {/* 上級生でない担当者のドリッパーにあれば警告の色と印（置くのは止めない） */}
-          {card.seniorOnly && (
-            <span
-              title={
-                look?.offSenior
-                  ? "上級生のみ（担当者が上級生ではありません）"
-                  : "上級生のみ"
-              }
-              className={`inline-flex min-w-0 items-center rounded px-1 py-0.5 font-black ${look?.offSenior ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
-            >
-              {look?.offSenior ? (
-                <TriangleAlert className="h-3 w-3 shrink-0" />
-              ) : (
-                <Star className="h-3 w-3 shrink-0 fill-current" />
-              )}
-              <span className="truncate">上級生</span>
-            </span>
-          )}
-        </span>
-        {/* 入れ直し（緊急）の理由。商品名は注文番号の下の表示にまとめる */}
-        {reasons && reasonTag(reasons, "ml-auto")}
+        {subline}
+        {nomination.lane && (
+          <span
+            data-card-label="lane"
+            data-priority="0"
+            title={`指名 ${nomination.lane}`}
+            className={`${labelClass} bg-slate-900 text-white`}
+          >
+            <span data-label-long>指名 </span>
+            {nomination.lane}
+          </span>
+        )}
+        {nomination.text && (
+          <span
+            data-card-label="name"
+            data-priority="1"
+            title={`指名 ${nomination.text}`}
+            className={`${labelClass} bg-slate-900 text-white`}
+          >
+            指名 {nomination.text}
+          </span>
+        )}
+        {card.seniorOnly && (
+          <span
+            data-card-label="senior"
+            data-priority="2"
+            title={
+              look?.offSenior
+                ? "上級生のみ（担当者が上級生ではありません）"
+                : "上級生のみ"
+            }
+            className={`${labelClass} ${look?.offSenior && !card.emergency ? "bg-(color:--caos-senior-warning) text-white" : "bg-amber-100 text-amber-900"}`}
+          >
+            {look?.offSenior ? (
+              <TriangleAlert className="h-3 w-3 shrink-0" />
+            ) : (
+              <Star className="h-3 w-3 shrink-0 fill-current" />
+            )}
+            <span data-label-long>上級生</span>
+          </span>
+        )}
+        {card.emergency && (
+          <span
+            data-card-label="emergency"
+            data-priority="3"
+            title={`${emergencyCount}杯が緊急（全${card.cups.length}杯）`}
+            className={`${labelClass} ml-auto bg-white text-red-700`}
+          >
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            {emergencyLabel}
+          </span>
+        )}
+        {served && (
+          <span
+            data-card-label="served"
+            data-priority="0"
+            className={`${labelClass} border border-slate-900 bg-white text-slate-900`}
+          >
+            {served}
+          </span>
+        )}
+        {reasons && (
+          <span
+            data-card-label="reason"
+            data-priority="4"
+            title={reasons}
+            className={`${labelClass} bg-red-50 text-red-700`}
+          >
+            {reasons}
+          </span>
+        )}
+        {mergeInto && (
+          <span
+            data-card-label="merge"
+            data-priority="1"
+            className={`${labelClass} bg-(color:--caos-merge) text-white`}
+          >
+            <MergeIcon className="h-[1em] w-[1.3em] shrink-0" />
+            {orderLabel(mergeInto)}
+          </span>
+        )}
       </div>
       {note && (
         <div
