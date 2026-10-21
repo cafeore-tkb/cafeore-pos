@@ -125,7 +125,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
   });
 
-  test("入れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
+  test("淹れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
     const emergency = {
       id: "redo",
       createdAt: new Date(T0.getTime() + 60_000),
@@ -383,7 +383,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     ]);
     const looks = cardLooks(mixed, [], new Map());
-    // 元の2杯に入れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
+    // 元の2杯に淹れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
     expect(looks.get("mixed-8")?.split).toEqual({ total: 2, cups: 2 });
     expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
   });

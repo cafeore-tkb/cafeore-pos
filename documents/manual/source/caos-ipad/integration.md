@@ -11,7 +11,7 @@
 | [#1094](https://github.com/cafeore-tkb/cafeore-pos/pull/1094) | feat(caos): 注文コメント入力と新着コメントへの導線を追加 | `774fabb478bc412f934b183e235cd3a709fe4551` |
 | [#1093](https://github.com/cafeore-tkb/cafeore-pos/pull/1093) | fix(caos): 未割当の同一注文内カードを最大3列で折り返す | `60e3fb611d1fbf9113eea25a0ce836d4a96de906` |
 | [#1092](https://github.com/cafeore-tkb/cafeore-pos/pull/1092) | feat(caos): ヘッダーからオーダーストップ・受付再開 | `2071aa8bc7275d96bb61daa01266e8f1821b5488` |
-| [#1091](https://github.com/cafeore-tkb/cafeore-pos/pull/1091) | feat(caos): 入れ直し元のゴミ箱から対象の抽出を破棄・記録 | `9fb7d50740c92dde1e5ad6833be8290e65d2f753` |
+| [#1091](https://github.com/cafeore-tkb/cafeore-pos/pull/1091) | feat(caos): 淹れ直し元のゴミ箱から対象の抽出を破棄・記録 | `9fb7d50740c92dde1e5ad6833be8290e65d2f753` |
 | [#1090](https://github.com/cafeore-tkb/cafeore-pos/pull/1090) | fix(caos): 提供済みチェックの位置とサイズを既存の丸ボタンに統一 | `31b8bb47f14b07bdec86387ec59f8c39b8c22d41` |
 | [#1089](https://github.com/cafeore-tkb/cafeore-pos/pull/1089) | feat(caos): 通常カップと緊急カップの混在統合を許可 | `785cc47595540a0127e90c3a0b0a384e678fe54d` |
 | [#1088](https://github.com/cafeore-tkb/cafeore-pos/pull/1088) | feat(pos): 緊急カードの識別と狭幅での表示を改善 | `55fefc923bbfd06c4166dda9f2e3f0338d0fb35f` |

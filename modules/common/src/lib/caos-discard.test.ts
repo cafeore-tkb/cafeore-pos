@@ -61,9 +61,9 @@ const request = (orders: CaosPracticeOrder[]): CaosDiscardRequest => ({
   drip_id: "discarded",
 });
 
-describe("[unit] 入れ直し元の破棄", () => {
+describe("[unit] 淹れ直し元の破棄", () => {
   test.each([true, false])(
-    "対象だけを終了し、統合相手・提供状態・入れ直しを残す（抽出中=%s）",
+    "対象だけを終了し、統合相手・提供状態・淹れ直しを残す（抽出中=%s）",
     (started) => {
       const orders = fixture(started);
       const req = request(orders);
@@ -91,7 +91,7 @@ describe("[unit] 入れ直し元の破棄", () => {
       ).toEqual(["cup-1"]);
     },
   );
-  test("ラベル再発行・入れ直し未登録・対象外・状態変更を断る", () => {
+  test("ラベル再発行・淹れ直し未登録・対象外・状態変更を断る", () => {
     const orders = fixture();
     const req = request(orders);
     expect(
@@ -130,7 +130,7 @@ describe("[unit] 入れ直し元の破棄", () => {
     const apply = applyCaosOutboxOp(orders, entry.op, new Date(entry.at));
     expect(apply).toHaveProperty("orders");
   });
-  test("入れ直し自体を再度入れ直した場合も、前の緊急抽出を特定する", () => {
+  test("淹れ直し自体を再度淹れ直した場合も、前の緊急抽出を特定する", () => {
     const orders = fixture();
     const cup = orders[0].cups[0];
     cup.emergencies[0] = {

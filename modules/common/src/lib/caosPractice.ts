@@ -387,7 +387,7 @@ export const applyCaosPracticeWrites = (
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。通常と入れ直しも同じカードにできる
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。通常と淹れ直しも同じカードにできる
   for (const dripId of touched) {
     const units = allUnits(next).filter((unit) => unit.row.dripId === dripId);
     if (units.length > CAOS_MAX_CUPS)

@@ -211,7 +211,7 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 	a.t = t
 	a.noBroadcast()
 
-	// 入れ直しが無い（取り消した）なら作らない。頼んだ端末がシールを捨てられるよう、ルートが無い 404 ではなく 410
+	// 淹れ直しが無い（取り消した）なら作らない。頼んだ端末がシールを捨てられるよう、ルートが無い 404 ではなく 410
 	missing := uuid.New()
 	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": missing, "job": testLabelJob}).expect(http.StatusGone)
 	var count int64
@@ -229,7 +229,7 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 }
 
 // 緊急の取り消しと同時に頼まれても、取り消した緊急のシールの頼みは残らない。
-// 取り消し（入れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 410 になる
+// 取り消し（淹れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 410 になる
 func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
 	a := newTestAPI(t)
 	id := a.seedEmergency()

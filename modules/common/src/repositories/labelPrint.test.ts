@@ -7,7 +7,7 @@ describe("[unit] labelPrintRequestResult", () => {
     expect(labelPrintRequestResult(200)).toBe("requested");
   });
 
-  test("入れ直しが消えていたら（410）gone。端末はシールを捨てる", () => {
+  test("淹れ直しが消えていたら（410）gone。端末はシールを捨てる", () => {
     expect(labelPrintRequestResult(410)).toBe("gone");
   });
 

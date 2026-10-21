@@ -820,7 +820,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
       );
       expect(mixed.startedAt).toEqual(at(0));
       expect(cancelCaosPracticeEmergency(orders, ids[0]).error).toBe(
-        "抽出を始めた入れ直しは取り消せません",
+        "抽出を始めた淹れ直しは取り消せません",
       );
       const finished = advanceCaosPracticeDripper(
         orders,

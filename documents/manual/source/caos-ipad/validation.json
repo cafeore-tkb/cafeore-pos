@@ -6,11 +6,11 @@
   "fonts": {
     "AAAAAA+NotoSansJP-Bold": {
       "format": "Type0",
-      "embedded_bytes": 48996
+      "embedded_bytes": 35952
     },
     "BAAAAA+NotoSansJP-Regular": {
       "format": "Type0",
-      "embedded_bytes": 128680
+      "embedded_bytes": 102020
     }
   },
   "illustrator_application_test": "not performed"

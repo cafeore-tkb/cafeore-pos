@@ -88,7 +88,7 @@ const countPendingPrints = () => readPendingPrints().length;
  * relay を渡すと（CaOS・マスターの緊急）、直接刷れなかったシールはすぐ relay でレジに頼み（代理印刷。print-relay）、
  * 頼めたら端末には残さない（刷るのは代理印刷のレジ）。頼めなかったら（API につながらない・断られた）端末に残し、
  * 送り直すたびに、直接刷れなければもう一度頼む（つながっていないあいだも頼み続ける。頼めないたびに間を延ばす。relayRetryDelay）。
- * 入れ直しが消えていたら（gone。取り消した・注文の編集や削除で消えた）、そのシールは捨てる（刷らず、もう頼まない）。
+ * 淹れ直しが消えていたら（gone。取り消した・注文の編集や削除で消えた）、そのシールは捨てる（刷らず、もう頼まない）。
  */
 export const usePrinter = (
   createPrinter: CreateLabelPrinter,

@@ -30,8 +30,8 @@ export const DiscardSuggestion = ({
     <>
       <CardActionTray inset={inset}>
         <CardActionButton
-          aria-label={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
-          title={`入れ直し登録済み：元の${cups.length}杯の破棄を確認`}
+          aria-label={`淹れ直し登録済み：元の${cups.length}杯の破棄を確認`}
+          title={`淹れ直し登録済み：元の${cups.length}杯の破棄を確認`}
           onClick={(event) => {
             event.stopPropagation();
             setOpen(true);
@@ -54,8 +54,8 @@ export const DiscardSuggestion = ({
           <AlertDialogHeader>
             <AlertDialogTitle>元の抽出を破棄しますか？</AlertDialogTitle>
             <AlertDialogDescription>
-              入れ直しを登録した、次の{cups.length}杯が対象です。
-              新しい入れ直しカップと、対象外のカップは残ります。
+              淹れ直しを登録した、次の{cups.length}杯が対象です。
+              新しい淹れ直しカップと、対象外のカップは残ります。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="space-y-2 font-bold">

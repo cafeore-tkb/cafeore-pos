@@ -308,7 +308,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ],
     });
 
-    // 通常と入れ直しも、同じ商品・互換性のある指名なら統合できる。
+    // 通常と淹れ直しも、同じ商品・互換性のある指名なら統合できる。
     // 指名は、同じ番号か片方だけ
     const nominated = cup({ item: blend, line: "line-2" });
     const free = cup({ item: blend, line: "line-3" });

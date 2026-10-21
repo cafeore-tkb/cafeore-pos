@@ -90,7 +90,7 @@ func (h *CaosHandler) discardCups(req models.CaosDiscardRequest) ([]uuid.UUID, e
 					return err
 				}
 				if strings.TrimSpace(source.Reason) == "ラベル再発行" {
-					return ruleErrorf("入れ直し元の未完了の抽出だけ破棄できます")
+					return ruleErrorf("淹れ直し元の未完了の抽出だけ破棄できます")
 				}
 				created = source.CreatedAt
 			}
@@ -103,7 +103,7 @@ func (h *CaosHandler) discardCups(req models.CaosDiscardRequest) ([]uuid.UUID, e
 				return err
 			}
 			if count == 0 {
-				return ruleErrorf("入れ直し元の未完了の抽出だけ破棄できます")
+				return ruleErrorf("淹れ直し元の未完了の抽出だけ破棄できます")
 			}
 			if unit.BrewStartedAt != nil && unit.BrewStartedAt.After(at) {
 				at = *unit.BrewStartedAt

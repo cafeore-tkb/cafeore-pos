@@ -374,7 +374,7 @@
     },
     {
       "name": "request-rebrew",
-      "label": "入れ直しを登録",
+      "label": "淹れ直しを登録",
       "source": "services/pos/app/caos/icons/request-rebrew.svg"
     },
     {

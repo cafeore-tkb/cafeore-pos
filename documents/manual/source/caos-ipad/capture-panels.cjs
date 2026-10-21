@@ -66,7 +66,7 @@ const out = require("node:path").resolve(__dirname, "../../images/caos-ipad");
     await home();
     await page.getByRole("button", { name: "キュー", exact: true }).click();
     await page
-      .getByRole("button", { name: /入れ直し登録済み/ })
+      .getByRole("button", { name: /淹れ直し登録済み/ })
       .first()
       .click();
     await page.waitForTimeout(300);

@@ -125,7 +125,7 @@ const cards = [
   },
   {
     title: "通常＋緊急の混在",
-    note: "緊急1/2は片方だけ入れ直し",
+    note: "緊急1/2は片方だけ淹れ直し",
     card: fixture({ cups: 2, emergency: 1 }),
   },
   {

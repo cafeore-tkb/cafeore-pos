@@ -144,7 +144,7 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文） */
 export interface CardLook {
-  /** 入れ直しを登録した元の抽出。 */
+  /** 淹れ直しを登録した元の抽出。 */
   discardCandidates?: CaosCard["cups"];
   discard?: (ids: string[]) => boolean;
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
@@ -178,7 +178,7 @@ export const cardLooks = (
   offSenior: (card: CaosCard) => boolean = () => false,
   onDiscard?: (card: CaosCard, ids: string[]) => boolean,
 ): CardLooks => {
-  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。入れ直しの杯だけは数えない。
+  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。淹れ直しの杯だけは数えない。
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
     const normal = card.cups.filter((cup) => !cup.emergency);
