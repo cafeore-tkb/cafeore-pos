@@ -13,6 +13,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
 /** 緊急（入れ直し）の印。マスターと CaOS の緊急のボタンに付ける */
 export const EmergencyIcon = Siren;
 
+const EMERGENCY_REASON_SHORTCUTS = ["抽出ミス", "異物混入", "ラベル再発行"];
+
 /**
  * 緊急（入れ直し）の入力：注文番号・入れ直すカップ・理由（よく使うものを押すか、自由に書く）。マスターと CaOS で同じもの。
  * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ）。
@@ -101,34 +103,34 @@ export const EmergencyForm = <O extends CaosOrderInput>({
         </fieldset>
       )}
       <div className="grid gap-2">
+        <span className="font-bold text-sm">理由</span>
+        <div className="flex flex-wrap gap-2">
+          {EMERGENCY_REASON_SHORTCUTS.map((reason) => (
+            <Button
+              key={reason}
+              type="button"
+              size="sm"
+              variant={draft.reason === reason ? "default" : "outline"}
+              aria-pressed={draft.reason === reason}
+              onClick={() => draft.setReason(reason)}
+            >
+              {reason}
+            </Button>
+          ))}
+        </div>
         <label
           htmlFor={`${id}-reason`}
           className="grid gap-1 font-bold text-sm"
         >
-          理由
+          理由（自由記述）
           <Input
             id={`${id}-reason`}
             value={draft.reason}
             maxLength={100}
-            placeholder="自由に書けます（無くてもよい）"
+            placeholder="選んだ理由を編集、または自由に入力（任意）"
             onChange={(event) => draft.setReason(event.target.value)}
           />
         </label>
-        {draft.reasons.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {draft.reasons.map((reason) => (
-              <Button
-                key={reason}
-                type="button"
-                size="sm"
-                variant={draft.reason === reason ? "default" : "outline"}
-                onClick={() => draft.setReason(reason)}
-              >
-                {reason}
-              </Button>
-            ))}
-          </div>
-        )}
       </div>
       <Button
         type="submit"
