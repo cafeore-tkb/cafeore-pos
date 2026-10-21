@@ -1,6 +1,7 @@
 import {
   BellRing,
   type LucideIcon,
+  MessageSquareText,
   Printer,
   Search,
   Settings,
@@ -59,6 +60,9 @@ interface TopHeaderProps {
   onOpenSearch: () => void;
   /** 注文番号の検索を開いている */
   searchOpen: boolean;
+  onOpenComment?: () => void;
+  commentOpen?: boolean;
+  commentUnreadCount?: number;
   /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
   onOpenPastOrders: () => void;
@@ -129,6 +133,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   unsent,
   onOpenSearch,
   searchOpen,
+  onOpenComment,
+  commentOpen,
+  commentUnreadCount = 0,
   onOpenEmergency,
   onOpenPastOrders,
 }) => {
@@ -310,6 +317,31 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <Search className="mb-0.5 h-4 w-4" />
           番号
         </button>
+        {onOpenComment && !simulating && (
+          <button
+            type="button"
+            onClick={onOpenComment}
+            aria-pressed={commentOpen}
+            title="注文にコメント"
+            aria-label={
+              commentUnreadCount
+                ? `注文にコメント、新着${commentUnreadCount}件`
+                : "注文にコメント"
+            }
+            className="border-(color:--caos-comment) text-(color:--caos-comment) aria-pressed:bg-(color:--caos-comment) relative flex h-11 w-11 shrink-0 touch-manipulation flex-col items-center justify-center gap-0.5 rounded-lg border bg-white font-black text-[10px] leading-none aria-pressed:text-white"
+          >
+            <MessageSquareText className="h-4 w-4" />
+            コメント
+            {commentUnreadCount > 0 && (
+              <span
+                aria-hidden="true"
+                className="-top-1.5 -right-1.5 absolute flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 font-bold text-[11px] text-white"
+              >
+                {commentUnreadCount > 99 ? "99+" : commentUnreadCount}
+              </span>
+            )}
+          </button>
+        )}
         {!simulating && (
           <button
             type="button"

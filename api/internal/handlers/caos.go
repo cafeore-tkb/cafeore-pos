@@ -33,7 +33,7 @@ import (
 //     （二度押し・続けて押すのを防ぐ。始めた時刻と「次へ」を押した時刻の差で見る）
 //
 // 盤面（抽出の開始・終わり・待機）を書くのは CaOS の操作だけ。提供の画面の準備完了・提供（order_status.go）は盤面を書かず、
-// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。終えるのは「次へ」だけ）。
+// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。通常終了は「次へ」、破棄は discardCups）。
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。カップを置くドリッパーの advisory lock は
 // 注文の行より先に取り、列の番号を決めて書き終えるまで・抽出を始めるドリッパーが空いているかを確かめるまで、同じドリッパーへの書き込みを待たせる。
@@ -197,7 +197,7 @@ func validateCaosAfter(a models.CaosCupAfter) error {
 }
 
 // caosUpdates は after を書く列。position はサーバーが決めた番号（未割当なら nil）。
-// startedAt は抽出を始めるときのサーバーの今か、統合で入る抽出中のカードの開始（どちらでもなければ nil）。終了の時刻は「次へ」だけが付ける。
+// startedAt は抽出を始めるときのサーバーの今か、統合で入る抽出中のカードの開始（どちらでもなければ nil）。終了の時刻は「次へ」と破棄操作が付ける。
 func caosUpdates(a models.CaosCupAfter, position *int, startedAt *time.Time) map[string]any {
 	return map[string]any{
 		"dripper":          a.Dripper,
@@ -341,10 +341,6 @@ func checkCaosCards(tx *gorm.DB, dripIDs []uuid.UUID) error {
 		for i := range cups {
 			if !sameCaosState(&cups[i].OrderCup, caosCupState(&cups[0].OrderCup)) {
 				return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
-			}
-			// 入れ直しは行の ID と入れ直したカップの ID が違う。入れ直しと緊急でないカップは同じカードにしない（緊急の取り消しと食い違う）
-			if (cups[i].ID == cups[i].CupID) != (cups[0].ID == cups[0].CupID) {
-				return ruleErrorf("緊急（入れ直し）と緊急でないカップは同じカードにできません")
 			}
 		}
 		if err := checkCaosCardNomination(tx, id); err != nil {
