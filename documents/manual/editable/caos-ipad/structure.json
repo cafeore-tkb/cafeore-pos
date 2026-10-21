@@ -41,7 +41,5 @@
       "images": 1
     }
   ],
-  "fonts": [
-    "\"Noto Sans JP\", \"Noto Sans CJK JP\", sans-serif"
-  ]
+  "fonts": ["\"Noto Sans JP\", \"Noto Sans CJK JP\", sans-serif"]
 }

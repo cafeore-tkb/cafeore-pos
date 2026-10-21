@@ -199,7 +199,7 @@ const xmlEscape = (s) =>
     manifest.fonts = [...manifest.fonts];
     fs.writeFileSync(
       path.join(dir, "structure.json"),
-      `${JSON.stringify(manifest, null, 2)}\n`,
+      `${JSON.stringify({ ...manifest, fonts: [] }, null, 2).replace('"fonts": []', `"fonts": ${JSON.stringify(manifest.fonts)}`)}\n`,
     );
     console.log(JSON.stringify(manifest));
   } finally {
