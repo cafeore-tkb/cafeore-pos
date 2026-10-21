@@ -379,7 +379,7 @@ func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
-// 注文の編集で外したカップ・消した注文の入れ直しも、取り消したときと同じく知らせ、レジに頼んだ代理印刷も消す
+// 注文の編集で外したカップ・消した注文の淹れ直しも、取り消したときと同じく知らせ、レジに頼んだ代理印刷も消す
 // （知らせが無いと、ほかの端末に残ったそのシールは消えず、頼み直しは 410 で断られる）
 func TestCupEmergencyRemovedWithOrderBroadcastOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
@@ -428,14 +428,14 @@ func TestCupEmergencyRemovedWithOrderBroadcastOnDB(t *testing.T) {
 	if got := labelPrints(); len(got) != 1 || got[0] != kept {
 		t.Fatalf("label print requests after edit = %v, want only %s", got, kept)
 	}
-	// 消えた入れ直しの頼み直しは 410（頼んだ端末はシールを捨てる）
+	// 消えた淹れ直しの頼み直しは 410（頼んだ端末はシールを捨てる）
 	reqBody, _ := json.Marshal(map[string]any{"id": removed, "job": testLabelJob})
 	if w := callWithParams(t, NewLabelPrintHandler(db, hub).CreateLabelPrintRequest, http.MethodPost, string(reqBody), nil); w.Code != http.StatusGone {
 		t.Fatalf("request after edit = %d: %s", w.Code, w.Body.String())
 	}
 	noBroadcast(t, hub)
 
-	// 入れ直しの無いカップしか外さない編集では知らせない
+	// 淹れ直しの無いカップしか外さない編集では知らせない
 	if w := callWithParams(t, f.orders.UpdateOrder, http.MethodPut, string(editBody), gin.Params{{Key: "id", Value: o.ID.String()}}); w.Code != http.StatusOK {
 		t.Fatalf("PUT order again = %d: %s", w.Code, w.Body)
 	}
@@ -444,7 +444,7 @@ func TestCupEmergencyRemovedWithOrderBroadcastOnDB(t *testing.T) {
 	}
 	noBroadcast(t, hub)
 
-	// 注文を消すと、残りの入れ直しも知らせる
+	// 注文を消すと、残りの淹れ直しも知らせる
 	if err := f.orders.deleteOrder(o.ID); err != nil {
 		t.Fatal(err)
 	}

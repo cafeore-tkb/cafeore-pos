@@ -23,7 +23,7 @@ import type { PrinterConnectionStatus } from "./infra/printer";
  * 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかったシールを、サーバー（POST /api/label-print-requests）に頼み、
  * 代理印刷をオンにしたレジが刷る。頼むのは print-util の usePrinter（relay）、刷るのはレジの useLabelPrintProxy。
  * レジは刷る前に引き受け（claim）、引き受けたレジだけが刷る（代理印刷のレジが何台あっても 1 枚だけ刷る）。
- * 頼めなければ、頼む端末は未印刷に残して間をあけて頼み直す（relayRetryDelay）。入れ直しが消えていたら（410）、そのシールは捨てる。
+ * 頼めなければ、頼む端末は未印刷に残して間をあけて頼み直す（relayRetryDelay）。淹れ直しが消えていたら（410）、そのシールは捨てる。
  */
 
 /** 刷れなかった・ほかのレジが刷っている頼みを、もう一度引き受けにいくまでの間（ミリ秒） */

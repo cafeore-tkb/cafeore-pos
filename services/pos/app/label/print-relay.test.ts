@@ -282,7 +282,7 @@ describe("[unit] 頼めなかったシールの頼み直しの間", () => {
     expect(relayRetryDelay(0)).toBe(RELAY_RETRY_MIN_MS);
   });
 
-  test("頼めなければ間をあけ、受け取ってもらえた・入れ直しが消えていた（gone）なら忘れる", () => {
+  test("頼めなければ間をあけ、受け取ってもらえた・淹れ直しが消えていた（gone）なら忘れる", () => {
     const backoff: RelayBackoff = new Map();
     const start = 1_000;
     expect(canRelayNow(backoff, "a", start)).toBe(true);

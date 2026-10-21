@@ -163,7 +163,7 @@ func (h *CaosHandler) DeleteCupEmergency(c *gin.Context) {
 	}
 }
 
-// publishCupEmergencyCancelled は入れ直しを取り消した（注文の編集・削除で消えたときも）ことを、このインスタンスの画面へ配り、
+// publishCupEmergencyCancelled は淹れ直しを取り消した（注文の編集・削除で消えたときも）ことを、このインスタンスの画面へ配り、
 // ほかのインスタンスへ DB の通知で知らせる。
 // 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す（注文の一覧から消えたことでは消さない）。
 // 知らせを受け損ねた画面はシールを刷ってしまうが、刷るべきシールを刷らないよりよいので、送り直しはしない。
@@ -244,11 +244,11 @@ func (h *CaosHandler) cancelEmergency(id uuid.UUID) (orderID uuid.UUID, resource
 	return orderID, resourceIDs, err
 }
 
-// deleteCupEmergencies は where に合う入れ直しを、入れ直しで減らした在庫と、レジに頼んだ代理印刷ごと消し（外部キーが無いので。
-// models.CupEmergency）、消した入れ直しの id を返す。呼ぶ側は、コミットしたら消した id を publishCupEmergencyCancelled で知らせる
+// deleteCupEmergencies は where に合う淹れ直しを、淹れ直しで減らした在庫と、レジに頼んだ代理印刷ごと消し（外部キーが無いので。
+// models.CupEmergency）、消した淹れ直しの id を返す。呼ぶ側は、コミットしたら消した id を publishCupEmergencyCancelled で知らせる
 // （画面は、端末に残っているそのシールを消す）。
 //
-// 入れ直しの行を消してから頼みを消す。頼みの受付（label_print.go）は入れ直しの行を FOR SHARE で読んでから頼みを足すので、
+// 淹れ直しの行を消してから頼みを消す。頼みの受付（label_print.go）は淹れ直しの行を FOR SHARE で読んでから頼みを足すので、
 // 受付が先ならここで頼みも消え、ここが先なら受付は行が無くて頼みを作らない（消えた緊急のシールの頼みが残らない）。
 func deleteCupEmergencies(tx *gorm.DB, where string, args ...any) ([]uuid.UUID, error) {
 	var ids []uuid.UUID

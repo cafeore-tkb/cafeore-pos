@@ -25,7 +25,7 @@ const ok = async (request: Promise<{ response: Response }>) => {
 
 /**
  * 代理印刷を頼んだ結果。requested は受け取ってもらえた（刷れたかではない）。
- * gone は入れ直しが無い（取り消した・注文の編集や削除で消えた。410）ので、もう頼めない（頼む端末はシールを捨てる）。
+ * gone は淹れ直しが無い（取り消した・注文の編集や削除で消えた。410）ので、もう頼めない（頼む端末はシールを捨てる）。
  * retry はつながらない・断られた（間をあけて頼み直す。404 もルートが無い（API が古い）ことがあるので、こちら）
  */
 export type LabelPrintRequestResult = "requested" | "gone" | "retry";

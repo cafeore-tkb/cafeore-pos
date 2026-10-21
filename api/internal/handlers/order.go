@@ -728,7 +728,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
 	resourcesBefore := h.inventory.ResourceIDsForOrders(orderID)
 
-	// 外した明細のカップの入れ直し（消したら、取り消したときと同じく知らせる）
+	// 外した明細のカップの淹れ直し（消したら、取り消したときと同じく知らせる）
 	var removedEmergencies []uuid.UUID
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態変更と重なっても、どちらかの変更が消えないようにロックしてから読む
@@ -810,7 +810,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		c.JSON(status, gin.H{"error": message})
 		return
 	}
-	// 画面は、端末に残っているその入れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
+	// 画面は、端末に残っているその淹れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
 	for _, id := range removedEmergencies {
 		publishCupEmergencyCancelled(h.db, h.hub, id)
 	}
@@ -874,7 +874,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
-		// カップの入れ直しも消す（消したら、取り消したときと同じく知らせる）
+		// カップの淹れ直しも消す（消したら、取り消したときと同じく知らせる）
 		emergencies, err = deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID))
 		if err != nil {
 			return err
@@ -904,7 +904,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 		return gorm.ErrRecordNotFound
 	}
 
-	// 画面は、端末に残っているその入れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
+	// 画面は、端末に残っているその淹れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
 	for _, id := range emergencies {
 		publishCupEmergencyCancelled(h.db, h.hub, id)
 	}
