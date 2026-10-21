@@ -102,7 +102,7 @@ export const useLiveBoard = ({
           : []),
         { kind: "next", ...next },
       ),
-    /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
+    /** 緊急（淹れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(
         label,

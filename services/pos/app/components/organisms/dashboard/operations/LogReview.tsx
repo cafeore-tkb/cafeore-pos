@@ -18,8 +18,8 @@ const EVENT_NAMES: Record<string, string> = {
   "lanes.swap": "担当者の入替",
   "lanes.seniors": "担当者属性の更新",
   "brew.discard": "元の抽出を破棄",
-  "emergency.add": "入れ直しを追加",
-  "emergency.cancel": "入れ直しを取消",
+  "emergency.add": "淹れ直しを追加",
+  "emergency.cancel": "淹れ直しを取消",
   "cups.update": "割当・移動・統合",
   "bay.next": "抽出完了・次の抽出へ",
   "operation.rejected": "操作が拒否されました",
@@ -33,7 +33,7 @@ const eventName = (event: string) =>
     : event.startsWith("inventory.")
       ? "棚卸し・入荷の記録"
       : event.startsWith("emergency.")
-        ? "入れ直しの操作記録"
+        ? "淹れ直しの操作記録"
         : "業務の操作記録");
 
 const getEntries = async () => {

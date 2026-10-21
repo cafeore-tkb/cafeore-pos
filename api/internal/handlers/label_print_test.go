@@ -29,7 +29,7 @@ func labelPrintPath(id uuid.UUID, action string) string {
 	return "/api/label-print-requests/" + id.String() + "/" + action
 }
 
-// 頼める入れ直し（代理印刷の頼みの id）を DB に入れる。カップ・注文は見ないので入れない
+// 頼める淹れ直し（代理印刷の頼みの id）を DB に入れる。カップ・注文は見ないので入れない
 func (a *testAPI) seedEmergency() uuid.UUID {
 	a.t.Helper()
 	row := models.CupEmergency{ID: uuid.New(), OrderCupID: uuid.New(), CreatedAt: time.Now()}
@@ -211,7 +211,7 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 	a.t = t
 	a.noBroadcast()
 
-	// 入れ直しが無い（取り消した）なら作らない
+	// 淹れ直しが無い（取り消した）なら作らない
 	missing := uuid.New()
 	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": missing, "job": testLabelJob}).expect(http.StatusNotFound)
 	var count int64
@@ -229,7 +229,7 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 }
 
 // 緊急の取り消しと同時に頼まれても、取り消した緊急のシールの頼みは残らない。
-// 取り消し（入れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 404 になる
+// 取り消し（淹れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 404 になる
 func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
 	a := newTestAPI(t)
 	id := a.seedEmergency()

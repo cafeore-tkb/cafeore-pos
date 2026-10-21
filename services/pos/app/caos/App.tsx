@@ -114,7 +114,7 @@ export default function App() {
       : undefined,
     view: controlViewMode,
     keyboardEnabled: panel?.kind !== "comment",
-    // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
+    // 番号から淹れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
     orders: session.emergency.orders,
     cards: session.cards,
     lanes,

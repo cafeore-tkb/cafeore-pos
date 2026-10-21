@@ -6,7 +6,7 @@ import { useCaosStateLog } from "./useCaosStateLog";
 
 /**
  * 操作パネル。選択中の1つだけを表示し、別の画面を開いたら置き換える。
- * detail は待機のカードの詳細のパネル、rebrew は緊急（入れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
+ * detail は待機のカードの詳細のパネル、rebrew は緊急（淹れ直し）の入力（key は抽出中・終わりのカードから開いたときのそのカード。null ならヘッダーから番号で）、
  * assign は空きスロットへの割当、lane は列の操作（ドリッパーの番号を押して開く）、auxiliary は補助のタブ、search は注文番号の検索（digits は入れている番号）、comment は任意の注文へのコメント入力
  */
 export type OpenPanel =
@@ -38,7 +38,7 @@ export const useBoardSelection = (
     returnToUnassigned: (key: string) => boolean;
     merge: (firstKey: string, intoKey: string) => boolean;
     split: (key: string, cupId: string) => boolean;
-    /** 緊急（入れ直し） */
+    /** 緊急（淹れ直し） */
     emergency: { cancel: (card: CaosCard) => void };
   },
 ) => {
@@ -76,7 +76,7 @@ export const useBoardSelection = (
     found?.status === "queued" && found.dripper !== null
       ? { card: found, bayId: found.dripper }
       : null;
-  // カードから入れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
+  // カードから淹れ直すのは抽出中・終わりのカードだけ。盤面から消えたら（注文が消えた・待機に戻った）閉じ、注文の選択も外す
   const rebrewKey = panel?.kind === "rebrew" ? panel.key : null;
   const rebrewing = rebrewKey
     ? cards.find(
@@ -214,7 +214,7 @@ export const useBoardSelection = (
     /** 統合の解除（統合したカードから cupId の 1 杯を外す） */
     split: (card: CaosCard, cupId: string) =>
       thenDeselect(actions.split(card.key, cupId)),
-    /** 入れ直しのカードの入れ直しを取り消し、注文の選択を外す */
+    /** 淹れ直しのカードの淹れ直しを取り消し、注文の選択を外す */
     cancelEmergency: (card: CaosCard) => {
       emergency.cancel(card);
       setSelectedOrderId(null);

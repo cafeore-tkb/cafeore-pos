@@ -1,6 +1,6 @@
 import { type CaosCard, dripperLabel } from "@cafeore/common";
 
-/** 同一注文でも、通常の抽出と入れ直しの番号は別々に表示する。強調は共通の注文IDを使う。 */
+/** 同一注文でも、通常の抽出と淹れ直しの番号は別々に表示する。強調は共通の注文IDを使う。 */
 export const cardNumberParts = (card: CaosCard) =>
   [
     ...new Map(
@@ -16,7 +16,7 @@ export const cardNumberParts = (card: CaosCard) =>
       Number(b.emergency) - Number(a.emergency),
   );
 
-/** 同じ注文の2杯や入れ直しは、複数注文を統合したカードとは区別する。 */
+/** 同じ注文の2杯や淹れ直しは、複数注文を統合したカードとは区別する。 */
 export const isMergedOrderCard = (card: CaosCard) =>
   new Set(card.cups.map((cup) => cup.orderId)).size > 1;
 

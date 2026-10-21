@@ -135,7 +135,7 @@ export default function FielsOfMaster() {
 }
 
 // マスター画面の注文カード。カップを1杯ずつ出す（押して状態を変えることはしない。準備完了は CaOS と提供画面で付ける）。
-// 抽出が要るカップには緊急（入れ直し）のボタンと、まだ抽出を始めていない入れ直しがあればその取り消し（最後に足したもの）を付ける
+// 抽出が要るカップには緊急（淹れ直し）のボタンと、まだ抽出を始めていない淹れ直しがあればその取り消し（最後に足したもの）を付ける
 const MasterOrderCard = ({
   order,
   onEmergency,
@@ -188,7 +188,7 @@ const MasterOrderCard = ({
   );
 };
 
-// カップの下の緊急（入力を開く）と、まだ抽出を始めていない入れ直しの取り消し（2 回押しで決める。1 行に並べてカップの高さをそろえる）
+// カップの下の緊急（入力を開く）と、まだ抽出を始めていない淹れ直しの取り消し（2 回押しで決める。1 行に並べてカップの高さをそろえる）
 const EmergencyActions = ({
   cancelableId,
   onEmergency,
@@ -211,7 +211,7 @@ const EmergencyActions = ({
     </Button>
     {cancelableId && (
       <TwoStepButton
-        // 取り消す入れ直しが替わったら、1 回目からにする
+        // 取り消す淹れ直しが替わったら、1 回目からにする
         key={cancelableId}
         label="取消"
         confirmLabel="緊急を取り消す"

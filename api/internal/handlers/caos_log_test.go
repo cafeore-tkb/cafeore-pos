@@ -384,7 +384,7 @@ func TestCaosEmergencyOperationLogOnDB(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("history = %d", count)
 	}
-	// ログの保存に失敗した追加は、入れ直しも履歴もrollbackする。
+	// ログの保存に失敗した追加は、淹れ直しも履歴もrollbackする。
 	if err := db.Exec("ALTER TABLE caos_operation_cups ADD CONSTRAINT test_reject_log CHECK (false) NOT VALID").Error; err != nil {
 		t.Fatal(err)
 	}

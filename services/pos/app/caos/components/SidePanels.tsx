@@ -322,7 +322,7 @@ const MoveCardButtons: React.FC<
 };
 
 // 待機のカードの詳細（管制盤 C）。別のドリッパーへ・先頭へ・待機の先頭へ・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
-// 入れ直し（緊急）の取り消し。
+// 淹れ直し（緊急）の取り消し。
 // パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<
   MoveActions & {
@@ -332,7 +332,7 @@ export const TicketDetailPanel: React.FC<
     lane?: Lane;
     onClose: () => void;
     onSplitCup: (card: CaosCard, cupId: string) => void;
-    /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+    /** 淹れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
     onCancelEmergency?: (card: CaosCard) => void;
   }
 > = ({
@@ -388,9 +388,9 @@ export const TicketDetailPanel: React.FC<
   </SidePanel>
 );
 
-// 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードのカップを全部選んでおく
+// 緊急（淹れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードのカップを全部選んでおく
 // （注文をまたいで統合したカードは、番号は先頭のカップの注文で、ほかの注文のカップも選べる。外せば一部だけ）。ヘッダーから開けば番号から入れる。
-// 確定すると、未割当のいちばん上に入れ直しのカードが出て（統合したカードの全部の杯なら、元のカードと同じ組み合わせの 1 枚）、緊急のシールとそのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
+// 確定すると、未割当のいちばん上に淹れ直しのカードが出て（統合したカードの全部の杯なら、元のカードと同じ組み合わせの 1 枚）、緊急のシールとそのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
 // 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す。パネルの外を押すと閉じる
 export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
@@ -404,7 +404,7 @@ export const RebrewPanel: React.FC<
 > = ({ card, look, lane, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
-    <SidePanel title="緊急（入れ直し）" onClose={onClose}>
+    <SidePanel title="緊急（淹れ直し）" onClose={onClose}>
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />

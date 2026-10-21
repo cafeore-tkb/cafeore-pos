@@ -159,7 +159,7 @@ func TestCaosPressTimeOnDB(t *testing.T) {
 	}
 }
 
-// 入れ直しの在庫は足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した入れ直しは、
+// 淹れ直しの在庫は足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した淹れ直しは、
 // 棚卸しの後にいつ抽出を始めても（押した時刻・押した時刻を送らない古い画面・未来の時刻）棚卸しの後に使った分に数えない
 func TestCupEmergencyPressStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
@@ -172,7 +172,7 @@ func TestCupEmergencyPressStockOnDB(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := f.createOrder(t, 1, line(f.blend))
-	// 入れ直しは 2 分前に足し、1 分前に棚卸しをした
+	// 淹れ直しは 2 分前に足し、1 分前に棚卸しをした
 	f.skew = -2 * time.Minute
 	if code, body := f.addEmergencies(t, o.OrderCups[0].ID); code != http.StatusCreated {
 		t.Fatalf("POST = %d: %s", code, body)

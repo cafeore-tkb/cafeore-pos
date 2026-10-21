@@ -71,8 +71,8 @@ type OrderStockUsage struct {
 	Amount   float64 `gorm:"type:double precision;not null"`
 }
 
-// 緊急（入れ直し。CupEmergency）1 回で在庫対象がどれだけ減るか。OrderStockUsage と同じく、足したときの在庫の設定で決めて残す。
-// 入れ直しを取り消したら（入れ直しを消すときは）いっしょに消す。
+// 緊急（淹れ直し。CupEmergency）1 回で在庫対象がどれだけ減るか。OrderStockUsage と同じく、足したときの在庫の設定で決めて残す。
+// 淹れ直しを取り消したら（淹れ直しを消すときは）いっしょに消す。
 type CupEmergencyStockUsage struct {
 	CupEmergencyID uuid.UUID `gorm:"type:uuid;primaryKey"`
 	ResourceID     uuid.UUID `gorm:"type:uuid;primaryKey;index"`

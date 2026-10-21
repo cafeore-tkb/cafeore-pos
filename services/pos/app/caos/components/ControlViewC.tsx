@@ -227,7 +227,7 @@ const ControlViewCBoard: React.FC<
 type CardHold = ReturnType<typeof useCardHold<CaosCard>>;
 
 // ドリッパーの列のカード（抽出中・待機）。開いた未割当のカードと統合できれば押して統合し、ほかは操作のアイコンを開く（menu）。
-// 長押しは hold（待機の詳細・抽出中の入れ直し）。ドラッグで落とす先の目印（前・後ろ・統合。useCardDrag の dropTargetAt）を持ち、
+// 長押しは hold（待機の詳細・抽出中の淹れ直し）。ドラッグで落とす先の目印（前・後ろ・統合。useCardDrag の dropTargetAt）を持ち、
 // 指の下なら入れる所の線か統合の枠を出す
 const LaneCard: React.FC<{
   card: CaosCard;

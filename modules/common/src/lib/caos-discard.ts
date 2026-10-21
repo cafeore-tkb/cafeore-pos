@@ -4,7 +4,7 @@ import type { CaosPracticeOrder, CaosPracticeResult } from "./caosPractice";
 
 export type CaosDiscardRequest = components["schemas"]["CaosDiscardRequest"];
 
-/** 元の抽出単位の後に、同じカップの実際の入れ直しが登録された杯だけ。 */
+/** 元の抽出単位の後に、同じカップの実際の淹れ直しが登録された杯だけ。 */
 export const caosDiscardCandidates = (
   cards: readonly CaosCard[],
   card: CaosCard,
@@ -52,7 +52,7 @@ export const discardCaosPracticeCups = (
     caosDiscardCandidates(cards, target).map((c) => c.id),
   );
   if (req.cup_ids.some((id) => !candidates.has(id)))
-    return { error: "入れ直し元の未完了の抽出だけ破棄できます" };
+    return { error: "淹れ直し元の未完了の抽出だけ破棄できます" };
   if (cards.some((c) => c.dripId === req.drip_id))
     return { error: "破棄後のカードIDが使われています" };
   const ids = new Set(req.cup_ids);

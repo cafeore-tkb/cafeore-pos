@@ -29,7 +29,7 @@ func (f *caosFixture) cancelEmergency(t *testing.T, id uuid.UUID) (int, string) 
 	return w.Code, w.Body.String()
 }
 
-// emergencies はカップの入れ直し（足した順）。
+// emergencies はカップの淹れ直し（足した順）。
 func (f *caosFixture) emergencies(t *testing.T, cupID uuid.UUID) []models.CupEmergency {
 	t.Helper()
 	var rows []models.CupEmergency
@@ -39,7 +39,7 @@ func (f *caosFixture) emergencies(t *testing.T, cupID uuid.UUID) []models.CupEme
 	return rows
 }
 
-// emergencyState は入れ直しの今の値（before に送る）。
+// emergencyState は淹れ直しの今の値（before に送る）。
 func (f *caosFixture) emergencyState(t *testing.T, id uuid.UUID) map[string]any {
 	t.Helper()
 	rows, err := readCaosUnits(f.db, "c.id = ?", id)
@@ -64,7 +64,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	}
 	first := f.cup(t, o1.OrderCups[0].ID)
 
-	// 同じカップを何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない
+	// 同じカップを何度でも淹れ直せる。カップの列（最初の抽出の記録）は変えない
 	for range 2 {
 		if code, body := f.addEmergencies(t, o1.OrderCups[0].ID); code != http.StatusCreated {
 			t.Fatalf("POST = %d: %s", code, body)
@@ -107,7 +107,7 @@ func TestCupEmergencyOnDB(t *testing.T) {
 		t.Fatalf("a rejected request added %d", len(rows))
 	}
 
-	// 入れ直しの割当・「次へ」はカップと同じ書き込みで、入れ直しの行の列を書く
+	// 淹れ直しの割当・「次へ」はカップと同じ書き込みで、淹れ直しの行の列を書く
 	e1 := rows[0].ID
 	emergencyCard := uuid.New()
 	f.mustPut(t, write([]uuid.UUID{e1}, unassigned, placed(2, emergencyCard, true)))
@@ -124,12 +124,12 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if got := f.emergencies(t, o1.OrderCups[0].ID)[0]; got.BrewStartedAt == nil || got.BrewFinishedAt == nil {
 		t.Fatalf("emergency after next = %+v", got)
 	}
-	// 準備完了のカップを入れ直しても、準備完了の時刻はそのまま
+	// 準備完了のカップを淹れ直しても、準備完了の時刻はそのまま
 	if cup := f.cup(t, o1.OrderCups[0].ID); !timeEqual(cup.ReadyAt, first.ReadyAt) {
 		t.Fatalf("ready_at = %v, want %v", cup.ReadyAt, first.ReadyAt)
 	}
 
-	// 準備中のカップの入れ直しの「次へ」も、終えた時刻だけを付ける（カップも注文も準備完了にしない）
+	// 準備中のカップの淹れ直しの「次へ」も、終えた時刻だけを付ける（カップも注文も準備完了にしない）
 	f.mustPut(t, write(ids(o2.OrderCups[0]), unassigned, placed(3, uuid.New(), false)))
 	if code, body := f.addEmergencies(t, o2.OrderCups[0].ID); code != http.StatusCreated {
 		t.Fatalf("POST = %d: %s", code, body)
@@ -148,13 +148,13 @@ func TestCupEmergencyOnDB(t *testing.T) {
 	if err := db.First(&after, "id = ?", o2.ID).Error; err != nil || after.ReadyAt != nil {
 		t.Fatalf("order = %+v, want not ready", after)
 	}
-	// 入れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にしても残り、終えるのは「次へ」だけ）
+	// 淹れ直したカップの最初のカード（3 番の待機）はそのまま残る（提供の画面で準備完了にしても残り、終えるのは「次へ」だけ）
 	if cup := f.cup(t, o2.OrderCups[0].ID); cup.Dripper == nil || *cup.Dripper != 3 || cup.ReadyAt != nil {
 		t.Fatalf("cup = %+v", cup)
 	}
 }
 
-// 入れ直しのカードも、順番・統合・指名・上級生のみはカップと同じ決まり
+// 淹れ直しのカードも、順番・統合・指名・上級生のみはカップと同じ決まり
 func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -166,7 +166,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	e1 := f.emergencies(t, o1.OrderCups[0].ID)[0].ID
 	e2 := f.emergencies(t, o1.OrderCups[1].ID)[0].ID
 
-	// 待機の途中に入れると、後ろのカード（カップも入れ直しも）の番号をずらす
+	// 待機の途中に入れると、後ろのカード（カップも淹れ直しも）の番号をずらす
 	cardA, cardB, cardE := uuid.New(), uuid.New(), uuid.New()
 	f.mustPut(t,
 		write(ids(o2.OrderCups[0]), unassigned, placed(1, cardA, true)),
@@ -177,7 +177,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("queued = %v, want [%v %v]", queued, cardE, cardB)
 	}
 
-	// 通常と入れ直しも同じカードにできる。最大 2 杯の制約は維持する。
+	// 通常と淹れ直しも同じカードにできる。最大 2 杯の制約は維持する。
 	o3 := f.createOrder(t, 3, line(f.blend))
 	o4 := f.createOrder(t, 4, line(f.blend))
 	f.mustPut(t, write(ids(o3.OrderCups[0]), unassigned, placed(1, cardE, false)))
@@ -194,7 +194,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 		t.Fatalf("normal cup changed on cancellation: %+v", after)
 	}
 
-	// 指名のあるカップの入れ直しは、その番号のドリッパーにしか置けない
+	// 指名のあるカップの淹れ直しは、その番号のドリッパーにしか置けない
 	f.nominate(t, o4.OrderMenus[0], intPtr(5), nil)
 	if code, body := f.addEmergencies(t, o4.OrderCups[0].ID); code != http.StatusCreated {
 		t.Fatalf("POST = %d: %s", code, body)
@@ -205,7 +205,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	}
 	f.mustPut(t, write([]uuid.UUID{e4}, unassigned, placed(5, uuid.New(), false)))
 
-	// 上級生のみのカップの入れ直しも、上級生でない（担当者のいない）ドリッパーに置ける（サーバーは断らない）
+	// 上級生のみのカップの淹れ直しも、上級生でない（担当者のいない）ドリッパーに置ける（サーバーは断らない）
 	special := models.ItemType{Name: "special-" + uuid.NewString(), DisplayName: "特別", SeniorOnly: true}
 	geisha := models.Item{Name: "ゲイシャ", Abbr: "ゲ", ItemType: special}
 	if err := db.Create(&geisha).Error; err != nil {
@@ -217,7 +217,7 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	}
 	e5 := f.emergencies(t, o5.OrderCups[0].ID)[0].ID
 	f.mustPut(t, write([]uuid.UUID{e5}, unassigned, placed(2, uuid.New(), false)))
-	// 指名のあるカップの入れ直しは、指名のドリッパー（担当者のいない 3rd）に置ける
+	// 指名のあるカップの淹れ直しは、指名のドリッパー（担当者のいない 3rd）に置ける
 	o6 := f.createOrder(t, 6, line(geisha))
 	f.nominate(t, o6.OrderMenus[0], intPtr(3), nil)
 	if code, body := f.addEmergencies(t, o6.OrderCups[0].ID); code != http.StatusCreated {
@@ -225,14 +225,14 @@ func TestCupEmergencyCardRulesOnDB(t *testing.T) {
 	}
 	f.mustPut(t, write([]uuid.UUID{f.emergencies(t, o6.OrderCups[0].ID)[0].ID}, unassigned, placed(3, uuid.New(), false)))
 
-	// 未割当に戻す（before は入れ直しの列）
+	// 未割当に戻す（before は淹れ直しの列）
 	f.mustPut(t, write([]uuid.UUID{e5}, f.emergencyState(t, e5), toUnassigned))
 	if state := f.emergencyState(t, e5); state["dripper"] != (*int)(nil) {
 		t.Fatalf("emergency = %v, want unassigned", state)
 	}
 }
 
-// 注文を編集して外したカップ・消した注文のカップの入れ直しも消える。引き継いだカップの入れ直しは残る
+// 注文を編集して外したカップ・消した注文のカップの淹れ直しも消える。引き継いだカップの淹れ直しは残る
 func TestCupEmergencyFollowsOrderOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -260,7 +260,7 @@ func TestCupEmergencyFollowsOrderOnDB(t *testing.T) {
 	}
 }
 
-// 取り消せるのは、まだ抽出を始めていない（未割当か待機の）入れ直しだけ
+// 取り消せるのは、まだ抽出を始めていない（未割当か待機の）淹れ直しだけ
 func TestCupEmergencyCancelOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -284,7 +284,7 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	if rows := f.emergencies(t, cupID); len(rows) != 0 {
 		t.Fatalf("emergencies after cancel = %+v", rows)
 	}
-	// 2 回目（ほかの端末で取り消した）・無い入れ直し・カップの ID は 409
+	// 2 回目（ほかの端末で取り消した）・無い淹れ直し・カップの ID は 409
 	for name, id := range map[string]uuid.UUID{"again": unassignedID, "missing": uuid.New(), "cup": cupID} {
 		if code, _ := f.cancelEmergency(t, id); code != http.StatusConflict {
 			t.Fatalf("cancel %s = %d, want 409", name, code)
@@ -344,7 +344,7 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 		t.Fatalf("emergencies = %+v, want the brewing one", rows)
 	}
 
-	// 前の日の注文の入れ直しは取り消せない
+	// 前の日の注文の淹れ直しは取り消せない
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
 	oldID := uuid.New()
 	if err := db.Create(&models.CupEmergency{ID: oldID, OrderCupID: old.OrderCups[0].ID, CreatedAt: old.CreatedAt}).Error; err != nil {
@@ -355,7 +355,7 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	}
 }
 
-// 取り消したら、全部の画面に取り消した入れ直しを知らせる（画面はこの知らせでだけ未印刷のシールを消す）。断ったときは知らせない
+// 取り消したら、全部の画面に取り消した淹れ直しを知らせる（画面はこの知らせでだけ未印刷のシールを消す）。断ったときは知らせない
 func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -382,7 +382,7 @@ func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
-// 入れ直しで使うアイテムの在庫とカップは、足したときの設定で減り、取り消すと戻る
+// 淹れ直しで使うアイテムの在庫とカップは、足したときの設定で減り、取り消すと戻る
 func TestCupEmergencyStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -428,7 +428,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	first := add()
 	expect("1 つめ", map[uuid.UUID][3]float64{itemStock.ID: {15, 1, 1}, cupStock.ID: {1, 1, 1}})
 
-	// あとで per_serving を変えても、前の入れ直しの消費は変わらない。次の入れ直しは今の設定で減る
+	// あとで per_serving を変えても、前の淹れ直しの消費は変わらない。次の淹れ直しは今の設定で減る
 	if err := db.Model(&itemStock).Update("per_serving", 20).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -436,13 +436,13 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	second := add()
 	expect("2 つめ", map[uuid.UUID][3]float64{itemStock.ID: {35, 2, 2}, cupStock.ID: {2, 2, 2}})
 
-	// 取り消すと、その入れ直しの分だけ戻る
+	// 取り消すと、その淹れ直しの分だけ戻る
 	if code, body := f.cancelEmergency(t, first); code != http.StatusNoContent {
 		t.Fatalf("cancel = %d: %s", code, body)
 	}
 	expect("取り消した後", map[uuid.UUID][3]float64{itemStock.ID: {20, 1, 1}, cupStock.ID: {1, 1, 1}})
 
-	// 入れ直しは足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した入れ直しは、
+	// 淹れ直しは足した時刻で使ったことにし、CaOS の抽出の時刻には依らない。棚卸しの前に足した淹れ直しは、
 	// いつ抽出を始めても（まだ始めていなくても）棚卸しの後に使った分に数えない
 	countedAt := time.Now().Add(time.Second)
 	if err := db.Create(&models.StockEvent{ResourceID: itemStock.ID, Kind: string(models.StockEventKindCount), Quantity: 500, CreatedAt: countedAt}).Error; err != nil {
@@ -471,7 +471,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 			t.Errorf("%s: consumed after the count = %v, want %v", tc.label, got, tc.consumed)
 		}
 	}
-	// 棚卸しの後に足した入れ直しは、まだ抽出を始めていなくても数える
+	// 棚卸しの後に足した淹れ直しは、まだ抽出を始めていなくても数える
 	if err := db.Model(&models.CupEmergency{}).Where("id = ?", second).
 		Updates(map[string]any{"created_at": countedAt.Add(time.Second), "brew_started_at": nil, "brew_finished_at": nil}).Error; err != nil {
 		t.Fatal(err)
@@ -480,7 +480,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 		t.Errorf("added after the count: %+v (%v), want consumed 20", snapshots, err)
 	}
 
-	// 注文を消すと入れ直しの消費も消える
+	// 注文を消すと淹れ直しの消費も消える
 	if err := f.orders.deleteOrder(o.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -490,7 +490,7 @@ func TestCupEmergencyStockOnDB(t *testing.T) {
 	}
 }
 
-// 抽出中の入れ直しを動かしても（始めた時刻を消す・今から始め直す）、入れ直しの在庫は 1 杯分のまま（二重に数えない）。
+// 抽出中の淹れ直しを動かしても（始めた時刻を消す・今から始め直す）、淹れ直しの在庫は 1 杯分のまま（二重に数えない）。
 // 使った時刻は足した時刻で、CaOS の抽出の時刻には依らない
 func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
@@ -547,7 +547,7 @@ func TestCupEmergencyMoveStockOnDB(t *testing.T) {
 	expect("始め直した")
 }
 
-// 理由は前後の空白を除いて足す全部の入れ直しに付け、応答に載る。長すぎれば何も足さない
+// 理由は前後の空白を除いて足す全部の淹れ直しに付け、応答に載る。長すぎれば何も足さない
 func TestCupEmergencyReasonOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -574,7 +574,7 @@ func TestCupEmergencyReasonOnDB(t *testing.T) {
 	}
 }
 
-// 理由の候補は、前の日までも含めた全部の入れ直しの理由を、よく使う順（同じなら文字の順）に 5 つまで。理由の無いものは数えない
+// 理由の候補は、前の日までも含めた全部の淹れ直しの理由を、よく使う順（同じなら文字の順）に 5 つまで。理由の無いものは数えない
 func TestCupEmergencyReasonsOnDB(t *testing.T) {
 	db := openCaosTestDB(t)
 	f := newCaosFixture(t, db)
@@ -591,7 +591,7 @@ func TestCupEmergencyReasonsOnDB(t *testing.T) {
 		t.Fatalf("reasons without emergencies = %v", got)
 	}
 
-	// 前の日の注文の入れ直し（今日の注文にしか足せないので、直に入れる）
+	// 前の日の注文の淹れ直し（今日の注文にしか足せないので、直に入れる）
 	old := f.createOrderAt(t, 9, time.Now().Add(-48*time.Hour), line(f.blend))
 	for _, reason := range []string{"温度", "温度", "温度", "量"} {
 		if err := db.Create(&models.CupEmergency{ID: uuid.New(), OrderCupID: old.OrderCups[0].ID, CreatedAt: old.CreatedAt, Reason: reason}).Error; err != nil {
@@ -610,7 +610,7 @@ func TestCupEmergencyReasonsOnDB(t *testing.T) {
 	}
 }
 
-// 通常と入れ直しを統合しても、それぞれの行・理由と抽出状態を保持する。
+// 通常と淹れ直しを統合しても、それぞれの行・理由と抽出状態を保持する。
 func TestCupEmergencyMixedMergeOnDB(t *testing.T) {
 	for _, mode := range []string{"unassigned", "queued", "normal-brewing", "emergency-brewing"} {
 		t.Run(mode, func(t *testing.T) {

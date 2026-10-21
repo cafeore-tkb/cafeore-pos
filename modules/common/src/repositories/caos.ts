@@ -81,9 +81,9 @@ export const nextCaosDripper = async (
   );
 
 /**
- * カップを緊急（入れ直し）にする（POST /api/cup-emergencies）。1 杯につき入れ直しを 1 つ足す（同じカップに何度でも）。
- * reason は入れ直す理由（空なら理由なし）。入れ直しはカップの emergencies に入り、CaOS で未割当の入れ直しのカードになる。
- * data.ids は足した入れ直しの id（cupIds と同じ順）
+ * カップを緊急（淹れ直し）にする（POST /api/cup-emergencies）。1 杯につき淹れ直しを 1 つ足す（同じカップに何度でも）。
+ * reason は淹れ直す理由（空なら理由なし）。淹れ直しはカップの emergencies に入り、CaOS で未割当の淹れ直しのカードになる。
+ * data.ids は足した淹れ直しの id（cupIds と同じ順）
  */
 export const addCupEmergencies = async (cupIds: string[], reason: string) =>
   send(
@@ -92,13 +92,13 @@ export const addCupEmergencies = async (cupIds: string[], reason: string) =>
     }),
   );
 
-/** 緊急の入力に出す理由の候補（GET /api/cup-emergencies/reasons）。前の日までも含めた全部の入れ直しの理由を、よく使う順に */
+/** 緊急の入力に出す理由の候補（GET /api/cup-emergencies/reasons）。前の日までも含めた全部の淹れ直しの理由を、よく使う順に */
 export const getCupEmergencyReasons = async () =>
   send(apiClient.GET("/api/cup-emergencies/reasons"));
 
 /**
- * 緊急（入れ直し）を取り消す（DELETE /api/cup-emergencies/{id}）。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。
- * 入れ直しで減らした在庫も戻る。取り消したことは共有の WebSocket の {"type":"cup_emergency_cancelled"} で全部の画面に届く
+ * 緊急（淹れ直し）を取り消す（DELETE /api/cup-emergencies/{id}）。まだ抽出を始めていない（未割当か待機の）淹れ直しだけ。
+ * 淹れ直しで減らした在庫も戻る。取り消したことは共有の WebSocket の {"type":"cup_emergency_cancelled"} で全部の画面に届く
  */
 export const cancelCupEmergency = async (id: string): Promise<CaosResult> =>
   send(

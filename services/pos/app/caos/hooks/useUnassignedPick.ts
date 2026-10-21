@@ -23,7 +23,7 @@ import { useOutsidePress } from "./useOutsidePress";
  * 相手が決まる（logic/cards の quickMergePartner。未割当と placed の待機・抽出中のカードから）ときは、開いたカードをもう一度押しても統合する
  * （決まらなければ開いたまま）。
  * 統合したカードを開くと 1 杯ずつ外せる（onSplitCup を渡したときだけ）。
- * 入れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
+ * 淹れ直し（緊急）のカードを開くと取り消せる（onCancelEmergency を渡したときだけ）。
  */
 export const useUnassignedPick = ({
   orders,
@@ -113,7 +113,7 @@ export const useUnassignedPick = ({
         onSplitCup(card, cupId);
         setOpenKey(null);
       }),
-    /** 入れ直し（緊急）のカードを取り消して閉じる（onCancelEmergency を渡したときだけ） */
+    /** 淹れ直し（緊急）のカードを取り消して閉じる（onCancelEmergency を渡したときだけ） */
     cancelEmergency:
       onCancelEmergency &&
       ((card: CaosCard) => {

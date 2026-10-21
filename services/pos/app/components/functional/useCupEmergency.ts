@@ -16,21 +16,21 @@ import { useLabelPrintQueue } from "~/label/print-relay";
 import { usePrinter } from "~/label/print-util";
 import { usePrinterAddresses } from "./usePrinterAddresses";
 
-/** 入れ直すカップ（注文と、その中のカップの ID）。刷るときは POS の注文（OrderEntity） */
+/** 淹れ直すカップ（注文と、その中のカップの ID）。刷るときは POS の注文（OrderEntity） */
 export type EmergencyCup<O extends CaosOrderInput = WithId<OrderEntity>> = {
   order: O;
   cupId: string;
 };
 
-/** 入れ直しを足した・取り消したことを通知で出す（実データテストの練習の盤面でも同じ文） */
+/** 淹れ直しを足した・取り消したことを通知で出す（実データテストの練習の盤面でも同じ文） */
 export const toastEmergenciesAdded = (count: number) =>
-  toast(`入れ直しを ${count} 杯足しました`);
+  toast(`淹れ直しを ${count} 杯足しました`);
 export const toastEmergenciesCancelled = (count: number) =>
-  toast(`入れ直しを ${count} 杯取り消しました`);
+  toast(`淹れ直しを ${count} 杯取り消しました`);
 
 /**
- * 緊急（入れ直し）。マスターの緊急ボタンと CaOS の入れ直しのパネルで使う。
- * カップに入れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を、前に緊急のシールを付けて 1 枚ずつ
+ * 緊急（淹れ直し）。マスターの緊急ボタンと CaOS の淹れ直しのパネルで使う。
+ * カップに淹れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を、前に緊急のシールを付けて 1 枚ずつ
  * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。直接刷れなければ、すぐ代理印刷をオンにしたレジに頼む
  * （POST /api/label-print-requests。label/print-relay）。頼めなければ端末に残し、送り直すたびにもう一度試す（usePrinter）。
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。
@@ -51,7 +51,7 @@ export const useCupEmergency = (
   // レジに頼んで、まだ刷れていないシール（ほかの端末が頼んだものも）
   const { requests: relayed, relayAvailable } = useLabelPrintQueue();
 
-  /** 入れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した入れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
+  /** 淹れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した淹れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
     async (cups: EmergencyCup[], reason: string) => {
       onActivity?.("emergency.api.requested", {
@@ -77,7 +77,7 @@ export const useCupEmergency = (
     [printCupLabel, onActivity],
   );
 
-  /** 入れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */
+  /** 淹れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */
   const cancelEmergency = useCallback(async (ids: string[]) => {
     for (const [done, id] of ids.entries()) {
       const { error } = await cancelCupEmergency(id);
@@ -106,7 +106,7 @@ export const useCupEmergency = (
   };
 };
 
-/** 注文の抽出が要るカップ（表示の値つき。緊急で入れ直せるカップ）。指名は明細のもの */
+/** 注文の抽出が要るカップ（表示の値つき。緊急で淹れ直せるカップ）。指名は明細のもの */
 const brewCupsOf = <O extends CaosOrderInput>(order: O) =>
   order.cups.filter(cupNeedsBrew).map((cup) => {
     const menu = order.menus.find((m) => m.orderMenuId === cup.orderMenuId);
@@ -135,8 +135,8 @@ export const orderByNo = <O extends CaosOrderInput>(
 export type EmergencyInitial = { orderNo: number; cupIds: string[] };
 
 /**
- * 緊急の入力：注文番号・入れ直すカップ・理由。initial はカップやカードから開いたときの注文番号とカップ。
- * 入れ直せるのは番号の注文の抽出が要るカップと、initial のカップのあるほかの注文（注文をまたいで統合したカード）の抽出が要るカップ。
+ * 緊急の入力：注文番号・淹れ直すカップ・理由。initial はカップやカードから開いたときの注文番号とカップ。
+ * 淹れ直せるのは番号の注文の抽出が要るカップと、initial のカップのあるほかの注文（注文をまたいで統合したカード）の抽出が要るカップ。
  * 番号を変えると、ほかの注文は外し、その注文の抽出が要るカップが 1 杯ならそれを選び、ほかは選び直す。
  * 注文は POS の注文（OrderEntity）か、実データテストの練習の盤面の注文
  */
@@ -174,9 +174,9 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
     },
     /** 番号の注文（無ければ undefined） */
     order,
-    /** 入れ直せるカップ（注文つき。番号の注文のカップが先） */
+    /** 淹れ直せるカップ（注文つき。番号の注文のカップが先） */
     cups,
-    /** ほかの注文のカップも入れ直せるか（カップに注文番号を添える） */
+    /** ほかの注文のカップも淹れ直せるか（カップに注文番号を添える） */
     manyOrders: scope.length > 1,
     picked,
     toggle: (cupId: string) =>
@@ -187,7 +187,7 @@ export const useEmergencyDraft = <O extends CaosOrderInput>(
       ),
     reason,
     setReason,
-    /** 入れ直すカップ（addEmergency に渡す。理由は reason） */
+    /** 淹れ直すカップ（addEmergency に渡す。理由は reason） */
     selected: cups
       .filter((cup) => picked.includes(cup.cupId))
       .map((cup): EmergencyCup<O> => ({ order: cup.order, cupId: cup.cupId })),

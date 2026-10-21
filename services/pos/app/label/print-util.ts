@@ -190,8 +190,8 @@ export const usePrinter = (
   );
 
   /**
-   * 緊急で入れ直したカップのシールを 1 枚、前に緊急のシールを付けて刷る。
-   * 刷れなければ入れ直しの id で残す（取り消したら removePendingPrint で消す）
+   * 緊急で淹れ直したカップのシールを 1 枚、前に緊急のシールを付けて刷る。
+   * 刷れなければ淹れ直しの id で残す（取り消したら removePendingPrint で消す）
    */
   const printCupLabel = useCallback(
     async (order: OrderEntity, cupId: string, emergencyId: string) => {

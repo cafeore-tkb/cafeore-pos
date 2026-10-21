@@ -95,7 +95,7 @@ func (h *CaosHandler) GetCaosLogs(c *gin.Context) {
 
 // ready前のCaOS対象cupと、操作対象cupを同じSQLスナップショットで取得する。
 // 同時間窓は未割当・待機・抽出中・抽出完了を含み、readyになった杯は除く。
-// 入れ直しは元のcupのreadyとは独立して動くため、履歴には含めるが窓には元cupのreadyを使う。
+// 淹れ直しは元のcupのreadyとは独立して動くため、履歴には含めるが窓には元cupのreadyを使う。
 func readCaosLogWindow(tx *gorm.DB, affected, dripIDs []uuid.UUID, start, end time.Time) ([]models.CaosOperationCup, error) {
 	var rows []models.CaosOperationCup
 	err := tx.Raw(`SELECT c.id AS unit_id, c.cup_id, c.order_id, o.order_id AS order_no,
@@ -232,7 +232,7 @@ func containsUUID(ids []uuid.UUID, id uuid.UUID) bool {
 	return false
 }
 
-// 緊急の追加・取消を、対象cup/order・理由・入れ直しIDと共に残す。
+// 緊急の追加・取消を、対象cup/order・理由・淹れ直しIDと共に残す。
 func recordCaosEmergency(tx *gorm.DB, kind string, now time.Time, before []models.CaosOperationCup, ids []uuid.UUID, reason string) error {
 	payload, err := json.Marshal(map[string]any{"reason": reason, "unit_ids": ids})
 	if err != nil {

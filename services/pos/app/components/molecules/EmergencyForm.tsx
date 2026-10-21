@@ -10,20 +10,20 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../ui/sheet";
 
-/** 緊急（入れ直し）の印。マスターと CaOS の緊急のボタンに付ける */
+/** 緊急（淹れ直し）の印。マスターと CaOS の緊急のボタンに付ける */
 export const EmergencyIcon = Siren;
 
 const EMERGENCY_REASON_SHORTCUTS = ["抽出ミス", "異物混入", "ラベル再発行"];
 
 /**
- * 緊急（入れ直し）の入力：注文番号・入れ直すカップ・理由（よく使うものを押すか、自由に書く）。マスターと CaOS で同じもの。
+ * 緊急（淹れ直し）の入力：注文番号・淹れ直すカップ・理由（よく使うものを押すか、自由に書く）。マスターと CaOS で同じもの。
  * 状態は useEmergencyDraft（initial はカップやカードから開いたときの注文番号とカップ）。
  * 確定すると onAdd（足して、そのカップのシールを刷る）、足せたら onDone
  */
 export type EmergencyFormProps<O extends CaosOrderInput> = {
   orders: readonly O[];
   initial?: EmergencyInitial;
-  /** 足した入れ直しの id。断られたら null */
+  /** 足した淹れ直しの id。断られたら null */
   onAdd: (cups: EmergencyCup<O>[], reason: string) => Promise<string[] | null>;
   onDone: () => void;
   /** 実データテストの練習の盤面に足す（シールを刷らないので、確定のボタンにそう書く） */
@@ -39,7 +39,7 @@ export const EmergencyForm = <O extends CaosOrderInput>({
 }: EmergencyFormProps<O>) => {
   const id = useId();
   const draft = useEmergencyDraft(orders, initial);
-  // 送っている間は確定させない（2 回押して入れ直しが倍にならないように）
+  // 送っている間は確定させない（2 回押して淹れ直しが倍にならないように）
   const [sending, setSending] = useState(false);
   return (
     <form
@@ -74,7 +74,7 @@ export const EmergencyForm = <O extends CaosOrderInput>({
       )}
       {draft.order && (
         <fieldset className="grid gap-2">
-          <legend className="mb-1 font-bold text-sm">入れ直すカップ</legend>
+          <legend className="mb-1 font-bold text-sm">淹れ直すカップ</legend>
           {draft.cups.length === 0 && (
             <p className="text-muted-foreground text-sm">
               抽出が要るカップがありません
@@ -140,8 +140,8 @@ export const EmergencyForm = <O extends CaosOrderInput>({
       >
         <EmergencyIcon className="h-5 w-5" />
         {practice
-          ? `${draft.selected.length}杯を入れ直す（テストなので刷りません）`
-          : `${draft.selected.length}杯を入れ直して刷る`}
+          ? `${draft.selected.length}杯を淹れ直す（テストなので刷りません）`
+          : `${draft.selected.length}杯を淹れ直して刷る`}
       </Button>
     </form>
   );
@@ -157,7 +157,7 @@ export const EmergencySheet = <O extends CaosOrderInput>({
   <Sheet open onOpenChange={(open) => !open && onClose()}>
     <SheetContent className="overflow-y-auto">
       <SheetHeader className="mb-4">
-        <SheetTitle>緊急（入れ直し）</SheetTitle>
+        <SheetTitle>緊急（淹れ直し）</SheetTitle>
       </SheetHeader>
       <EmergencyForm {...form} onDone={onClose} />
     </SheetContent>

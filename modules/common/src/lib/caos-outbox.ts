@@ -60,7 +60,7 @@ export type CaosOutboxOp =
       startNext?: boolean;
       startPressed?: boolean;
     }
-  /** 緊急（入れ直し）の取り消し */
+  /** 緊急（淹れ直し）の取り消し */
   | { kind: "cancel-emergency"; id: string }
   /** 担当者の交代。before は押したときの担当者（前の版で残したものには無いので、確かめずに送る） */
   | {
@@ -171,7 +171,7 @@ const laneTaken = (dripper: number) =>
 
 type Row = Pick<CupEmergency, "id"> & CaosCupState;
 
-// カップと入れ直しの行（CaOS の値を書く行）を ID で引く
+// カップと淹れ直しの行（CaOS の値を書く行）を ID で引く
 const rowsOf = (orders: readonly CaosOrderInput[]) =>
   new Map<string, Row>(
     orders.flatMap((order) =>
@@ -541,7 +541,7 @@ const orderVersion = (order: CaosOrderInput) =>
     ]),
   );
 
-// 書くカップ（入れ直しも）の ID
+// 書くカップ（淹れ直しも）の ID
 const cupIdsOf = (request: CaosOutboxOp, server: CaosServerState) => {
   switch (request.kind) {
     case "discard":

@@ -63,7 +63,7 @@ interface TopHeaderProps {
   onOpenComment?: () => void;
   commentOpen?: boolean;
   commentUnreadCount?: number;
-  /** 緊急（入れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
+  /** 緊急（淹れ直し）の入力を番号から開く。無ければ（実データテスト中）出さない */
   onOpenEmergency?: () => void;
   onOpenPastOrders: () => void;
 }
@@ -352,7 +352,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
         )}
         {!simulating && <OrderStopControl />}
-        {/* 緊急（入れ直し）は接続状況より左に置く。 */}
+        {/* 緊急（淹れ直し）は接続状況より左に置く。 */}
         {onOpenEmergency && (
           <button
             type="button"
