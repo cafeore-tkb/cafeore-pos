@@ -1,7 +1,7 @@
-/* Illustrator自身で8ページのSVGを読み込み、8アートボードの.aiを保存する。
+/* v2: Illustrator自身で8ページのSVGを読み込み、8アートボードの.aiを保存する。
  * ExtendScript互換のためES3で記述。既存のファイル・開いている書類は変更しない。
  */
-(() => {
+(function () {
   var PAGE_COUNT = 8;
   var WIDTH = (297 / 25.4) * 72;
   var HEIGHT = (210 / 25.4) * 72;
@@ -11,11 +11,45 @@
   var report = [];
   var previousDocument = app.documents.length ? app.activeDocument : null;
   var ownFolder = new File($.fileName).parent;
-  var folder = new File(ownFolder.fsName + "/page-01.svg").exists
-    ? ownFolder
-    : Folder.selectDialog(
-        "解凍したpage-01.svg～page-08.svgのフォルダーを選んでください"
+  var folder = ownFolder;
+  if (!new File(ownFolder.fsName + "/page-01.svg").exists) {
+    // 拡張子フィルターはOSごとの差でSVGを選べなくなるため指定しない。
+    var selection = new Window("dialog", "CaOS v2：ページの場所を指定");
+    selection.add(
+      "statictext",
+      undefined,
+      "解凍済みのSVGを1枚、またはフォルダーを指定してください。"
+    );
+    var buttons = selection.add("group");
+    buttons.add("button", undefined, "SVGを1枚選ぶ", { name: "ok" }).onClick =
+      function () {
+        selection.close(1);
+      };
+    buttons.add("button", undefined, "フォルダーを選ぶ").onClick = function () {
+      selection.close(10);
+    };
+    buttons.add("button", undefined, "キャンセル", { name: "cancel" });
+    var choice = selection.show();
+    if (choice === 1) {
+      var selectedFile = File.openDialog(
+        "page-01.svgなど、解凍したSVGを1枚選んでください"
       );
+      if (!selectedFile) return;
+      if (!/\.svg$/i.test(selectedFile.name)) {
+        alert(
+          "ここでは.jsxやZIPではなく、解凍済みのpage-01.svg～page-08.svgを選んでください。"
+        );
+        return;
+      }
+      folder = selectedFile.parent;
+    } else if (choice === 10) {
+      folder = Folder.selectDialog(
+        "解凍した8枚のSVGが入っているフォルダーを選んでください"
+      );
+    } else {
+      return;
+    }
+  }
   if (!folder) return;
 
   function pageFile(index) {

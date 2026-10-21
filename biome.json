@@ -39,6 +39,9 @@
           },
           "correctness": {
             "noInnerDeclarations": "off"
+          },
+          "complexity": {
+            "useArrowFunction": "off"
           }
         }
       }
