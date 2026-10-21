@@ -5,6 +5,7 @@ import {
   assignWrites,
   buildCaosCards,
   caosLane,
+  caosStateJSON,
   mergeWrites,
 } from "./caos-board";
 import {
@@ -364,6 +365,61 @@ describe("unit: caos-outbox 送る", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("破棄を送信し、同じ終了カードの反映後は再送せず、通常終了との競合は断る", async () => {
+    const original = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "original",
+      brewStartedAt: NOW,
+      emergencies: [
+        {
+          id: "redo",
+          createdAt: NOW,
+          reason: "抽出ミス",
+          dripper: null,
+          dripperPosition: null,
+          dripId: null,
+          brewStartedAt: null,
+          brewFinishedAt: null,
+        },
+      ],
+    });
+    const op = entry({
+      kind: "discard",
+      request: {
+        cup_ids: ["a"],
+        before: caosStateJSON(original),
+        drip_id: "discarded",
+      },
+    });
+    const initial = orders(original);
+    const live = setup([op], initial);
+    await live.outbox.kick();
+    expect(live.sent).toHaveLength(1);
+    expect(live.sent[0]).toMatchObject({
+      kind: "discard",
+      request: { drip_id: "discarded", cup_ids: ["a"] },
+    });
+    live.outbox.stop();
+    const reflected = setup(
+      [op],
+      orders({ ...original, dripId: "discarded", brewFinishedAt: SERVER_T }),
+    );
+    await reflected.outbox.kick();
+    expect(reflected.sent).toHaveLength(0);
+    expect(reflected.items()).toHaveLength(0);
+    reflected.outbox.stop();
+    const conflict = setup(
+      [op],
+      orders({ ...original, brewFinishedAt: SERVER_T }),
+    );
+    await conflict.outbox.kick();
+    expect(conflict.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(conflict.rejected).toHaveLength(1);
+    conflict.outbox.stop();
   });
 
   test("送信中だけロックし、反映待ち中は別タブに解放する。再送タイマーもロックを取る", async () => {
