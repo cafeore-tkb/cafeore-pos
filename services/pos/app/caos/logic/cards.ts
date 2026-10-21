@@ -173,23 +173,24 @@ export const cardLooks = (
   comments: CommentsByOrder | null = null,
   offSenior: (card: CaosCard) => boolean = () => false,
 ): CardLooks => {
-  // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
+  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。入れ直しの杯だけは数えない。
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (card.emergency) continue;
-    for (const orderId of new Set(card.cups.map((cup) => cup.orderId)))
+    const normal = card.cups.filter((cup) => !cup.emergency);
+    for (const orderId of new Set(normal.map((cup) => cup.orderId)))
       byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
   const splitOf = (card: CaosCard): CardSplit | undefined => {
-    if (card.emergency || cardOrderNos(card).length > 1) return undefined;
-    const { orderId } = card.cups[0];
+    const normal = card.cups.filter((cup) => !cup.emergency);
+    if (normal.length === 0 || cardOrderNos(card).length > 1) return undefined;
+    const { orderId } = normal[0];
     const parts = byOrder.get(orderId) ?? [];
     if (parts.length <= 1) return undefined;
     return {
       total: parts.length,
       cups: parts
         .flatMap((part) => part.cups)
-        .filter((cup) => cup.orderId === orderId).length,
+        .filter((cup) => !cup.emergency && cup.orderId === orderId).length,
     };
   };
   return new Map(

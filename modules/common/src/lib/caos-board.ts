@@ -508,7 +508,7 @@ const sameItem = (a: CaosBoardCup, b: CaosBoardCup) =>
 
 /**
  * card を into のカードに入れられるか（1 杯 + 1 杯 = 2 杯の同時抽出）。同じ商品の 1 杯どうしで、指名の番号がぶつからない
- * （どちらかが指名なし、または同じ番号）。緊急（入れ直し）は入れ直しどうしだけ（緊急でないカップと同じカードにしない。サーバーも断る）。
+ * （どちらかが指名なし、または同じ番号）。通常と緊急（入れ直し）も統合でき、緊急状態はカップごとに保持する。
  *   - card（動かすほう）は未割当か待機。into（入るほう）は未割当・待機・抽出中（抽出を始めたカードにも足せる。終わったカードには入れない）
  *   - into がドリッパーにあれば、card もそのドリッパーに置ける（指名）
  */
@@ -518,7 +518,6 @@ const mergeableInto = (card: CaosCard, into: CaosCard) =>
   into.status !== "done" &&
   card.cups.length === 1 &&
   into.cups.length === 1 &&
-  card.emergency === into.emergency &&
   sameItem(card.cups[0], into.cups[0]) &&
   (into.nominatedDripper === null ||
     caosDripperAllowed(card, into.nominatedDripper)) &&

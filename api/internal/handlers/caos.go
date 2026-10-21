@@ -342,10 +342,6 @@ func checkCaosCards(tx *gorm.DB, dripIDs []uuid.UUID) error {
 			if !sameCaosState(&cups[i].OrderCup, caosCupState(&cups[0].OrderCup)) {
 				return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
 			}
-			// 入れ直しは行の ID と入れ直したカップの ID が違う。入れ直しと緊急でないカップは同じカードにしない（緊急の取り消しと食い違う）
-			if (cups[i].ID == cups[i].CupID) != (cups[0].ID == cups[0].CupID) {
-				return ruleErrorf("緊急（入れ直し）と緊急でないカップは同じカードにできません")
-			}
 		}
 		if err := checkCaosCardNomination(tx, id); err != nil {
 			return err
