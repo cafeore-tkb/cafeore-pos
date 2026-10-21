@@ -196,7 +196,7 @@ type CaosCupsWrite struct {
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
 
-	// MergeInto 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+	// MergeInto 統合元の書き込みに付ける統合先の cup または淹れ直しの ID。統合の向きを履歴に残す。
 	MergeInto *openapi_types.UUID `json:"merge_into,omitempty"`
 }
 
@@ -443,20 +443,20 @@ type CommentResponse struct {
 
 // CupEmergencyCreateRequest defines model for CupEmergencyCreateRequest.
 type CupEmergencyCreateRequest struct {
-	// OrderCupIds 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
+	// OrderCupIds 淹れ直すカップ（1 杯につき淹れ直しを 1 つ足す）
 	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
 
-	// Reason 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+	// Reason 淹れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の淹れ直しに付ける
 	Reason *string `json:"reason,omitempty"`
 }
 
 // CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
 type CupEmergencyCreateResponse struct {
-	// Ids 足した入れ直しの id（order_cup_ids と同じ順）
+	// Ids 足した淹れ直しの id（order_cup_ids と同じ順）
 	Ids []openapi_types.UUID `json:"ids"`
 }
 
-// CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
+// CupEmergencyResponse 緊急（淹れ直し）1 回。CaOS の淹れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
 type CupEmergencyResponse struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
@@ -466,7 +466,7 @@ type CupEmergencyResponse struct {
 	DripperPosition *int                `json:"dripper_position"`
 	Id              openapi_types.UUID  `json:"id"`
 
-	// Reason 入れ直す理由（足したときに書いたもの。無ければ空）
+	// Reason 淹れ直す理由（足したときに書いたもの。無ければ空）
 	Reason string `json:"reason"`
 }
 
@@ -486,7 +486,7 @@ type InventoryRemindResponse struct {
 
 // InventoryStatus defines model for InventoryStatus.
 type InventoryStatus struct {
-	// Consumed counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
+	// Consumed counted_at より後に使った量（注文と淹れ直し。使った時刻の決まりは GET /api/inventory）
 	Consumed float64 `json:"consumed"`
 
 	// CountedAt 最後の棚卸し。無ければ最初の入荷
@@ -624,7 +624,7 @@ type LabelPrintJob struct {
 
 // LabelPrintRequestCreateRequest defines model for LabelPrintRequestCreateRequest.
 type LabelPrintRequestCreateRequest struct {
-	// Id 頼みの id（入れ直しの id）
+	// Id 頼みの id（淹れ直しの id）
 	Id openapi_types.UUID `json:"id"`
 
 	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
@@ -795,7 +795,7 @@ type OrderCupResponse struct {
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
 	DripperPosition *int `json:"dripper_position"`
 
-	// Emergencies このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
+	// Emergencies このカップの緊急（淹れ直し）。足した順。CaOS 以外の画面は読まない
 	Emergencies []CupEmergencyResponse `json:"emergencies"`
 	Id          openapi_types.UUID     `json:"id"`
 	Item        ItemResponse           `json:"item"`

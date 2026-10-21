@@ -39,7 +39,7 @@ interface TestPlaySession {
 // 練習の盤面はブラウザの中だけで持ち（本番と同じ形の注文とカップ）、カードの組み立ては本番と同じ buildCaosCards、
 // 操作の書き込みは本番と同じ @cafeore/common の assignWrites など（hooks/useCaosSession.ts）で作り、当てる（番号を決め、後ろをずらす）のと「次へ」は
 // 本番の API と同じ決まりの @cafeore/common の applyCaosPracticeWrites・advanceCaosPracticeDripper で行う。時刻は練習の時計の今。
-// 緊急（入れ直し）も練習の盤面の中だけで足し・取り消す（addCaosPracticeEmergencies・cancelCaosPracticeEmergency。シールは刷らない）。
+// 緊急（淹れ直し）も練習の盤面の中だけで足し・取り消す（addCaosPracticeEmergencies・cancelCaosPracticeEmergency。シールは刷らない）。
 // サーバー・本番の盤面・注文・在庫・印刷には何も送らない。
 export const useTestPlay = ({
   historicalOrders,
@@ -184,7 +184,7 @@ export const useTestPlay = ({
     },
     /** 届いた注文（緊急の入力で番号から選ぶ） */
     arrivedOrders,
-    /** 緊急（入れ直し）を足す（理由・決まりは本番と同じ。足した時刻は練習の時計の今）。足した入れ直しの id。断ったら理由を出して null */
+    /** 緊急（淹れ直し）を足す（理由・決まりは本番と同じ。足した時刻は練習の時計の今）。足した淹れ直しの id。断ったら理由を出して null */
     addEmergencies: (cupIds: string[], reason: string) => {
       const result = addCaosPracticeEmergencies(
         practiceRef.current,
@@ -200,7 +200,7 @@ export const useTestPlay = ({
       replace(result.orders);
       return result.ids;
     },
-    /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true。断ったら理由を出して何も変えない */
+    /** 緊急（淹れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true。断ったら理由を出して何も変えない */
     cancelEmergencies: (ids: string[]) => {
       let orders = practiceRef.current;
       for (const id of ids) {

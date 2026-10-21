@@ -125,7 +125,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     ]);
   });
 
-  test("入れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
+  test("淹れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
     const emergency = {
       id: "redo",
       createdAt: new Date(T0.getTime() + 60_000),
@@ -318,7 +318,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(staysInLane([alone], alone, 4)).toBe(true);
   });
 
-  test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
+  test("未割当の淹れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
     const emergency = {
       id: "e1",
       createdAt: T0,
@@ -383,7 +383,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     ]);
     const looks = cardLooks(mixed, [], new Map());
-    // 元の2杯に入れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
+    // 元の2杯に淹れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
     expect(looks.get("mixed-8")?.split).toEqual({ total: 2, cups: 2 });
     expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
   });
@@ -542,7 +542,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(actions(first.queued[0], idle)).toBe(
       "assign:2 assign:3 assign:4 assign:5 assign:6 start unassign",
     );
-    // 待機の有無で完了の操作は変わらない。終わったカードは入れ直しだけ
+    // 待機の有無で完了の操作は変わらない。終わったカードは淹れ直しだけ
     const alone = { ...first, queued: [] };
     expect(actions(first.brewing, alone)).toBe("emergency finish");
     const done = { ...first.brewing, status: "done" as const };
@@ -841,7 +841,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
   });
   // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
-  // #6：提供済みのカップを入れ直した（入れ直しが未割当）。#7 は下に
+  // #6：提供済みのカップを淹れ直した（淹れ直しが未割当）。#7 は下に
   const rebrew = {
     id: "e6",
     createdAt: T0,
@@ -859,7 +859,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     at(2, 10, [{}]),
     at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
     at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
-    // #7：「次へ」を押し忘れたまま提供済みにした（入れ直しではないので出さない）
+    // #7：「次へ」を押し忘れたまま提供済みにした（淹れ直しではないので出さない）
     at(7, 40, [
       {
         dripper: 3,

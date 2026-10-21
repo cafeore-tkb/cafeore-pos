@@ -19,7 +19,7 @@ import {
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
 
-// 入れ直し（緊急）の理由（重ねずに「・」でつなぐ。無ければ空）
+// 淹れ直し（緊急）の理由（重ねずに「・」でつなぐ。無ければ空）
 const cupsEmergencyReasons = (cups: CaosCard["cups"]) =>
   unique(cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
 
@@ -93,7 +93,7 @@ export const cardNominee = (card: CaosCard) =>
 
 /**
  * ドリッパーに置いた（待機・抽出中の）カードの、提供の画面で提供済みにしたカップの札（全部なら「提供済」、一部なら「提供済 1/2」）。
- * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。入れ直しは提供を持たない。無ければ空
+ * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。淹れ直しは提供を持たない。無ければ空
  */
 export const cardServedLabel = (card: CaosCard) => {
   // 未割当には準備完了・提供済みのカップは入らない
@@ -105,7 +105,7 @@ export const cardServedLabel = (card: CaosCard) => {
     : `提供済 ${served}/${card.cups.length}`;
 };
 
-/** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
+/** 淹れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
 export const emergencyReasons = (card: CaosCard) =>
   cupsEmergencyReasons(card.cups);
 
@@ -144,7 +144,7 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文） */
 export interface CardLook {
-  /** 入れ直しを登録した元の抽出。 */
+  /** 淹れ直しを登録した元の抽出。 */
   discardCandidates?: CaosCard["cups"];
   discard?: (ids: string[]) => boolean;
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
@@ -178,7 +178,7 @@ export const cardLooks = (
   offSenior: (card: CaosCard) => boolean = () => false,
   onDiscard?: (card: CaosCard, ids: string[]) => boolean,
 ): CardLooks => {
-  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。入れ直しの杯だけは数えない。
+  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。淹れ直しの杯だけは数えない。
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
     const normal = card.cups.filter((cup) => !cup.emergency);
@@ -227,7 +227,7 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
 };
 
 /**
- * 未割当のカードを注文番号の行にまとめる（管制盤 A の横帯・C の注文の列）。入れ直し（緊急）の行を先に、ほかは注文番号の順
+ * 未割当のカードを注文番号の行にまとめる（管制盤 A の横帯・C の注文の列）。淹れ直し（緊急）の行を先に、ほかは注文番号の順
  * （buildCaosCards の未割当の並びと同じ）。統合したカードはいちばん小さい注文番号の行に置く。行の中は注文の中の並び
  */
 export const unassignedRows = (cards: readonly CaosCard[]) => {

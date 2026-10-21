@@ -36,7 +36,7 @@ type WSMessage =
     }
   // CaOS のドリッパーの担当者（今日の 6 つ全部）。変わるたびと、つないだとき（今日の担当者があれば）に届く
   | { type: "caos_lanes"; caos_lanes: CaosLanes }
-  // 取り消された緊急（入れ直し）の id。取り消したときに 1 回だけ届く（つないだときには届かない）
+  // 取り消された緊急（淹れ直し）の id。取り消したときに 1 回だけ届く（つないだときには届かない）
   | { type: "cup_emergency_cancelled"; cup_emergency_id: string }
   // 呼び出し催促した注文の id。催促したときに 1 回だけ届く（つないだときには届かない）
   | { type: "order_recalled"; order_id: string }
@@ -51,7 +51,7 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
 
 /**
  * 共有の WebSocket（/api/ws/orders）。注文・オーダーストップ・レジの状態・CaOS の担当者を持つ。
- * onCupEmergencyCancelled は緊急（入れ直し）が取り消されたという知らせを受けたときだけ呼ぶ（注文の一覧から消えたことでは呼ばない）。
+ * onCupEmergencyCancelled は緊急（淹れ直し）が取り消されたという知らせを受けたときだけ呼ぶ（注文の一覧から消えたことでは呼ばない）。
  * onOrderRecalled は呼び出し催促の知らせを受けたときに、その注文の id で呼ぶ。
  * onLabelPrintRequested・onLabelPrintDone は代理印刷の頼み・刷れたという知らせを受けたときに呼ぶ
  */

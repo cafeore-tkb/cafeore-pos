@@ -92,7 +92,7 @@ const cup = ({ line = "line-1", ...init }: CupInit): Cup => ({
   ...init,
 });
 
-// 緊急（入れ直し）の行。既定は未割当
+// 緊急（淹れ直し）の行。既定は未割当
 const emergency = (
   id: string,
   at: Partial<Cup["emergencies"][number]> = {},
@@ -243,9 +243,9 @@ describe("[unit] CaOS の盤面の組み立て", () => {
     ]);
   });
 
-  test("緊急（入れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの入れ直しも出す", () => {
+  test("緊急（淹れ直し）：カップと同じ決まりのカードになり、未割当のいちばん上。準備完了のカップの淹れ直しも出す", () => {
     const start = new Date(NOW.getTime() - 60_000);
-    // 1 杯目は準備完了（最初の抽出は終わり）で、入れ直しが 2 回。1 回目は 3 番で抽出中、2 回目は未割当
+    // 1 杯目は準備完了（最初の抽出は終わり）で、淹れ直しが 2 回。1 回目は 3 番で抽出中、2 回目は未割当
     const brewed = cup({
       item: blend,
       readyAt: NOW,
@@ -279,7 +279,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       [2, "done", false, 1, [brewed.id]],
       [2, "brewing", true, 3, ["e1"]],
     ]);
-    // 入れ直しは入れ直したカップの商品・指名で、書き込みの cup_ids は入れ直しの ID、before は入れ直しの列
+    // 淹れ直しは淹れ直したカップの商品・指名で、書き込みの cup_ids は淹れ直しの ID、before は淹れ直しの列
     const redo = cards[0];
     expect(redo.cups[0]).toMatchObject({
       cupId: brewed.id,
@@ -308,7 +308,7 @@ describe("[unit] CaOS の盤面の組み立て", () => {
       ],
     });
 
-    // 通常と入れ直しも、同じ商品・互換性のある指名なら統合できる。
+    // 通常と淹れ直しも、同じ商品・互換性のある指名なら統合できる。
     // 指名は、同じ番号か片方だけ
     const nominated = cup({ item: blend, line: "line-2" });
     const free = cup({ item: blend, line: "line-3" });
@@ -1030,7 +1030,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(splitWrites(brewing2, later.id)).toHaveProperty("error");
   });
 
-  test("統合したカードから全部の杯を入れ直したら、足した入れ直しを元のカードと同じ組み合わせの 1 枚（未割当）にまとめる", () => {
+  test("統合したカードから全部の杯を淹れ直したら、足した淹れ直しを元のカードと同じ組み合わせの 1 枚（未割当）にまとめる", () => {
     const started = new Date(NOW.getTime() - 60_000);
     const brewed = { dripper: 3, dripperPosition: 1, dripId: "m" };
     const a = cup({ item: blend, ...brewed, brewStartedAt: started });
@@ -1043,7 +1043,7 @@ describe("[unit] CaOS の書き込み", () => {
     expect(caosRebrewsTogether(before, [other.id, b.id])).toBe(false);
     expect(caosRebrewsTogether(before, [a.id, b.id, other.id])).toBe(false);
 
-    // 足した入れ直しは注文ごとに別々のカードで届く。届いていなければ待つ（null）
+    // 足した淹れ直しは注文ごとに別々のカードで届く。届いていなければ待つ（null）
     const added = (emergencies: Record<string, string[]>) =>
       buildCaosCards(
         [

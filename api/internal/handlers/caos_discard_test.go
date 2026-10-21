@@ -103,7 +103,7 @@ func TestCaosDiscardRejectsInvalidOnDB(t *testing.T) {
 	if f.cup(t, target).BrewFinishedAt != nil {
 		t.Fatal("rejected operation changed cup")
 	}
-	// 入れ直しの登録後でも、別の端末で状態が変わっていれば断る。
+	// 淹れ直しの登録後でも、別の端末で状態が変わっていれば断る。
 	if code, body := f.addEmergencies(t, target); code != http.StatusCreated {
 		t.Fatalf("add=%d %s", code, body)
 	}

@@ -23,7 +23,7 @@ const ICONS: Record<
   start: { src: startBrewIcon, label: "始める" },
   finish: { src: finishBrewIcon, label: "終える（待機の先頭を始める）" },
   unstart: { src: undoBrewStartIcon, label: "未着手に戻す" },
-  emergency: { src: requestRebrewIcon, label: "緊急（入れ直し）" },
+  emergency: { src: requestRebrewIcon, label: "緊急（淹れ直し）" },
   comment: { src: viewCommentsIcon, label: "コメントを見る" },
   unassign: { src: unassignIcon, label: "未割当に戻す" },
 };

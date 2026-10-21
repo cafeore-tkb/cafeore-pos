@@ -16,7 +16,7 @@ import {
 
 /**
  * 前の注文（今の番号のすぐ前の番号の、キャンセルしていない注文）の、まだ抽出を始めていない 1 杯のカードの商品
- * （splitItemKey）。CaOS で統合できる相手（未割当か待機の、入れ直しでない 1 杯のカード）だけを数える
+ * （splitItemKey）。CaOS で統合できる相手（未割当か待機の、淹れ直しでない 1 杯のカード）だけを数える
  */
 export const previousSingles = (
   orders: readonly WithId<OrderEntity>[],

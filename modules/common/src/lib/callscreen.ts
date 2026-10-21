@@ -40,7 +40,7 @@ export interface CallScreenOrders {
   dripping: CallScreenDripping[];
   /** 注文番号。注文した順（淹れる順） */
   preparing: number[];
-  /** 準備完了でない注文の、抽出中のカード。緊急（入れ直し）のカードは含めない */
+  /** 準備完了でない注文の、抽出中のカード。緊急（淹れ直し）のカードは含めない */
   brewing: CallScreenBrewing[];
 }
 
