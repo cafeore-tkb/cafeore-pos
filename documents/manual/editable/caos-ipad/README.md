@@ -1,5 +1,7 @@
 # Illustratorでの編集
 
+8ページを1つの正規の`.ai`ファイルへまとめるには、同梱の[手順](COMBINE-IN-ILLUSTRATOR.md)に従って`combine-pages.jsx`をIllustratorで実行してください。既に解凍済みの場合は、追加スクリプトだけで同じSVGを使えます。
+
 各ページのSVGをIllustratorで開いてください。本文・見出し・注記は文字として保持し、ひとまとまりの段落は1つのSVG text要素にまとめています。折り返し行はtspanです。画面・カード・アイコンの見本は画像として埋め込んでいます。
 
 完全なNoto Sans JPフォントをインストールしてください。

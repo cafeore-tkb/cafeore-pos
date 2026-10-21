@@ -22,5 +22,26 @@
         "useSortedClasses": "warn"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "include": ["documents/manual/editable/caos-ipad/combine-pages.jsx"],
+      "javascript": {
+        "formatter": {
+          "trailingCommas": "none"
+        }
+      },
+      "linter": {
+        "rules": {
+          "style": {
+            "useTemplate": "off",
+            "noVar": "off"
+          },
+          "correctness": {
+            "noInnerDeclarations": "off"
+          }
+        }
+      }
+    }
+  ]
 }

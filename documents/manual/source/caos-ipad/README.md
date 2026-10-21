@@ -18,6 +18,8 @@
 
 ## Illustratorで編集するとき
 
+[Illustrator統合スクリプト](../../editable/caos-ipad/combine-pages.jsx)と[実行手順](../../editable/caos-ipad/COMBINE-IN-ILLUSTRATOR.md)を追加しました。手元のIllustratorで8枚のSVGを読み込み、8アートボード・ページ別レイヤーの1つのAI書類として保存します。AIファイルをクラウドで作成済みという意味ではありません。
+
 編集用ZIPに、8ページ分のSVGと編集上の注意を入れています。SVGでは段落ごとに1つの`text`要素を使い、折り返し行を`tspan`にまとめています。1文字ずつ別のテキスト要素に分解していません。見出しや注記も本文とは別の要素です。
 
 本文はアウトライン化していません。Illustratorでは完全な **Noto Sans JP** フォントをインストールして開いてください。[Google Fontsの配布元](https://fonts.google.com/noto/specimen/Noto+Sans+JP)から入手できます。同梱・埋め込みのフォントは原稿に必要な499文字に絞ってあり、追加の文章に必要な字形をすべて含むものではありません。フォントのライセンスは[OFL.txt](fonts/OFL.txt)です。
