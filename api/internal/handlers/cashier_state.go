@@ -142,6 +142,7 @@ var menuItemSpec = valueSpec{kind: kindObject, fields: []fieldSpec{
 			{name: "needs_brew", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "senior_only", optional: true, spec: valueSpec{kind: kindBool}},
 			{name: "iced_brew", optional: true, spec: valueSpec{kind: kindBool}},
+			{name: "serve_with_snack", optional: true, spec: valueSpec{kind: kindBool}},
 		}}},
 	}}},
 	{name: "quantity", spec: valueSpec{kind: kindPositiveInt}},

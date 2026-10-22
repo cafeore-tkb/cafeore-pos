@@ -43,7 +43,7 @@ export function ProductBrewTimeCharts({ products }: { products: Products }) {
         <p className="mt-1 text-stone-500 text-xs leading-relaxed">
           対象外 {excluded}
           杯：開始未記録・未提供・抽出対象外・時刻不整合など。未計測を0分では補いません。
-          抽出開始→提供完了には抽出・準備・お渡し待ちを含みます。元のカップの抽出開始記録を使い、入れ直しを別の抽出として合算しません。
+          抽出開始→提供完了には抽出・準備・お渡し待ちを含みます。元のカップの抽出開始記録を使い、淹れ直しを別の抽出として合算しません。
         </p>
       </div>
       {measured.length ? (

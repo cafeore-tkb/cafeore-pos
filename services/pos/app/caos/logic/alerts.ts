@@ -8,7 +8,7 @@ export const FORGOTTEN_BREW_SEC = 120;
 /** 受けてからこれだけ（秒）たっても未割当のカードに、待っている時間の札を付ける */
 const LONG_WAIT_SEC = 300;
 
-/** 長く待っている未割当のカードなら、受けてから（入れ直しは入れ直してから）の分。ほかは null。統合したカードはいちばん早いカップから数える（入れ直しは入れ直しどうしでしか統合しないので、注文と入れ直しの時刻は混ざらない） */
+/** 長く待っている未割当のカードなら、受けてから（淹れ直しは淹れ直してから）の分。ほかは null。統合したカードは通常・淹れ直しの各カップの orderedAt のうち、いちばん早い時刻から数える */
 export const longWaitMinutes = (card: CaosCard, nowMs: number) => {
   if (card.status !== "unassigned") return null;
   const orderedMs = Math.min(
@@ -28,7 +28,7 @@ export interface WaitingOrder {
   late: boolean;
 }
 
-// cards のカップの注文を、待ちの長い順に 1 つずつ（受けた時刻はカップの orderedAt。入れ直しは入れ直した時刻）
+// cards のカップの注文を、待ちの長い順に 1 つずつ（受けた時刻はカップの orderedAt。淹れ直しは淹れ直した時刻）
 const waitingOrders = (cards: readonly CaosCard[], nowMs: number) => {
   const found = new Map<string, WaitingOrder>();
   for (const cup of cards.flatMap((card) => card.cups)) {

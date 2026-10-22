@@ -17,8 +17,8 @@ import { jstDate } from "./jst";
 // カードの状態は時刻で決まる（終了あり＝終わり、開始あり＝抽出中、どちらも無くドリッパーあり＝待機、ドリッパーなし＝未割当）。
 // ドリッパーに置いたカードは、提供の画面でカップを準備完了（提供可能）・提供済みにしても終わらない（終えるのは CaOS の「次へ」だけ）。
 // 準備完了・提供済みのカップを除くのは、まだドリッパーに置いていない未割当だけ。
-// 緊急（入れ直し。カップの emergencies）も同じ列を持ち、カップと同じ決まりでカードに入る（書き込みの cup_ids には入れ直しの id を入れる）。
-// 入れ直しは準備完了・提供の時刻を持たない（準備完了のカップも入れ直すので）。未割当の入れ直しは未割当のいちばん上に出す。
+// 緊急（淹れ直し。カップの emergencies）も同じ列を持ち、カップと同じ決まりでカードに入る（書き込みの cup_ids には淹れ直しの id を入れる）。
+// 淹れ直しは準備完了・提供の時刻を持たない（準備完了のカップも淹れ直すので）。未割当の淹れ直しは未割当のいちばん上に出す。
 // 指名はレジで選んだドリッパーの番号（注文の明細の dripper）。番号のあるカップはその番号のドリッパーにしか置けない。
 // 1 枚のカードに違う番号のカップは入れない（指名なしのカップは、どの番号のカップとも同じカードにできる。カードの指名はその番号）。
 // 番号の無い自由記述（assignee）だけの古い明細は指名なし。
@@ -75,21 +75,21 @@ export interface CaosOrderInput {
   cups: readonly Cup[];
 }
 
-/** カードの中の 1 杯（カップか、その入れ直し） */
+/** カードの中の 1 杯（カップか、その淹れ直し） */
 export interface CaosBoardCup {
-  /** 書き込みの cup_ids に入れる ID（カップの ID か、入れ直しの ID） */
+  /** 書き込みの cup_ids に入れる ID（カップの ID か、淹れ直しの ID） */
   id: string;
-  /** カップの ID（入れ直しなら、入れ直したカップ） */
+  /** カップの ID（淹れ直しなら、淹れ直したカップ） */
   cupId: string;
-  /** 緊急（入れ直し） */
+  /** 緊急（淹れ直し） */
   emergency: boolean;
-  /** 入れ直す理由（カップと、理由の無い入れ直しは空） */
+  /** 淹れ直す理由（カップと、理由の無い淹れ直しは空） */
   emergencyReason: string;
   orderId: string;
   orderNo: number;
   /** 注文の中の並び（0 始まり） */
   position: number;
-  /** 受けた時刻（注文の時刻。入れ直しなら入れ直した時刻） */
+  /** 受けた時刻（注文の時刻。淹れ直しなら淹れ直した時刻） */
   orderedAt: Date;
   item: Cup["item"];
   /** 指名のドリッパーの番号（明細の dripper。1〜6）。指名なし・自由記述だけの古い明細は null */
@@ -120,7 +120,7 @@ export interface CaosCard {
   nominatedDripper: number | null;
   /** 上級生のみ（cupSeniorOnly）。上級生だけが淹れる */
   seniorOnly: boolean;
-  /** 緊急（入れ直し）が入っている */
+  /** 緊急（淹れ直し）が入っている */
   emergency: boolean;
   /** 今のカップの値（書き込みの before に送る） */
   state: CaosCupState;
@@ -250,8 +250,8 @@ export const caosDayOrders = <O extends Pick<CaosOrderInput, "createdAt">>(
  * 注文の一覧から、その日（day。日本時間の YYYY-MM-DD、jstDate）のカードを組み立てる。day を省くと日では絞らない（練習の盤面）。
  *   - ドリッパーに置いたカード：同じ dripId のカップ。状態は時刻で決まる（API の「次へ」の splitCaosLane と同じ決まり）
  *   - 統合した未割当：dripId はあるがドリッパーの無いカップ。準備完了のカップは除く
- *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名の番号ごと・入れ直しかで分け、1 枚は最大 2 杯
- * 並びは、未割当（入れ直し、注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
+ *   - 未割当：まだカードに入っていない、抽出が要り準備完了でないカップを、注文ごと・商品ごと・指名の番号ごと・淹れ直しかで分け、1 枚は最大 2 杯
+ * 並びは、未割当（淹れ直し、注文番号の順）のあとに、ドリッパーの順に 終わり・抽出中・待機（順番の順）。
  * 抽出が要らないカップ（cupNeedsBrew が false）は、列の値があっても出さない。
  */
 export const buildCaosCards = (
@@ -508,7 +508,7 @@ const sameItem = (a: CaosBoardCup, b: CaosBoardCup) =>
 
 /**
  * card を into のカードに入れられるか（1 杯 + 1 杯 = 2 杯の同時抽出）。同じ商品の 1 杯どうしで、指名の番号がぶつからない
- * （どちらかが指名なし、または同じ番号）。緊急（入れ直し）は入れ直しどうしだけ（緊急でないカップと同じカードにしない。サーバーも断る）。
+ * （どちらかが指名なし、または同じ番号）。通常と緊急（淹れ直し）も統合でき、緊急状態はカップごとに保持する。
  *   - card（動かすほう）は未割当か待機。into（入るほう）は未割当・待機・抽出中（抽出を始めたカードにも足せる。終わったカードには入れない）
  *   - into がドリッパーにあれば、card もそのドリッパーに置ける（指名）
  */
@@ -518,7 +518,6 @@ const mergeableInto = (card: CaosCard, into: CaosCard) =>
   into.status !== "done" &&
   card.cups.length === 1 &&
   into.cups.length === 1 &&
-  card.emergency === into.emergency &&
   sameItem(card.cups[0], into.cups[0]) &&
   (into.nominatedDripper === null ||
     caosDripperAllowed(card, into.nominatedDripper)) &&
@@ -587,8 +586,8 @@ export const mergeWrites = (
 };
 
 /**
- * 入れ直すカップ（cupIds。入れ直したカップの ID）が、盤面のどれかのカードのカップの組と同じで 2 杯以上か
- * （統合したカード（#011+#012 など）から全部の杯を入れ直す）。そのときは、足した入れ直しも元のカードと同じ組み合わせの 1 枚にまとめる（caosRebrewMergePair）
+ * 淹れ直すカップ（cupIds。淹れ直したカップの ID）が、盤面のどれかのカードのカップの組と同じで 2 杯以上か
+ * （統合したカード（#011+#012 など）から全部の杯を淹れ直す）。そのときは、足した淹れ直しも元のカードと同じ組み合わせの 1 枚にまとめる（caosRebrewMergePair）
  */
 export const caosRebrewsTogether = (
   cards: readonly CaosCard[],
@@ -607,13 +606,13 @@ export const caosRebrewsTogether = (
   );
 };
 
-/** カップ（入れ直しも。id は書き込みの cup_ids に入れる ID）の入ったカード。盤面にまだ無ければ undefined */
+/** カップ（淹れ直しも。id は書き込みの cup_ids に入れる ID）の入ったカード。盤面にまだ無ければ undefined */
 export const caosCardOfCup = (cards: readonly CaosCard[], id: string) =>
   cards.find((card) => card.cups.some((cup) => cup.id === id));
 
 /**
- * 足した入れ直し（ids）を 1 枚のカード（同じ dripId。未割当のまま）にまとめるときの、統合する 2 枚（caosMergePair の向き。書き込みは mergeWrites）。
- * 足した入れ直しがまだ盤面に届いていなければ "arriving"（届くのを待つ）。もう 1 枚にまとまっている（同じ注文の同じ商品）・
+ * 足した淹れ直し（ids）を 1 枚のカード（同じ dripId。未割当のまま）にまとめるときの、統合する 2 枚（caosMergePair の向き。書き込みは mergeWrites）。
+ * 足した淹れ直しがまだ盤面に届いていなければ "arriving"（届くのを待つ）。もう 1 枚にまとまっている（同じ注文の同じ商品）・
  * 未割当の 1 杯のカードでなくなった（届くまでにほかの端末が動かした）・統合できないときは null（まとめない）
  */
 export const caosRebrewMergePair = (
@@ -697,7 +696,7 @@ export const moveQueueWrites = (
 /** 抽出を始めてから「次へ」を押せるようになるまでの秒（二度押しや、続けて押すのを防ぐ。サーバーも同じ秒で断る） */
 export const CAOS_NEXT_COOLDOWN_SEC = 10;
 
-/** 全杯が提供済みなら、抽出の完了忘れをすぐ修正できる。入れ直しは提供時刻を持たない。 */
+/** 全杯が提供済みなら、抽出の完了忘れをすぐ修正できる。淹れ直しは提供時刻を持たない。 */
 export const caosCardServed = (
   card: Partial<Pick<CaosCard, "cups">> | undefined,
 ) =>

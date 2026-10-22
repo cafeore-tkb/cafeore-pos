@@ -14,7 +14,7 @@ import {
 
 type RecallListener = (orderId: string) => void;
 
-/** 代理印刷の知らせ。頼まれた（requested）・刷れた（done）・緊急が取り消された（cancelled。その入れ直しのシールの頼みも消える） */
+/** 代理印刷の知らせ。頼まれた（requested）・刷れた（done）・緊急が取り消された（cancelled。その淹れ直しのシールの頼みも消える） */
 export type LabelPrintEvent =
   | { type: "requested"; request: LabelPrintRequest }
   | { type: "done" | "cancelled"; id: string };

@@ -3,6 +3,7 @@ import {
   type ColorSetting,
   type StockResource,
   canMergeCards,
+  caosDiscardCandidates,
   resolveItemColor,
 } from "@cafeore/common";
 import { type BeanIndex, cardBean } from "./beans";
@@ -18,7 +19,7 @@ import {
 
 const unique = <T>(values: T[]) => Array.from(new Set(values));
 
-// 入れ直し（緊急）の理由（重ねずに「・」でつなぐ。無ければ空）
+// 淹れ直し（緊急）の理由（重ねずに「・」でつなぐ。無ければ空）
 const cupsEmergencyReasons = (cups: CaosCard["cups"]) =>
   unique(cups.flatMap((cup) => cup.emergencyReason || [])).join("・");
 
@@ -92,7 +93,7 @@ export const cardNominee = (card: CaosCard) =>
 
 /**
  * ドリッパーに置いた（待機・抽出中の）カードの、提供の画面で提供済みにしたカップの札（全部なら「提供済」、一部なら「提供済 1/2」）。
- * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。入れ直しは提供を持たない。無ければ空
+ * 提供済みでもカードは「次へ」まで盤面に残るので、見分けられるように付ける。淹れ直しは提供を持たない。無ければ空
  */
 export const cardServedLabel = (card: CaosCard) => {
   // 未割当には準備完了・提供済みのカップは入らない
@@ -104,7 +105,7 @@ export const cardServedLabel = (card: CaosCard) => {
     : `提供済 ${served}/${card.cups.length}`;
 };
 
-/** 入れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
+/** 淹れ直し（緊急）のカードの理由（重ねずに「・」でつなぐ。無ければ空） */
 export const emergencyReasons = (card: CaosCard) =>
   cupsEmergencyReasons(card.cups);
 
@@ -143,6 +144,9 @@ export interface CardSplit {
 
 /** カードの見せ方（色の設定の色・アイテムの在庫の豆と、分けた注文） */
 export interface CardLook {
+  /** 淹れ直しを登録した元の抽出。 */
+  discardCandidates?: CaosCard["cups"];
+  discard?: (ids: string[]) => boolean;
   /** 背景色（#RRGGBB）。商品の色の設定（画面 master。指名の番号のあるカードは画面 nominated、無ければ master。商品 → 種類の順）。無ければ白 */
   color?: string;
   /** 1 注文だけのカードで、注文が 2 枚以上に分かれているときだけ（ほかの注文と統合したカードに入った分も 1 枚と数える） */
@@ -172,30 +176,36 @@ export const cardLooks = (
   beanIndex: BeanIndex,
   comments: CommentsByOrder | null = null,
   offSenior: (card: CaosCard) => boolean = () => false,
+  onDiscard?: (card: CaosCard, ids: string[]) => boolean,
 ): CardLooks => {
-  // 注文ごとに、その注文のカップが入ったカード（統合したカードも）。入れ直しのカードは注文の分け方に入れない
+  // 注文ごとに、通常のカップが入ったカード（混在・統合したカードも）。淹れ直しの杯だけは数えない。
   const byOrder = new Map<string, CaosCard[]>();
   for (const card of cards) {
-    if (card.emergency) continue;
-    for (const orderId of new Set(card.cups.map((cup) => cup.orderId)))
+    const normal = card.cups.filter((cup) => !cup.emergency);
+    for (const orderId of new Set(normal.map((cup) => cup.orderId)))
       byOrder.set(orderId, [...(byOrder.get(orderId) ?? []), card]);
   }
   const splitOf = (card: CaosCard): CardSplit | undefined => {
-    if (card.emergency || cardOrderNos(card).length > 1) return undefined;
-    const { orderId } = card.cups[0];
+    const normal = card.cups.filter((cup) => !cup.emergency);
+    if (normal.length === 0 || cardOrderNos(card).length > 1) return undefined;
+    const { orderId } = normal[0];
     const parts = byOrder.get(orderId) ?? [];
     if (parts.length <= 1) return undefined;
     return {
       total: parts.length,
       cups: parts
         .flatMap((part) => part.cups)
-        .filter((cup) => cup.orderId === orderId).length,
+        .filter((cup) => !cup.emergency && cup.orderId === orderId).length,
     };
   };
   return new Map(
     cards.map((card) => [
       card.key,
       {
+        discardCandidates: caosDiscardCandidates(cards, card),
+        discard: onDiscard
+          ? (ids: string[]) => onDiscard(card, ids)
+          : undefined,
         color: cardColor(card, settings),
         split: splitOf(card),
         bean: cardBean(card, beanIndex),
@@ -217,7 +227,7 @@ export const groupByOrder = (cards: readonly CaosCard[]) => {
 };
 
 /**
- * 未割当のカードを注文番号の行にまとめる（管制盤 A の横帯・C の注文の列）。入れ直し（緊急）の行を先に、ほかは注文番号の順
+ * 未割当のカードを注文番号の行にまとめる（管制盤 A の横帯・C の注文の列）。淹れ直し（緊急）の行を先に、ほかは注文番号の順
  * （buildCaosCards の未割当の並びと同じ）。統合したカードはいちばん小さい注文番号の行に置く。行の中は注文の中の並び
  */
 export const unassignedRows = (cards: readonly CaosCard[]) => {

@@ -45,6 +45,12 @@ const (
 	Printed LabelPrintClaimResponseStatus = "printed"
 )
 
+// Defines values for MasterStateExpectedType.
+const (
+	ExpectedOperational MasterStateExpectedType = "operational"
+	ExpectedStop        MasterStateExpectedType = "stop"
+)
+
 // Defines values for MasterStateUpdateRequestType.
 const (
 	Operational MasterStateUpdateRequestType = "operational"
@@ -190,7 +196,7 @@ type CaosCupsWrite struct {
 	Before CaosCupState         `json:"before"`
 	CupIds []openapi_types.UUID `json:"cup_ids"`
 
-	// MergeInto 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+	// MergeInto 統合元の書き込みに付ける統合先の cup または淹れ直しの ID。統合の向きを履歴に残す。
 	MergeInto *openapi_types.UUID `json:"merge_into,omitempty"`
 }
 
@@ -205,6 +211,23 @@ type CaosCupsWriteRequest struct {
 	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
 	Press  *CaosPress      `json:"press,omitempty"`
 	Writes []CaosCupsWrite `json:"writes"`
+}
+
+// CaosDiscardRequest 元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。
+type CaosDiscardRequest struct {
+	// Before カップの今の CaOS の値（OrderCupResponse の同じ名前の列をそのまま）。全部 null なら未割当
+	Before CaosCupState         `json:"before"`
+	CupIds []openapi_types.UUID `json:"cup_ids"`
+	DripId openapi_types.UUID   `json:"drip_id"`
+
+	// Press 操作を押した時刻（at）と、それを送った時刻（sent_at）。どちらも端末の時計の、エポックのミリ秒。
+	// 端末に残して後ろで送る操作（電波が切れていたあいだに押したもの）も、抽出の開始・終了を押した時刻で付けるため。サーバーは次のように時刻を決める：
+	// - 送った時刻がサーバーの今より 5 秒より後か、30 秒より前なら、端末の時計がずれているとみて、押した時刻をその差だけずらす（サーバーの今 −（送った時刻 − 押した時刻））。
+	//   そうでなければ押した時刻のまま（30 秒までは、通信にかかった長さかもしれないので）
+	// - サーバーの今より後ならサーバーの今。今日（日本時間）より前ならサーバーの今
+	// - 同じドリッパーで前の抽出を終えた時刻より前なら、その時刻
+	// 省略すると（押した時刻を送らない古い画面）、サーバーの今
+	Press *CaosPress `json:"press,omitempty"`
 }
 
 // CaosHumanLogEntry defines model for CaosHumanLogEntry.
@@ -420,20 +443,20 @@ type CommentResponse struct {
 
 // CupEmergencyCreateRequest defines model for CupEmergencyCreateRequest.
 type CupEmergencyCreateRequest struct {
-	// OrderCupIds 入れ直すカップ（1 杯につき入れ直しを 1 つ足す）
+	// OrderCupIds 淹れ直すカップ（1 杯につき淹れ直しを 1 つ足す）
 	OrderCupIds []openapi_types.UUID `json:"order_cup_ids"`
 
-	// Reason 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける
+	// Reason 淹れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の淹れ直しに付ける
 	Reason *string `json:"reason,omitempty"`
 }
 
 // CupEmergencyCreateResponse defines model for CupEmergencyCreateResponse.
 type CupEmergencyCreateResponse struct {
-	// Ids 足した入れ直しの id（order_cup_ids と同じ順）
+	// Ids 足した淹れ直しの id（order_cup_ids と同じ順）
 	Ids []openapi_types.UUID `json:"ids"`
 }
 
-// CupEmergencyResponse 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
+// CupEmergencyResponse 緊急（淹れ直し）1 回。CaOS の淹れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ）
 type CupEmergencyResponse struct {
 	BrewFinishedAt  *time.Time          `json:"brew_finished_at"`
 	BrewStartedAt   *time.Time          `json:"brew_started_at"`
@@ -443,7 +466,7 @@ type CupEmergencyResponse struct {
 	DripperPosition *int                `json:"dripper_position"`
 	Id              openapi_types.UUID  `json:"id"`
 
-	// Reason 入れ直す理由（足したときに書いたもの。無ければ空）
+	// Reason 淹れ直す理由（足したときに書いたもの。無ければ空）
 	Reason string `json:"reason"`
 }
 
@@ -463,7 +486,7 @@ type InventoryRemindResponse struct {
 
 // InventoryStatus defines model for InventoryStatus.
 type InventoryStatus struct {
-	// Consumed counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
+	// Consumed counted_at より後に使った量（注文と淹れ直し。使った時刻の決まりは GET /api/inventory）
 	Consumed float64 `json:"consumed"`
 
 	// CountedAt 最後の棚卸し。無ければ最初の入荷
@@ -508,6 +531,9 @@ type ItemTypeCreateRequest struct {
 	// IcedBrew 省略したら false。needs_brew が false のときに true は 400
 	IcedBrew *bool `json:"iced_brew,omitempty"`
 
+	// ServeWithSnack お菓子をつける。省略したら false
+	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
+
 	// MakesCup 省略したら true
 	MakesCup *bool  `json:"makes_cup,omitempty"`
 	Name     string `json:"name"`
@@ -527,6 +553,9 @@ type ItemTypeResponse struct {
 	IcedBrew bool               `json:"iced_brew"`
 	Id       openapi_types.UUID `json:"id"`
 
+	// ServeWithSnack この種類のアイテムにお菓子をつける。
+	ServeWithSnack bool `json:"serve_with_snack"`
+
 	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
 	MakesCup bool   `json:"makes_cup"`
 	Name     string `json:"name"`
@@ -545,6 +574,9 @@ type ItemTypeUpdateRequest struct {
 	// IcedBrew 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
 	IcedBrew *bool              `json:"iced_brew,omitempty"`
 	Id       openapi_types.UUID `json:"id"`
+
+	// ServeWithSnack お菓子をつける。省略したら今の値のまま
+	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
 
 	// MakesCup 省略したら今の値のまま
 	MakesCup *bool  `json:"makes_cup,omitempty"`
@@ -592,7 +624,7 @@ type LabelPrintJob struct {
 
 // LabelPrintRequestCreateRequest defines model for LabelPrintRequestCreateRequest.
 type LabelPrintRequestCreateRequest struct {
-	// Id 頼みの id（入れ直しの id）
+	// Id 頼みの id（淹れ直しの id）
 	Id openapi_types.UUID `json:"id"`
 
 	// Job シール（1 件分）の印刷データ。画面の PrintJob（services/pos/app/label/document.ts）をそのまま JSON にしたもの。
@@ -611,6 +643,15 @@ type LabelPrintRequestResponse struct {
 	Job LabelPrintJob `json:"job"`
 }
 
+// MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
+type MasterStateExpected struct {
+	CreatedAt *time.Time              `json:"created_at"`
+	Type      MasterStateExpectedType `json:"type"`
+}
+
+// MasterStateExpectedType defines model for MasterStateExpected.Type.
+type MasterStateExpectedType string
+
 // MasterStateResponse defines model for MasterStateResponse.
 type MasterStateResponse struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -619,7 +660,9 @@ type MasterStateResponse struct {
 
 // MasterStateUpdateRequest defines model for MasterStateUpdateRequest.
 type MasterStateUpdateRequest struct {
-	Type MasterStateUpdateRequestType `json:"type"`
+	// Expected 確認した受付状態。履歴なしは type=operational、created_at=null。
+	Expected *MasterStateExpected         `json:"expected,omitempty"`
+	Type     MasterStateUpdateRequestType `json:"type"`
 }
 
 // MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
@@ -752,7 +795,7 @@ type OrderCupResponse struct {
 	// DripperPosition CaOS のドリッパーの中の順番（小さいほど先）。サーバーが決める（途中に入れると後ろを +1 する。抜けた番号は詰めない）
 	DripperPosition *int `json:"dripper_position"`
 
-	// Emergencies このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない
+	// Emergencies このカップの緊急（淹れ直し）。足した順。CaOS 以外の画面は読まない
 	Emergencies []CupEmergencyResponse `json:"emergencies"`
 	Id          openapi_types.UUID     `json:"id"`
 	Item        ItemResponse           `json:"item"`
@@ -1253,6 +1296,9 @@ type ReceiveSquareWebhookJSONBody = map[string]interface{}
 
 // WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
 type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
+
+// DiscardCaosCupsJSONRequestBody defines body for DiscardCaosCups for application/json ContentType.
+type DiscardCaosCupsJSONRequestBody = CaosDiscardRequest
 
 // AdvanceCaosDripperJSONRequestBody defines body for AdvanceCaosDripper for application/json ContentType.
 type AdvanceCaosDripperJSONRequestBody = CaosNextRequest

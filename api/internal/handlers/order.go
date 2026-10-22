@@ -171,7 +171,7 @@ func loadOrderMenus(db *gorm.DB, orderID uuid.UUID, requests []models.MenuInfoCr
 }
 
 // アイテム 1 つで減る在庫対象：そのアイテムの在庫と、カップを作る（種類の makes_cup。order_cups と同じ isCupItem）アイテムなら
-// その種類を使うカップ。注文の明細と緊急（入れ直し）で使う。
+// その種類を使うカップ。注文の明細と緊急（淹れ直し）で使う。
 func itemStockResources(item models.Item, resources []models.StockResource) []models.StockResource {
 	var used []models.StockResource
 	for _, r := range resources {
@@ -784,7 +784,7 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 				return err
 			}
 		}
-		// 外した明細のカップの入れ直しも消す
+		// 外した明細のカップの淹れ直しも消す
 		var removed []uuid.UUID
 		for _, cup := range beforeCups {
 			if !slices.ContainsFunc(orderCups, func(kept models.OrderCup) bool { return kept.ID == cup.ID }) {

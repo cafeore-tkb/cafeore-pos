@@ -9,6 +9,7 @@ import {
   canMergeCards,
   caosLane,
   mergeWrites,
+  splitWrites,
   unassignWrites,
   unstartWrites,
 } from "./caos-board";
@@ -104,6 +105,11 @@ const assign = (
     assignWrites(cardsOf(orders), card, dripper, { place, newId }),
     now,
   );
+
+const requireCard = (card: CaosCard | undefined) => {
+  if (!card) throw new Error("expected card");
+  return card;
+};
 
 const UNPLACED: CaosCupsWrite["before"] = {
   dripper: null,
@@ -685,7 +691,7 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     return added;
   };
 
-  test("足した入れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで入れ直したカップは準備完了にしない", () => {
+  test("足した淹れ直しは未割当のカードになり、割当・抽出・次へはカップと同じ。次へで淹れ直したカップは準備完了にしない", () => {
     const initial = ordersOf([hot], [hot]);
     const cupId = initial[0].cups[0].id;
     const added = addEmergencies(initial, [cupId], "  こぼした ", at(5));
@@ -720,34 +726,118 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     expect(advanced.orders[0].cups[0].readyAt).toBeNull();
   });
 
-  test("入れ直しは入れ直しどうしだけ統合でき、緊急でないカップと同じカードにはできない", () => {
-    const initial = ordersOf([hot], [hot]);
-    const { orders, ids } = addEmergencies(
-      initial,
-      [initial[0].cups[0].id],
-      "",
-      at(0),
-    );
-    const write = (cupIds: string[]): CaosCupsWrite => ({
-      cup_ids: cupIds,
-      before: UNPLACED,
-      after: {
-        dripper: null,
-        drip_id: "m",
-        insert_before: null,
-        start_brew: false,
-      },
-    });
-    expect(
-      applyCaosPracticeWrites(
-        orders,
-        [write([ids[0], orders[1].cups[0].id])],
+  test.each([false, true])(
+    "通常＋緊急を未割当・待機で統合し、緊急だけ取り消せる（待機=%s）",
+    (queued) => {
+      const initial = ordersOf([hot], [hot]);
+      let { orders, ids } = addEmergencies(
+        initial,
+        [initial[0].cups[0].id],
+        "抽出ミス",
         at(0),
-      ).error,
-    ).toBe("緊急（入れ直し）と緊急でないカップは同じカードにできません");
-  });
+      );
+      const normalId = orders[1].cups[0].id;
 
-  test("取り消せるのはまだ抽出を始めていない入れ直しだけ。抽出の要らないカップ・無いカップには足せない", () => {
+      if (queued)
+        orders = apply(
+          orders,
+          {
+            writes: [
+              {
+                cup_ids: [normalId],
+                before: UNPLACED,
+                after: {
+                  dripper: 2,
+                  drip_id: newId(),
+                  insert_before: null,
+                  start_brew: false,
+                },
+              },
+            ],
+          },
+          at(0),
+        );
+      const normal = requireCard(
+        cardsOf(orders).find((c) => c.cups.some((cup) => cup.id === normalId)),
+      );
+      const redo = requireCard(unassigned(orders).find((c) => c.emergency));
+      orders = apply(orders, mergeWrites(redo, normal, newId), at(1));
+      const mixed = requireCard(
+        cardsOf(orders).find((c) => c.cups.length === 2),
+      );
+      expect(mixed.emergency).toBe(true);
+      expect(mixed.cups.map((c) => c.id).sort()).toEqual(
+        [ids[0], normalId].sort(),
+      );
+      expect(mixed.cups.find((c) => c.emergency)?.emergencyReason).toBe(
+        "抽出ミス",
+      );
+      // 分割しても通常・緊急それぞれのIDと状態を保持する。
+      const split = apply(orders, splitWrites(mixed, ids[0]), at(2));
+      expect(
+        cardsOf(split).filter((c) =>
+          c.cups.some((cup) => [ids[0], normalId].includes(cup.id)),
+        ),
+      ).toHaveLength(2);
+      const before = orders[1].cups[0];
+      const cancelled = cancelCaosPracticeEmergency(orders, ids[0]);
+      if (cancelled.error !== undefined) throw new Error(cancelled.error);
+      expect(cancelled.orders[1].cups[0]).toEqual(before);
+      expect(
+        cardsOf(cancelled.orders).find((c) =>
+          c.cups.some((cup) => cup.id === normalId),
+        )?.emergency,
+      ).toBe(false);
+    },
+  );
+
+  test.each([false, true])(
+    "抽出中の通常＋緊急を統合し、一緒に完了できる（緊急が先=%s）",
+    (emergencyFirst) => {
+      const initial = ordersOf([hot], [hot]);
+      let { orders, ids } = addEmergencies(
+        initial,
+        [initial[0].cups[0].id],
+        "異物混入",
+        at(0),
+      );
+      const normalId = orders[1].cups[0].id;
+      const firstId = emergencyFirst ? ids[0] : normalId;
+      const secondId = emergencyFirst ? normalId : ids[0];
+      const first = requireCard(
+        unassigned(orders).find((c) => c.cups[0].id === firstId),
+      );
+      orders = assign(orders, first, 2, at(0));
+      const brewing = requireCard(
+        cardsOf(orders).find((c) => c.status === "brewing"),
+      );
+      const joining = requireCard(
+        unassigned(orders).find((c) => c.cups[0].id === secondId),
+      );
+      orders = apply(orders, mergeWrites(joining, brewing, newId), at(10));
+      const mixed = requireCard(
+        cardsOf(orders).find((c) => c.cups.length === 2),
+      );
+      expect(mixed.startedAt).toEqual(at(0));
+      expect(cancelCaosPracticeEmergency(orders, ids[0]).error).toBe(
+        "抽出を始めた淹れ直しは取り消せません",
+      );
+      const finished = advanceCaosPracticeDripper(
+        orders,
+        2,
+        mixed.dripId,
+        at(310),
+      );
+      if (finished.error !== undefined) throw new Error(finished.error);
+      expect(finished.orders[1].cups[0].brewFinishedAt).toEqual(at(310));
+      expect(finished.orders[0].cups[0].emergencies[0].brewFinishedAt).toEqual(
+        at(310),
+      );
+      expect(finished.orders[0].cups[0].brewFinishedAt).toBeNull();
+    },
+  );
+
+  test("取り消せるのはまだ抽出を始めていない淹れ直しだけ。抽出の要らないカップ・無いカップには足せない", () => {
     const initial = ordersOf([hot], [milk]);
     const { orders, ids } = addEmergencies(
       initial,
@@ -761,18 +851,18 @@ describe("[unit] CaOS の練習の盤面の緊急（本番の API と同じ決�
     expect(orders[0].cups[0].emergencies).toHaveLength(1);
     expect(
       cancelCaosPracticeEmergency(cancelled.orders, ids[0]).error,
-    ).toContain("入れ直しが見つかりません");
+    ).toContain("淹れ直しが見つかりません");
 
     const [card] = unassigned(orders).filter((c) => c.emergency);
     const brewing = assign(orders, card, 1, at(0));
     expect(cancelCaosPracticeEmergency(brewing, ids[0]).error).toBe(
-      "抽出を始めた入れ直しは取り消せません",
+      "抽出を始めた淹れ直しは取り消せません",
     );
 
     const add = (cupIds: string[], reason = "") =>
       addCaosPracticeEmergencies(initial, cupIds, reason, at(0), newId);
     expect(add([initial[1].cups[0].id])).toStrictEqual({
-      error: "抽出の要らないカップ（テストミルク）は入れ直せません",
+      error: "抽出の要らないカップ（テストミルク）は淹れ直せません",
     });
     expect(add(["missing"])).toHaveProperty("error");
     expect(add([])).toHaveProperty("error");

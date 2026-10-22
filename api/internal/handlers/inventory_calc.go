@@ -21,7 +21,7 @@ type stockSnapshot struct {
 	CountedQuantity *float64
 	// 基準点以降の入荷・調整（棚卸しが無いときは最初の入荷も含む）
 	Received float64
-	// 基準点より後に使った量と回数（注文と入れ直し。使った時刻の決まりは Inventory.consumption）
+	// 基準点より後に使った量と回数（注文と淹れ直し。使った時刻の決まりは Inventory.consumption）
 	Consumed         float64
 	Servings         int
 	ServingsLastHour int

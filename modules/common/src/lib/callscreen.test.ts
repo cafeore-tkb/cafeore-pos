@@ -21,6 +21,7 @@ const itemType = (
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  serve_with_snack: false,
   ...flags,
 });
 const blend = {
@@ -195,7 +196,7 @@ describe("[unit] 呼び出し画面の抽出中のカード（ドリップの案
     expect(cards.find((card) => card.dripper === 2)?.key).toBe(`${dripId}@2`);
   });
 
-  test("緊急（入れ直し）のカードは入れない", () => {
+  test("緊急（淹れ直し）のカードは入れない", () => {
     const emergency = {
       id: "emergency-1",
       createdAt: T0,

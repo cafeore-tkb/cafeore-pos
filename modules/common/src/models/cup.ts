@@ -2,13 +2,13 @@ import { z } from "zod";
 import { itemSchema } from "./item";
 
 /**
- * カップの緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は Cup の同じ名前の列と同じ）。
- * 足すのは POST /api/cup-emergencies。読み方は lib/caos-board.ts（入れ直しもカップと同じくカードに入る）
+ * カップの緊急（淹れ直し）1 回。CaOS の淹れ直しのカードの列（意味は Cup の同じ名前の列と同じ）。
+ * 足すのは POST /api/cup-emergencies。読み方は lib/caos-board.ts（淹れ直しもカップと同じくカードに入る）
  */
 export const cupEmergencySchema = z.object({
   id: z.string(),
   createdAt: z.date(),
-  /** 入れ直す理由（無ければ空） */
+  /** 淹れ直す理由（無ければ空） */
   reason: z.string(),
   dripper: z.number().int().nullable(),
   dripperPosition: z.number().int().nullable(),
@@ -43,7 +43,7 @@ export const cupSchema = z.object({
   brewStartedAt: z.date().nullable(),
   /** 抽出を終えた時刻 */
   brewFinishedAt: z.date().nullable(),
-  /** 緊急（入れ直し）。足した順 */
+  /** 緊急（淹れ直し）。足した順 */
   emergencies: z.array(cupEmergencySchema),
 });
 

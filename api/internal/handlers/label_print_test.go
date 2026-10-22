@@ -29,7 +29,7 @@ func labelPrintPath(id uuid.UUID, action string) string {
 	return "/api/label-print-requests/" + id.String() + "/" + action
 }
 
-// 頼める入れ直し（代理印刷の頼みの id）を DB に入れる。カップ・注文は見ないので入れない
+// 頼める淹れ直し（代理印刷の頼みの id）を DB に入れる。カップ・注文は見ないので入れない
 func (a *testAPI) seedEmergency() uuid.UUID {
 	a.t.Helper()
 	row := models.CupEmergency{ID: uuid.New(), OrderCupID: uuid.New(), CreatedAt: time.Now()}

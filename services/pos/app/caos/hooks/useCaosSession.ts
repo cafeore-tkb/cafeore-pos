@@ -16,6 +16,7 @@ import {
   caosNextLocked,
   caosRebrewMergePair,
   caosRebrewsTogether,
+  caosStateJSON,
   dripperLabel,
   jstClock,
   jstDate,
@@ -77,10 +78,10 @@ const newDripId = () => crypto.randomUUID();
 // 押したカードが、もう盤面に無いとき（ほかの端末で動いた・注文が消えた）
 const NOT_FOUND = "カードが見つかりません";
 
-// 緊急（入れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
-// 足したら入れ直しの id、取り消したら true を返し、断られたら null・false。label は「直前の操作」に出す操作の名前
+// 緊急（淹れ直し）を足す・取り消す（本番は API と印刷、実データテストは練習の盤面の中だけ）。
+// 足したら淹れ直しの id、取り消したら true を返し、断られたら null・false。label は「直前の操作」に出す操作の名前
 type EmergencyOps = {
-  /** 番号から入れ直すカップを選ぶ注文 */
+  /** 番号から淹れ直すカップを選ぶ注文 */
   orders: readonly CaosOrderInput[];
   add: (
     cups: EmergencyCup<CaosOrderInput>[],
@@ -131,7 +132,7 @@ export const useCaosSession = () => {
   const { lanes: people } = useCaosLanes();
   const { colorSettings } = useColorSettings();
   const { beanIndex, ...beanStock } = useBeanInventory();
-  // 緊急（入れ直し）と、そのシールを刷るこの端末のプリンター
+  // 緊急（淹れ直し）と、そのシールを刷るこの端末のプリンター
   const { printer: labelPrinter, addEmergency } = useCupEmergency(caosLog);
   useCaosStateLog("printer.state.changed", {
     status: labelPrinter.status,
@@ -176,8 +177,28 @@ export const useCaosSession = () => {
         comments,
         // 練習には担当者がいないので出さない
         (card) => !testing && seniorOnlyOffSenior(card, people),
+        (card, ids) => {
+          const ok = source.discardCups(
+            {
+              cup_ids: ids,
+              before: caosStateJSON(card.state),
+              drip_id: newDripId(),
+            },
+            `破棄 ${orderLabel(card)}`,
+          );
+          if (ok) toast("元の抽出の破棄を受け付けました");
+          return ok;
+        },
       ),
-    [cards, colorSettings, beanIndex, comments, testing, people],
+    [
+      cards,
+      colorSettings,
+      beanIndex,
+      comments,
+      testing,
+      people,
+      source.discardCups,
+    ],
   );
   // 豆残量確認に出す、盤面で待っている杯数（豆ごと）。実データテスト中は出さない
   const beanWaitingCups = useMemo(
@@ -296,9 +317,9 @@ export const useCaosSession = () => {
     );
   };
 
-  // 統合したカードから全部の杯を入れ直した（caosRebrewsTogether）ときの、足した入れ直しの id（1 回の入れ直しごとに 1 組。続けて入れ直せば組が並ぶ）。
+  // 統合したカードから全部の杯を淹れ直した（caosRebrewsTogether）ときの、足した淹れ直しの id（1 回の淹れ直しごとに 1 組。続けて淹れ直せば組が並ぶ）。
   // 組の全部が盤面に届いたら、元のカードと同じ組み合わせの 1 枚のカードにまとめる（本番は足した応答の前にも後にも WebSocket で届くので、盤面が変わるたびに見る。
-  // 足せた入れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「直前の操作」に出さない）
+  // 足せた淹れ直しはサーバーにあるので、つなぎ直して遅れて届いても、どちらもまだ未割当の 1 杯のカードならまとめる。まとめるのは「直前の操作」に出さない）
   const [rebrewsToMerge, setRebrewsToMerge] = useState<string[][]>([]);
   const mergeRebrews = (ids: string[]) =>
     setRebrewsToMerge((groups) => [...groups, ids]);
@@ -322,7 +343,7 @@ export const useCaosSession = () => {
     if (waiting.length < rebrewsToMerge.length) setRebrewsToMerge(waiting);
   }, [cards, rebrewsToMerge, source]);
 
-  // 本番と実データテストを行き来するときに、覚えている操作（「直前の操作」・右上の確かめ・知らせ・入れ直しのまとめ）を忘れる
+  // 本番と実データテストを行き来するときに、覚えている操作（「直前の操作」・右上の確かめ・知らせ・淹れ直しのまとめ）を忘れる
   const forgetPending = () => {
     lastAction.forget();
     toasts.clear();
@@ -434,10 +455,10 @@ export const useCaosSession = () => {
     /** この端末のまだ送れていない盤面の操作の数と、今すぐ送り直す */
     unsent,
     /**
-     * 緊急（入れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
-     *   - orders：番号から入れ直すカップを選ぶ注文
-     *   - add：入れ直しを足す。入れ直しのカードが未割当のいちばん上に出る（統合したカードから全部の杯を入れ直せば、元のカードと同じ組み合わせの 1 枚）
-     *   - cancel：入れ直しのカード（未割当・待機）の入れ直しを取り消す
+     * 緊急（淹れ直し）。本番は API に書いてシールを刷り、実データテスト中は練習の盤面の中だけ（刷らない。emergencyOps）
+     *   - orders：番号から淹れ直すカップを選ぶ注文
+     *   - add：淹れ直しを足す。淹れ直しのカードが未割当のいちばん上に出る（統合したカードから全部の杯を淹れ直せば、元のカードと同じ組み合わせの 1 枚）
+     *   - cancel：淹れ直しのカード（未割当・待機）の淹れ直しを取り消す
      * どちらも「直前の操作」に出す
      */
     emergency: {

@@ -22,7 +22,7 @@ const (
 	masterStateChangedChannel = "master_state_changed"
 	// レジの状態（cashier_states）。通知の中身は "<送ったインスタンスの ID>"
 	cashierStateChangedChannel = "cashier_state_changed"
-	// 取り消された緊急（入れ直し）。通知の中身は "<送ったインスタンスの ID> <入れ直しの ID>"
+	// 取り消された緊急（淹れ直し）。通知の中身は "<送ったインスタンスの ID> <淹れ直しの ID>"
 	cupEmergencyCancelledChannel = "cup_emergency_cancelled"
 	// 呼び出し催促。通知の中身は "<送ったインスタンスの ID> <注文 ID>"
 	orderRecalledChannel = "order_recalled"
@@ -193,7 +193,7 @@ type changeSet struct {
 	masterState  bool
 	cashierState bool
 	caosLanes    bool // CaOS のドリッパーの担当者（caos_lanes.go）
-	// 取り消された緊急（入れ直し）。DB から読み直すものは無く、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
+	// 取り消された緊急（淹れ直し）。DB から読み直すものは無く、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
 	cancelledEmergencies map[uuid.UUID]struct{}
 	// 呼び出し催促した注文。取り消された緊急と同じく、知らせをそのまま配る（待ち受けていなかった間のものは配れない）
 	recalledOrders map[uuid.UUID]struct{}
@@ -234,7 +234,7 @@ func (q *pendingChanges) add(channel, payload string) {
 	case dripperAssigneesChangedChannel:
 		q.update(func(s *changeSet) { s.caosLanes = true })
 	case cupEmergencyCancelledChannel:
-		// 形の分からない通知は、どの入れ直しか分からないので配らない（その端末は余分に刷るだけ）
+		// 形の分からない通知は、どの淹れ直しか分からないので配らない（その端末は余分に刷るだけ）
 		if id, err := uuid.Parse(rest); err == nil {
 			q.update(func(s *changeSet) { s.cancelledEmergencies[id] = struct{}{} })
 		}

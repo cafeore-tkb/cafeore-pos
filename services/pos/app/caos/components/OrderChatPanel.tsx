@@ -77,46 +77,7 @@ export const OrderChatPanel = ({
         }}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3"
       >
-        <ol
-          role="log"
-          aria-label="コメント履歴"
-          aria-live="polite"
-          aria-relevant="additions"
-          className="flex flex-col gap-3"
-        >
-          {comments.map((comment) => {
-            const own = comment.author === "master";
-            const reaction = commentReaction(comment);
-            return (
-              <li
-                key={commentKey(comment)}
-                className={`flex flex-col gap-1 ${own ? "items-end" : "items-start"}`}
-              >
-                <span className="px-1 text-[11px] text-slate-500">
-                  {AUTHORS[comment.author]}
-                  {orders.size > 1 && ` · #${orderNoLabel(comment.orderNo)}`}
-                </span>
-                <div
-                  className={`max-w-[88%] rounded-2xl border px-3 py-2 text-[14px] leading-relaxed ${own ? "rounded-tr-sm border-emerald-200 bg-emerald-100 text-emerald-950" : "rounded-tl-sm border-slate-200 bg-white text-slate-900"}`}
-                >
-                  {reaction ? (
-                    <ReactionIcon stamp={reaction} />
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words">
-                      {comment.text}
-                    </p>
-                  )}
-                </div>
-                <time
-                  dateTime={comment.createdAt.toISOString()}
-                  className="px-1 text-[10px] text-slate-500"
-                >
-                  {jstClock(comment.createdAt.getTime()).slice(0, 5)}
-                </time>
-              </li>
-            );
-          })}
-        </ol>
+        <OrderChatMessages comments={comments} />
       </div>
       <footer className="max-h-[45%] shrink-0 overflow-y-auto border-slate-200 border-t bg-white p-2">
         <ul className="grid gap-2">
@@ -132,3 +93,54 @@ export const OrderChatPanel = ({
     </section>
   );
 };
+
+/** 閲覧と新規コメント入力で同じ履歴・リアクション表示を使う。 */
+export function OrderChatMessages({
+  comments,
+  highlightedKey,
+}: { comments: readonly BoardComment[]; highlightedKey?: string }) {
+  const orders = new Set(comments.map((comment) => comment.orderId));
+  return (
+    <ol
+      role="log"
+      aria-label="コメント履歴"
+      aria-live="polite"
+      aria-relevant="additions"
+      className="flex flex-col gap-3"
+    >
+      {comments.map((comment) => {
+        const own = comment.author === "master";
+        const reaction = commentReaction(comment);
+        return (
+          <li
+            key={commentKey(comment)}
+            data-comment-key={commentKey(comment)}
+            className={`flex scroll-my-2 flex-col gap-1 rounded-lg ${own ? "items-end" : "items-start"} ${highlightedKey === commentKey(comment) ? "outline-(color:--caos-comment) outline-2 outline-offset-4" : ""}`}
+          >
+            <span className="px-1 text-[11px] text-slate-500">
+              {AUTHORS[comment.author]}
+              {orders.size > 1 && ` · #${orderNoLabel(comment.orderNo)}`}
+            </span>
+            <div
+              className={`max-w-[88%] rounded-2xl border px-3 py-2 text-[14px] leading-relaxed ${own ? "border-(color:--caos-comment) bg-(color:--caos-comment-soft) rounded-tr-sm text-slate-950" : "rounded-tl-sm border-slate-200 bg-white text-slate-900"}`}
+            >
+              {reaction ? (
+                <ReactionIcon stamp={reaction} />
+              ) : (
+                <p className="whitespace-pre-wrap break-words">
+                  {comment.text}
+                </p>
+              )}
+            </div>
+            <time
+              dateTime={comment.createdAt.toISOString()}
+              className="px-1 text-[10px] text-slate-500"
+            >
+              {jstClock(comment.createdAt.getTime()).slice(0, 5)}
+            </time>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}

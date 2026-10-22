@@ -15,6 +15,7 @@ const hotType: ItemType = {
   needs_brew: true,
   senior_only: false,
   iced_brew: false,
+  serve_with_snack: false,
 };
 const goodsType: ItemType = {
   ...hotType,

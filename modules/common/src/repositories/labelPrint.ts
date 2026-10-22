@@ -39,7 +39,7 @@ export const labelPrintRequestResult = (
 };
 
 /**
- * 緊急（入れ直し）のシールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は入れ直しの id。
+ * 緊急（淹れ直し）のシールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は淹れ直しの id。
  * 同じ id を送り直しても 1 つだけ（2 枚刷らない）。例外は投げず、結果（labelPrintRequestResult）を返す
  */
 export const requestLabelPrint = async (

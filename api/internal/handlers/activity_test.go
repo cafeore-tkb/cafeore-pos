@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"cafeore-pos/api/internal/models"
+
 	"github.com/goccy/go-yaml"
 	"github.com/google/uuid"
 )
@@ -60,6 +61,8 @@ func TestItemTypeUpdatedMessageFlags(t *testing.T) {
 			"✏️ タイプを変更: 限定（抽出が要る あり → なし、上級生のみ あり → なし） :e-change:"},
 		{"senior_only", func(it *models.ItemType) { it.SeniorOnly = false },
 			"✏️ タイプを変更: 限定（上級生のみ あり → なし） :e-change:"},
+		{"serve_with_snack", func(it *models.ItemType) { it.ServeWithSnack = true },
+			"✏️ タイプを変更: 限定（お菓子をつける なし → あり） :e-change:"},
 		{"iced_brew", func(it *models.ItemType) { it.IcedBrew = true },
 			"✏️ タイプを変更: 限定（アイスで淹れる なし → あり） :e-change:"},
 	}
