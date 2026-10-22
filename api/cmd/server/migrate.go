@@ -37,7 +37,8 @@ func migrate(db *gorm.DB) error {
 		}
 
 		// モデルの ID の既定値が uuid_generate_v4() なので、空の DB では先に拡張が要る。
-		// 入っていれば何もしない（本番の Supabase は extensions スキーマに入っている）。
+		// 入っていれば何もしない（Supabase は extensions スキーマに入っている）。
+		// Cloud SQL では初回の起動でここで入れる（Cloud SQL で作ったユーザーは cloudsqlsuperuser なので入れられる）。
 		if err := tx.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 			return fmt.Errorf("failed to enable uuid-ossp: %w", err)
 		}

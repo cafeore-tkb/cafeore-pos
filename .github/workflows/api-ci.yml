@@ -34,7 +34,7 @@ jobs:
 
   # 本物の Postgres を使うテストは、この 1 つの Postgres を TEST_DATABASE_URL で共有する
   # （準備と後始末は api/internal/testdb。CI では TEST_DATABASE_URL が無いと落ちる）。
-  # 本番（Supabase）に合わせて 17。
+  # 本番（Cloud SQL の POSTGRES_17。infra の gcp/cloud_sql.tf）に合わせて 17。
   test:
     runs-on: ubuntu-latest
     services:

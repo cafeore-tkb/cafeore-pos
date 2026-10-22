@@ -214,8 +214,9 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Secret Manager の `supabase-database-url` |
-| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（`DATABASE_URL` がセッションプーラーなので不要）。トランザクションプーラー（ポート 6543）に変えたら、直接接続かセッションプーラーの接続文字列 |
+| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Cloud SQL。Secret Manager の `cloudsql-database-url`（Unix ソケット `/cloudsql/...` でつなぐ）。infra の `api_database` を `cloud_sql` にするまでは Supabase（`supabase-database-url`）。手順は infra の README「Cloud SQL」 |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（Cloud SQL はプーラーを通さず直接つなぐので不要。Supabase の間もセッションプーラーなので不要） |
+| `DB_MAX_OPEN_CONNS` | 未設定（5） | 未設定（5） | infra の `api_db_max_open_conns`。1 インスタンスが張る接続の上限（LISTEN の 1 本は別）。Cloud Run のインスタンス数の上限 ×（これ + 1）が Cloud SQL の `max_connections` に収まるようにする |
 | `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
