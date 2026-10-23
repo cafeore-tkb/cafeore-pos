@@ -311,7 +311,7 @@ func TestCupEmergencyCancelOnDB(t *testing.T) {
 	}
 	// 取り消した後に頼まれても作らない
 	body, _ := json.Marshal(map[string]any{"id": printID, "job": testLabelJob})
-	if w := callWithParams(t, NewLabelPrintHandler(db, f.hub).CreateLabelPrintRequest, http.MethodPost, string(body), nil); w.Code != http.StatusNotFound {
+	if w := callWithParams(t, NewLabelPrintHandler(db, f.hub).CreateLabelPrintRequest, http.MethodPost, string(body), nil); w.Code != http.StatusGone {
 		t.Fatalf("request after cancel = %d: %s", w.Code, w.Body.String())
 	}
 
@@ -380,6 +380,85 @@ func TestCupEmergencyCancelBroadcastOnDB(t *testing.T) {
 		t.Fatalf("cancel again = %d, want 409", code)
 	}
 	noBroadcast(t, hub)
+}
+
+// 注文の編集で外したカップ・消した注文の淹れ直しも、取り消したときと同じく知らせ、レジに頼んだ代理印刷も消す
+// （知らせが無いと、ほかの端末に残ったそのシールは消えず、頼み直しは 410 で断られる）
+func TestCupEmergencyRemovedWithOrderBroadcastOnDB(t *testing.T) {
+	db := openCaosTestDB(t)
+	f := newCaosFixture(t, db)
+	o := f.createOrder(t, 1, line(f.blend), line(f.blend))
+	code, body := f.addEmergencies(t, ids(o.OrderCups...)...)
+	var res models.CupEmergencyCreateResponse
+	if code != http.StatusCreated || json.Unmarshal([]byte(body), &res) != nil || len(res.Ids) != 2 {
+		t.Fatalf("POST = %d: %s", code, body)
+	}
+	kept, removed := res.Ids[0], res.Ids[1]
+	for _, id := range res.Ids {
+		if err := db.Create(&models.LabelPrintRequest{ID: id, Job: models.JSONB(`{"labels":[{}]}`), CreatedAt: time.Now()}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	labelPrints := func() []uuid.UUID {
+		t.Helper()
+		var got []uuid.UUID
+		if err := db.Model(&models.LabelPrintRequest{}).Pluck("id", &got).Error; err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	expectCancelled := func(hub *Hub, id uuid.UUID) {
+		t.Helper()
+		if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeCupEmergencyCancelled || msg.CupEmergencyID == nil || *msg.CupEmergencyID != id {
+			t.Fatalf("broadcast = %+v, want cup_emergency_cancelled %s", msg, id)
+		}
+	}
+	hub := NewHub() // Run しないので、配信は hub.broadcast に溜まる
+	f.orders.hub = hub
+
+	// 2 杯目の明細を外す
+	edit := models.OrderUpdateRequest{OrderId: 1, BillingAmount: 500, Received: 500, MenuIds: []models.MenuInfoCreate{
+		{MenuId: f.menu.ID, OrderMenuId: &o.OrderMenus[0].ID},
+	}}
+	editBody, _ := json.Marshal(edit)
+	if w := callWithParams(t, f.orders.UpdateOrder, http.MethodPut, string(editBody), gin.Params{{Key: "id", Value: o.ID.String()}}); w.Code != http.StatusOK {
+		t.Fatalf("PUT order = %d: %s", w.Code, w.Body)
+	}
+	expectCancelled(hub, removed)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrder {
+		t.Fatalf("broadcast = %s, want order", msg.Type)
+	}
+	if got := labelPrints(); len(got) != 1 || got[0] != kept {
+		t.Fatalf("label print requests after edit = %v, want only %s", got, kept)
+	}
+	// 消えた淹れ直しの頼み直しは 410（頼んだ端末はシールを捨てる）
+	reqBody, _ := json.Marshal(map[string]any{"id": removed, "job": testLabelJob})
+	if w := callWithParams(t, NewLabelPrintHandler(db, hub).CreateLabelPrintRequest, http.MethodPost, string(reqBody), nil); w.Code != http.StatusGone {
+		t.Fatalf("request after edit = %d: %s", w.Code, w.Body.String())
+	}
+	noBroadcast(t, hub)
+
+	// 淹れ直しの無いカップしか外さない編集では知らせない
+	if w := callWithParams(t, f.orders.UpdateOrder, http.MethodPut, string(editBody), gin.Params{{Key: "id", Value: o.ID.String()}}); w.Code != http.StatusOK {
+		t.Fatalf("PUT order again = %d: %s", w.Code, w.Body)
+	}
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrder {
+		t.Fatalf("broadcast = %s, want order", msg.Type)
+	}
+	noBroadcast(t, hub)
+
+	// 注文を消すと、残りの淹れ直しも知らせる
+	if err := f.orders.deleteOrder(o.ID); err != nil {
+		t.Fatal(err)
+	}
+	expectCancelled(hub, kept)
+	if msg := nextBroadcast(t, hub); msg.Type != WSMessageTypeOrderDeleted {
+		t.Fatalf("broadcast = %s, want order_deleted", msg.Type)
+	}
+	noBroadcast(t, hub)
+	if got := labelPrints(); len(got) != 0 {
+		t.Fatalf("label print requests after delete = %v", got)
+	}
 }
 
 // 淹れ直しで使うアイテムの在庫とカップは、足したときの設定で減り、取り消すと戻る

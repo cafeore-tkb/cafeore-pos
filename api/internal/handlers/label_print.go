@@ -43,7 +43,8 @@ const (
 
 // POST /api/label-print-requests - 緊急（淹れ直し）のシールをレジに代わりに刷ってもらう。id は淹れ直しの id。
 // 同じ id は 1 つだけで、2 回目からは中身を変えない。まだ刷れていなければ、代理印刷のレジへ配る（2 回目からは配り直す）。
-// 淹れ直しが無い（取り消した）なら 404 で、頼みは作らない。
+// 淹れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない。消えた淹れ直しは戻らないので、
+// 頼んだ端末はそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない。404 なら端末は頼み直す）。
 func (h *LabelPrintHandler) CreateLabelPrintRequest(c *gin.Context) {
 	// 本文は印刷データと id だけなので、印刷データの上限に少し足した分まで読む
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, labelPrintJobMaxBytes+1024)
@@ -72,8 +73,8 @@ func (h *LabelPrintHandler) CreateLabelPrintRequest(c *gin.Context) {
 	}
 	row := models.LabelPrintRequest{ID: id, Job: models.JSONB(job), CreatedAt: h.now()}
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		// 淹れ直しの行を FOR SHARE で読んでから足す。取り消し（cup_emergency.go の cancelEmergency）は淹れ直しの行を消してから
-		// 頼みを消すので、取り消しが先なら行が無くて 404、こちらが先なら取り消しがこの頼みも消す（取り消した緊急のシールを刷らない）
+		// 淹れ直しの行を FOR SHARE で読んでから足す。淹れ直しを消すとき（cup_emergency.go の deleteCupEmergencies）は淹れ直しの行を
+		// 消してから頼みを消すので、消すのが先なら行が無くて 410、こちらが先なら消すときにこの頼みも消す（消えた緊急のシールを刷らない）
 		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Select("id").
 			First(&models.CupEmergency{}, "id = ?", id).Error; err != nil {
 			return err
@@ -82,7 +83,7 @@ func (h *LabelPrintHandler) CreateLabelPrintRequest(c *gin.Context) {
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "緊急（淹れ直し）が見つかりません（取り消したかもしれません）"})
+		c.JSON(http.StatusGone, gin.H{"error": "緊急（淹れ直し）が見つかりません（取り消したか、注文が編集・削除されたかもしれません）"})
 		return
 	}
 	if err != nil {
