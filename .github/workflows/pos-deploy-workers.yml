@@ -10,8 +10,9 @@ name: pos / deploy (Workers)
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
 # プレビュー URL 付きのバージョンだけ作る。
 #
-# 本番の deploy では、変数 WORKERS_CUSTOM_DOMAIN があれば独自ドメインを付ける
-# （README の「POS の Worker を cafeore のアカウントに移す」）。
+# 本番（main への push と手動実行）は、WORKERS_PROD_CLOUDFLARE_* があればそのアカウントへ出し、
+# 変数 WORKERS_CUSTOM_DOMAIN があれば独自ドメインを付ける。PR のプレビューは今までどおり
+# WORKERS_CLOUDFLARE_* のアカウントへ出す（README の「POS の Worker を cafeore のアカウントに移す」）。
 #
 # PR のバージョンには pr-<番号> のエイリアス（--preview-alias）も付ける。
 # pr-<番号>-<Worker 名>.<subdomain>.workers.dev という push しても変わらない URL が、
@@ -224,8 +225,17 @@ jobs:
           # wrangler が読む名前は CLOUDFLARE_* 固定なので、GitHub 側の
           # WORKERS_ 接頭辞つきの名前からここで詰め替える。
           # アカウント ID は秘密情報ではないので Variables に置いている。
-          CLOUDFLARE_API_TOKEN: ${{ secrets.WORKERS_CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.WORKERS_CLOUDFLARE_ACCOUNT_ID }}
+          #
+          # 本番だけ、WORKERS_PROD_* があればそちらのアカウント（cafeore）へ出す。PR のプレビューは
+          # WORKERS_CLOUDFLARE_* のアカウント（cafeorepos）のまま。2 つは組で入れる（下のスクリプトで確かめる）。
+          CLOUDFLARE_API_TOKEN: >-
+            ${{ (github.event_name != 'pull_request' && secrets.WORKERS_PROD_CLOUDFLARE_API_TOKEN)
+                || secrets.WORKERS_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: >-
+            ${{ (github.event_name != 'pull_request' && vars.WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID)
+                || vars.WORKERS_CLOUDFLARE_ACCOUNT_ID }}
+          HAS_PROD_TOKEN: ${{ secrets.WORKERS_PROD_CLOUDFLARE_API_TOKEN != '' }}
+          PROD_ACCOUNT_ID: ${{ vars.WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID }}
           # CI からテレメトリを送らない。
           WRANGLER_SEND_METRICS: 'false'
           # スクリプトに ${{ }} を直接埋めるとログや PR タイトル経由で
@@ -239,8 +249,8 @@ jobs:
           # README の「API の認証」を参照。
           API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
           # 本番の Worker に付ける独自ドメイン（pos.cafeore.cafe）。ゾーンが
-          # WORKERS_CLOUDFLARE_ACCOUNT_ID のアカウントに無いと付けられないので、
-          # アカウントを替えるときに一緒に入れる（下のスクリプトのコメントを参照）。
+          # WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID のアカウントに無いと付けられないので、
+          # WORKERS_PROD_* と一緒に入れる（下のスクリプトのコメントを参照）。
           CUSTOM_DOMAIN: ${{ vars.WORKERS_CUSTOM_DOMAIN }}
           # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
@@ -275,6 +285,17 @@ jobs:
             echo "$out"
             return 0
           }
+
+          # 本番の出し先は WORKERS_PROD_* のトークンとアカウント ID の組で決まる。片方だけだと、
+          # 別のアカウントのトークンで出そうとして落ちるか、思わないアカウントに出る。
+          has_prod_account=false
+          if [ -n "$PROD_ACCOUNT_ID" ]; then
+            has_prod_account=true
+          fi
+          if [ "$IS_PR" != "true" ] && [ "$HAS_PROD_TOKEN" != "$has_prod_account" ]; then
+            echo "::error::secret の WORKERS_PROD_CLOUDFLARE_API_TOKEN と変数の WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID は両方入れるか、両方消す"
+            exit 1
+          fi
 
           # 走らせるコマンドを決める。
           if [ "$IS_PR" != "true" ]; then
@@ -315,6 +336,8 @@ jobs:
           fi
 
           # 本番の Worker にだけ独自ドメインを付ける（versions upload は付け外しをしない）。
+          # PR で deploy に倒したとき（WORKERS_AUTO_DEPLOY_IF_NOT_EXIST）は、プレビューの
+          # アカウントに出すので付けない。
           #
           # wrangler は routes（--domain も含む）があると workers_dev を既定で false にするので、
           # 付けると workers.dev の本番の URL は止まる。preview_urls は wrangler.jsonc で true に
@@ -323,9 +346,14 @@ jobs:
           #
           # wrangler は workers.dev を止めてから独自ドメインを付ける。ゾーンがこのアカウントに
           # 無いと、workers.dev だけが止まって独自ドメインは付かず、本番の POS に届かなくなる。
-          # そうなったら変数を消して手動実行し直す。
+          # そうなったら変数を消して手動実行し直す。WORKERS_PROD_* 無しで（プレビューと同じ
+          # アカウントのまま）独自ドメインだけを入れたときは、出す前に止める。
           domain_args=()
-          if [ "$mode" = "deploy" ] && [ -n "$CUSTOM_DOMAIN" ]; then
+          if [ "$mode" = "deploy" ] && [ "$IS_PR" != "true" ] && [ -n "$CUSTOM_DOMAIN" ]; then
+            if [ -z "$PROD_ACCOUNT_ID" ]; then
+              echo "::error::WORKERS_CUSTOM_DOMAIN は WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID（独自ドメインのゾーンがあるアカウント）と一緒に入れる"
+              exit 1
+            fi
             if ! printf '%s' "$CUSTOM_DOMAIN" | grep -qE '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'; then
               echo "::error::WORKERS_CUSTOM_DOMAIN にはホスト名だけを入れる（https:// や / を付けない）"
               exit 1

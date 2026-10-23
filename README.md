@@ -78,9 +78,11 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 本番の URL は Cloudflare の `cafeore` アカウントの独自ドメイン `https://pos.cafeore.cafe`。
 `cafeorepos` アカウントの `https://cafeore-pos.cafeorepos.workers.dev` から移す
 （[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)。済むまでは workers.dev が本番）。
+移すのは本番だけで、PR のプレビューは今までどおり `cafeorepos` に出す。本番の deploy は
+`WORKERS_PROD_CLOUDFLARE_*` があればそのアカウントへ、無ければプレビューと同じ `WORKERS_CLOUDFLARE_*` のアカウントへ出す。
 独自ドメインは、本番の deploy のときだけ変数 `WORKERS_CUSTOM_DOMAIN` を `--domain` で渡して付ける。
-渡すと wrangler が本番の workers.dev（`cafeore-pos.<subdomain>.workers.dev`）を止める。
-PR のプレビューは `wrangler.jsonc` の `preview_urls` で別に決まるので、workers.dev に残る。
+渡すと wrangler が本番の workers.dev（`cafeore-pos.<subdomain>.workers.dev`）を止める
+（プレビュー URL は `wrangler.jsonc` の `preview_urls` で別に決まる）。
 
 PR のバージョンには `pr-<番号>` のエイリアス（`--preview-alias`）も付ける。
 `https://pr-<番号>-cafeore-pos.<subdomain>.workers.dev` は push しても変わらず、
@@ -125,24 +127,30 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 ローカルからは `pnpm pos deploy` で同じことができる。
 POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
 渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
-独自ドメインに移した後は `--domain pos.cafeore.cafe` も渡すこと。渡さないと本番の workers.dev がまた開く。
+独自ドメインに移した後は、`CLOUDFLARE_ACCOUNT_ID` を `cafeore` のものにし、`--domain pos.cafeore.cafe` も渡すこと。
+渡さないと本番の workers.dev がまた開く。
 
 ### POS の Worker を cafeore のアカウントに移す
 
-POS の Worker を、Cloudflare の `cafeorepos` アカウント（`cafeore-pos.cafeorepos.workers.dev`）から
+本番の POS の Worker を、Cloudflare の `cafeorepos` アカウント（`cafeore-pos.cafeorepos.workers.dev`）から
 `cafeore` アカウントに移し、独自ドメイン `pos.cafeore.cafe` で出す。`cafeore.cafe` のゾーンは `cafeore` アカウントにあり、
 独自ドメインは Worker と同じアカウントのゾーンにしか付けられない。URL がアカウントの workers.dev でなくなるので、
 `cafeore.cafe` のゾーンと一緒に動かす限り、Worker をまた別のアカウントに移しても URL は変わらない
 （Worker だけを移すと独自ドメインは付けられない）。
 
+**移すのは本番だけ。PR のプレビューは今までどおり `cafeorepos` の `cafeore-pos` に出す**
+（`pr-<番号>-cafeore-pos.cafeorepos.workers.dev`）。
+
 ```
 移す前:   端末 ─→ cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker）─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
 移した後: 端末 ─→ pos.cafeore.cafe（cafeore の Worker）              ─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
+          PR の確認 ─→ pr-<番号>-cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker のプレビュー）─→ プレビュー用の Cloud Run
 ```
 
 Worker をアカウントの間で動かす機能は無いので、`cafeore` に同じ名前の Worker を新しくデプロイする。
-中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。backend を mice に移す手順
-（infra の README「本番を mice に移す」）とは別々に進められる。
+`pos-deploy-workers` は、本番の deploy を `WORKERS_PROD_CLOUDFLARE_*` のアカウントへ、PR の `versions upload` を
+`WORKERS_CLOUDFLARE_*` のアカウントへ出す。中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。
+backend を mice に移す手順（infra の README「本番を mice に移す」）とは別々に進められる。
 
 **URL（オリジン）が変わるので、端末に残しているものは新しい URL に引き継がれない**（localStorage はオリジンごとに分かれている）。
 
@@ -158,27 +166,29 @@ Worker をアカウントの間で動かす機能は無いので、`cafeore` に
 決めてあること:
 
 - ドメインは `pos.cafeore.cafe`（`WORKERS_CUSTOM_DOMAIN`）。DNS のレコードは、最初のデプロイで Cloudflare が作る（今は無い）
-- 新しい Worker の本番の workers.dev（`cafeore-pos.cafeore.workers.dev`）は止める。開いていると、`pos.cafeore.cafe` に
-  Access を掛けたときの抜け道になるため。PR のプレビュー（`pr-<番号>-cafeore-pos.cafeore.workers.dev`）は残る
-- 呼び出しの音声（R2）は移さない。新しいバケットは空から始まり、呼んだ番号から ElevenLabs で作り直す（利用枠を使う）
-- 旧 Worker は、端末を移し終えるまで消さない（戻せるように）
+- 新しい Worker の本番の workers.dev（`cafeore-pos.cafeore.workers.dev`）は止める（`--domain` を渡すと wrangler が止める）
+- **`cafeorepos` の `cafeore-pos` は消さない。** `versions upload` は Worker が既にあることが前提なので、消すとプレビューを
+  出せなくなる。代わりに、端末を移し終えたら本番の workers.dev だけを止める（手順 5）
+- 呼び出しの音声のバケットは、本番が `cafeore`、プレビューが `cafeorepos` の、同じ名前の別のものになる。本番の音声は移さない。
+  新しいバケットは空から始まり、呼んだ番号から ElevenLabs で作り直す（利用枠を使う）
 
 #### 1. Cloudflare（`cafeore` アカウント。ダッシュボードで手作業）
 
-1. Workers を Paid プランにする。`cafeorepos` で契約していても、契約はアカウントごと。無料枠を超えると POS が止まる
+1. Workers を Paid プランにする。契約はアカウントごとで、無料枠を超えると POS が止まる
    （[API の認証](#api-の認証cloudflare-access)の手順 1-1）
-2. R2 を有効にし、`services/pos` でバケットを作る。無いとデプロイが失敗する
+2. R2 を有効にし、`services/pos` でバケットを作る。無いと本番のデプロイが失敗する
 
    ```sh
    CLOUDFLARE_ACCOUNT_ID=b52dd4bd917c4ef7537befffcb1dea42 pnpm exec wrangler r2 bucket create cafeore-call-voices
    ```
 
-3. CI 用の API トークンを作る。テンプレートの「Edit Cloudflare Workers」で、Account Resources を `cafeore`、
+3. 本番のデプロイ用の API トークンを作る。テンプレートの「Edit Cloudflare Workers」で、Account Resources を `cafeore`、
    Zone Resources を `cafeore.cafe` だけにする。独自ドメインを付けるのに、ゾーンの Workers Routes の Edit が要る。
    最初のデプロイで Worker を作るので、Workers Scripts は Worker を指定しない（アカウント全体の）権限にする
 
    **`cafeore` アカウントにはほかの Worker（`website`・`url-shortener` など）もあり、このトークンはそれも書き換えられる。**
-   このリポジトリに write を持つ人は secrets を取り出せる（[誰がデプロイできるか](#誰がデプロイできるかpublic-リポジトリ前提)）ので、
+   workflow が使うのは本番の deploy（main への push と手動実行）のときだけだが、このリポジトリに write を持つ人は
+   PR の workflow を書き換えて secrets を取り出せる（[誰がデプロイできるか](#誰がデプロイできるかpublic-リポジトリ前提)）ので、
    今までより届く範囲が広がる
 
 #### 2. infra（CORS と在庫リマインドの URL）
@@ -187,22 +197,26 @@ infra の `frontend_origins` に `https://pos.cafeore.cafe` が入り、`pos_bas
 main を、Worker をデプロイする前に apply する。新しい URL が `frontend_origins` に無いと、そこで開いた POS の
 書き込みと WebSocket が 403 になる。詳しくは infra の README「POS の Worker を cafeore のアカウントに移す」。
 
-#### 3. GitHub（このリポジトリ）を `cafeore` に替えてデプロイする
+#### 3. GitHub（このリポジトリ）に本番の出し先を足してデプロイする
 
-次をまとめて替えてから、Actions の「pos / deploy (Workers)」を main で手動実行する。最初の deploy で、`cafeore` に
+次をまとめて入れてから、Actions の「pos / deploy (Workers)」を main で手動実行する。最初の deploy で、`cafeore` に
 Worker と `pos.cafeore.cafe` ができる。
 
 | キー | 種別 | 値 |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | 手順 1-3 のトークン |
-| `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | `b52dd4bd917c4ef7537befffcb1dea42`（`cafeore`） |
+| `WORKERS_PROD_CLOUDFLARE_API_TOKEN` | Secrets | 手順 1-3 のトークン（足す） |
+| `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` | Variables | `b52dd4bd917c4ef7537befffcb1dea42`（`cafeore`。足す） |
 | `WORKERS_CUSTOM_DOMAIN` | Variables | `pos.cafeore.cafe`（足す） |
 | `VITE_API_BASE_URL` | Variables | 今 workers.dev を向けているなら `https://pos.cafeore.cafe`。Cloud Run や LB を直接向けているなら変えない |
 
-- `WORKERS_CUSTOM_DOMAIN` だけを先に入れると、`cafeorepos` には独自ドメインを付けられず、wrangler が先に止めた
-  旧 Worker の workers.dev だけが止まって **POS が止まる**。そうなったら `WORKERS_CUSTOM_DOMAIN` を消して手動実行し直す
-  （workers.dev がまた開く）
-- `WORKERS_CUSTOM_DOMAIN` があるのに `VITE_API_BASE_URL` が workers.dev のままだと、デプロイの workflow が止める
+`WORKERS_CLOUDFLARE_API_TOKEN`・`WORKERS_CLOUDFLARE_ACCOUNT_ID` は `cafeorepos` のまま触らない（プレビューが使う）。
+
+デプロイの workflow は、次のときは出す前に止める。
+
+- `WORKERS_PROD_*` のトークンとアカウント ID の片方だけがある
+- `WORKERS_PROD_*` が無いのに `WORKERS_CUSTOM_DOMAIN` がある（`cafeorepos` には独自ドメインを付けられず、wrangler が先に
+  workers.dev を止めて POS が止まるため）
+- `WORKERS_CUSTOM_DOMAIN` があるのに `VITE_API_BASE_URL` が workers.dev のまま
 
 確かめる:
 
@@ -210,6 +224,7 @@ Worker と `pos.cafeore.cafe` ができる。
 - `https://cafeore-pos.cafeore.workers.dev/` が開かない
 - トップページの一番下のビルドの番号が、今の main のもの
 - 呼び出し画面で番号を呼ぶと読み上げが鳴る（新しいバケットに音声ができる）
+- `preview` ラベルの付いた PR に push すると、今までどおり `cafeorepos` にプレビューが出る
 
 #### 4. 端末を移す（営業していない時間に）
 
@@ -217,32 +232,40 @@ Worker と `pos.cafeore.cafe` ができる。
 2. 新しい URL を開き、プリンター・Square の端末・呼び出し画面などの設定を入れ直す
 3. ブックマークとホーム画面のアイコンを付け直す
 
-#### 5. 旧 Worker を片付ける
+#### 5. 旧 Worker の本番を止める
 
-旧 Worker は、移した後も前のビルドのまま、トークンを付けて API に中継し続ける。端末を移し終えたら消す。
+`cafeorepos` の `cafeore-pos` の本番は、移した後も前のビルドのまま、トークンを付けて API に中継し続ける。
+プレビューのために Worker は消せないので、端末を移し終えたら本番の workers.dev だけを止める。
 
-1. `cafeorepos` の `cafeore-pos` を消す（R2 のバケット `cafeore-call-voices` も要らなくなる）
+1. `cafeorepos` のダッシュボードの Workers & Pages → `cafeore-pos` → Domains で、workers.dev の本番（Production）を止め、
+   プレビュー（Preview）は開いたままにする。PR の `versions upload` はこの設定を読むだけで変えない
+2. infra の `frontend_origins` から `https://cafeore-pos.cafeorepos.workers.dev` を消す
+3. 同じアカウントの `cafeore-mobile` は使っておらず、移さない（このリポジトリにもデプロイの workflow が無い）。消してよい
 
    ```sh
-   CLOUDFLARE_ACCOUNT_ID=28555ebffffdd0f6ffb76e101fabea06 pnpm exec wrangler delete --name cafeore-pos
+   CLOUDFLARE_ACCOUNT_ID=28555ebffffdd0f6ffb76e101fabea06 pnpm exec wrangler delete --name cafeore-mobile
    ```
 
-   同じアカウントの `cafeore-mobile` は使っておらず、移さない（このリポジトリにもデプロイの workflow が無い）。
-   一緒に消してよい（`--name cafeore-mobile`）
-
-2. infra の `frontend_origins` から `https://cafeore-pos.cafeorepos.workers.dev` を消す
+**[API の認証](#api-の認証cloudflare-access)で Access を入れるなら、そのときトークン（`LB_PROXY_TOKEN`）も入れ替える。**
+本番に出した前のバージョンには、それぞれプレビュー URL（`<バージョン ID の先頭 8 文字>-cafeore-pos.cafeorepos.workers.dev`）が
+あり、トークンと中継先を持ったまま残る（バージョンは消せない）。`cafeore` の Access の外なので、そこが抜け道になる。
+バージョン ID は Actions のログに出るので、URL は推測できる。infra の `api_proxy_token`（LB を持っている workspace 全部）と
+`LB_PROXY_TOKEN` を新しい値にして、「pos / deploy (Workers)」を手動実行する（入れ替える間は POS が 403 になる。infra の README
+「トークンの置き場所」）。PR のプレビューのバージョンが引き継ぐのは古いトークンで、中継先も持たないので、API には届かない。
 
 #### 戻すとき
 
-- 手順 5 の前なら、手順 3 の GitHub の値を元に戻し（`WORKERS_CUSTOM_DOMAIN` は消す）、手動実行する。旧 Worker の
-  workers.dev は開いたまま。`pos.cafeore.cafe` は `cafeore` の Worker を指したまま残るので、要らなければ
-  ダッシュボードで独自ドメインを外す
+- `WORKERS_PROD_CLOUDFLARE_*` と `WORKERS_CUSTOM_DOMAIN` を消し、`VITE_API_BASE_URL` を元に戻して手動実行する。
+  本番の deploy が `cafeorepos` に戻り、wrangler が workers.dev を開き直す（手順 5-1 で止めていても）。
+  `pos.cafeore.cafe` は `cafeore` の Worker を指したまま残るので、要らなければダッシュボードで独自ドメインを外す
 - 新しい URL で入れ直した端末の設定は、旧 URL には戻らない（旧 URL に残っているものはそのまま使える）
 
 #### 確かめていないこと
 
-- 実際のデプロイ。wrangler 4.123.0 のソースで、`--domain` を渡すと本番の workers.dev が止まり、`preview_urls` を書いて
-  あればプレビュー URL は残ること、CI では既にある DNS レコードを上書きして独自ドメインを付けることは確かめた
+- 実際のデプロイ。wrangler 4.123.0 のソースで次は確かめた
+  - `--domain` を渡すと本番の workers.dev が止まり、`preview_urls` を書いてあればプレビュー URL は残る
+  - CI では、既にある DNS レコードを上書きして独自ドメインを付ける
+  - `versions upload` は workers.dev とプレビューの設定を変えない。secret は前のバージョンから引き継ぎ、変数（`API_ORIGIN`）は引き継がない
 - 手順 1-3 のトークンの権限で足りるか
 
 ### 呼び出し画面の CM
@@ -280,7 +303,7 @@ Worker と `pos.cafeore.cafe` ができる。
   数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。ドリッパーは画面では「3rd」だが、「さん番ドリッパー」と読ませる
 - 片は R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。[移した](#pos-の-worker-を-cafeore-のアカウントに移す)後は `cafeore`）に溜め、溜めてあれば ElevenLabs を呼ばない。
   鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
-  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューで同じバケットを使う
+  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューは別のアカウント（本番は `cafeore`、プレビューは `cafeorepos`）の、同じ名前の別のバケットを使う
 - 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
   さらに、まだ呼んでいない注文の呼び出しの音声を、画面に見えた時点で先に作らせておく（番号の片が溜まるので、ドリップの案内も速くなる）
 - 呼び出し催促した番号は、読み上げを鳴らし始めてから 1 分のあいだ、地は変えずに金の縁を脈打たせる。
@@ -705,10 +728,13 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
       10 秒ごとの確認だけで端末 1 台あたり 1 日 8,640 になる
    2. Zero Trust はチーム `cafeore.cloudflareaccess.com` が既にあるので、それを使う。
       ログイン方法はワンタイム PIN（メール）で足りる
-   3. Zero Trust → Access → Applications で、`pos.cafeore.cafe` のセルフホストのアプリケーションを作る。
+   3. Workers & Pages → `cafeore-pos`（`cafeore` アカウント）→ Access タブで、Worker ごと守る（「All traffic」）。
       ポリシーでスタッフ用と表示用のメールだけを許す。
       セッションの長さは学祭の期間より長くする（途中で切れると、その端末でログインし直しになる）。
-      Worker の Access タブで「All traffic」を選んでも守れるが、PR のプレビューまでログインが要るようになる
+      `pos.cafeore.cafe` だけを守るアプリケーションにしないこと。本番に出したバージョンごとのプレビュー URL
+      （`<バージョン ID の先頭 8 文字>-cafeore-pos.cafeore.workers.dev`）が抜け道になる。PR のプレビューは `cafeorepos` の
+      別の Worker なので、これでは守られない（今までどおり認証しない）。`cafeorepos` に残る前の本番のバージョンについては
+      [移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)の手順 5 の後ろ（トークンの入れ替え）
    4. Access → Applications でそのアプリケーションの AUD タグを控える
 
    ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
@@ -987,9 +1013,11 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers`。独自ドメインを付けるなら、そのゾーンの Workers Routes の Edit も要る |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers`。PR のプレビューの出し先（`cafeorepos`）。`WORKERS_PROD_*` が無いときは本番もここ |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
-| `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_CLOUDFLARE_ACCOUNT_ID` のアカウントに無いと POS が止まるので、アカウントと一緒に替える（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)） |
+| `WORKERS_PROD_CLOUDFLARE_API_TOKEN` | Secrets | 同上（任意）。本番の deploy の出し先（`cafeore`）。独自ドメインを付けるので、そのゾーンの Workers Routes の Edit も要る |
+| `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（任意）。上と組で入れる。片方だけだとデプロイを止める |
+| `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` のアカウントに要るので、`WORKERS_PROD_*` 無しで入れるとデプロイを止める（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)） |
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
