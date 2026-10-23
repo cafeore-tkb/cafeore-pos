@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-const METHODS = ["カード", "電子マネー", "QR コード"] as const;
+const METHODS = ["カード", "QR コード"] as const;
 
 /**
  * Square 端末を用意できないお試し環境で、決済手段の見た目だけを確認するための表示。

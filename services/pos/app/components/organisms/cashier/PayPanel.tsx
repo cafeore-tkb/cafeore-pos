@@ -182,7 +182,7 @@ export const PayPanel = ({
         <div
           className="grid gap-2"
           style={{
-            gridTemplateColumns: `repeat(${methods.length + (showSquareDemo ? 3 : 0)}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${methods.length + (showSquareDemo ? 2 : 0)}, minmax(0, 1fr))`,
           }}
         >
           {methods.map((payment) => {
