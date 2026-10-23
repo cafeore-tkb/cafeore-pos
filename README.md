@@ -227,6 +227,9 @@ Worker と `pos.cafeore.cafe` ができる。
    CLOUDFLARE_ACCOUNT_ID=28555ebffffdd0f6ffb76e101fabea06 pnpm exec wrangler delete --name cafeore-pos
    ```
 
+   同じアカウントの `cafeore-mobile` は使っておらず、移さない（このリポジトリにもデプロイの workflow が無い）。
+   一緒に消してよい（`--name cafeore-mobile`）
+
 2. infra の `frontend_origins` から `https://cafeore-pos.cafeorepos.workers.dev` を消す
 
 #### 戻すとき
