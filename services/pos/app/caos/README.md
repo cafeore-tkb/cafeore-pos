@@ -48,7 +48,7 @@ cupの親注文・統合先・同時間窓・割当時刻などの監査用取�
 
 ## 公開
 
-POS の画面の1つとして `/master-sheet` で配信します（<https://cafeore-pos.cafeorepos.workers.dev/master-sheet>）。入口は `services/pos/app/routes/_header.master-sheet.tsx` で、他の内部画面と共通の接続状態・オーダーストップのヘッダーを表示します。盤面はそのヘッダーの実際の高さを引いた領域に収めます。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/_header.master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A・C を切り替えて同じ盤面を映します（終わったカードは出さず、抽出中・待機だけ）。空きスロットは出さず、カードを押してもアイコンを出さず（未着手の ✋ の印は出す）、盤面への書き込みも送りません。リベロ（ドリッパーにお湯を持って回る係）が見る画面は `/master-sheet/libero`（`routes/_header.master-sheet_.libero.tsx` → `caos/LiberoBoard.tsx`）で、同じ盤面を読むだけです（下の「リベロビュー」）。閲覧の 2 つの画面はヘッダーの「管制盤」「リベロ」で行き来できます（操作の画面のヘッダーにはリベロビューへのボタンを置きません。トップページの一覧から開きます）。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
+POS の画面の1つとして `/master-sheet` で配信します（<https://pos.cafeore.cafe/master-sheet>）。入口は `services/pos/app/routes/_header.master-sheet.tsx` で、他の内部画面と共通の接続状態・オーダーストップのヘッダーを表示します。盤面はそのヘッダーの実際の高さを引いた領域に収めます。盤面を閲覧だけで映す画面は `/master-sheet/view`（`routes/_header.master-sheet_.view.tsx` → `caos/ReadOnlyBoard.tsx`）で、管制盤 A・C を切り替えて同じ盤面を映します（終わったカードは出さず、抽出中・待機だけ）。空きスロットは出さず、カードを押してもアイコンを出さず（未着手の ✋ の印は出す）、盤面への書き込みも送りません。リベロ（ドリッパーにお湯を持って回る係）が見る画面は `/master-sheet/libero`（`routes/_header.master-sheet_.libero.tsx` → `caos/LiberoBoard.tsx`）で、同じ盤面を読むだけです（下の「リベロビュー」）。閲覧の 2 つの画面はヘッダーの「管制盤」「リベロ」で行き来できます（操作の画面のヘッダーにはリベロビューへのボタンを置きません。トップページの一覧から開きます）。旧リポジトリ `cafeore-tkb/CaOS` から公開していた [GitHub Pages の版](https://cafeore-tkb.github.io/digital-master-sheet-pages/) は、こちらに切り替えたら止めます。
 
 閲覧専用の `/master-sheet/view` はヘッダーのA・Cで表示を切り替えます。選んだビューはこの端末に保存し、廃止済みのDや不正な保存値はAへ戻します。2ビューとも空きスロット・割当・統合・分割・進行・担当者交代は使えず、カードのタップ・長押し・ドラッグでは盤面を変更しません。スクロール・通知音の切替は使え、新着カードの点滅はCにも出します。
 

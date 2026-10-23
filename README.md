@@ -75,6 +75,13 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 `wrangler versions upload` に切り替え、本番のトラフィックは向けずに
 プレビュー URL 付きのバージョンだけ作る。
 
+本番の URL は Cloudflare の `cafeore` アカウントの独自ドメイン `https://pos.cafeore.cafe`。
+`cafeorepos` アカウントの `https://cafeore-pos.cafeorepos.workers.dev` から移す
+（[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)。済むまでは workers.dev が本番）。
+独自ドメインは、本番の deploy のときだけ変数 `WORKERS_CUSTOM_DOMAIN` を `--domain` で渡して付ける。
+渡すと wrangler が本番の workers.dev（`cafeore-pos.<subdomain>.workers.dev`）を止める。
+PR のプレビューは `wrangler.jsonc` の `preview_urls` で別に決まるので、workers.dev に残る。
+
 PR のバージョンには `pr-<番号>` のエイリアス（`--preview-alias`）も付ける。
 `https://pr-<番号>-cafeore-pos.<subdomain>.workers.dev` は push しても変わらず、
 その PR で最後に上げたバージョンを指す。バージョンごとの URL
@@ -118,6 +125,122 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 ローカルからは `pnpm pos deploy` で同じことができる。
 POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
 渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
+独自ドメインに移した後は `--domain pos.cafeore.cafe` も渡すこと。渡さないと本番の workers.dev がまた開く。
+
+### POS の Worker を cafeore のアカウントに移す
+
+POS の Worker を、Cloudflare の `cafeorepos` アカウント（`cafeore-pos.cafeorepos.workers.dev`）から
+`cafeore` アカウントに移し、独自ドメイン `pos.cafeore.cafe` で出す。`cafeore.cafe` のゾーンは `cafeore` アカウントにあり、
+独自ドメインは Worker と同じアカウントのゾーンにしか付けられない。URL がアカウントの workers.dev でなくなるので、
+`cafeore.cafe` のゾーンと一緒に動かす限り、Worker をまた別のアカウントに移しても URL は変わらない
+（Worker だけを移すと独自ドメインは付けられない）。
+
+```
+移す前:   端末 ─→ cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker）─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
+移した後: 端末 ─→ pos.cafeore.cafe（cafeore の Worker）              ─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
+```
+
+Worker をアカウントの間で動かす機能は無いので、`cafeore` に同じ名前の Worker を新しくデプロイする。
+中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。backend を mice に移す手順
+（infra の README「本番を mice に移す」）とは別々に進められる。
+
+**URL（オリジン）が変わるので、端末に残しているものは新しい URL に引き継がれない**（localStorage はオリジンごとに分かれている）。
+
+| 引き継がれないもの | どうするか |
+|--|--|
+| 送れていない注文（レジ）・送れていない CaOS の操作・刷れなかったシール | **旧 URL で送り切ってから**端末を移す。残したまま移ると、旧 URL を開き直すまで送られない |
+| プリンターの設定（IP・ポート・代理印刷） | 新しい URL で入れ直す |
+| レジで使う Square の端末 | 各レジの画面右上で選び直す（ペアリングは DB にあるのでやり直さない） |
+| 呼び出し画面の音・CaOS の画面の設定など | 入れ直す |
+
+ブックマークとホーム画面のアイコンも旧 URL のままなので、付け直す。
+
+決めてあること:
+
+- ドメインは `pos.cafeore.cafe`（`WORKERS_CUSTOM_DOMAIN`）。DNS のレコードは、最初のデプロイで Cloudflare が作る（今は無い）
+- 新しい Worker の本番の workers.dev（`cafeore-pos.cafeore.workers.dev`）は止める。開いていると、`pos.cafeore.cafe` に
+  Access を掛けたときの抜け道になるため。PR のプレビュー（`pr-<番号>-cafeore-pos.cafeore.workers.dev`）は残る
+- 呼び出しの音声（R2）は移さない。新しいバケットは空から始まり、呼んだ番号から ElevenLabs で作り直す（利用枠を使う）
+- 旧 Worker は、端末を移し終えるまで消さない（戻せるように）
+
+#### 1. Cloudflare（`cafeore` アカウント。ダッシュボードで手作業）
+
+1. Workers を Paid プランにする。`cafeorepos` で契約していても、契約はアカウントごと。無料枠を超えると POS が止まる
+   （[API の認証](#api-の認証cloudflare-access)の手順 1-1）
+2. R2 を有効にし、`services/pos` でバケットを作る。無いとデプロイが失敗する
+
+   ```sh
+   CLOUDFLARE_ACCOUNT_ID=b52dd4bd917c4ef7537befffcb1dea42 pnpm exec wrangler r2 bucket create cafeore-call-voices
+   ```
+
+3. CI 用の API トークンを作る。テンプレートの「Edit Cloudflare Workers」で、Account Resources を `cafeore`、
+   Zone Resources を `cafeore.cafe` だけにする。独自ドメインを付けるのに、ゾーンの Workers Routes の Edit が要る。
+   最初のデプロイで Worker を作るので、Workers Scripts は Worker を指定しない（アカウント全体の）権限にする
+
+   **`cafeore` アカウントにはほかの Worker（`website`・`url-shortener` など）もあり、このトークンはそれも書き換えられる。**
+   このリポジトリに write を持つ人は secrets を取り出せる（[誰がデプロイできるか](#誰がデプロイできるかpublic-リポジトリ前提)）ので、
+   今までより届く範囲が広がる
+
+#### 2. infra（CORS と在庫リマインドの URL）
+
+infra の `frontend_origins` に `https://pos.cafeore.cafe` が入り、`pos_base_url` が `https://pos.cafeore.cafe` になった
+main を、Worker をデプロイする前に apply する。新しい URL が `frontend_origins` に無いと、そこで開いた POS の
+書き込みと WebSocket が 403 になる。詳しくは infra の README「POS の Worker を cafeore のアカウントに移す」。
+
+#### 3. GitHub（このリポジトリ）を `cafeore` に替えてデプロイする
+
+次をまとめて替えてから、Actions の「pos / deploy (Workers)」を main で手動実行する。最初の deploy で、`cafeore` に
+Worker と `pos.cafeore.cafe` ができる。
+
+| キー | 種別 | 値 |
+|--|--|--|
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | 手順 1-3 のトークン |
+| `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | `b52dd4bd917c4ef7537befffcb1dea42`（`cafeore`） |
+| `WORKERS_CUSTOM_DOMAIN` | Variables | `pos.cafeore.cafe`（足す） |
+| `VITE_API_BASE_URL` | Variables | 今 workers.dev を向けているなら `https://pos.cafeore.cafe`。Cloud Run や LB を直接向けているなら変えない |
+
+- `WORKERS_CUSTOM_DOMAIN` だけを先に入れると、`cafeorepos` には独自ドメインを付けられず、wrangler が先に止めた
+  旧 Worker の workers.dev だけが止まって **POS が止まる**。そうなったら `WORKERS_CUSTOM_DOMAIN` を消して手動実行し直す
+  （workers.dev がまた開く）
+- `WORKERS_CUSTOM_DOMAIN` があるのに `VITE_API_BASE_URL` が workers.dev のままだと、デプロイの workflow が止める
+
+確かめる:
+
+- `https://pos.cafeore.cafe/status` が JSON を返す（Worker → LB → api）
+- `https://cafeore-pos.cafeore.workers.dev/` が開かない
+- トップページの一番下のビルドの番号が、今の main のもの
+- 呼び出し画面で番号を呼ぶと読み上げが鳴る（新しいバケットに音声ができる）
+
+#### 4. 端末を移す（営業していない時間に）
+
+1. 各端末で旧 URL を開き、送れていない注文（レジのトースト）・CaOS の未送信・刷れなかったシールが無いことを確かめる
+2. 新しい URL を開き、プリンター・Square の端末・呼び出し画面などの設定を入れ直す
+3. ブックマークとホーム画面のアイコンを付け直す
+
+#### 5. 旧 Worker を片付ける
+
+旧 Worker は、移した後も前のビルドのまま、トークンを付けて API に中継し続ける。端末を移し終えたら消す。
+
+1. `cafeorepos` の `cafeore-pos` を消す（R2 のバケット `cafeore-call-voices` も要らなくなる）
+
+   ```sh
+   CLOUDFLARE_ACCOUNT_ID=28555ebffffdd0f6ffb76e101fabea06 pnpm exec wrangler delete --name cafeore-pos
+   ```
+
+2. infra の `frontend_origins` から `https://cafeore-pos.cafeorepos.workers.dev` を消す
+
+#### 戻すとき
+
+- 手順 5 の前なら、手順 3 の GitHub の値を元に戻し（`WORKERS_CUSTOM_DOMAIN` は消す）、手動実行する。旧 Worker の
+  workers.dev は開いたまま。`pos.cafeore.cafe` は `cafeore` の Worker を指したまま残るので、要らなければ
+  ダッシュボードで独自ドメインを外す
+- 新しい URL で入れ直した端末の設定は、旧 URL には戻らない（旧 URL に残っているものはそのまま使える）
+
+#### 確かめていないこと
+
+- 実際のデプロイ。wrangler 4.123.0 のソースで、`--domain` を渡すと本番の workers.dev が止まり、`preview_urls` を書いて
+  あればプレビュー URL は残ること、CI では既にある DNS レコードを上書きして独自ドメインを付けることは確かめた
+- 手順 1-3 のトークンの権限で足りるか
 
 ### 呼び出し画面の CM
 
@@ -152,7 +275,7 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
   番号の片は呼び出し・催促・ドリップの案内で同じものを使う
 - 番号（注文番号とドリッパーの番号）は、数字のままではなく仮名の読みにして渡す（`numberReading`。303 なら「さんびゃくさん番」）。
   数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。ドリッパーは画面では「3rd」だが、「さん番ドリッパー」と読ませる
-- 片は R2 のバケット `cafeore-call-voices`（Cloudflare のアカウント `cafeorepos`）に溜め、溜めてあれば ElevenLabs を呼ばない。
+- 片は R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。[移した](#pos-の-worker-を-cafeore-のアカウントに移す)後は `cafeore`）に溜め、溜めてあれば ElevenLabs を呼ばない。
   鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
   同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューで同じバケットを使う
 - 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
@@ -534,7 +657,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
                                    トークンを付ける）
 ```
 
-- POS（`cafeore-pos.cafeorepos.workers.dev`）を Access で守る。ログインしないと画面も開けない
+- POS（`pos.cafeore.cafe`）を Access で守る。ログインしないと画面も開けない
 - Access はログインした端末のリクエストに JWT（`Cf-Access-Jwt-Assertion`）を付ける。Worker はそれごと
   `/api` を Cloud Run に中継し、api が署名・発行元・AUD・期限を確かめる（`api/internal/auth`）。
   WebSocket（`/api/ws/orders`）も同じ道を通る
@@ -556,7 +679,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
   | Square | `POST /api/square/webhook` | LB（Cloud Armor はトークンなしで通す） | Webhook の署名 |
   | デプロイの CI・POS の接続確認 | `GET /status`・`GET /health` | LB（CI は `GCP_API_LB_URL`）・Worker | 認証しない（稼働状況だけ） |
 
-- Worker 経由でも、ブラウザの `Origin`（`https://cafeore-pos.cafeorepos.workers.dev`）はそのまま API に届き、
+- Worker 経由でも、ブラウザの `Origin`（`https://pos.cafeore.cafe`）はそのまま API に届き、
   CORS で照らし合わされる。同じオリジンになったからといって `FRONTEND_ORIGINS` から消すと、書き込みと
   WebSocket が 403 になる
 - Access のセッションが切れると、API への fetch と WebSocket が Access のログイン画面へ飛ばされて
@@ -573,23 +696,24 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 **消すまで誰でも叩ける**（DB は同じ）。中継先には新しいサービスの URL を使い、保護が完成するのは
 旧サービスを消してから。
 
-1. **Cloudflare（ダッシュボードで手作業）**
+1. **Cloudflare（`cafeore` アカウントのダッシュボードで手作業）**。[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)が済んでいる前提
    1. Workers を Paid プランにする。`/api` が Worker を通るとリクエストに数えられ、無料枠（1 日 10 万。
       リセットは日本時間 9 時）を超えるとその日は Worker が失敗し、POS が止まる。`/status` の
       10 秒ごとの確認だけで端末 1 台あたり 1 日 8,640 になる
-   2. Zero Trust を有効にしてチーム名を決める（`<チーム名>.cloudflareaccess.com`）。
+   2. Zero Trust はチーム `cafeore.cloudflareaccess.com` が既にあるので、それを使う。
       ログイン方法はワンタイム PIN（メール）で足りる
-   3. Workers & Pages → `cafeore-pos` → Settings → Domains & Routes で、workers.dev の
-      「Enable Cloudflare Access」を押す。ポリシーでスタッフ用と表示用のメールだけを許す。
-      セッションの長さは学祭の期間より長くする（途中で切れると、その端末でログインし直しになる）
+   3. Zero Trust → Access → Applications で、`pos.cafeore.cafe` のセルフホストのアプリケーションを作る。
+      ポリシーでスタッフ用と表示用のメールだけを許す。
+      セッションの長さは学祭の期間より長くする（途中で切れると、その端末でログインし直しになる）。
+      Worker の Access タブで「All traffic」を選んでも守れるが、PR のプレビューまでログインが要るようになる
    4. Access → Applications でそのアプリケーションの AUD タグを控える
 
    ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
 2. **GitHub（このリポジトリの Variables）**
    1. `WORKERS_API_ORIGIN` に `cafeore-pos-prod` の URL（infra の `terraform output prod_service_url`）を入れ、
       Actions の「pos / deploy (Workers)」を手動実行する
-   2. ログインしたブラウザで `https://cafeore-pos.cafeorepos.workers.dev/status` を開き、JSON が返ることを確かめる
-   3. `VITE_API_BASE_URL` を `https://cafeore-pos.cafeorepos.workers.dev` にして、もう一度手動実行する。
+   2. ログインしたブラウザで `https://pos.cafeore.cafe/status` を開き、JSON が返ることを確かめる
+   3. `VITE_API_BASE_URL` を `https://pos.cafeore.cafe` にして、もう一度手動実行する。
       これで画面が Worker 経由で API を呼ぶ
 3. **infra（HCP Terraform の workspace variables）**。詳しくは infra の README の「API の認証」
    1. `api_auth_mode = "cloudflare-access-report-only"` と、チームのドメイン・AUD・メールを入れて apply する
@@ -860,8 +984,9 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers` |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers`。独自ドメインを付けるなら、そのゾーンの Workers Routes の Edit も要る |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
+| `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_CLOUDFLARE_ACCOUNT_ID` のアカウントに無いと POS が止まるので、アカウントと一緒に替える（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)） |
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |

@@ -10,6 +10,9 @@ name: pos / deploy (Workers)
 # PR では versions upload に切り替え、本番のトラフィックは向けずに
 # プレビュー URL 付きのバージョンだけ作る。
 #
+# 本番の deploy では、変数 WORKERS_CUSTOM_DOMAIN があれば独自ドメインを付ける
+# （README の「POS の Worker を cafeore のアカウントに移す」）。
+#
 # PR のバージョンには pr-<番号> のエイリアス（--preview-alias）も付ける。
 # pr-<番号>-<Worker 名>.<subdomain>.workers.dev という push しても変わらない URL が、
 # その PR で最後に上げたバージョンを指す（上げるたびに付け替わる）。
@@ -235,6 +238,10 @@ jobs:
           # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
           # README の「API の認証」を参照。
           API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
+          # 本番の Worker に付ける独自ドメイン（pos.cafeore.cafe）。ゾーンが
+          # WORKERS_CLOUDFLARE_ACCOUNT_ID のアカウントに無いと付けられないので、
+          # アカウントを替えるときに一緒に入れる（下のスクリプトのコメントを参照）。
+          CUSTOM_DOMAIN: ${{ vars.WORKERS_CUSTOM_DOMAIN }}
           # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
           LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
@@ -298,13 +305,41 @@ jobs:
               var_args=(--var "API_ORIGIN:$API_ORIGIN")
             else
               case "$VITE_API_BASE_URL" in
-                *.workers.dev*)
+                *.workers.dev* | "https://$CUSTOM_DOMAIN" | "https://$CUSTOM_DOMAIN/"*)
                   echo "::error::VITE_API_BASE_URL が Worker を向いているのに WORKERS_API_ORIGIN が無い。このままだと POS が API に届かない"
                   exit 1
                   ;;
               esac
               echo "::warning::WORKERS_API_ORIGIN が無いので、Worker は /api を中継しない"
             fi
+          fi
+
+          # 本番の Worker にだけ独自ドメインを付ける（versions upload は付け外しをしない）。
+          #
+          # wrangler は routes（--domain も含む）があると workers_dev を既定で false にするので、
+          # 付けると workers.dev の本番の URL は止まる。preview_urls は wrangler.jsonc で true に
+          # してあるので、PR のプレビューは workers.dev に残る。変数を消して deploy し直すと
+          # workers.dev がまた開く（独自ドメインは消えない）。
+          #
+          # wrangler は workers.dev を止めてから独自ドメインを付ける。ゾーンがこのアカウントに
+          # 無いと、workers.dev だけが止まって独自ドメインは付かず、本番の POS に届かなくなる。
+          # そうなったら変数を消して手動実行し直す。
+          domain_args=()
+          if [ "$mode" = "deploy" ] && [ -n "$CUSTOM_DOMAIN" ]; then
+            if ! printf '%s' "$CUSTOM_DOMAIN" | grep -qE '^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$'; then
+              echo "::error::WORKERS_CUSTOM_DOMAIN にはホスト名だけを入れる（https:// や / を付けない）"
+              exit 1
+            fi
+            # 画面が workers.dev の Worker を向いたままだと、新しい Worker を通らない。
+            # このアカウントの workers.dev は上のとおり止まり、前のアカウントの Worker は残っていれば
+            # 動くが、消した時点で POS が API に届かなくなる。
+            case "$VITE_API_BASE_URL" in
+              *.workers.dev*)
+                echo "::error::WORKERS_CUSTOM_DOMAIN があるのに VITE_API_BASE_URL が workers.dev を向いている。https://$CUSTOM_DOMAIN にする"
+                exit 1
+                ;;
+            esac
+            domain_args=(--domain "$CUSTOM_DOMAIN")
           fi
 
           # 中継するときは、トークンも deploy のたびに --secrets-file で入れ直す。
@@ -346,7 +381,7 @@ jobs:
 
           status=0
           if [ "$mode" = "deploy" ]; then
-            out=$(pnpm exec wrangler deploy "${var_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
+            out=$(pnpm exec wrangler deploy "${var_args[@]}" "${domain_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
           else
             # エイリアスは英字で始まり、Worker 名と - でつないで 63 文字以内であること
             # （DNS のラベルになるため）。pr-<番号> なら収まる。
