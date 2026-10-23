@@ -10,6 +10,7 @@ import {
 } from "../../functional/cashierDraft";
 import type { SquarePaymentSelectStatus } from "../../functional/useSquarePaymentSelect";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
+import { SquareDemoMethods } from "./SquareDemoMethods";
 
 type props = {
   draft: CashierDraft;
@@ -136,6 +137,7 @@ export const PayPanel = ({
   const padRowOffset = cash ? 1 : 0;
   const selected = methodColor(draft.payment);
   const methods: CashierPayment[] = ["cash", ...squarePaymentTypes];
+  const showSquareDemo = squarePaymentTypes.length === 0;
   const squareLabel = cash
     ? ""
     : squarePaymentTypeLabel[draft.payment as SquarePaymentType];
@@ -180,7 +182,7 @@ export const PayPanel = ({
         <div
           className="grid gap-2"
           style={{
-            gridTemplateColumns: `repeat(${methods.length}, minmax(0, 1fr))`,
+            gridTemplateColumns: `repeat(${methods.length + (showSquareDemo ? 3 : 0)}, minmax(0, 1fr))`,
           }}
         >
           {methods.map((payment) => {
@@ -221,7 +223,14 @@ export const PayPanel = ({
               </button>
             );
           })}
+          {showSquareDemo && <SquareDemoMethods />}
         </div>
+
+        {showSquareDemo && (
+          <p className="mt-1.5 text-right font-bold text-[11px] text-amber-700">
+            Square デモ表示 · 押しても決済されません
+          </p>
+        )}
 
         <div className="mt-3 flex h-6 items-center gap-2 font-medium text-stone-500 text-xs">
           <span>{cash ? "受取金額" : "請求額"}</span>
