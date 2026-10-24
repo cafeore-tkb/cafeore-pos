@@ -10,15 +10,18 @@
 // 番号は仮名の読み（303 なら「さんびゃくさん」）にして渡す。数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。
 //
 // 文は片（「N番のお客様、」「提供口までお越しください。」など）に分けて ElevenLabs で作り、つないで 1 本で返す。
-// 片ごとに R2（CALL_VOICES）に溜めるので、番号の片は呼び出し・催促・ドリップの案内で同じものを使い、
+// 片ごとにバケット（CALL_VOICES）に溜めるので、番号の片は呼び出し・催促・ドリップの案内で同じものを使い、
 // 決まった文の片は一度作れば済む。溜める鍵は、ElevenLabs に送る中身のハッシュ。文や声を変えれば別の鍵になり、作り直される。
 //
-// ElevenLabs の鍵は Worker の secret の ELEVENLABS_API_KEY。デプロイの workflow が GitHub の secret の
-// ELEVENLABS_API_KEY から --secrets-file で入れる（本番もプレビューも同じ）。
+// 動くところは 2 つある（どちらもこのファイルをそのまま使う）。
+//   - Cloudflare Workers（worker/index.ts）… バケットは R2。ElevenLabs の鍵は Worker の secret の ELEVENLABS_API_KEY で、
+//     pos-deploy-workers が GitHub の secret の ELEVENLABS_API_KEY から --secrets-file で入れる
+//   - Cloud Run の web（server/app.ts）… バケットは GCS（server/gcs.ts）。鍵は env の ELEVENLABS_API_KEY で、
+//     Terraform が Secret Manager から入れる
 
 import { concatMp3 } from "./mp3";
 
-/** R2 のバケットのうち、ここで使うところだけ */
+/** 溜めるところ。R2 のバケットのうち、ここで使うところだけの形（GCS では server/gcs.ts が同じ形を作る） */
 export interface CallVoiceBucket {
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
   put(
@@ -37,6 +40,10 @@ export interface CallVoiceEnv {
 }
 
 export interface CallVoiceContext {
+  /**
+   * 溜めるところ（put）を渡す。Workers は応答を返した後に走らせ、Cloud Run の web（server/app.ts）は
+   * 終わるのを待ってから応答を返す（返した後は CPU がほとんど止まるため）
+   */
   waitUntil(promise: Promise<unknown>): void;
 }
 
@@ -48,7 +55,7 @@ const VOICE_ID = "gHBfNp2PWSyFgpPlzCOd";
 const VOICE_DIRECTION = "[スムーズなナレーターで]";
 /** 鍵を変えずに作り直したいとき（ElevenLabs 側の声が変わったなど）はここを上げる */
 const CACHE_VERSION = 1;
-/** ElevenLabs の返事を待つ上限。返事が来ないまま Worker を待たせない */
+/** ElevenLabs の返事を待つ上限。返事が来ないまま待たせない */
 const ELEVENLABS_TIMEOUT_MS = 20_000;
 
 /** 注文番号は 1〜4 桁だけ受け付ける（作る片の数に上限を付ける） */
@@ -144,7 +151,7 @@ export const callVoiceRequestBody = (segment: string) => ({
   settings: { stability: 1.0, similarity: 0.75 },
 });
 
-/** R2 の鍵。送る中身と出力の形式が同じなら同じ鍵になる */
+/** 溜める鍵。送る中身と出力の形式が同じなら同じ鍵になる */
 export const callVoiceCacheKey = async (
   body: ReturnType<typeof callVoiceRequestBody>,
 ) => {
@@ -214,7 +221,7 @@ const segmentAudio = async (
 
   const cached = await env.CALL_VOICES?.get(key).catch((error) => {
     // 読めなくても ElevenLabs で作れば流せるので、ログに残して進める
-    console.error("call-voice: R2 から読めなかった", error);
+    console.error("call-voice: 溜めたところから読めなかった", error);
     return null;
   });
   if (cached) return { audio: await cached.arrayBuffer(), cache: "hit" };
@@ -258,15 +265,16 @@ const segmentAudio = async (
   }
 
   if (env.CALL_VOICES) {
-    // 溜めるのを待たずに返す。溜められなければ次の呼び出しでまた作る。
-    // 返す方と取り合わないよう、溜める方には写しを渡す
+    // 溜めるのは ctx.waitUntil に任せる（Workers では返した後、Cloud Run では返す前。CallVoiceContext）。
+    // 溜められなければ次の呼び出しでまた作る。返す方と取り合わないよう、溜める方には写しを渡す
     ctx.waitUntil(
       env.CALL_VOICES.put(key, audio.slice(0), {
         httpMetadata: { contentType: "audio/mpeg" },
-        // R2 の中を見たときに何の音声か分かるように（ヘッダーに載るので URL エンコードする）
+        // バケットの中を見たときに何の音声か分かるように（R2 ではヘッダーに載るので URL エンコードする。
+        // GCS のメタデータにもそのまま入れる）
         customMetadata: { text: encodeURIComponent(segment) },
       }).catch((error) => {
-        console.error("call-voice: R2 に溜められなかった", error);
+        console.error("call-voice: 溜められなかった", error);
       }),
     );
   }

@@ -37,6 +37,37 @@ jobs:
       - uses: './.github/actions/setup-deps'
       - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts app/caos/logic/orderCommentComposer.test.ts
 
+  # Cloud Run の web のサーバー（server/）と、Workers（worker/）の単体テスト。
+  # 呼び出しの音声（worker/call-voice.ts）はどちらからも使う。
+  server-unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm exec vitest run server/ worker/
+
+  # web のイメージ（Dockerfile）が作れるかを見る。push はしない（api-ci の image と同じ）。
+  #
+  # pos-deploy-cloudrun も PR でイメージを作るが、preview ラベルが付いた PR だけなので、
+  # ラベルの無い PR では Dockerfile や束ねるところの壊れに main へのマージ（本番デプロイ）まで
+  # 気づけない。VITE_* は焼き込まないので、中の画面は API の既定の URL（localhost）を向く。
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: './.github/actions/setup-deps'
+      - run: pnpm run build
+      - run: pnpm run build:server
+      - uses: docker/setup-buildx-action@v3
+      - name: イメージをビルドする（push しない）
+        uses: docker/build-push-action@v6
+        with:
+          context: services/pos
+          file: services/pos/Dockerfile
+          platforms: linux/amd64
+          push: false
+          provenance: false
+
   # api-ci の lint と見分けるため、ジョブ名は biome にしている。
   # biome.json がリポジトリ直下にあるので、ルートで実行する。
   biome:

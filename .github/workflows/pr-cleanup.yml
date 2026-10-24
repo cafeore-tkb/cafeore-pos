@@ -19,9 +19,9 @@ name: pr / cleanup
 #
 # ## Artifact Registry
 #
-# api-build が付けた pr-<番号> タグを外す。タグが外れたイメージは UNTAGGED に
-# なり、infra 側のクリーンアップポリシー（gcp/artifact_registry.tf）が
-# 一定期間後に本体を消す。
+# api-build が api に、pos-deploy-cloudrun が pos-web に付けた pr-<番号> タグを外す。
+# タグが外れたイメージは UNTAGGED になり、infra 側のクリーンアップポリシー
+# （gcp/artifact_registry.tf）が一定期間後に本体を消す。
 #
 # **タグだけを消し、イメージ本体（バージョン）は消さない。** PR の head と
 # main の tip が同じコミットになった場合（fast-forward マージなど）、同じ
@@ -30,8 +30,9 @@ name: pr / cleanup
 #
 # ## Cloud Run
 #
-# その PR に割り当てたリビジョンタグ（pr-<番号>）を外す。タグはサービスあたりの
-# 上限があるので放置できない。タグが外れたリビジョンはトラフィックを持たない
+# その PR に割り当てたリビジョンタグ（pr-<番号>）を、backend のプレビュー用サービス
+# （cafeore-pos-preview）と web のプレビュー用サービス（cafeore-pos-web-preview）から外す。
+# タグはサービスあたりの上限があるので放置できない。タグが外れたリビジョンはトラフィックを持たない
 # ままなので、インスタンスは立たず課金もされない。
 #
 # ## Neon
@@ -42,22 +43,19 @@ name: pr / cleanup
 #
 # ## Cloudflare Workers
 #
-# こちらは**片付けていない**。wrangler に versions delete が無く、
-# versions upload で作ったバージョンを個別に消す手段が今のところ無いため
+# PR のプレビューは Cloud Run（pos-deploy-cloudrun）に移したので、新しくは作られない。
+# 前に pos-deploy-workers が PR から versions upload したバージョンは**片付けていない**。
+# wrangler に versions delete が無く、バージョンを個別に消す手段が今のところ無いため
 # （wrangler preview delete は private beta）。閉じた PR のプレビュー URL も
 # 残り続ける。pr-<番号> のエイリアスも、最後に上げたバージョンを指したまま残る。
-# 気になる場合は wrangler.jsonc の preview_urls を false にして
-# プレビュー URL の配信自体を止めること。
-#
-# ラベルを外した場合も同じで、フロントのプレビュー URL は開ける。ただし
-# 焼き込んだ backend のタグ URL は上で外れるので、API には繋がらなくなる。
+# 焼き込んだ backend のタグ URL は上で外れるので、API には繋がらない。
 #
 # ## POS のプレビューのコメント
 #
-# pos-deploy-workers.yml が PR に書いた「POS のプレビュー」コメントを消す。
-# 上のとおり URL 自体は残るが、API に繋がらない URL をプレビューとして
-# 案内し続けないようにするため。backend のコメントは消していない。
-# コメントは目印で探すので、**pos-deploy-workers.yml の COMMENT_MARKER と
+# pos-deploy-cloudrun.yml が PR に書いた「POS のプレビュー」コメントを、web のタグと一緒に消す。
+# 前に pos-deploy-workers.yml が書いたコメント（目印が別）も消す。Workers の URL 自体は残るが、
+# API に繋がらない URL をプレビューとして案内し続けないようにするため。backend のコメントは消していない。
+# コメントは目印で探すので、**pos-deploy-cloudrun.yml の COMMENT_MARKER と
 # 必ず揃えること。** ずれると消えずに残る。
 
 # pull_request ではなく pull_request_target を使う。コンフリクトしている PR では
@@ -236,53 +234,131 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  pos-preview-comment:
-    name: Delete POS preview comment
+  pos-web-preview:
+    name: Delete POS web preview
     runs-on: ubuntu-latest
 
     # Artifact Registry 側と同じ条件。fork と Dependabot の PR には
-    # pos-deploy-workers.yml もコメントを書かない。
+    # pos-deploy-cloudrun.yml もプレビューを出さない。
     if: >-
       ${{ github.actor != 'dependabot[bot]'
           && github.event.pull_request.head.repo.full_name == github.repository
           && (github.event.action == 'closed' || github.event.label.name == 'preview') }}
 
-    # POS のプレビューを出す実行と同じ group に入れる。デプロイ中に消すと、
-    # 消した後にデプロイがコメントを書き直してしまうため。
-    # cancel-in-progress: false なので、デプロイが終わるのを待ってから消す。
-    # 逆に消している途中でラベルを付け直すと、デプロイ側がこの job を取り消す。
+    # POS の web のプレビューを出す実行と同じ group に入れる。デプロイ中に片付けると、
+    # 片付けた後にデプロイがタグとコメントを付け直してしまうため。
+    # cancel-in-progress: false なので、デプロイが終わるのを待ってから片付ける。
+    # 逆に片付けている途中でラベルを付け直すと、デプロイ側がこの job を取り消す。
     #
     # PR の github.ref は refs/pull/<番号>/merge なので、それを組み立てている。
     # 別のラベルを外しただけの実行は、待っているデプロイを取り消さないよう
     # run_id で group を分けて逃がす（上の concurrency と同じ理由）。
-    # **group 名は pos-deploy-workers.yml の concurrency と揃えること。**
+    # **group 名は pos-deploy-cloudrun.yml の concurrency と揃えること。**
     concurrency:
       group: >-
         ${{ (github.event.action == 'closed'
              || (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
-            && format('pos-deploy-workers-refs/pull/{0}/merge', github.event.number)
-            || format('pr-cleanup-pos-comment-skip-{0}', github.run_id) }}
+            && format('pos-deploy-cloudrun-refs/pull/{0}/merge', github.event.number)
+            || format('pr-cleanup-pos-web-skip-{0}', github.run_id) }}
       cancel-in-progress: false
 
-    # コメントを消すのに要る権限だけにする。PR のコードは checkout しない。
+    # job に permissions を書くと workflow のものは引き継がれないので、要るものを全部並べる。
+    # PR のコードは checkout しない。
     permissions:
+      contents: read
+      id-token: write
       pull-requests: write
 
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      # pos-deploy-cloudrun.yml の IMAGE_NAME・CLOUD_RUN_PREVIEW_SERVICE と同じ値にすること。
+      IMAGE_NAME: pos-web
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE || 'cafeore-pos-web-preview' }}
+      PR_NUMBER: ${{ github.event.number }}
+
     steps:
+      - name: GCP に認証する
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: pos-web の pr-<番号> タグを消す
+        run: |
+          set -uo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME"
+          tag="pr-$PR_NUMBER"
+
+          status=0
+          out=$(gcloud artifacts docker tags delete "$image:$tag" --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # POS を触っていない PR ではイメージ自体が作られていない。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|NOT_FOUND|does not exist'; then
+              echo "$image:$tag は存在しない。この PR は web のイメージを作っていないとみなす"
+              status=0
+            else
+              exit "$status"
+            fi
+          fi
+
+          {
+            echo "### Artifact Registry の後片付け（web）"
+            echo '```'
+            echo "$image:$tag"
+            echo '```'
+            echo "タグを外した。イメージ本体は UNTAGGED になり、クリーンアップポリシーが後で回収する。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: web の Cloud Run のリビジョンタグを外す
+        run: |
+          set -uo pipefail
+
+          status=0
+          out=$(gcloud run services update-traffic "$CLOUD_RUN_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --remove-tags="pr-$PR_NUMBER" \
+            --quiet 2>&1) || status=$?
+          echo "$out"
+
+          if [ "$status" -ne 0 ]; then
+            # POS を触っていない PR ではタグを付けていない（infra を apply する前は、サービスも無い）。
+            # 消すものが無いのは正常なので、その場合だけ成功扱いにする。
+            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist|no tag'; then
+              echo "pr-$PR_NUMBER のタグは無い。この PR は web をデプロイしていないとみなす"
+            else
+              exit "$status"
+            fi
+          fi
+
+      # GCP の片付けが失敗しても、コメントは消す（job は失敗のままになり、ラベルは外れない）。
       - name: POS のプレビューのコメントを消す
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.number }}
-          # pos-deploy-workers.yml の COMMENT_MARKER と同じ値にすること。
-          COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
+          # 1 つ目は pos-deploy-cloudrun.yml の COMMENT_MARKER と同じ値にすること。
+          # 2 つ目は前の pos-deploy-workers.yml のもの。切り替えより前にプレビューを出した PR が
+          # 閉じきったら消してよい。
+          COMMENT_MARKERS: |-
+            <!-- cafeore-preview: pos-web -->
+            <!-- cafeore-preview: pos -->
         run: |
           set -uo pipefail
 
           # github-actions[bot] が書いたものだけを消す。目印を本文で引用した
-          # 他の人や bot のコメントは消さないため。pos-deploy-workers.yml も同じ条件で探す。
+          # 他の人や bot のコメントは消さないため。pos-deploy-cloudrun.yml も同じ条件で探す。
           # --paginate と --jq はページごとに出力するが、1 行 1 件なのでそのまま並べてよい。
+          markers=$(printf '%s\n' "$COMMENT_MARKERS" | jq -R . | jq -sc .)
           ids=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\"))) | .id") \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body as \$b | $markers | any(. as \$m | \$b | contains(\$m)))) | .id") \
             || exit $?
 
           if [ -z "$ids" ]; then
@@ -315,10 +391,10 @@ jobs:
     needs:
       - artifact-registry
       - neon-branch
-      - pos-preview-comment
+      - pos-web-preview
 
     # 閉じたときの片付けが全部済んだら preview ラベルを外す。
-    # Artifact Registry 側と POS のコメントは成功が必須。Neon 側は NEON_PROJECT_ID が
+    # Artifact Registry 側と POS の web（タグとコメント）は成功が必須。Neon 側は NEON_PROJECT_ID が
     # 未設定ならスキップされるので、それも済んだ扱いにする。どれかが失敗・取り消しなら
     # 外さない（残っているものがあることをラベルで示すため）。
     # unlabeled で片付けたときは、ラベルはもう外れているので何もしない。
@@ -328,7 +404,7 @@ jobs:
           && contains(github.event.pull_request.labels.*.name, 'preview')
           && needs.artifact-registry.result == 'success'
           && (needs.neon-branch.result == 'success' || needs.neon-branch.result == 'skipped')
-          && needs.pos-preview-comment.result == 'success' }}
+          && needs.pos-web-preview.result == 'success' }}
 
     # ラベルの付け外しに要る権限だけにする。PR のコードは checkout しない。
     permissions:

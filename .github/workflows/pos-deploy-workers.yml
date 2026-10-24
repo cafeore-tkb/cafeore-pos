@@ -1,31 +1,23 @@
 name: pos / deploy (Workers)
 
+# **POS を GCP に移す途中の、今の本番。** DNS を GCP の LB に付け替えて確かめ、切り替えが済んだら
+# この workflow ごと消す（services/pos/worker・wrangler.jsonc・R2 も一緒に。README の「POS を GCP に移す」の手順 7）。
+# 付け替えるまでは、main への push のたびに今までどおり本番の Worker を出し直す。付け替えた後は出さない
+# （下の「まだ Workers を向いているか確かめる」）。
+#
 # POS フロントをビルドして Cloudflare Workers へデプロイする。
 #
 # ssr: false の SPA なので、画面は build/client を静的アセットとして配信する
 # （設定は services/pos/wrangler.jsonc）。Worker のスクリプトは /api などを
 # Cloud Run の API へ中継するだけ（services/pos/worker/index.ts）。
 #
-# main への push と手動実行では本番へ deploy する。
-# PR では versions upload に切り替え、本番のトラフィックは向けずに
-# プレビュー URL 付きのバージョンだけ作る。
+# main への push と手動実行で本番へ deploy する。
+# **PR のプレビューは Cloud Run に移した**（pos-deploy-cloudrun.yml）ので、ここでは PR では走らせない。
+# 前に PR から versions upload したプレビューのバージョンは消せないので残る（pr-cleanup.yml を参照）。
 #
-# 本番（main への push と手動実行）は、WORKERS_PROD_CLOUDFLARE_* があればそのアカウントへ出し、
-# 変数 WORKERS_CUSTOM_DOMAIN があれば独自ドメインを付ける。PR のプレビューは今までどおり
-# WORKERS_CLOUDFLARE_* のアカウントへ出す（README の「POS の Worker を cafeore のアカウントに移す」）。
-#
-# PR のバージョンには pr-<番号> のエイリアス（--preview-alias）も付ける。
-# pr-<番号>-<Worker 名>.<subdomain>.workers.dev という push しても変わらない URL が、
-# その PR で最後に上げたバージョンを指す（上げるたびに付け替わる）。
-#
-# ただし versions upload は Worker が既にあることが前提なので、まだ無いと
-# 失敗する。変数 WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が true のときに限り、
-# その場合だけ deploy にフォールバックして Worker を作る。
-#
-# PR のプレビューは **preview ラベルが付いた open な PR にだけ**出す
-# （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
-# ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
-# コメントは消す（pr-cleanup.yml を参照）。
+# 本番は、WORKERS_PROD_CLOUDFLARE_* があればそのアカウントへ出し、無ければ WORKERS_CLOUDFLARE_* の
+# アカウントへ出す。変数 WORKERS_CUSTOM_DOMAIN があれば独自ドメインを付ける
+# （README の「POS の Worker を cafeore のアカウントに移す」）。
 
 on:
   push:
@@ -36,173 +28,88 @@ on:
       - 'modules/common/**'
       - 'pnpm-lock.yaml'
       - '.github/workflows/pos-deploy-workers.yml'
-  pull_request:
-    # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - labeled
-    paths:
-      - 'services/pos/**'
-      - 'modules/common/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/pos-deploy-workers.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  # プレビュー用 backend の URL を引くための WIF。
-  # 引けなくてもデプロイは止めないので、GCP が落ちていても Cloudflare へは出せる。
-  id-token: write
-  # プレビュー URL を PR にコメントするのに必要。
-  # fork からの PR は job の if で除外してあるので、書き込みを許しても
-  # 外部の人のコードがこの権限を使うことはない。
-  pull-requests: write
+  # ビルドの番号（.github/scripts/build-info.sh）で、マージコミットから PR を引くのに要る。
+  pull-requests: read
 
-# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
-# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
-# 走っているプレビューのデプロイを取り消してしまう。run_id で group を
-# 分けて逃がす。**条件は job の if と揃えること。**
-#
-# pr-cleanup.yml のコメントを消す job も PR ではこの group に入り、デプロイが
-# 終わるのを待ってから消す。**group 名を変えるときは pr-cleanup.yml も揃えること。**
+# 本番へのデプロイを途中で止めると中途半端な状態になりうるので、打ち切らない。
+# 待機できるのは最新の 1 件だけなので、実行は溜まらない。
 concurrency:
-  group: >-
-    ${{ (github.event_name != 'pull_request'
-         || (github.actor != 'dependabot[bot]'
-             && github.event.pull_request.head.repo.full_name == github.repository
-             && github.event.pull_request.state == 'open'
-             && contains(github.event.pull_request.labels.*.name, 'preview')
-             && (github.event.action != 'labeled' || github.event.label.name == 'preview')))
-        && format('pos-deploy-workers-{0}', github.ref)
-        || format('pos-deploy-workers-skip-{0}', github.run_id) }}
-  # 本番へのデプロイを途中で止めると中途半端な状態になりうるので、
-  # 打ち切ってよいのは PR のプレビューだけにする。
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: pos-deploy-workers-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # 3つ除外している。
-    #
-    #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
-    #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
-    #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
-    #     渡らない（Dependabot 用の別ストアが引かれる）ので、やはり認証で落ちる。
-    #     npm の更新は pnpm-lock.yaml を触るため、除外しないと毎週赤くなる
-    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
-    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
-    #
-    # **PR の条件は上の concurrency と揃えること。**
-    if: >-
-      ${{ github.actor != 'dependabot[bot]'
-          && (github.event_name != 'pull_request'
-              || (github.event.pull_request.head.repo.full_name == github.repository
-                  && github.event.pull_request.state == 'open'
-                  && contains(github.event.pull_request.labels.*.name, 'preview')
-                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
-
-    env:
-      # PR コメントを service ごとに1件へまとめるための目印。
-      # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
-      COMMENT_MARKER: '<!-- cafeore-preview: pos -->'
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
-      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
-      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
-      SERVICE_LABEL: 'POS'
+    # Dependabot が起点の実行には Actions の secrets が渡らない（Dependabot 用の別ストアが
+    # 引かれる）ので、認証で落ちる。
+    if: ${{ github.actor != 'dependabot[bot]' }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: './.github/actions/setup-deps'
-
-      # PR のビルドに焼き込む API の URL を確定させる。
+      # DNS を GCP の LB に付け替えた後（README の「POS を GCP に移す」の手順 4）は、Workers の本番を出さない
+      # （手順 7 でこの workflow ごと消すまで）。出すと --domain pos.cafeore.cafe がカスタムドメインを付け直そうとして、
+      # Terraform の A レコードとぶつかる（CI の wrangler は既にある DNS のレコードを上書きして独自ドメインを付ける。
+      # ぶつかったときにどうなるかは確かめていない）。WORKERS_CUSTOM_DOMAIN は戻すときのために残しておく。
       #
-      # Cloud Run のサービス URL は**サービス単位で固定**で、リビジョンが
-      # 変わっても変わらない。つまり backend のデプロイを待つ必要はなく、
-      # サービスさえ存在していれば先に引ける。ビルドは VITE_* を焼き込むので、
-      # この確定はビルドより前でなければならない。
+      # 付け替えたかどうかは、今の応答で見る。Workers のカスタムドメインは Cloudflare を通るので、応答の Server は
+      # cloudflare になる（Access がログインへ飛ばすときも）。何かが応答したのに cloudflare でなければ、もう別のところ
+      # （GCP の LB）を向いている。応答が無い（ドメインがまだ無い、A レコードを消して名前が引けないなど）ときは出す。
       #
-      # 引けなくても**落とさない**（サービス未作成、GCP 障害、権限不足など）。
-      # その場合は下の VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の順に
-      # フォールバックする。Cloudflare へのデプロイを GCP の可用性に
-      # 引きずられないようにするため。
-      - name: GCP に認証する
-        id: gcp_auth
-        if: ${{ github.event_name == 'pull_request' }}
-        continue-on-error: true
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
-
-      - uses: google-github-actions/setup-gcloud@v2
-        if: ${{ github.event_name == 'pull_request' && steps.gcp_auth.outcome == 'success' }}
-        continue-on-error: true
-
-      - name: プレビュー用 backend の URL を引く
-        id: api_url
-        if: ${{ github.event_name == 'pull_request' && steps.gcp_auth.outcome == 'success' }}
-        continue-on-error: true
+      # main への push では出さずに成功で終わる（警告を残す）。手動実行では失敗にする。戻すときに、
+      # ランナーの DNS のキャッシュ（TTL の間）で GCP を見て、出したつもりで出ていないことにならないように。
+      - name: pos.cafeore.cafe がまだ Workers を向いているか確かめる
+        id: route
         env:
-          PR_NUMBER: ${{ github.event.number }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          CUSTOM_DOMAIN: ${{ vars.WORKERS_CUSTOM_DOMAIN }}
         run: |
           set -uo pipefail
 
-          # 別の PR の上に積んだ PR で backend を変えていなければ、向き先の PR の backend を使う
-          # （api-build.yml の backend-owner と同じスクリプト）。決められなければ自分の番号。
-          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
-          case "$owner" in
-            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
-          esac
-          echo "owner=$owner" >> "$GITHUB_OUTPUT"
-
-          # backend は PR ごとに pr-<番号> のリビジョンタグを付けてデプロイされ、
-          # そのタグ専用の URL を持つ。まずは実物を引く。
-          spec=$(gcloud run services describe "$CLOUD_RUN_PREVIEW_SERVICE" \
-            --project="$GCP_PROJECT_ID" \
-            --region="$GCP_REGION" \
-            --format=json 2>&1) || spec=""
-
-          url=""
-          if [ -n "$spec" ]; then
-            url=$(printf '%s' "$spec" \
-              | jq -r --arg t "pr-$owner" \
-                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty' \
-              2>/dev/null) || url=""
+          if [ -z "$CUSTOM_DOMAIN" ]; then
+            # --domain を渡さないので、ぶつからない
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          # まだ backend がデプロイされていないと、そのタグは存在しない。
-          # タグ URL はサービス URL のホスト名に "<タグ>---" を足した形なので、
-          # サービス URL から組み立てておく。あとで backend が出れば有効になる。
-          if [ -z "$url" ] && [ -n "$spec" ]; then
-            base=$(printf '%s' "$spec" | jq -r '.status.url // empty' 2>/dev/null) || base=""
-            case "$base" in
-              https://*) url="https://pr-$owner---${base#https://}" ;;
-            esac
-          fi
+          probe=$(curl -sS -o /dev/null --max-time 10 \
+            -w '%{http_code} %header{server}' "https://$CUSTOM_DOMAIN/session-check" 2>/dev/null) || true
+          code="${probe%% *}"
+          server=$(printf '%s' "${probe#* }" | tr '[:upper:]' '[:lower:]')
+          echo "https://$CUSTOM_DOMAIN/session-check: ${code:-応答なし} Server: ${server:-なし}"
 
-          case "$url" in
-            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url（#$owner の backend）を使う" ;;
-            *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
-          esac
+          if [ -n "$code" ] && [ "$code" != "000" ] && [ "$server" != "cloudflare" ]; then
+            msg="$CUSTOM_DOMAIN は Cloudflare 以外（Server: ${server:-なし}）から応答している。GCP の LB に付け替えた後なので、Workers の本番は出さない（README の「POS を GCP に移す」）"
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "::error::$msg。Workers に戻すなら、A レコードを消して名前が引けなくなってから流し直す"
+              exit 1
+            fi
+            echo "::warning::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - uses: './.github/actions/setup-deps'
+        if: ${{ steps.route.outputs.skip != 'true' }}
 
       # どの PR・コミットのビルドかを画面に焼き、トップページに出す（API の分は /status から）。
       # 本番は main のマージコミットから PR を引く（.github/scripts/build-info.sh）。
       - name: ビルドの番号を決める
         id: build_info
+        if: ${{ steps.route.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
 
       - name: ビルドする
+        if: ${{ steps.route.outputs.skip != 'true' }}
         working-directory: services/pos
         run: pnpm run build
         env:
@@ -210,41 +117,32 @@ jobs:
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           VITE_BUILD_PR: ${{ steps.build_info.outputs.pr }}
           VITE_BUILD_COMMIT: ${{ steps.build_info.outputs.commit }}
-          # PR では上で引いたプレビュー用 backend の URL を焼き込む。
-          # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
-          # 順にフォールバックする。
-          VITE_API_BASE_URL: >-
-            ${{ (github.event_name == 'pull_request'
-                 && (steps.api_url.outputs.url || vars.VITE_API_BASE_URL_PREVIEW))
-                || vars.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
       - name: デプロイする
         id: deploy
+        if: ${{ steps.route.outputs.skip != 'true' }}
         working-directory: services/pos
         env:
           # wrangler が読む名前は CLOUDFLARE_* 固定なので、GitHub 側の
           # WORKERS_ 接頭辞つきの名前からここで詰め替える。
           # アカウント ID は秘密情報ではないので Variables に置いている。
           #
-          # 本番だけ、WORKERS_PROD_* があればそちらのアカウント（cafeore）へ出す。PR のプレビューは
-          # WORKERS_CLOUDFLARE_* のアカウント（cafeorepos）のまま。2 つは組で入れる（下のスクリプトで確かめる）。
+          # WORKERS_PROD_* があればそちらのアカウント（cafeore）へ出す。無ければ WORKERS_CLOUDFLARE_* の
+          # アカウント（cafeorepos）へ。2 つは組で入れる（下のスクリプトで確かめる）。
           CLOUDFLARE_API_TOKEN: >-
-            ${{ (github.event_name != 'pull_request' && secrets.WORKERS_PROD_CLOUDFLARE_API_TOKEN)
+            ${{ secrets.WORKERS_PROD_CLOUDFLARE_API_TOKEN
                 || secrets.WORKERS_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: >-
-            ${{ (github.event_name != 'pull_request' && vars.WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID)
+            ${{ vars.WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID
                 || vars.WORKERS_CLOUDFLARE_ACCOUNT_ID }}
           HAS_PROD_TOKEN: ${{ secrets.WORKERS_PROD_CLOUDFLARE_API_TOKEN != '' }}
           PROD_ACCOUNT_ID: ${{ vars.WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID }}
           # CI からテレメトリを送らない。
           WRANGLER_SEND_METRICS: 'false'
-          # スクリプトに ${{ }} を直接埋めるとログや PR タイトル経由で
-          # コマンドを差し込まれうるので、値は env 経由で渡す。
-          IS_PR: ${{ github.event_name == 'pull_request' }}
-          PR_NUMBER: ${{ github.event.number }}
-          # Worker がまだ存在しないときに限り、PR でも wrangler deploy に
-          # フォールバックする。詳しくは下のスクリプト内のコメントを参照。
-          AUTO_DEPLOY_IF_NOT_EXIST: ${{ vars.WORKERS_AUTO_DEPLOY_IF_NOT_EXIST }}
+          # スクリプトに ${{ }} を直接埋めるとログ経由でコマンドを差し込まれうるので、
+          # 値は env 経由で渡す。
+          #
           # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
           # README の「API の認証」を参照。
           API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
@@ -256,100 +154,52 @@ jobs:
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
           LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
           # 呼び出し画面の音声を作る ElevenLabs の鍵（worker/call-voice.ts）。
-          # Worker の secret の ELEVENLABS_API_KEY として、本番にもプレビューにも入れる。
+          # Worker の secret の ELEVENLABS_API_KEY として入れる。
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
         run: |
           set -uo pipefail
 
-          # Worker が既に存在するかどうか。
-          #
-          # 判定できないとき（認証エラーなど別の理由で失敗したとき）は
-          # **存在する扱いにして true を返す**。ここで存在しないと誤断定すると、
-          # 本来 versions upload で済むところを本番の deploy に倒してしまうため。
-          # その場合は本来のコマンドを走らせて、そちらのエラーを出させる。
-          worker_exists() {
-            local out
-            local status=0
-
-            out=$(pnpm exec wrangler versions list 2>&1) || status=$?
-            if [ "$status" -eq 0 ]; then
-              return 0
-            fi
-
-            if printf '%s\n' "$out" | grep -qiE 'not found|does not exist|10007'; then
-              return 1
-            fi
-
-            echo "Worker の存在を判定できなかった。存在する前提で続行する:"
-            echo "$out"
-            return 0
-          }
-
-          # 本番の出し先は WORKERS_PROD_* のトークンとアカウント ID の組で決まる。片方だけだと、
+          # 出し先は WORKERS_PROD_* のトークンとアカウント ID の組で決まる。片方だけだと、
           # 別のアカウントのトークンで出そうとして落ちるか、思わないアカウントに出る。
           has_prod_account=false
           if [ -n "$PROD_ACCOUNT_ID" ]; then
             has_prod_account=true
           fi
-          if [ "$IS_PR" != "true" ] && [ "$HAS_PROD_TOKEN" != "$has_prod_account" ]; then
+          if [ "$HAS_PROD_TOKEN" != "$has_prod_account" ]; then
             echo "::error::secret の WORKERS_PROD_CLOUDFLARE_API_TOKEN と変数の WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID は両方入れるか、両方消す"
             exit 1
           fi
 
-          # 走らせるコマンドを決める。
-          if [ "$IS_PR" != "true" ]; then
-            # main への push と手動実行は本番へ。
-            mode="deploy"
-          elif [ "$AUTO_DEPLOY_IF_NOT_EXIST" = "true" ] && ! worker_exists; then
-            # wrangler versions upload は対象の Worker が既にあることが前提で、
-            # 無いと失敗する。初回だけ deploy に倒して Worker を作る。
-            #
-            # **PR から本番の Worker が作られる**ことになるので、変数
-            # WORKERS_AUTO_DEPLOY_IF_NOT_EXIST が明示的に true のときだけ
-            # この経路に入る。初回の立ち上げが済んだら変数を消すこと。
-            echo "Worker が存在しないので deploy にフォールバックする"
-            mode="deploy"
-          else
-            # 本番のトラフィックは向けない。プレビュー URL が出力に出る。
-            mode="versions-upload"
-          fi
-
-          # 本番の Worker にだけ中継先を渡す。PR のプレビューでは渡さない
-          # （プレビューの画面は、焼き込んだプレビュー用 backend の URL を直接呼ぶ）。
-          #
-          # 画面が API を Worker 経由で呼ぶ設定（VITE_API_BASE_URL が workers.dev）なのに
+          # 画面が API を Worker 経由で呼ぶ設定（VITE_API_BASE_URL が workers.dev か独自ドメイン）なのに
           # 中継先が無いと、本番の POS が API に届かなくなる。その組み合わせでは出さない。
           var_args=()
-          if [ "$mode" = "deploy" ]; then
-            if [ -n "$API_ORIGIN" ]; then
-              var_args=(--var "API_ORIGIN:$API_ORIGIN")
-            else
-              case "$VITE_API_BASE_URL" in
-                *.workers.dev* | "https://$CUSTOM_DOMAIN" | "https://$CUSTOM_DOMAIN/"*)
-                  echo "::error::VITE_API_BASE_URL が Worker を向いているのに WORKERS_API_ORIGIN が無い。このままだと POS が API に届かない"
-                  exit 1
-                  ;;
-              esac
-              echo "::warning::WORKERS_API_ORIGIN が無いので、Worker は /api を中継しない"
-            fi
+          if [ -n "$API_ORIGIN" ]; then
+            var_args=(--var "API_ORIGIN:$API_ORIGIN")
+          else
+            case "$VITE_API_BASE_URL" in
+              *.workers.dev* | "https://$CUSTOM_DOMAIN" | "https://$CUSTOM_DOMAIN/"*)
+                echo "::error::VITE_API_BASE_URL が Worker を向いているのに WORKERS_API_ORIGIN が無い。このままだと POS が API に届かない"
+                exit 1
+                ;;
+            esac
+            echo "::warning::WORKERS_API_ORIGIN が無いので、Worker は /api を中継しない"
           fi
 
-          # 本番の Worker にだけ独自ドメインを付ける（versions upload は付け外しをしない）。
-          # PR で deploy に倒したとき（WORKERS_AUTO_DEPLOY_IF_NOT_EXIST）は、プレビューの
-          # アカウントに出すので付けない。
+          # 独自ドメインを付ける。
           #
           # wrangler は routes（--domain も含む）があると workers_dev を既定で false にするので、
-          # 付けると workers.dev の本番の URL は止まる。preview_urls は wrangler.jsonc で true に
-          # してあるので、PR のプレビューは workers.dev に残る。変数を消して deploy し直すと
-          # workers.dev がまた開く（独自ドメインは消えない）。
+          # 付けると workers.dev の本番の URL は止まる（preview_urls は wrangler.jsonc で別に決まる）。
+          # 変数を消して deploy し直すと workers.dev がまた開く（独自ドメインは消えない）。
           #
           # wrangler は workers.dev を止めてから独自ドメインを付ける。ゾーンがこのアカウントに
           # 無いと、workers.dev だけが止まって独自ドメインは付かず、本番の POS に届かなくなる。
-          # そうなったら変数を消して手動実行し直す。WORKERS_PROD_* 無しで（プレビューと同じ
+          # そうなったら変数を消して手動実行し直す。WORKERS_PROD_* 無しで（cafeorepos の
           # アカウントのまま）独自ドメインだけを入れたときは、出す前に止める。
+          #
+          # DNS を GCP の LB に付け替えた後は、ここまで来ない（上の「まだ Workers を向いているか確かめる」）。
           domain_args=()
-          if [ "$mode" = "deploy" ] && [ "$IS_PR" != "true" ] && [ -n "$CUSTOM_DOMAIN" ]; then
+          if [ -n "$CUSTOM_DOMAIN" ]; then
             if [ -z "$PROD_ACCOUNT_ID" ]; then
               echo "::error::WORKERS_CUSTOM_DOMAIN は WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID（独自ドメインのゾーンがあるアカウント）と一緒に入れる"
               exit 1
@@ -377,14 +227,13 @@ jobs:
           # 消えると中継が LB で 403 になり、POS が API に届かなくなる。
           # --secrets-file に書いていない secret は消えない（wrangler の挙動）。
           #
-          # ElevenLabs の鍵は本番の deploy でもプレビューの versions upload でも毎回入れる。
-          # 書かなかった secret は前のバージョンから引き継がれるので、片方だけで入れると
-          # もう片方に古い値が残る。どちらも同じ GitHub の secret から入れて揃える。
+          # ElevenLabs の鍵も deploy のたびに入れる。書かなかった secret は前のバージョンから
+          # 引き継がれるので、GitHub の secret を変えたときに古い値が残らないようにする。
           # 無ければ入れない（呼び出し画面は音声を流さず、チャイムだけになる）。
           #
           # 値はコマンドラインに載せず、RUNNER_TEMP のファイル経由で渡して最後に消す。
           proxy_token=""
-          if [ "$mode" = "deploy" ] && [ -n "$API_ORIGIN" ]; then
+          if [ -n "$API_ORIGIN" ]; then
             if [ -z "$LB_PROXY_TOKEN" ]; then
               echo "::error::WORKERS_API_ORIGIN があるのに secret の LB_PROXY_TOKEN が無い。このままだと中継が LB で 403 になる"
               exit 1
@@ -408,102 +257,14 @@ jobs:
           fi
 
           status=0
-          if [ "$mode" = "deploy" ]; then
-            out=$(pnpm exec wrangler deploy "${var_args[@]}" "${domain_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
-          else
-            # エイリアスは英字で始まり、Worker 名と - でつないで 63 文字以内であること
-            # （DNS のラベルになるため）。pr-<番号> なら収まる。
-            out=$(pnpm exec wrangler versions upload \
-              --tag "pr-$PR_NUMBER" \
-              --preview-alias "pr-$PR_NUMBER" \
-              --message "PR #$PR_NUMBER ($GITHUB_SHA)" \
-              "${secret_args[@]}" 2>&1) || status=$?
-          fi
-
+          out=$(pnpm exec wrangler deploy "${var_args[@]}" "${domain_args[@]}" "${secret_args[@]}" 2>&1) || status=$?
           echo "$out"
 
-          # wrangler の出力から workers.dev の URL を拾う。
-          # versions upload ならプレビュー URL（そのバージョンのもの）、deploy なら本番の URL。
-          # versions upload ではエイリアスの URL も別の行（Version Preview Alias URL: ...）に
-          # 出るので、そちらは行の見出しで拾い、プレビュー URL からはその行を除いておく
-          # （wrangler の出力の順が変わっても、エイリアスの URL を取り違えない）。
-          # 取れなくてもここでは失敗させない（コメントを省くだけ）。
-          preview_url=$(printf '%s\n' "$out" \
-            | grep -vF 'Preview Alias URL' \
-            | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
-            | head -1) || true
-          alias_url=$(printf '%s\n' "$out" \
-            | grep -F 'Preview Alias URL' \
-            | grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' \
-            | head -1) || true
-
           {
-            echo "mode=$mode"
-            echo "preview_url=$preview_url"
-            echo "alias_url=$alias_url"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "### wrangler の出力（mode: $mode）"
+            echo "### wrangler の出力"
             echo '```'
             echo "$out"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$status"
-
-      # デプロイが成功したときだけ走る（既定の if: success()）。
-      - name: プレビュー URL を PR にコメントする
-        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.preview_url != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.number }}
-          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
-          ALIAS_URL: ${{ steps.deploy.outputs.alias_url }}
-          MODE: ${{ steps.deploy.outputs.mode }}
-          API_OWNER: ${{ steps.api_url.outputs.owner }}
-        run: |
-          set -uo pipefail
-
-          # エイリアスの URL は push しても変わらないので、そちらを URL として出し、
-          # バージョンの URL は「この commit」として添える。エイリアスが取れなかったとき
-          # （deploy に倒したときなど）はバージョンの URL だけを出す。
-          url_rows="| URL | $PREVIEW_URL |"
-          if [ -n "$ALIAS_URL" ]; then
-            url_rows=$(printf '%s\n' \
-              "| URL | $ALIAS_URL |" \
-              "| この commit の URL | $PREVIEW_URL |")
-          fi
-
-          body=$(printf '%s\n' \
-            "$COMMENT_MARKER" \
-            "### $SERVICE_LABEL のプレビュー" \
-            "" \
-            "| | |" \
-            "| --- | --- |" \
-            "$url_rows" \
-            "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
-            "| commit | \`$GITHUB_SHA\` |" \
-            "| mode | \`$MODE\` |" \
-            "" \
-            "このコメントは push のたびに書き換わる。")
-
-          # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
-          # github-actions[bot] が書いたものに限る。目印を本文で引用した他の人や
-          # bot のコメント（Claude の概要など）を上書きしてしまうため。
-          # 消す側の pr-cleanup.yml も同じ条件で探す。
-          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-            --paginate \
-            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
-
-          if [ -n "$comment_id" ]; then
-            gh api --method PATCH \
-              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
-              -f body="$body" > /dev/null
-            echo "既存のコメント $comment_id を更新した"
-          else
-            gh api --method POST \
-              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
-              -f body="$body" > /dev/null
-            echo "コメントを新規作成した"
-          fi

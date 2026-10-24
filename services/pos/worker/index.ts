@@ -1,6 +1,9 @@
 // POS の Worker。静的ファイル（build/client）は assets がそのまま返し、
 // /api・/status・/health だけをここで Cloud Run の API へ中継する。
-// 呼び出し画面の音声（/call-voice）もここで返す（worker/call-voice.ts）。
+// 呼び出し画面の音声（/call-voice）と、ログインのセッションの確認（/session-check）もここで返す。
+//
+// GCP に移した後は、同じことを Cloud Run の web（server/）がする（README の「POS を GCP に移す」）。
+// DNS を付け替えて確かめるまでは、こちらが本番。切り替えが済んだら、この Worker ごと消す。
 //
 // ## なぜ中継するのか
 //
@@ -37,6 +40,7 @@ interface Env extends CallVoiceEnv {
 // run_worker_first と揃えること
 const API_PATH = /^\/(?:api\/|status$|health$)/;
 const CALL_VOICE_PREFIX = "/call-voice/";
+const SESSION_CHECK_PATH = "/session-check";
 
 // **infra の gcp/api_edge.tf の api_proxy_token_header と揃えること。**
 const PROXY_TOKEN_HEADER = "X-Cafeore-Proxy-Token";
@@ -51,6 +55,14 @@ export default {
     // プレビューでも、画面と同じ Worker が返す（中継先の API_ORIGIN は要らない）
     if (url.pathname.startsWith(CALL_VOICE_PREFIX)) {
       return handleCallVoice(request, env, ctx);
+    }
+    // 画面がログインのセッションを確かめる（useOnlineStatus）。Worker ごと Access の内側なので、
+    // セッションが切れていれば Access が 401 を返し、ここには来ない。Cloud Run の web（server/app.ts）と同じ
+    if (url.pathname === SESSION_CHECK_PATH) {
+      return new Response(null, {
+        status: 204,
+        headers: { "cache-control": "no-store" },
+      });
     }
     if (!API_PATH.test(url.pathname)) {
       return env.ASSETS.fetch(request);

@@ -12,7 +12,7 @@
 # 使い方: build-info.sh
 # 環境変数: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_NAME, GITHUB_SHA,
 #           PR_NUMBER と PR_HEAD_SHA（pull_request のときだけ）
-# api-build.yml と pos-deploy-workers.yml が使う。
+# api-build.yml と pos-deploy-cloudrun.yml（と、切り替えまでの本番の pos-deploy-workers.yml）が使う。
 set -uo pipefail
 
 if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then

@@ -1,0 +1,398 @@
+name: pos / deploy (Cloud Run)
+
+# POS の画面をビルドし、web のコンテナ（services/pos/Dockerfile）にして Artifact Registry へ push し、
+# Cloud Run の web のサービスへ出す（README の「POS を GCP に移す」）。
+#
+# ssr: false の SPA なので、画面は build/client の静的ファイル。コンテナの中の Node のサーバー
+# （services/pos/server）がそれを返し、呼び出しの音声（/call-voice）とセッションの確認（/session-check）も受け持つ。
+# /api・/status・/health は LB が api（cafeore-pos-prod）へ回すので、web には来ない。
+#
+# main への push と手動実行では本番の cafeore-pos-web を、ビルドしたイメージのダイジェストで更新する。
+# サービス自体と env（CALL_VOICE_BUCKET・ELEVENLABS_API_KEY）は infra が持つので、ここでは image だけを変える。
+# 画面は API を同じオリジン（POS_WEB_ORIGIN、既定 https://pos.cafeore.cafe）で呼ぶ。
+#
+# PR では本番に触らず、プレビュー用の別サービス（既定 cafeore-pos-web-preview）へ
+# **リビジョンタグ付き・トラフィックなし**（--no-traffic --tag pr-<番号>）で出す。api-build.yml の
+# backend のプレビューと同じやり方で、PR ごとに https://pr-<番号>---<service>-<hash>.<region>.run.app が生える。
+# プレビューの画面は、その PR の backend のタグの URL を直接呼ぶ（焼き込む）。
+#
+# PR のプレビューは **preview ラベルが付いた open な PR にだけ**出す（api-build.yml の
+# 「PR では preview ラベルが付いているときだけ」を参照）。ラベルを外すか PR を閉じると、
+# pr-cleanup.yml がタグ（Cloud Run と Artifact Registry）と PR のコメントを片付ける。
+#
+# DNS を付け替えるまでは、本番の POS は Cloudflare Workers（pos-deploy-workers.yml）のまま。
+# 切り替える前でも、ここは本番の cafeore-pos-web を更新する（LB の向こうにあるだけで、まだ誰も使っていない）。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/pos/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pos-deploy-cloudrun.yml'
+  pull_request:
+    # 既定の opened / synchronize / reopened に、ラベルを付けたときを足している。
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - labeled
+    paths:
+      - 'services/pos/**'
+      - 'modules/common/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/pos-deploy-cloudrun.yml'
+  workflow_dispatch:
+
+# WIF の OIDC トークン発行に id-token: write が必須。
+permissions:
+  contents: read
+  id-token: write
+  # プレビュー URL を PR にコメントするのに必要。
+  # fork からの PR は job の if で除外してあるので、書き込みを許しても
+  # 外部の人のコードがこの権限を使うことはない。
+  pull-requests: write
+
+# プレビューを出さない PR の実行（ラベルの無い PR への push、別のラベルを
+# 付けたときなど）は job がスキップされるだけだが、同じ group に入ると
+# 走っているプレビューのデプロイを取り消してしまう。run_id で group を
+# 分けて逃がす。**条件は job の if と揃えること。**
+#
+# pr-cleanup.yml の web のプレビューを片付ける job も PR ではこの group に入り、デプロイが
+# 終わるのを待ってから片付ける。**group 名を変えるときは pr-cleanup.yml も揃えること。**
+concurrency:
+  group: >-
+    ${{ (github.event_name != 'pull_request'
+         || (github.actor != 'dependabot[bot]'
+             && github.event.pull_request.head.repo.full_name == github.repository
+             && github.event.pull_request.state == 'open'
+             && contains(github.event.pull_request.labels.*.name, 'preview')
+             && (github.event.action != 'labeled' || github.event.label.name == 'preview')))
+        && format('pos-deploy-cloudrun-{0}', github.ref)
+        || format('pos-deploy-cloudrun-skip-{0}', github.run_id) }}
+  # 本番へのデプロイを途中で止めると、前のコミットのまま残ることがあるので、
+  # 打ち切ってよいのは PR のプレビューだけにする（api-build.yml と同じ）。
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deploy:
+    name: Build and deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    # 3つ除外している（pos-deploy-workers.yml・api-build.yml と同じ）。
+    #
+    #   - fork からの PR … secrets も id-token も渡らないので実行しても必ず落ちる
+    #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
+    #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
+    #     渡らず（Dependabot 用の別ストアが引かれる）、権限も read-only なので
+    #     やはり認証で落ちる。依存更新の妥当性は pos-ci で見る
+    #   - preview ラベルの無い PR … プレビューはラベルを付けた PR にだけ出す。
+    #     別のラベルを付けたときと、閉じた PR にラベルを付けたときも出さない
+    #     （閉じた PR は片付けが済んでいるので、出すと消されずに残る）
+    #
+    # **PR の条件は上の concurrency と揃えること。**
+    if: >-
+      ${{ github.actor != 'dependabot[bot]'
+          && (github.event_name != 'pull_request'
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                  && github.event.pull_request.state == 'open'
+                  && contains(github.event.pull_request.labels.*.name, 'preview')
+                  && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
+
+    env:
+      # いずれも秘密情報ではない。既定値は api-build.yml と同じ（infra の `terraform output` の現行値）。
+      # Terraform 側で ID を変えたら、このリポジトリの Variables に入れて上書きする。
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      # **pr-cleanup.yml の web のプレビューの片付けと揃えること。**
+      IMAGE_NAME: pos-web
+      CLOUD_RUN_SERVICE: ${{ vars.GCP_CLOUD_RUN_WEB_SERVICE || 'cafeore-pos-web' }}
+      CLOUD_RUN_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE || 'cafeore-pos-web-preview' }}
+      # PR の画面が呼ぶ backend のプレビュー用サービス（api-build.yml の CLOUD_RUN_PREVIEW_SERVICE）
+      API_PREVIEW_SERVICE: ${{ vars.GCP_CLOUD_RUN_PREVIEW_SERVICE || 'cafeore-pos-preview' }}
+      # PR コメントを service ごとに1件へまとめるための目印。Workers のプレビューの
+      # '<!-- cafeore-preview: pos -->' とは分けている（あちらは古いコメントの片付けにだけ残る）。
+      # pr-cleanup.yml もこの目印でコメントを探して消すので、変えるときは揃えること。
+      COMMENT_MARKER: '<!-- cafeore-preview: pos-web -->'
+      SERVICE_LABEL: 'POS'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: './.github/actions/setup-deps'
+
+      - name: GCP に認証する
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+          # docker login にそのまま渡せる短期トークンを受け取る。
+          # SA を impersonate するので service_account の指定が必要。
+          token_format: access_token
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # PR のビルドに焼き込む API の URL を確定させる（pos-deploy-workers.yml でしていたのと同じ）。
+      #
+      # Cloud Run のサービス URL は**サービス単位で固定**で、リビジョンが
+      # 変わっても変わらない。つまり backend のデプロイを待つ必要はなく、
+      # サービスさえ存在していれば先に引ける。ビルドは VITE_* を焼き込むので、
+      # この確定はビルドより前でなければならない。
+      #
+      # 引けなくても**落とさない**（backend のサービス未作成、権限不足など）。
+      # その場合は下の VITE_API_BASE_URL_PREVIEW にフォールバックする。
+      - name: プレビュー用 backend の URL を引く
+        id: api_url
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -uo pipefail
+
+          # 別の PR の上に積んだ PR で backend を変えていなければ、向き先の PR の backend を使う
+          # （api-build.yml の backend-owner と同じスクリプト）。決められなければ自分の番号。
+          owner=$(bash .github/scripts/preview-backend-owner.sh "$PR_NUMBER") || owner="$PR_NUMBER"
+          case "$owner" in
+            ''|*[!0-9]*) owner="$PR_NUMBER" ;;
+          esac
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+
+          # backend は PR ごとに pr-<番号> のリビジョンタグを付けてデプロイされ、
+          # そのタグ専用の URL を持つ。まずは実物を引く。
+          spec=$(gcloud run services describe "$API_PREVIEW_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format=json 2>&1) || spec=""
+
+          url=""
+          if [ -n "$spec" ]; then
+            url=$(printf '%s' "$spec" \
+              | jq -r --arg t "pr-$owner" \
+                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty' \
+              2>/dev/null) || url=""
+          fi
+
+          # まだ backend がデプロイされていないと、そのタグは存在しない。
+          # タグ URL はサービス URL のホスト名に "<タグ>---" を足した形なので、
+          # サービス URL から組み立てておく。あとで backend が出れば有効になる。
+          if [ -z "$url" ] && [ -n "$spec" ]; then
+            base=$(printf '%s' "$spec" | jq -r '.status.url // empty' 2>/dev/null) || base=""
+            case "$base" in
+              https://*) url="https://pr-$owner---${base#https://}" ;;
+            esac
+          fi
+
+          case "$url" in
+            https://*) echo "url=$url" >> "$GITHUB_OUTPUT"; echo "API は $url（#$owner の backend）を使う" ;;
+            *) echo "URL を引けなかったので変数のフォールバックに任せる" ;;
+          esac
+
+      # どの PR・コミットのビルドかを画面に焼き、トップページに出す（API の分は /status から）。
+      # 本番は main のマージコミットから PR を引く（.github/scripts/build-info.sh）。
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
+      - name: ビルドする
+        working-directory: services/pos
+        run: pnpm run build
+        env:
+          # 静的ファイルに焼き込まれる。ここに入れた値はブラウザから読める
+          # （本番は IAP の内側なので、ログインした人だけ）。
+          VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          VITE_BUILD_PR: ${{ steps.build_info.outputs.pr }}
+          VITE_BUILD_COMMIT: ${{ steps.build_info.outputs.commit }}
+          # 本番は同じオリジン。LB が /api・/status・/health を api に回す。
+          # PR では上で引いたプレビュー用 backend の URL を焼き込む。引けなかった場合は
+          # VITE_API_BASE_URL_PREVIEW、それも無ければ本番と同じ値になる（本番の API の CORS は
+          # プレビューの URL を通さないので、API につながらないプレビューになる）。
+          VITE_API_BASE_URL: >-
+            ${{ (github.event_name == 'pull_request'
+                 && (steps.api_url.outputs.url || vars.VITE_API_BASE_URL_PREVIEW))
+                || vars.POS_WEB_ORIGIN || 'https://pos.cafeore.cafe' }}
+
+      # server/ を 1 ファイル（build/web-server.mjs）に束ねる。Dockerfile はそれと build/client をコピーするだけ。
+      - name: web のサーバーを束ねる
+        working-directory: services/pos
+        run: pnpm run build:server
+
+      - name: Artifact Registry に docker login する
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: タグを決める
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          # PR のイメージには **pr-<番号> しか付けない**（api-build.yml と同じ理由）。
+          # sha タグも一緒に付けてしまうと、PR を閉じたときに pr- タグを消しても
+          # sha タグが残ってバージョンが TAGGED のままになり、
+          # 「未参照になったら消す」クリーンアップの対象から漏れる。
+          tags: |
+            type=sha,format=long,prefix=,enable=${{ github.event_name != 'pull_request' }}
+            type=ref,event=pr
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ビルドして push する
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: services/pos
+          file: services/pos/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # api-build.yml と同じく、provenance attestation を付けず単一のイメージにする。
+          provenance: false
+
+      - name: Cloud Run にデプロイする
+        id: deploy
+        env:
+          # タグではなくダイジェストで指定する。タグは後から別のイメージへ
+          # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -uo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # ここでは image しか渡さない。**--update-env-vars・--set-secrets・--service-account などを足さないこと。**
+          #   - env（CALL_VOICE_BUCKET・ELEVENLABS_API_KEY）は本番もプレビューも Terraform が持ち、新しいリビジョンは
+          #     サービスのものを引き継ぐ。プレビューの env は infra の ignore_changes に入っていないので、
+          #     ここで変えると次の apply とぶつかる
+          #   - 実行 SA は Terraform が作った web 専用のもの（cafeore-pos-web@...）。CI の SA が actAs できるのは
+          #     それだけなので、別のものを指定すると落ちる
+          if [ "$IS_PR" = "true" ]; then
+            service="$CLOUD_RUN_PREVIEW_SERVICE"
+            tag="pr-$PR_NUMBER"
+            # --no-traffic なのでサービスの素の URL の向き先は動かず、タグ URL からだけ
+            # 到達できるリビジョンができる。同じ PR に push し直すと、その
+            # タグが新しいリビジョンへ付け替わる。
+            gcloud run deploy "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              --no-traffic \
+              --tag="$tag" \
+              --quiet || exit $?
+          else
+            service="$CLOUD_RUN_SERVICE"
+            tag=""
+            # 本番は traffic が LATEST 追従なので、image を差し替えれば切り替わる。
+            # image は infra（gcp/pos_web.tf）が ignore_changes に入れているので、次の apply で
+            # 踏み台のイメージに巻き戻らない。
+            gcloud run services update "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --image="$image" \
+              --quiet || exit $?
+          fi
+
+          # URL を確定させる。PR はタグ URL、それ以外はサービスの URL。
+          # 本番の run.app は入口を LB に絞ってあり（infra の ingress）、記録に残すだけ。POS は POS_WEB_ORIGIN で開く。
+          url=""
+          if [ -n "$tag" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format=json \
+              | jq -r --arg t "$tag" \
+                  'first(.status.traffic[]? | select(.tag == $t) | .url) // empty')
+          fi
+          if [ -z "$url" ]; then
+            url=$(gcloud run services describe "$service" \
+              --project="$GCP_PROJECT_ID" \
+              --region="$GCP_REGION" \
+              --format='value(status.url)')
+          fi
+
+          {
+            echo "service=$service"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Cloud Run にデプロイした"
+            echo '```'
+            echo "service: $service ($GCP_REGION)"
+            echo "url:     $url"
+            echo "image:   $image"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # デプロイが成功したときだけ走る（既定の if: success()）。
+      - name: プレビュー URL を PR にコメントする
+        if: ${{ github.event_name == 'pull_request' && steps.deploy.outputs.url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          SERVICE: ${{ steps.deploy.outputs.service }}
+          API_OWNER: ${{ steps.api_url.outputs.owner }}
+        run: |
+          set -uo pipefail
+
+          body=$(printf '%s\n' \
+            "$COMMENT_MARKER" \
+            "### $SERVICE_LABEL のプレビュー" \
+            "" \
+            "| | |" \
+            "| --- | --- |" \
+            "| URL | $PREVIEW_URL |" \
+            "| service | \`$SERVICE\` |" \
+            "| backend | ${API_OWNER:+#$API_OWNER のもの} |" \
+            "| commit | \`$GITHUB_SHA\` |" \
+            "" \
+            "本番とは別のサービス。アクセスが無ければゼロまで縮む。" \
+            "このコメントは push のたびに書き換わる。")
+
+          # 既に自分が書いたコメントがあれば、増やさずにそれを書き換える。
+          # github-actions[bot] が書いたものに限る。目印を本文で引用した他の人や
+          # bot のコメント（Claude の概要など）を上書きしてしまうため。
+          # 消す側の pr-cleanup.yml も同じ条件で探す。
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --paginate \
+            --jq "map(select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$COMMENT_MARKER\")))) | .[0].id // empty")
+
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH \
+              "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -f body="$body" > /dev/null
+            echo "既存のコメント $comment_id を更新した"
+          else
+            gh api --method POST \
+              "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -f body="$body" > /dev/null
+            echo "コメントを新規作成した"
+          fi
+
+      - name: push したイメージを表示する
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### push したイメージ"
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

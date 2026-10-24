@@ -18,30 +18,31 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` は Docker イメージのビルドも見る。push はしない） |
+| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` と `pos-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
-| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
-| `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
+| `pos-deploy-cloudrun` | `services/pos` | 画面をビルドして web のイメージを Artifact Registry へ push し、Cloud Run（`cafeore-pos-web`）へデプロイ。PR では `cafeore-pos-web-preview` にプレビューを出す |
+| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers の本番へデプロイ。GCP に移し終えるまでの本番で、PR では走らない（[POS を GCP に移す](#pos-を-gcp-に移す)） |
+| `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー（Artifact Registry と Cloud Run のタグ、Neon のブランチ、PR のコメント）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
 ### PR のプレビューは `preview` ラベルで出す
 
 PR のプレビュー（下のフロントエンドと backend）は、**`preview` ラベルが付いた open な PR にだけ**出す。
-ラベルの無い PR では `api-build` / `pos-deploy-workers` の job がスキップされる。
+ラベルの無い PR では `api-build` / `pos-deploy-cloudrun` の job がスキップされる。
 
 | 操作 | 何が起きるか |
 |--|--|
 | ラベルを付ける | プレビューをデプロイし、URL を PR にコメントする |
 | ラベルが付いている間に push / reopen | デプロイし直す（コメントは書き換わる） |
-| ラベルを外す | `pr-cleanup` が backend を片付ける |
-| PR を閉じる | `pr-cleanup` が backend を片付け、全部成功したらラベルも外す |
+| ラベルを外す | `pr-cleanup` が backend と画面のプレビューを片付ける |
+| PR を閉じる | `pr-cleanup` が backend と画面のプレビューを片付け、全部成功したらラベルも外す |
 
 - ラベルは「プレビューが出ている」ことを表す。閉じたときの片付けが失敗した場合は外さず、残っているものがあることを示す
 - 閉じたときはラベルの有無にかかわらず片付ける（ラベル運用より前に出したプレビューも回収するため）
 - 各 workflow の `paths` は今までどおり効く。対象のパスを触っていない PR は、ラベルを付けてもその workflow が走らない
-- ラベルの無い PR でも、Docker イメージが作れるかは `api-ci` で見る。DB のスキーマのずれの検査（`/status` の `schema_drift`）はプレビューを出したときと main へのデプロイ時だけ
-- フロントの Cloudflare Workers 側は、ラベルを外しても消えない（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)を参照）。焼き込んだ backend の URL は外れるので、API には繋がらなくなる
-- デプロイ中にラベルを外すと、片付けはデプロイが終わるのを待ってから走る（`api-build` と `pr-cleanup` が同じ concurrency group `preview-backend-pr-<番号>` に入る）
+- ラベルの無い PR でも、Docker イメージが作れるかは `api-ci`（api）と `pos-ci`（web）で見る。DB のスキーマのずれの検査（`/status` の `schema_drift`）はプレビューを出したときと main へのデプロイ時だけ
+- 画面のプレビューは Cloud Run の `pr-<番号>` のタグなので、backend と一緒に片付く。前に Cloudflare Workers に出した画面のプレビューは消えない（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)を参照）。焼き込んだ backend の URL は外れるので、API には繋がらない
+- デプロイ中にラベルを外すと、片付けはデプロイが終わるのを待ってから走る（backend は `api-build` と `pr-cleanup` が同じ concurrency group `preview-backend-pr-<番号>` に、画面は `pos-deploy-cloudrun` と `pr-cleanup` の web の job が `pos-deploy-cloudrun-refs/pull/<番号>/merge` に入る）
 - `pr-cleanup` は `pull_request_target` なので、ラベルを外したときの片付けは **main にある定義**で走る。`pull_request` で走るデプロイ側は PR 側の定義で走る
 - ラベルは事前に作っておくこと（無いと付けられない）
 
@@ -59,7 +60,178 @@ PR のプレビュー（下のフロントエンドと backend）は、**`previe
 - `GITHUB_TOKEN` で付けるので、デプロイは走らない。プレビューは次の push で最新になる
 - 何度流しても結果は同じ。`workflow_dispatch` だけの workflow は main に入ってからでないと Actions の画面から流せない
 
+### フロントエンド（Cloud Run の web）
+
+POS の画面は GCP に移す（[POS を GCP に移す](#pos-を-gcp-に移す)）。DNS を付け替えるまでの本番は、
+下の [Cloudflare Workers](#フロントエンドcloudflare-workers) のまま。PR のプレビューは先にこちらへ移した。
+
+```
+pos.cafeore.cafe（Cloudflare は DNS だけ）─→ GCP の外部アプリケーション LB
+  ├ POST /api/square/webhook・GET /status・GET /health ─→ api-public（IAP なし）─→ Cloud Run cafeore-pos-prod
+  ├ /api/*（WebSocket の /api/ws/orders も）          ─→ api（IAP）        ─→ Cloud Run cafeore-pos-prod
+  └ それ以外（画面・/call-voice/*・/session-check）     ─→ web（IAP）        ─→ Cloud Run cafeore-pos-web
+```
+
+LB・IAP・証明書・Cloud Run のサービスとその env は infra が作る（infra の README「POS を GCP に移す」）。
+このリポジトリが持つのは web のコンテナの中身と、そのデプロイ（`pos-deploy-cloudrun`）。
+
+web のコンテナ（`services/pos/Dockerfile`）は、`build/client` と、`services/pos/server` を 1 ファイルに束ねた
+`build/web-server.mjs` を `node:22-slim` に置くだけ。サーバーは Node の組み込みだけで書いてあり、node_modules は要らない。
+`node` ユーザーで走り、`PORT`（既定 8080）で待ち、SIGTERM で閉じる。
+
+| パス | 何を返すか |
+|--|--|
+| `/call-voice/*` | 呼び出しの音声（[呼び出しの音声](#呼び出しの音声elevenlabs)）。Workers と同じ `worker/call-voice.ts` を使い、片を溜めるのは GCS |
+| `/session-check` | 204（`cache-control: no-store`）。画面がログインのセッションを確かめる（`useOnlineStatus`）。IAP の内側なので、切れていれば IAP が 401 を返す |
+| `/api/*`・`/status`・`/health` | 404。LB が api に回すので、ここには来ない（来たら LB の設定の間違い。中継はしない） |
+| それ以外 | `build/client` のファイル。無ければ SPA として `index.html`。ただし `/assets/` の下と、最後の段に拡張子があるパス（`.js`・`.png` など）は 404 |
+
+- キャッシュ: `index.html` は `no-cache`（ETag で確かめる）、`/assets/`（名前に中身のハッシュが付く）は
+  `private, max-age=31536000, immutable`、それ以外（`favicon.ico`・`epos-2.27.0.js` など）は `no-cache`。
+  無いファイルの 404 は `no-store`
+- テキスト（JS・CSS・HTML など）は br か gzip にして返す（Cloud Run は圧縮しない）。動画は Range に応える
+- 返すのは起動したときに `build/client` にあったファイルだけ。パスからファイルの場所を組み立てないので、`..` などで外は読めない
+- SPA のフォールバックの線引き（Workers と違い、ファイルらしいパスは 404 にする）と理由は `services/pos/server/static.ts` の冒頭
+- 手元で動かすときは、`services/pos` で `pnpm run build && pnpm run build:server` のあと `node build/web-server.mjs`
+  （`docker build -t pos-web .` でイメージも作れる）。`CALL_VOICE_BUCKET` は入れない（手元にはメタデータサーバーが無いので溜められない）
+
+`pos-deploy-cloudrun` は、main への push と手動実行では本番の `cafeore-pos-web` を、PR（`preview` ラベル付きのみ）では
+`cafeore-pos-web-preview` を更新する。どちらもサービスと env（`CALL_VOICE_BUCKET`・`ELEVENLABS_API_KEY`）は infra が持つので、
+image だけを差し替える。
+
+- 本番: `VITE_API_BASE_URL` を `POS_WEB_ORIGIN`（既定 `https://pos.cafeore.cafe`。同じオリジン）にしてビルドし、
+  イメージ `pos-web` を push して、`gcloud run services update --image <ダイジェスト>` で差し替える
+- PR: その PR の backend のタグの URL を引いて `VITE_API_BASE_URL` に焼き込む（Workers のプレビューでしていたのと同じ。
+  まだ backend が出ていなければサービスの URL から組み立て、引けなければ `VITE_API_BASE_URL_PREVIEW`）。
+  `pos-web:pr-<番号>` のタグだけで push し、`--no-traffic --tag pr-<番号>` で出す。タグの URL
+  （`https://pr-<番号>---cafeore-pos-web-preview-<hash>.<region>.run.app`）を PR にコメントする（push のたびに書き換わる）
+- PR のプレビューは LB の外の run.app を直接開くので、ログインしない（今までの Workers のプレビューと同じ）
+- PR を閉じるか `preview` ラベルを外すと、`pr-cleanup` がタグ（Cloud Run と Artifact Registry）とコメントを片付ける
+
+サービスの名前は Variables の `GCP_CLOUD_RUN_WEB_SERVICE`・`GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE` で上書きできる（[必要な設定](#必要な設定)）。
+
+### POS を GCP に移す
+
+POS の画面を Cloudflare Workers（`pos-deploy-workers`）から GCP（`pos-deploy-cloudrun`。[上](#フロントエンドcloud-run-の-web)）に移す。
+URL（`https://pos.cafeore.cafe`）は変えず、DNS の向き先を Workers から GCP の LB に付け替える。
+ログインは Cloudflare Access から IAP（Google のアカウント）に変わる。
+
+**途中で POS を止めないため、今の Workers の本番（`services/pos/worker`・`wrangler.jsonc`・`pos-deploy-workers` の本番の deploy・
+R2）と、infra の合言葉つきの LB（`api_edge.tf`）は、DNS を付け替えて確かめるまで消さない。** 戻すときはそれを使う。
+
+infra・api と合わせて、この順で進める。ここに書くのはこのリポジトリの側で、infra の側は infra の README「POS を GCP に移す」、
+api の認証は [API の認証](#api-の認証cloudflare-access)。
+
+0. **手作業の準備（GCP）**: `iap.googleapis.com`・`certificatemanager.googleapis.com` を有効にする。Secret Manager にシークレット
+   `elevenlabs-api-key`（ElevenLabs の鍵。GitHub の secret `ELEVENLABS_API_KEY` と同じ値）を作る。HCP Terraform の apply の
+   principal に LB・Cloud Armor・Certificate Manager・IAP・GCS のロールを足す。IAP でログインさせる Google アカウントを決める
+   （プロジェクトの組織の外のアカウントなら、自前の OAuth クライアントを作って infra の変数に入れる）
+1. **infra を merge して workspace `gcp` を apply する**。web の Cloud Run（`cafeore-pos-web`・`cafeore-pos-web-preview`）が
+   踏み台のイメージで立ち、LB・IAP・証明書（まだ PROVISIONING）ができる
+2. **workspace `cloudflare` に証明書の DNS 認証のレコードを入れて apply し、証明書が ACTIVE になるのを待つ**。
+   DNS はまだ Workers のままなので、POS は止まらない
+3. **このリポジトリを merge する**（下の「GitHub の設定」を先に）。`pos-deploy-cloudrun` が web のイメージを `cafeore-pos-web` に出す。
+   Workers の本番も出し直され、画面が `/session-check` を確かめるようになる（手順 4 の後に開いたままの画面がログインへ戻れるのは、これがあるから）。
+   手順 1 より前に merge すると、web のサービスがまだ無いので `pos-deploy-cloudrun` が落ちる（Workers の本番には響かない）。
+   `preview` ラベルの付いた PR の画面のプレビューも、手順 1 までは出せない
+4. **DNS を付け替える**（営業していない時間に。4-3 から 4-5 までは POS が開けない）
+   1. **先に api の `AUTH_MODE` を変える**（infra の `api_auth_mode`）。付け替えた後の API には Access の JWT ではなく IAP の JWT が付く。
+      今が `cloudflare-access`（か `cloudflare-access-report-only`）なら `cloudflare-access+iap-report-only` に、`off` なら `off` のまま
+      （か `iap-report-only`）にする。`cloudflare-access` のままだと、付け替えた後の API が全部断られる
+   2. **付け替える前に、手元の PC で新しい経路を確かめる（関門）。** hosts で `pos.cafeore.cafe` を LB の IP（infra の output `pos_lb_ip`）に
+      向けて、ブラウザで開く。次のどれかが駄目なら、ここで止めて hosts を戻す（ほかは何も変わっていない）
+      - Google でログインした後、画面が開き、メニューが読み込める（`/api/*` も通る）。画面（web）と API（api）は LB の別の backend なので、
+        ログインが 1 回で済むかは確かめていない。API だけ 401 になるなら、この構成のままでは使えない
+      - 注文を登録し、別のタブの提供の画面に WebSocket で流れる
+      - 呼び出し画面で音声が鳴る
+      - しばらく置いても読み込み直しが続かない（`/session-check` が 401 にならない）
+   3. Cloudflare の `cafeore` アカウントの Worker `cafeore-pos` の Domains & Routes で、カスタムドメイン `pos.cafeore.cafe` を外す。
+      ここから `pos.cafeore.cafe` は開けなくなる
+   4. workspace `cloudflare` に `pos_gcp_lb_ipv4`（output の `pos_lb_ip`）を入れて apply し、A レコード（DNS only）を作る
+   5. `dig +short pos.cafeore.cafe` が LB の IP になるのを待つ
+
+   **手順 7 までは、Workers の本番を `--domain` 付きで出さない。** 出すとカスタムドメインを付け直そうとして、A レコードとぶつかる
+   （CI の wrangler は既にある DNS のレコードを上書きして独自ドメインを付ける。[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)の
+   「確かめていないこと」。ぶつかったときにどうなるかは確かめていない）。`pos-deploy-workers` は、`https://pos.cafeore.cafe` が Cloudflare
+   以外（応答の `Server` が `cloudflare` でない）から返ってくるのを見て、main への push では出さずに終わり（警告を残す）、手動実行では失敗する。
+   Variables の `WORKERS_CUSTOM_DOMAIN` は戻すときに使うので消さない。**4-3 から 4-5 で向き先が変わるまでは main に merge しない**
+   （名前が引けない間に走ると、応答が無いので `--domain` 付きで出し、外したカスタムドメインを付け直してしまう）
+5. **確かめる**（下の「確かめること」）。端末を開き直して Google でログインし、注文・WebSocket・呼び出しの音声を見る。
+   Cloud Run のログで、report-only の弾くはずだったものを見る
+6. **弾くようにし、入口を LB だけにする**（infra の README の手順 6）: Square の Webhook の通知 URL を
+   `https://pos.cafeore.cafe/api/square/webhook` に登録し直し、Variables の `GCP_API_LB_URL` を `https://pos.cafeore.cafe` にしてから
+   （`api-build` の `/status` の確かめが LB を通る）、infra で `api_auth_mode = "iap"`・`api_lb_only = true` にして apply する
+7. **後片付け（別の PR）**: 旧 LB（infra の `api_lb_enabled`・`api_proxy_token`）、Workers の本番（`pos-deploy-workers.yml`・
+   `services/pos/worker` のうち Worker だけが使うもの・`wrangler.jsonc`・Cloudflare の `cafeore-pos`）、R2 のバケット
+   `cafeore-call-voices`、GitHub の `LB_PROXY_TOKEN`・`WORKERS_*`・`VITE_API_BASE_URL`・`ELEVENLABS_API_KEY` を消す。
+   `server/` も使っている `worker/call-voice.ts`・`worker/mp3.ts` は消さずに `server/` の下へ移す
+
+#### GitHub の設定（手順 3 の前）
+
+| キー | 種別 | 値 |
+|--|--|--|
+| `POS_WEB_ORIGIN` | Variables | 任意。本番の画面が API を呼ぶオリジン。既定 `https://pos.cafeore.cafe` のままでよい |
+| `GCP_CLOUD_RUN_WEB_SERVICE` | Variables | 任意。既定 `cafeore-pos-web`。infra でサービスの名前を変えたときだけ |
+| `GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE` | Variables | 任意。既定 `cafeore-pos-web-preview`。同上 |
+
+- 新しく入れる secret は無い。ElevenLabs の鍵は GitHub ではなく Secret Manager から Terraform が web に入れる（手順 0）
+- GCP への認証（`GCP_WORKLOAD_IDENTITY_PROVIDER`・`GCP_SERVICE_ACCOUNT`）と Artifact Registry は `api-build` と同じものを使う。
+  CI のサービスアカウントが web の 2 つのサービスにデプロイする権限は infra が付ける（`gcp/github_actions.tf`）
+- `VITE_API_BASE_URL`・`WORKERS_*`（`WORKERS_CUSTOM_DOMAIN` も）・`LB_PROXY_TOKEN`・`ELEVENLABS_API_KEY` は Workers の本番と、それに
+  戻すときに使うので、手順 7 まで残す。`WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` は PR から Worker を出さなくなったので、もう使わない
+
+#### 端末を移す
+
+URL（オリジン）は変わらないので、localStorage に残しているもの（送れていない注文・CaOS の操作・刷れなかったシール、
+プリンターの設定、選んだ Square の端末など）も、ブックマークとホーム画面のアイコンもそのまま使える。変わるのはログインだけ。
+
+1. 手順 4 の後、各端末で POS を開き直す。DNS の向き先が変わるまで（TTL の間）は Workers に届くことがある
+2. Google のログインが出るので、IAP で許したアカウントでログインする（呼び出し画面などの表示用の端末は表示用のアカウント）
+3. 開いたままの画面は、`/session-check` が 401 になった時点（30 秒ごとに確かめる）で読み込み直し、Google のログインへ移る
+
+#### 確かめること（手順 5）
+
+- ログインしていないブラウザで `https://pos.cafeore.cafe/` を開くと Google のログインへ飛ばされ、ログインすると画面が開く
+- `curl https://pos.cafeore.cafe/status` が JSON を返す（IAP を通らずに api に届く）
+- トップページの一番下のビルドの番号が、今の main のもの（`pos-deploy-cloudrun` のビルド）
+- レジで注文が通り、提供・CaOS の画面に WebSocket で届く
+- 呼び出し画面で番号を呼ぶと読み上げが鳴る。GCS のバケットに `call-voice/` の下のオブジェクトができる
+  （R2 の音声は移さないので、はじめは呼んだ番号から ElevenLabs で作り直す。利用枠を使う）
+- `cafeore-pos-web` の run.app の URL を直接開いても届かない（入口が LB だけ。infra の ingress）
+- Cloud Run の `cafeore-pos-web` のログに `web: 応答を返せなかった`・`call-voice:` のエラーが出ていない
+
+#### 戻すとき（手順 6 の前）
+
+Workers の本番は手順 7 まで残っているので、DNS を戻してカスタムドメインを付け直せばよい。
+
+1. workspace `cloudflare` から `pos_gcp_lb_ipv4` を消して apply し、A レコードを消す
+2. `dig +short pos.cafeore.cafe` が何も返さなくなるのを待つ
+3. Actions の「pos / deploy (Workers)」を main で手動実行する。`WORKERS_CUSTOM_DOMAIN` を残してあるので、Workers の本番が
+   カスタムドメイン付きで出し直される。ランナーにまだ LB の IP が見えていると失敗する（上の止め方）ので、そのときは待って流し直す
+4. api の `AUTH_MODE` を手順 4-1 の前の値に戻す
+5. 端末を開き直す
+
+手順 6 の後に戻すときは、先に api の `AUTH_MODE` を Workers の経路（Access）も通る値に戻してから同じことをする（[API の認証](#api-の認証cloudflare-access)）。
+
+#### 確かめていないこと
+
+- 実際のデプロイ（`pos-deploy-cloudrun` は actionlint を通しただけで、GitHub Actions では走らせていない）
+- IAP の内側での動き。セッションが切れたときに `/session-check` が 401 になること（`X-Requested-With` を付けたとき）、
+  IAP のセッションの長さ（どのくらいの間隔で読み込み直しが起きるか）、読み込み直しでそのままログインし直せるか、
+  画面（web）と API（api）の backend でログインが 1 回で済むか（手順 4-2 の関門で見る）
+- 本物の GCS とメタデータサーバーでの読み書き（テストは fetch の模擬だけ）
+- br・gzip にした応答と Range の応答を、LB と IAP がそのまま通すか
+- DNS を付け替えた直後に、開いたままの画面が前の接続（Workers）を使い続ける間の動き
+- `pos-deploy-workers` の止め方（`Server` が `cloudflare` か）を、本物の Workers と GCP の LB（IAP の応答）に当てていない
+  （判定のところは、手元の模擬のサーバーで確かめた）
+
+手元で確かめたのは、web のイメージを作って動かし、`index.html`・SPA のフォールバック・`/session-check`・アセットのキャッシュのヘッダー・
+SIGTERM で閉じることを curl で見たところまで。
+
 ### フロントエンド（Cloudflare Workers）
+
+**GCP に移し終えるまでの本番。** DNS を付け替えて確かめたら、`pos-deploy-workers` と `services/pos/worker`・`wrangler.jsonc` ごと消す
+（[POS を GCP に移す](#pos-を-gcp-に移す)の手順 7）。PR のプレビューは Cloud Run に移した（[上](#フロントエンドcloud-run-の-web)）。
 
 POS は `ssr: false` の SPA。画面は `build/client` を静的アセットとして
 配信する（`services/pos/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
@@ -67,58 +239,22 @@ POS は `ssr: false` の SPA。画面は `build/client` を静的アセットと
 
 Worker のスクリプトで `/api/*`・`/status`・`/health` を Cloud Run の API へ
 中継する（`services/pos/worker/index.ts`。理由は [API の認証](#api-の認証cloudflare-access)）。
-中継先は本番のデプロイのときだけ `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
-PR のプレビューでは渡さないので、プレビューの URL の `/api` は 503 を返す
-（プレビューの画面は Cloud Run を直接呼ぶので使わない）。
+中継先は本番のデプロイのときに `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
+呼び出しの音声（`/call-voice/*`）と、ログインのセッションの確認（`/session-check`。204 を返すだけで、Access の内側にある）も Worker が返す。
 
-main への push と手動実行では本番へ `wrangler deploy` する。PR（`preview` ラベル付きのみ）では
-`wrangler versions upload` に切り替え、本番のトラフィックは向けずに
-プレビュー URL 付きのバージョンだけ作る。
+main への push と手動実行で本番へ `wrangler deploy` する。PR では走らない。DNS を GCP に付け替えた後は、
+`pos.cafeore.cafe` が Cloudflare 以外から応答するのを見て出さない（[POS を GCP に移す](#pos-を-gcp-に移す)の手順 4）。
 
 本番の URL は Cloudflare の `cafeore` アカウントの独自ドメイン `https://pos.cafeore.cafe`。
 `cafeorepos` アカウントの `https://cafeore-pos.cafeorepos.workers.dev` から移す
 （[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)。済むまでは workers.dev が本番）。
-移すのは本番だけで、PR のプレビューは今までどおり `cafeorepos` に出す。本番の deploy は
-`WORKERS_PROD_CLOUDFLARE_*` があればそのアカウントへ、無ければプレビューと同じ `WORKERS_CLOUDFLARE_*` のアカウントへ出す。
-独自ドメインは、本番の deploy のときだけ変数 `WORKERS_CUSTOM_DOMAIN` を `--domain` で渡して付ける。
+本番の deploy は `WORKERS_PROD_CLOUDFLARE_*` があればそのアカウントへ、無ければ `WORKERS_CLOUDFLARE_*` のアカウント（`cafeorepos`）へ出す。
+独自ドメインは、変数 `WORKERS_CUSTOM_DOMAIN` を `--domain` で渡して付ける。
 渡すと wrangler が本番の workers.dev（`cafeore-pos.<subdomain>.workers.dev`）を止める
 （プレビュー URL は `wrangler.jsonc` の `preview_urls` で別に決まる）。
 
-PR のバージョンには `pr-<番号>` のエイリアス（`--preview-alias`）も付ける。
-`https://pr-<番号>-cafeore-pos.<subdomain>.workers.dev` は push しても変わらず、
-その PR で最後に上げたバージョンを指す。バージョンごとの URL
-（`https://<バージョン ID の先頭 8 文字>-cafeore-pos.…`）も別に残る。
-
-PR ではプレビュー URL を**コメントで貼る**（エイリアスの URL と、その commit の URL）。
-2回目以降は新しいコメントを足さず、同じコメントを書き換える
-（本文に埋めた目印で自分のコメントを探している）。
-
-PR のビルドでは、**その PR のリビジョンの URL をビルド前に確定させて**
-`VITE_API_BASE_URL` に焼き込む。
-
-backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ、
-`https://pr-<番号>---<service>-<hash>.<region>.run.app` という専用 URL を持つ。
-まず実物を `status.traffic` から引き、まだ backend がデプロイされていなければ
-サービス URL のホスト名に `pr-<番号>---` を足して組み立てる（形式は同じなので、
-あとで backend が出れば有効になる）。これで**順序制御なしにビルドを先に走らせられる**。
-`VITE_*` はビルド時に焼き込まれるので、この確定はビルドより前に置いてある。
-
-引けなかった場合は**落とさず**、`VITE_API_BASE_URL_PREVIEW` →
-`VITE_API_BASE_URL` の順にフォールバックする。サービス未作成・GCP 障害・
-権限不足のいずれでも、Cloudflare へのデプロイ自体は止めない。
-
-**初回だけ順番に注意。** `versions upload` は対象の Worker が既に存在している
-ことが前提なので、まだ無いと失敗する。いちばん最初は main へのマージか手動実行を
-先に通すこと。
-
-それができない場合のために、Variables に `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` = `true`
-を置くと、**Worker が存在しないときに限り** PR でも `wrangler deploy` に
-フォールバックして Worker を作る。存在するかどうかは `wrangler versions list` で
-先に確認しており、判定できなかった場合（認証エラーなど）は存在する前提で
-`versions upload` を走らせる（誤って本番へ倒さないため）。
-
-**この変数が有効な間は、PR から本番の Worker が作られる。** 立ち上げが済んだら
-変数を消すこと。
+前に PR から `wrangler versions upload` で出したプレビューのバージョン（`pr-<番号>-cafeore-pos.cafeorepos.workers.dev` など）は、
+消す手段が無いので残る（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。焼き込んだ backend のタグは片付いているので、API には繋がらない。
 
 | Worker 名 | 対象 |
 |--|--|
@@ -138,18 +274,18 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
 `cafeore.cafe` のゾーンと一緒に動かす限り、Worker をまた別のアカウントに移しても URL は変わらない
 （Worker だけを移すと独自ドメインは付けられない）。
 
-**移すのは本番だけ。PR のプレビューは今までどおり `cafeorepos` の `cafeore-pos` に出す**
-（`pr-<番号>-cafeore-pos.cafeorepos.workers.dev`）。
+**移すのは本番だけ。** PR のプレビューは `cafeorepos` の `cafeore-pos` に出していた
+（`pr-<番号>-cafeore-pos.cafeorepos.workers.dev`）が、その後 Cloud Run に移した（[フロントエンド（Cloud Run の web）](#フロントエンドcloud-run-の-web)）。
 
 ```
 移す前:   端末 ─→ cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker）─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
 移した後: 端末 ─→ pos.cafeore.cafe（cafeore の Worker）              ─(トークン)─→ pos-be-lb.cafeore.cafe ─→ api
-          PR の確認 ─→ pr-<番号>-cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker のプレビュー）─→ プレビュー用の Cloud Run
+          PR の確認 ─→ pr-<番号>---cafeore-pos-web-preview-….run.app（Cloud Run の web のプレビュー）─→ プレビュー用の Cloud Run
 ```
 
 Worker をアカウントの間で動かす機能は無いので、`cafeore` に同じ名前の Worker を新しくデプロイする。
-`pos-deploy-workers` は、本番の deploy を `WORKERS_PROD_CLOUDFLARE_*` のアカウントへ、PR の `versions upload` を
-`WORKERS_CLOUDFLARE_*` のアカウントへ出す。中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。
+`pos-deploy-workers` は、本番の deploy を `WORKERS_PROD_CLOUDFLARE_*` のアカウントへ出す（PR では走らない）。
+中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。
 backend を mice に移す手順（infra の README「本番を mice に移す」）とは別々に進められる。
 
 **URL（オリジン）が変わるので、端末に残しているものは新しい URL に引き継がれない**（localStorage はオリジンごとに分かれている）。
@@ -167,10 +303,11 @@ backend を mice に移す手順（infra の README「本番を mice に移す�
 
 - ドメインは `pos.cafeore.cafe`（`WORKERS_CUSTOM_DOMAIN`）。DNS のレコードは、最初のデプロイで Cloudflare が作る（今は無い）
 - 新しい Worker の本番の workers.dev（`cafeore-pos.cafeore.workers.dev`）は止める（`--domain` を渡すと wrangler が止める）
-- **`cafeorepos` の `cafeore-pos` は消さない。** `versions upload` は Worker が既にあることが前提なので、消すとプレビューを
-  出せなくなる。代わりに、端末を移し終えたら本番の workers.dev だけを止める（手順 5）
+- **`cafeorepos` の `cafeore-pos` はまだ消さない。** PR のプレビューの出し先だったので残していた。プレビューを Cloud Run に
+  移したので、GCP への切り替えの後片付け（[POS を GCP に移す](#pos-を-gcp-に移す)の手順 7）で一緒に消す。
+  端末を移し終えたら本番の workers.dev だけを止める（手順 5）
 - 呼び出しの音声のバケットは、本番が `cafeore`、プレビューが `cafeorepos` の、同じ名前の別のものになる。本番の音声は移さない。
-  新しいバケットは空から始まり、呼んだ番号から ElevenLabs で作り直す（利用枠を使う）
+  新しいバケットは空から始まり、呼んだ番号から ElevenLabs で作り直す（利用枠を使う）。PR のプレビューは今は Cloud Run で、GCS に溜める
 
 #### 1. Cloudflare（`cafeore` アカウント。ダッシュボードで手作業）
 
@@ -209,7 +346,7 @@ Worker と `pos.cafeore.cafe` ができる。
 | `WORKERS_CUSTOM_DOMAIN` | Variables | `pos.cafeore.cafe`（足す） |
 | `VITE_API_BASE_URL` | Variables | 今 workers.dev を向けているなら `https://pos.cafeore.cafe`。Cloud Run や LB を直接向けているなら変えない |
 
-`WORKERS_CLOUDFLARE_API_TOKEN`・`WORKERS_CLOUDFLARE_ACCOUNT_ID` は `cafeorepos` のまま触らない（プレビューが使う）。
+`WORKERS_CLOUDFLARE_API_TOKEN`・`WORKERS_CLOUDFLARE_ACCOUNT_ID` は `cafeorepos` のまま触らない（下の「戻すとき」の出し先）。
 
 デプロイの workflow は、次のときは出す前に止める。
 
@@ -224,7 +361,6 @@ Worker と `pos.cafeore.cafe` ができる。
 - `https://cafeore-pos.cafeore.workers.dev/` が開かない
 - トップページの一番下のビルドの番号が、今の main のもの
 - 呼び出し画面で番号を呼ぶと読み上げが鳴る（新しいバケットに音声ができる）
-- `preview` ラベルの付いた PR に push すると、今までどおり `cafeorepos` にプレビューが出る
 
 #### 4. 端末を移す（営業していない時間に）
 
@@ -235,10 +371,10 @@ Worker と `pos.cafeore.cafe` ができる。
 #### 5. 旧 Worker の本番を止める
 
 `cafeorepos` の `cafeore-pos` の本番は、移した後も前のビルドのまま、トークンを付けて API に中継し続ける。
-プレビューのために Worker は消せないので、端末を移し終えたら本番の workers.dev だけを止める。
+Worker はまだ消さない（上の「決めてあること」）ので、端末を移し終えたら本番の workers.dev だけを止める。
 
-1. `cafeorepos` のダッシュボードの Workers & Pages → `cafeore-pos` → Domains で、workers.dev の本番（Production）を止め、
-   プレビュー（Preview）は開いたままにする。PR の `versions upload` はこの設定を読むだけで変えない
+1. `cafeorepos` のダッシュボードの Workers & Pages → `cafeore-pos` → Domains で、workers.dev の本番（Production）を止める。
+   プレビュー（Preview）も止めてよい（PR のプレビューは Cloud Run に移した。前の PR のプレビューは API に繋がらない）
 2. infra の `frontend_origins` から `https://cafeore-pos.cafeorepos.workers.dev` を消す
 3. 同じアカウントの `cafeore-mobile` は使っておらず、移さない（このリポジトリにもデプロイの workflow が無い）。消してよい
 
@@ -282,7 +418,7 @@ Worker と `pos.cafeore.cafe` ができる。
   Chrome・Edge・Safari で流せる。音は消して流す
 - 呼び出し画面を被せている間は止め、CM に戻ったら続きから流す
 
-### 呼び出しの音声（ElevenLabs・R2）
+### 呼び出しの音声（ElevenLabs）
 
 呼び出し画面（`/callscreen`）は、ElevenLabs で作った音声で次の 3 つを読み上げる。重なったときは 1 件ずつ順に流す。
 
@@ -292,18 +428,25 @@ Worker と `pos.cafeore.cafe` ができる。
 | 提供の画面で「呼び出し催促」を押したとき（`POST /api/orders/{id}/recall`。お呼び出し中に出している番号だけ） | N番のお客様、商品のご用意ができております。お急ぎ、提供口までお越しください。 | 先に鳴らす |
 | CaOS でカードを淹れ始めたとき（空いたドリッパーに割り当てた・積まれていたカードを担当し始めた）。1 つの注文につき最初の 1 回だけ | N番のお客様、M番ドリッパーにてドリップいたします。（よろしければぜひ、お近くでご覧ください。） | 鳴らさない（呼び出しと取り違えないため） |
 
-- 音声は POS の Worker の `/call-voice/call?order=N(&reordered=1)`・`/call-voice/recall?order=N`・`/call-voice/drip?order=N&dripper=K` が返す
-  （`services/pos/worker/call-voice.ts`。ドリップの案内の括弧の中は `&invite=0` で省く）。文は Worker が決め、画面が渡すのは番号・「順番が前後するか」・ドリッパーの番号・括弧の中を省くかだけ。
+- 音声は画面を返すサーバーの `/call-voice/call?order=N(&reordered=1)`・`/call-voice/recall?order=N`・`/call-voice/drip?order=N&dripper=K` が返す
+  （中身はどちらも `services/pos/worker/call-voice.ts`。GCP では Cloud Run の web（`services/pos/server`）、移し終えるまでの本番では Worker。
+  ドリップの案内の括弧の中は `&invite=0` で省く）。文はサーバーが決め、画面が渡すのは番号・「順番が前後するか」・ドリッパーの番号・括弧の中を省くかだけ。
   決まった文しか読ませないので、作る音声の数には上限がある（番号は 1〜9999、ドリップの案内は 1 枚のカードの 2 注文まで）
 - 文は片（「N番のお客様、」「提供口までお越しください。」「順番が前後いたします。」「商品のご用意ができております。」
   「お急ぎ、提供口までお越しください。」「M番ドリッパーにてドリップいたします。」「よろしければぜひ、お近くでご覧ください。」）に分けて作り、
-  Worker がつないで 1 本の MP3 で返す（`worker/mp3.ts`。片ごとの ID3 タグと Info ヘッダーを落としてフレームをつなぐ）。
+  サーバーがつないで 1 本の MP3 で返す（`worker/mp3.ts`。片ごとの ID3 タグと Info ヘッダーを落としてフレームをつなぐ）。
   番号の片は呼び出し・催促・ドリップの案内で同じものを使う
 - 番号（注文番号とドリッパーの番号）は、数字のままではなく仮名の読みにして渡す（`numberReading`。303 なら「さんびゃくさん番」）。
   数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。ドリッパーは画面では「3rd」だが、「さん番ドリッパー」と読ませる
-- 片は R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。[移した](#pos-の-worker-を-cafeore-のアカウントに移す)後は `cafeore`）に溜め、溜めてあれば ElevenLabs を呼ばない。
+- 片はバケットに溜め、溜めてあれば ElevenLabs を呼ばない。
   鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
-  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューは別のアカウント（本番は `cafeore`、プレビューは `cafeorepos`）の、同じ名前の別のバケットを使う
+  同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す
+  - Cloud Run の web: GCS のバケット（env の `CALL_VOICE_BUCKET`。infra が作って渡す。無ければ溜めない）。
+    `services/pos/server/gcs.ts` が JSON API を直接呼ぶ（認証は web のサービスアカウントのトークン）。何の文の音声かを、オブジェクトのメタデータ `text` に入れる。
+    溜め終わってから音声を返す（Cloud Run は応答を返すと CPU をほとんど止めるので、返した後には溜めない）。
+    R2 の音声は移さないので、はじめは呼んだ番号から ElevenLabs で作り直す（利用枠を使う）
+  - Workers: R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。[移した](#pos-の-worker-を-cafeore-のアカウントに移す)後は `cafeore`）。
+    溜めるのは音声を返した後（`waitUntil`）
 - 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
   さらに、まだ呼んでいない注文の呼び出しの音声を、画面に見えた時点で先に作らせておく（番号の片が溜まるので、ドリップの案内も速くなる）
 - 呼び出し催促した番号は、読み上げを鳴らし始めてから 1 分のあいだ、地は変えずに金の縁を脈打たせる。
@@ -314,20 +457,21 @@ Worker と `pos.cafeore.cafe` ができる。
   統合したカードで片方の注文はもう案内していれば、まだの注文の番号だけを読む）。緊急（淹れ直し）のカード、もう呼んだ注文のカードでは流さない
 - 「よろしければぜひ、お近くでご覧ください。」は、前にそれを付けた案内から 1 分以内（立て続け）なら省く。付けた案内から数えるので、
   続いている間も 1 分に 1 回は付く（`@cafeore/common` の `planDripAnnouncement`）
-- ElevenLabs の鍵は GitHub の secret `ELEVENLABS_API_KEY`。本番もプレビューもデプロイのたびに
-  `--secrets-file` で Worker の secret に入れる（書かなかった secret は前のバージョンから引き継がれるので、
-  片方だけで入れると古い値が残る）
-- 音声が取れないとき（鍵が無い、ElevenLabs が断った、ローカルの `react-router dev` には Worker が無い）は、
+- ElevenLabs の鍵は、Cloud Run の web では Secret Manager のシークレット（既定 `elevenlabs-api-key`。Terraform の管理の外で手で作る）を
+  Terraform が env の `ELEVENLABS_API_KEY` に入れる（本番もプレビューも）。Workers の本番には、GitHub の secret `ELEVENLABS_API_KEY` を
+  デプロイのたびに `--secrets-file` で Worker の secret に入れる（書かなかった secret は前のバージョンから引き継がれるので、古い値を残さないため）
+- 音声が取れないとき（鍵が無い、ElevenLabs が断った、ローカルの `react-router dev` には `/call-voice` が無い）は、
   呼び出しはチャイムだけ、ドリップの案内は何も鳴らさない
-- Worker ごと手元で試すときは `pnpm pos build` のあと `services/pos` で `pnpm exec wrangler dev`
+- 手元で試すときは、`services/pos` で `pnpm run build && pnpm run build:server` のあと
+  `ELEVENLABS_API_KEY=... node build/web-server.mjs`（溜めない）。Worker ごと試すなら `pnpm exec wrangler dev`
   （R2 は手元の模擬になる。鍵は `.dev.vars` に `ELEVENLABS_API_KEY=...` と書く）
-- **バケットが無いと Worker のデプロイが失敗する。** はじめにダッシュボードで R2 を有効にし、
+- **R2 のバケットが無いと Worker のデプロイが失敗する。** はじめにダッシュボードで R2 を有効にし、
   `pnpm exec wrangler r2 bucket create cafeore-call-voices` で作っておくこと
-- プレビューの URL（`preview_urls`）は PR を閉じても残る（[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。
-  Access で守っていなければ、その URL の `/call-voice` も誰でも叩ける。エイリアスの URL
-  （`pr-<番号>-cafeore-pos.…`）は PR の番号から推測できるので、URL を知られていないことは当てにできない。
-  片の数は番号の幅で抑えてあるが、
-  ElevenLabs の利用枠が気になるなら、プレビューの URL も Access で守るか、`preview_urls` を止める
+- PR のプレビュー（`cafeore-pos-web-preview` の `pr-<番号>` のタグの URL）はログインしないので、PR が開いている間は
+  その URL の `/call-voice` も誰でも叩ける。URL は PR のコメント（public なリポジトリ）に出る。PR を閉じるかラベルを外すとタグが外れる。
+  前に Workers に出したプレビューの URL（`preview_urls`）は PR を閉じても残り、Access で守っていなければ同じく叩ける
+  （[後片付け](#pr-を閉じたときラベルを外したときの後片付け)）。片の数は番号の幅で抑えてあるが、ElevenLabs の利用枠が気になるなら、
+  プレビューには `ELEVENLABS_API_KEY` を渡さない（infra）か、`preview_urls` を止める
 
 ### backend（Artifact Registry → Cloud Run）
 
@@ -351,7 +495,7 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 `画面 #889 · 90b89b2　API #889 · 90b89b2` の形で出す。デプロイが反映されたか、
 画面と API が食い違っていないかを確かめるのに使う。
 
-- 番号は `pos-deploy-workers` と `api-build` が `.github/scripts/build-info.sh` で決める。
+- 番号は `pos-deploy-cloudrun`（移し終えるまでの本番は `pos-deploy-workers`）と `api-build` が `.github/scripts/build-info.sh` で決める。
   PR ではその PR と head のコミット、main ではマージコミットとそれをマージした PR
 - 画面はビルド時に `VITE_BUILD_PR`・`VITE_BUILD_COMMIT` として焼き込む
 - API はイメージの環境変数 `BUILD_PR`・`BUILD_COMMIT` に焼き込み（`api/Dockerfile`）、
@@ -378,9 +522,10 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `SQUARE_LOCATION_ID` | 任意 | 未設定 | 任意（端末をペアリングする店舗。空ならアカウントの既定の店舗） |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
 | `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
-| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
-| `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
-| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り） |
+| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`。GCP の LB に移す途中は `cloudflare-access+iap-report-only` か `cloudflare-access+iap`、移し終えたら `iap`（[API の認証](#api-の認証cloudflare-access)） |
+| `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ。`AUTH_MODE` に `cloudflare-access` を含むときだけ要る |
+| `IAP_AUDIENCE` | 未設定 | 未設定 | IAP の JWT の aud。`/projects/<プロジェクト番号>/global/backendServices/<backend「api」の数字の ID>`（カンマ区切りで複数可）。`AUTH_MODE` に `iap` を含むときだけ要る |
+| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り）。`*@<ドメイン>` でそのドメインのメールの全員（[許可リストの書き方](#許可リストの書き方)） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -673,9 +818,13 @@ SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?
 
 ### API の認証（Cloudflare Access）
 
-**`AUTH_MODE` を `cloudflare-access` にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
+**`AUTH_MODE` を `cloudflare-access`・`iap`・`cloudflare-access+iap` のどれか（`-report-only` を付けないもの）にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
 URL は POS の JS に入っているので、画面を開けば分かる（秘密ではない）。CORS は止めにならない
 （Origin を付けない curl などには効かない）。
+
+下の図と箇条書きは、今の Workers の経路（Cloudflare Access）の話。GCP に移すと、ログインは GCP の LB の IAP になり、
+Worker の中継と合言葉は無くなる（[POS を GCP に移す](#pos-を-gcp-に移す)）。api は IAP の JWT も同じ許可リストで
+確かめる（下の「`AUTH_MODE` の値」から）。
 
 ```
 ブラウザ ─→ Cloudflare Access ─→ POS の Worker ─→ LB ＋ Cloud Armor ─→ Cloud Run（api）
@@ -694,10 +843,11 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
   `PROXY_TOKEN` は本番のデプロイのたびに、GitHub の secret の `LB_PROXY_TOKEN` から入れ直す（`pos-deploy-workers`）。
   JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
 - api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
-  GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
+  GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする。
+  Access でも IAP でも同じ許可リストを使い、`*@<ドメイン>` でそのドメインの全員も書ける（[許可リストの書き方](#許可リストの書き方)）
 - `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
   書き込みは開かない（`api/cmd/server/main.go`）
-- 次は Access を通らずに来るので、`/api` のグループの外に置いて自前で確かめている
+- 次は Access も IAP も通らずに来るので、`/api` のグループの外に置いて自前で確かめている
 
   | 呼び出し元 | ルート | 通り道（LB を置いた後） | 確かめ方 |
   | --- | --- | --- | --- |
@@ -711,9 +861,126 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 - Access のセッションが切れると、API への fetch と WebSocket が Access のログイン画面へ飛ばされて
   失敗し続ける。POS は `/status` が 401 になったら（`X-Requested-With` を付けているので、セッション切れの
   ときは Access が 401 を返す）画面を読み込み直して Access のログインへ戻す（`useOnlineStatus`）。
-  続けて読み込み直すのは 1 分に 1 回まで
+  続けて読み込み直すのは 1 分に 1 回まで。GCP では `/status` は IAP を掛けない口（api-public）に行くので、
+  POS は画面の `/session-check`（IAP の内側）で確かめる。今は Workers でも同じく `/session-check` で確かめている
+
+#### `AUTH_MODE` の値
+
+| 値 | 確かめる JWT | 要る環境変数 |
+| --- | --- | --- |
+| `off`（か空） | 確かめない（誰でも叩ける） | なし |
+| `cloudflare-access` | `Cf-Access-Jwt-Assertion`（Cloudflare Access が付ける） | `CF_ACCESS_TEAM_DOMAIN`・`CF_ACCESS_AUD` |
+| `iap` | `X-Goog-Iap-Jwt-Assertion`（GCP の LB の IAP が付ける） | `IAP_AUDIENCE` |
+| `cloudflare-access+iap` | どちらも受け付ける | 両方 |
+
+- `off` 以外は後ろに `-report-only` を付けられる（`cloudflare-access-report-only`・`iap-report-only`・
+  `cloudflare-access+iap-report-only`）。並べた方式の全部で確かめるが弾かず、弾くはずだったものを
+  `auth(report-only)` のログに出すだけにする。**`-report-only` は全体に掛かる**ので、Access は弾いたまま
+  IAP だけ report-only、という組み合わせは無い
+- `+` で並べる順は問わない（`iap+cloudflare-access` も同じ）。知らない方式・同じ方式の重複（`iap+iap`）・
+  空（`iap+`）・途中に付けた `-report-only`（`iap-report-only+cloudflare-access`）は、綴りの誤りで認証が
+  外れないよう起動を止める。`cloudflare-access` を含むのに `CF_ACCESS_*` が無いとき、`iap` を含むのに
+  `IAP_AUDIENCE` が無いときも止める
+- 許可リスト（`AUTH_STAFF_EMAILS`・`AUTH_VIEWER_EMAILS`）はどの方式でも同じものを使う。IAP では JWT の
+  `email`（ログインした Google アカウントのメール）と照らし合わせる。大文字・小文字は区別しない。
+  書き方は次の「許可リストの書き方」
+- 起動時のログに、どのヘッダーを見ているかが出る（`Auth: checking the JWT in ...`、report-only なら
+  `Warning: AUTH_MODE is report-only (checking ...)`）
+
+#### 許可リストの書き方
+
+`AUTH_STAFF_EMAILS`・`AUTH_VIEWER_EMAILS` には、メール（Access のサービストークンならクライアント ID）を
+名指しで並べるほか、`*@<ドメイン>` でそのドメインのメールの全員を書ける。IAP の側は IAM の
+`domain:id.cafeore.cafe` で通すので、api の側も一人ずつ書かずに済む。
+
+```
+AUTH_STAFF_EMAILS=*@id.cafeore.cafe
+AUTH_VIEWER_EMAILS=callscreen@id.cafeore.cafe
+```
+
+- **名指しの行がドメインの行より優先する**。上の例では `callscreen@id.cafeore.cafe` は表示用（GET と WebSocket だけ）、
+  ほかの `id.cafeore.cafe` の人はスタッフ。表示用の端末のアカウントをスタッフと同じドメインに作っても、名指しで
+  `AUTH_VIEWER_EMAILS` に書けば書き込めない
+- 同じ名指しの行が両方の一覧にあれば強い方（スタッフ）。同じドメインの行が両方にあっても強い方
+- ドメインはメールの `@` より後ろ全体と比べる（大文字・小文字は区別しない）。サブドメイン
+  （`foo@x.id.cafeore.cafe`）や親のドメイン（`foo@cafeore.cafe`）は一致しない
+- ドメインで一致させるのはメールだけ。Access のサービストークンのクライアント ID（`common_name`）は名指しでしか通らない
+- `*` を含むのに `*@<ドメイン>` の形でないもの（`*`、`*@`、`*foo@x`、`foo*@x`、`*@*.x`、ドメインに `@` や空白を
+  含むものなど）は、書き方の誤りで思わぬ相手を通したり誰も通さなくなったりしないよう起動を止める。ドメインは
+  英数字と `-` のラベルを `.` でつないだものだけ受け付ける。`AUTH_STAFF_EMAILS` が空なら起動を止めるのは今までどおり
+- ドメインで書くと、そのドメインにアカウントを作れる人は全員その権限になる。Access のワンタイム PIN で
+  ログインさせているなら、そのドメインのメールを受け取れる人も同じ
+
+#### IAP の JWT の検証
+
+- IAP は通したリクエストに JWT（`X-Goog-Iap-Jwt-Assertion`）を付ける。api は署名（ES256。鍵は
+  `https://www.gstatic.com/iap/verify/public_key-jwk`）・発行元（`https://cloud.google.com/iap`）・aud・期限を
+  確かめる（`api/internal/auth/iap.go`）。LB を通らずに run.app を叩かれても、IAP の JWT が無ければ通らない
+- aud は IAP を掛けた backend service ごとに違う。`IAP_AUDIENCE` には backend「api」の
+  `/projects/<プロジェクト番号>/global/backendServices/<数字の ID>` を入れる。backend「web」の JWT は aud が
+  違うので api では通らない。カンマ区切りで複数入れると、どれか 1 つに一致すれば通す。`/projects/` で
+  始まらない値（backend service の名前や数字の ID だけ）は起動を止める。値は次で分かる
+
+  ```sh
+  gcloud projects describe <プロジェクト ID> --format 'value(projectNumber)'
+  gcloud compute backend-services describe <backend「api」の名前> --global --format 'value(id)'
+  ```
+
+  本番では infra の Terraform が backend「api」から組み立てて渡す（infra の `gcp/api_auth.tf`）ので、手で入れなくてよい。
+  backend「api」を作り直すと数字の ID が変わり、次の apply で api の env も変わる（新しいリビジョンが立つまで、新しい
+  backend を通った JWT は断られる）
+
+#### 両方のヘッダーが付いていたとき
+
+ふつうは付かない（Access と IAP はそれぞれ自分のヘッダーしか付けない）。手で足したものなどで両方付いていたら、
+api は両方を確かめ、**1 つでも正しくなければ 401**、両方正しければ**弱い方の権限**で扱う。正しい JWT を 1 つ
+持っている相手が、それだけを付けて送ったときより強い権限を得ることはなく、もう一方に入った壊れた・偽の JWT が
+黙って見逃されることもない（report-only ならログに出る）。
+
+- 同じヘッダーが 2 つ付いていたら、どれを信じるか決められないので 401（`cloudflare-access` でも同じ）
+- `AUTH_MODE` に無い方式のヘッダーは見ない。`iap` にした後は `Cf-Access-Jwt-Assertion` だけを付けても 401、
+  `cloudflare-access` のままなら `X-Goog-Iap-Jwt-Assertion` だけを付けても 401
+
+#### 移す途中（`cloudflare-access+iap`）
+
+DNS を GCP の LB に付け替える前後は、Workers（Access）を通ってくる端末と、LB（IAP）を通ってくる端末が
+混ざる。`cloudflare-access+iap` は両方を受け付ける。
+
+1. DNS を付け替える前に、`AUTH_MODE` に `+iap` を足して `IAP_AUDIENCE` を入れる。今が
+   `cloudflare-access-report-only` なら `cloudflare-access+iap-report-only`、`off` ならそのままでもよい。
+   今が `cloudflare-access` のときは、`cloudflare-access+iap` にすると IAP の設定を誤っていたら LB 経由が全部 401 に
+   なり、`cloudflare-access+iap-report-only` にすると Access の側も弾かなくなる（`-report-only` は全体に掛かる）。
+   どちらを取るか決めてから入れる
+2. 付け替えた後、IAP を通ってきたものに弾くはずだったものが出ていないかをログで見る。理由の前にヘッダーの名前が
+   付く（`X-Goog-Iap-Jwt-Assertion: invalid iap token: ...`）。どちらのヘッダーも無いもの
+   （`no token in Cf-Access-Jwt-Assertion or X-Goog-Iap-Jwt-Assertion`）は、Access も IAP も通らずに Cloud Run を
+   直接叩いている
+
+   ```sh
+   gcloud logging read 'resource.type="cloud_run_revision"
+     AND resource.labels.service_name="cafeore-pos-prod"
+     AND textPayload:"auth(report-only)"' \
+     --project project-5d6e656b-4871-46ff-96f --freshness 1h --format 'value(textPayload)'
+   ```
+
+3. 全部の端末が LB から来るようになったら `iap` にする。`iap` にした後に Workers へ戻すときは、`AUTH_MODE` にも
+   `cloudflare-access` を戻す（`iap` だけでは Access を通ってきたものが 401 になる）
+
+#### 確かめていないこと（IAP の検証）
+
+- 本物の IAP が付けた JWT では確かめていない。テストは自前で作った ES256 の鍵と JWT（`api/internal/auth/iap_test.go`）。
+  特に、JWT の `email` がメールアドレスそのもの（`accounts.google.com:` のような前置きが無い）であること。
+  前置きが付いていたら許可リストに一致せず 403 になる（report-only のログに `"accounts.google.com:..." is not allowed`
+  と出るので分かる）
+- IAP が、クライアントが自分で付けた `X-Goog-Iap-Jwt-Assertion` を消して付け直すか。付け足すだけなら同じヘッダーが
+  2 つになって 401 になるので、通ってしまうことはない
+- WebSocket（`/api/ws/orders`）の upgrade のリクエストにも IAP が JWT を付けること
+- Cloud Run から `www.gstatic.com` に鍵を取りに行けること（Access の鍵を取りに行くのと同じ外向きの通信）
+- IAP で人ではない相手（サービスアカウントなど）を通すやり方。Access のサービストークンに当たるものは試していない
 
 #### 切り替える手順
+
+Cloudflare Access を入れる手順。GCP（IAP）に移すときは [POS を GCP に移す](#pos-を-gcp-に移す)。
 
 順番を守ること。どの段階でも、前の段階に戻せば元に戻る。
 
@@ -893,7 +1160,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 なので、積んだ PR で backend（`api/` と `api-build.yml`）を変えていないものは、自分の backend を立てず、
 向き先の PR の backend（`pr-<番号>` のリビジョンと、その Neon ブランチ）を使う。中の backend は向き先と
 同じコードだから。向き先もそうなら、さらに上へたどる（`.github/scripts/preview-backend-owner.sh`）。
-`api-build.yml` は build を飛ばして「#<番号> の backend を使う」とコメントし、`pos-deploy-workers.yml` は
+`api-build.yml` は build を飛ばして「#<番号> の backend を使う」とコメントし、`pos-deploy-cloudrun.yml` は
 画面のプレビューをその backend に向ける。たどった先の PR に `preview` ラベルが無いときや、向き先を head に
 持つ PR が無いときは、自分の backend を専用ブランチで立てる。
 
@@ -990,41 +1257,50 @@ Dependabot が起点の実行には Actions の secrets が渡らず、権限も
 閉じたときは、片付けが全部成功したら `preview` ラベルも外す
 （GITHUB_TOKEN で外すので、それによって `pr-cleanup` が走り直すことはない）。
 
-**Artifact Registry** … `pr-cleanup` がその PR の `pr-<番号>` タグを外す。
+**Artifact Registry** … `pr-cleanup` がその PR の `pr-<番号>` タグを、`api` と `pos-web` のイメージから外す。
 タグが外れたイメージは infra 側のクリーンアップポリシーが7日後に消す。
 タグだけを外して本体を消さないのは、fast-forward マージなどで PR の head と
 main の tip が同じコミットになったとき、同じダイジェストを `latest` が
 指している可能性があるため。
 
-そのため `api-build` は **PR のイメージに `pr-<番号>` しか付けない**
+そのため `api-build` と `pos-deploy-cloudrun` は **PR のイメージに `pr-<番号>` しか付けない**
 （sha タグも付けると、タグを外してもイメージが TAGGED のまま残り回収されない）。
 workflow が落ちた PR や閉じられないまま放置された PR 用に、30日経った `pr-` タグを
 消す保険のポリシーも入れてある。
 
-**Cloudflare Workers** … 片付けていない。wrangler に `versions delete` が無く、
+**Cloud Run** … `pr-cleanup` がその PR の `pr-<番号>` のリビジョンタグを、backend の `cafeore-pos-preview` と画面の
+`cafeore-pos-web-preview` から外す。PR に書いた「POS のプレビュー」のコメントも消す（backend のコメントは消さない）。
+画面の分は、`pos-deploy-cloudrun` のデプロイが終わるのを待ってから片付ける（同じ concurrency group）。
+
+**Cloudflare Workers** … PR のプレビューは Cloud Run に移したので、新しくは作られない。前に `pos-deploy-workers` が PR から出した
+バージョンは片付けていない。wrangler に `versions delete` が無く、
 `versions upload` で作ったバージョンを個別に消す手段が今のところ無いため
 （`wrangler preview delete` は private beta）。閉じた PR のプレビュー URL も
 残り続ける。`pr-<番号>` のエイリアスも、最後に上げたバージョンを指したまま残る
 （Cloudflare は直近に上げた 1000 個までしか持たず、超えると古いものから消える）。
-公開したままにしたくない場合は `wrangler.jsonc` の `preview_urls` を
-`false` にして、プレビュー URL の配信自体を止めること。
+公開したままにしたくない場合は、`cafeorepos` の `cafeore-pos` の Domains でプレビュー（Preview）を止める
+（[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)の手順 5）。
+Worker ごとは GCP への切り替えの後片付けで消す。
 
 ### 必要な設定
 
 | キー | 種別 | 使う workflow |
 |--|--|--|
-| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers`。PR のプレビューの出し先（`cafeorepos`）。`WORKERS_PROD_*` が無いときは本番もここ |
+| `POS_WEB_ORIGIN` | Variables | `pos-deploy-cloudrun`。任意。本番の web のビルドに焼き込む API の URL（同じオリジン）。既定 `https://pos.cafeore.cafe`（[POS を GCP に移す](#pos-を-gcp-に移す)） |
+| `GCP_CLOUD_RUN_WEB_SERVICE` | Variables | `pos-deploy-cloudrun`。任意。本番の web の Cloud Run サービス。既定 `cafeore-pos-web` |
+| `GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE` | Variables | `pos-deploy-cloudrun`・`pr-cleanup`。任意。PR の web のプレビューを出す Cloud Run サービス。既定 `cafeore-pos-web-preview` |
+| `WEBHOOK_URL` | Secrets | `pos-deploy-cloudrun`・`pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
+| `VITE_API_BASE_URL_PREVIEW` | Variables | `pos-deploy-cloudrun`。任意。PR で backend の URL を引けなかったときのフォールバック |
+| `WORKERS_CLOUDFLARE_API_TOKEN` | Secrets | `pos-deploy-workers`。`WORKERS_PROD_*` が無いときの本番の出し先（`cafeorepos`）。PR のプレビューはもう出さない |
 | `WORKERS_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（アカウント ID は秘密情報ではない） |
 | `WORKERS_PROD_CLOUDFLARE_API_TOKEN` | Secrets | 同上（任意）。本番の deploy の出し先（`cafeore`）。独自ドメインを付けるので、そのゾーンの Workers Routes の Edit も要る |
 | `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（任意）。上と組で入れる。片方だけだとデプロイを止める |
-| `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` のアカウントに要るので、`WORKERS_PROD_*` 無しで入れるとデプロイを止める（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)） |
-| `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
-| `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
-| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
-| `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
+| `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` のアカウントに要るので、`WORKERS_PROD_*` 無しで入れるとデプロイを止める（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)）。このドメインが Cloudflare 以外から応答している（GCP に付け替えた後）ときは、Workers の本番を出さない（[POS を GCP に移す](#pos-を-gcp-に移す)の手順 4） |
+| `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | もう使わない（PR から Worker を出さなくなった）。消してよい |
+| `VITE_API_BASE_URL` | Variables | `pos-deploy-workers`（Workers の本番のビルドに焼き込む API の URL） |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
 | `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
-| `ELEVENLABS_API_KEY` | Secrets | `pos-deploy-workers`。呼び出し画面の音声を作る ElevenLabs の鍵。本番の deploy にもプレビューの versions upload にも、Worker の secret `ELEVENLABS_API_KEY` として入れる（[呼び出しの音声](#呼び出しの音声elevenlabsr2)）。無いと音声は流れず、チャイムだけになる |
+| `ELEVENLABS_API_KEY` | Secrets | `pos-deploy-workers`。呼び出し画面の音声を作る ElevenLabs の鍵。Workers の本番の deploy のたびに、Worker の secret `ELEVENLABS_API_KEY` として入れる（[呼び出しの音声](#呼び出しの音声elevenlabs)）。無いと音声は流れず、チャイムだけになる。Cloud Run の web には使わない（Secret Manager から infra が入れる） |
 | `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
@@ -1038,7 +1314,8 @@ POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub
 PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
 `LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
-GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
+GCP 側（`api-build`・`pos-deploy-cloudrun`・`pr-cleanup`）は Terraform を既定値のまま apply していれば追加設定は不要。
 値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
 `GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` /
-`GCP_CLOUD_RUN_PREVIEW_SERVICE` を Variables で上書きする。
+`GCP_CLOUD_RUN_PREVIEW_SERVICE` / `GCP_CLOUD_RUN_WEB_SERVICE` / `GCP_CLOUD_RUN_WEB_PREVIEW_SERVICE` を Variables で上書きする。
+既定値はどの workflow でも同じ。

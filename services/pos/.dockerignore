@@ -1,0 +1,5 @@
+# Dockerfile がコピーするのは build/client と build/web-server.mjs だけ。
+# ほか（node_modules・ソース・.env など）はビルドのコンテキストに送らない。
+*
+!build/client
+!build/web-server.mjs

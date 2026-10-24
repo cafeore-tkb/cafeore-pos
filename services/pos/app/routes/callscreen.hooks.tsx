@@ -208,8 +208,9 @@ const WARM_JITTER_MS = 5_000;
 /** 先に作らせる 1 件を待つ上限。返事が来ないまま止まると、後ろの先読みが全部止まるので打ち切る */
 const WARM_TIMEOUT_MS = 15_000;
 
-// 読み上げの音声は Worker（worker/call-voice.ts）が ElevenLabs で作り、片ごとに R2 に溜めたものをつないで返す。
-// 文は Worker が決めるので、ここでは番号・「順番が前後するか」・ドリッパーの番号だけを渡す。
+// 読み上げの音声は画面を返すサーバー（worker/call-voice.ts。Cloud Run の web でも Workers でも同じもの）が
+// ElevenLabs で作り、片ごとにバケット（GCS か R2）に溜めたものをつないで返す。
+// 文はサーバーが決めるので、ここでは番号・「順番が前後するか」・ドリッパーの番号だけを渡す。
 
 /** 呼び出しの読み上げ */
 export const callVoicePath = (orderNo: number, reordered: boolean) =>
@@ -229,7 +230,7 @@ export const dripVoicePath = (
 
 /**
  * 音声を取りに行き、再生できる URL（blob:）にする。
- * 取れなければ null（ローカルの dev サーバーには Worker が無い、鍵が無い、ElevenLabs が落ちている、待ちきれないなど）
+ * 取れなければ null（ローカルの dev サーバーには /call-voice が無い、鍵が無い、ElevenLabs が落ちている、待ちきれないなど）
  */
 const loadVoice = async (path: string): Promise<string | null> => {
   const controller = new AbortController();
@@ -372,7 +373,7 @@ export function useAnnouncer(
 }
 
 /**
- * 呼び出しの読み上げを先に作らせておく（Worker が R2 に溜め、ブラウザにも 1 時間持たせる）。呼ぶときに作るのを待たずに済む。
+ * 呼び出しの読み上げを先に作らせておく（サーバーがバケットに溜め、ブラウザにも 1 時間持たせる）。呼ぶときに作るのを待たずに済む。
  * 番号の片はドリップの案内と同じものなので、そちらも速くなる。
  * 新しく見えた番号ごとに 1 回だけ、1 件ずつ頼む。開いたあとに入った注文は、呼び出し画面が何台もあると
  * 同時に頼んで二重に作りうるので、少しずらしてから頼む（開いたときにあった注文は、ほかの画面がもう作っているので、ずらさない）

@@ -13,7 +13,7 @@
 #
 # 使い方: preview-backend-owner.sh <PR 番号>
 # 環境変数: GH_TOKEN, GITHUB_REPOSITORY, DEFAULT_BRANCH（省略時 main）
-# api-build.yml と pos-deploy-workers.yml が使う。判定を変えるときは README の
+# api-build.yml と pos-deploy-cloudrun.yml が使う。判定を変えるときは README の
 # 「PR のプレビューの backend」も直すこと。
 set -euo pipefail
 
