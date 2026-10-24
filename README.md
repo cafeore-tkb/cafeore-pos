@@ -22,6 +22,9 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
 | `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ（PR のプレビューと、[GCP に移した](#本番を-gcp-に移すiap)後は非常用の `pos-cf.cafeore.cafe`） |
 | `pos-deploy-cloudrun` | `services/pos` | 本番だけ。画面のイメージを作って Artifact Registry へ push し、Cloud Run `cafeore-pos-web` へデプロイ（既定で動く。変数 `POS_WEB_DEPLOY` を `false` にすると止まる） |
+| `deploy-staging` | `api`・`services/pos` | main への push と手動実行（main だけ）で、[staging](#staging-と-sandbox) に API と画面を出す（変数 `STAGING_DEPLOY` を `false` にすると止まる） |
+| `deploy-sandbox` | `api`・`services/pos` | 手動実行だけ。選んだブランチを [sandbox](#staging-と-sandbox) に出す |
+| `deploy-environment` | — | `deploy-staging`・`deploy-sandbox` が呼ぶ中身（reusable workflow。これだけでは走らない） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
@@ -420,6 +423,35 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
   `AUTH_MODE` が `iap*` なら、ログアウトして別のアカウントでログインし直し、トップページに「API には … として届いています」が
   出ないことで確かめる
 
+### staging と sandbox
+
+本番と同じ構成（IAP の LB・Cloud Run の API と画面・Cloud SQL）を、mice の同じプロジェクトに 2 つ並べてある
+（infra の README「staging と sandbox」が正本）。ここからは `deploy-staging` と `deploy-sandbox` が出す。
+
+| | 本番 | staging | sandbox |
+| --- | --- | --- | --- |
+| POS の URL（IAP） | `pos.cafeore.cafe` | `pos-stg.cafeore.cafe` | `pos-sandbox.cafeore.cafe` |
+| API の Cloud Run / 画面の Cloud Run | `cafeore-pos-prod` / `cafeore-pos-web` | `cafeore-pos-stg` / `cafeore-pos-stg-web` | `cafeore-pos-sandbox` / `cafeore-pos-sandbox-web` |
+| いつ出すか | main への push（`api-build`・`pos-deploy-cloudrun`） | main への push（`deploy-staging`）。手動実行も main だけ | 手動実行だけ（`deploy-sandbox`）。どのブランチでも |
+| DB | 本番の Cloud SQL | staging の Cloud SQL（中身は本番と別） | sandbox の Cloud SQL（**バックアップを取らない**） |
+| Square | 本番 | Sandbox | 使わない |
+
+- **staging は本番と並んで出る。** staging を通ってから本番、という順番にはしていない（本番の workflow は変えていない）
+- **1 回で API と画面の両方を出す。** 本番は API と画面が別の workflow で、変わった方だけが出るが、`deploy-staging` はどちらかの
+  パスが変わったら両方出す（`paths` は `api-build` と `pos-deploy-cloudrun` の main の `paths` を合わせたもの。揃えること）。
+  変わった方だけにすると、待っている実行が後の実行に置き換えられたとき（concurrency）、置き換えられた方の変更が出ないため
+- **画面は環境ごとにビルドする。** API のオリジン（`VITE_API_BASE_URL`）を焼き込むので、本番のイメージは使えない。
+  `VITE_DEPLOY_ENV` は `staging`・`sandbox` で、本番と同じくレジの「常に返金」は出さず、トップページにログイン中のアカウントを出す
+- イメージは本番と同じ Artifact Registry の `api`・`pos-web` に、`stg-<SHA>`・`stg-latest`（sandbox は `sandbox-…`）のタグで置く。
+  本番の `<SHA>`・`latest` を付け替えないよう分けている。BuildKit のキャッシュは本番のものを読むだけで書かない
+- デプロイの後、本番と同じく LB（`pos-be-lb-stg.cafeore.cafe`・`pos-be-lb-sandbox.cafeore.cafe`）を通して `/status` の
+  `schema_drift` を確かめる（[DB のスキーマ](#db-のスキーマ)）
+- **sandbox の DB は作り直さない。** モデルに列やテーブルを足したブランチを出すと DB に残り、そのあと足していないブランチ（main など）を
+  出すと `schema_drift` に出て `deploy-sandbox` が落ちる（デプロイ自体は済んでいる）。sandbox は 1 つしか無いので、最後に流したものが残る
+- Slack の `VITE_WEBHOOK_URL` には本番の `WEBHOOK_URL` を渡さない（`STAGING_WEBHOOK_URL`・`SANDBOX_WEBHOOK_URL`。無ければ空）
+- infra の手順（DB のユーザー、DNS と証明書）が済む前に `deploy-staging` が走ると落ちる。間に合わないときは変数 `STAGING_DEPLOY` を `false` にしておく
+- `deploy-sandbox` は手動実行だけなので、main に入ってからでないと Actions の画面から流せない
+
 ### 呼び出し画面の CM
 
 呼び出し画面（`/callscreen`）は、呼び出しが無い間は CM を全画面で流す。
@@ -778,7 +810,8 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
     - 本番で消し忘れないよう、オンにしている間はトグルを赤く出し、ページを読み込み直すとオフに戻る。決済中は切り替えられない。
     - **本番（`pos.cafeore.cafe` と非常用の `pos-cf.cafeore.cafe`）では、このトグルを出さない。** 出すのは PR のプレビューと
       ローカルの dev（`pnpm dev`）だけ。画面に焼き込む `VITE_DEPLOY_ENV` で決め、デプロイの workflow が入れる
-      （`pos-deploy-cloudrun` は `production`、`pos-deploy-workers` は PR なら `preview`、それ以外は `production`）。
+      （`pos-deploy-cloudrun` は `production`、`pos-deploy-workers` は PR なら `preview`、それ以外は `production`、
+      [staging と sandbox](#staging-と-sandbox) は `staging`・`sandbox`。どれも `preview` ではないので出さない）。
       本番に出てしまわないよう、値の無いビルド（ローカルの `vite build` など）でも出さない。
 - 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
 
@@ -1219,6 +1252,10 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
 | `ELEVENLABS_API_KEY` | Secrets | `pos-deploy-workers`。呼び出し画面の音声を作る ElevenLabs の鍵。本番の deploy にもプレビューの versions upload にも、Worker の secret `ELEVENLABS_API_KEY` として入れる（[呼び出しの音声](#呼び出しの音声elevenlabsr2)）。無いと音声は流れず、チャイムだけになる |
 | `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`。今は `https://pos-be-lb.cafeore.cafe`）。Cloud Run の入口を LB だけにしたら要る |
+| `STAGING_DEPLOY` | Variables | `deploy-staging`（任意）。`false` にすると staging に出さない（既定は出す） |
+| `STAGING_WEBHOOK_URL` / `SANDBOX_WEBHOOK_URL` | Secrets | `deploy-staging` / `deploy-sandbox`（任意）。その環境の画面に焼き込む Slack の Webhook。無ければ空（本番の `WEBHOOK_URL` は使わない） |
+| `STAGING_API_CLOUD_RUN_SERVICE`・`STAGING_API_LB_URL`・`STAGING_POS_WEB_CLOUD_RUN_SERVICE`・`STAGING_POS_WEB_URL` | Variables | `deploy-staging`（任意）。既定 `cafeore-pos-stg`・`https://pos-be-lb-stg.cafeore.cafe`・`cafeore-pos-stg-web`・`https://pos-stg.cafeore.cafe`（infra の output `environments.staging`）。infra で名前やドメインを変えたときだけ入れる |
+| `SANDBOX_API_CLOUD_RUN_SERVICE`・`SANDBOX_API_LB_URL`・`SANDBOX_POS_WEB_CLOUD_RUN_SERVICE`・`SANDBOX_POS_WEB_URL` | Variables | `deploy-sandbox`（任意）。既定 `cafeore-pos-sandbox`・`https://pos-be-lb-sandbox.cafeore.cafe`・`cafeore-pos-sandbox-web`・`https://pos-sandbox.cafeore.cafe`（output `environments.sandbox`） |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
@@ -1231,7 +1268,7 @@ POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub
 PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
 `LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
-GCP 側（`api-build`・`pos-deploy-workers`・`pos-deploy-cloudrun`・`pr-cleanup`）の workflow の既定値は、cafeore のプロジェクト
+GCP 側（`api-build`・`pos-deploy-workers`・`pos-deploy-cloudrun`・`deploy-environment`・`pr-cleanup`）の workflow の既定値は、cafeore のプロジェクト
 （`project-5d6e656b-4871-46ff-96f`）のまま。本番もプレビューも mice にあるので（[backend](#backendartifact-registry--cloud-run)）、
 次の Variables に mice の値を入れている（対応は infra の README「GitHub 側の設定」「本番を mice に移す」の手順 4）。
 **消すと既定値の cafeore に戻り、本番のデプロイが落ちる**（cafeore には本番のサービスも、CI のデプロイ権限も無い）。

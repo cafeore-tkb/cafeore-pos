@@ -13,7 +13,7 @@ const LOGIN_USER_PATH = "/auth/me";
 const LOGOUT_URL = "/?gcp-iap-mode=CLEAR_LOGIN_COOKIE";
 
 // PR のプレビュー（Workers）。ログインが無いので、相手の代わりに「プレビュー」と出す。
-// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、ローカルは無い
+// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、staging・sandbox はその名前、ローカルは無い
 const IS_PREVIEW = import.meta.env.VITE_DEPLOY_ENV === "preview";
 
 // ローカルの dev（react-router dev）には画面のサーバーが無く、何を聞いても index.html が返るので聞かない。
