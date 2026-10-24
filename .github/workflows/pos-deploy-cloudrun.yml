@@ -13,11 +13,12 @@ name: pos / deploy (Cloud Run)
 # Terraform が入れるので、ここではイメージだけを差し替える。
 #
 # **本番だけ。PR のプレビューはここでは出さない。** 今までどおり pos-deploy-workers.yml が
-# Workers に出す。Workers の本番のデプロイは、変数 POS_PROD_ON_CLOUD_RUN を true にすると止まる
-# （pos-deploy-workers.yml の prod-skipped を参照）。
+# Workers に出す。Workers の本番は、非常用の予備として pos-cf.cafeore.cafe に出し続ける
+# （pos-deploy-workers.yml の冒頭）。
 #
-# 変数 POS_WEB_DEPLOY が true のときだけ動く。Cloud Run のサービスや LB を Terraform で作る前に
-# マージしても、何もしない（job がスキップされるだけ）。
+# **既定で動く。** 止めたいときだけ変数 POS_WEB_DEPLOY を false にする。infra の Terraform
+# （pos_web_enabled。既定で true）で Cloud Run のサービスを作る前に main に入ると、存在しない
+# サービスの更新でこの job が落ちる。infra を先に apply すること（README の「本番を GCP に移す（IAP）」）。
 #
 # 認証は api-build.yml と同じ Workload Identity Federation。GCP 側の構成は infra リポジトリの
 # gcp/github_actions.tf を参照。サービスアカウントには、Artifact Registry への push、このサービスの
@@ -58,11 +59,11 @@ jobs:
 
     # 3つ除外している。
     #
-    #   - 変数 POS_WEB_DEPLOY が true でないとき … インフラがまだ無い（上を参照）
+    #   - 変数 POS_WEB_DEPLOY が false のとき … 止めたいとき（上を参照）
     #   - Dependabot が起点の実行 … Actions の secrets も id-token も渡らないので認証で落ちる
     #   - fork … push しても変数が無く、GCP にも入れない
     if: >-
-      ${{ vars.POS_WEB_DEPLOY == 'true'
+      ${{ vars.POS_WEB_DEPLOY != 'false'
           && github.actor != 'dependabot[bot]'
           && !github.event.repository.fork }}
 

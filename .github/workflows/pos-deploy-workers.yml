@@ -27,15 +27,17 @@ name: pos / deploy (Workers)
 # ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
 # コメントは消す（pr-cleanup.yml を参照）。
 #
-# ## 本番を Cloud Run に移した後
+# ## 本番の画面は GCP、Workers の本番は非常用の pos-cf.cafeore.cafe
 #
-# 本番の画面は GCP の LB（IAP）の後ろの Cloud Run に移す（pos-deploy-cloudrun.yml）。
-# 移した後は変数 POS_PROD_ON_CLOUD_RUN を true にして、ここからの本番（main への push と
-# 手動実行）のデプロイを止める。PR のプレビューは今までどおり出す。
+# 本番の画面（pos.cafeore.cafe）は GCP の LB（IAP）の後ろの Cloud Run が出す（pos-deploy-cloudrun.yml）。
+# ここからの本番（main への push と手動実行）は、非常用の予備として pos-cf.cafeore.cafe
+# （WORKERS_CUSTOM_DOMAIN）に出し続ける。中継先は今までどおり pos-be-lb.cafeore.cafe（トークン付き）。
+# 使い方は README の「本番を GCP に移す（IAP）」の「非常用の pos-cf」。
 #
-# 止めないと、本番の deploy が --domain（WORKERS_CUSTOM_DOMAIN）で pos.cafeore.cafe を Worker に
-# 付け直し、GCP の LB に向けた DNS を上書きしてしまう。止めた実行は prod-skipped の job が
-# そのことをまとめ（Summary）に出す。
+# **WORKERS_CUSTOM_DOMAIN を GCP のドメイン（変数 POS_WEB_DOMAIN。既定 pos.cafeore.cafe）にしたら、
+# 出す前に止める。** CI の wrangler deploy --domain は、同じ名前の DNS レコードがあっても上書きして
+# 独自ドメインを付ける（README の「POS の Worker を cafeore のアカウントに移す」の「確かめたこと」）ので、
+# infra が GCP の LB に向けた pos.cafeore.cafe を Worker に奪ってしまう。
 
 on:
   push:
@@ -92,32 +94,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # 本番を Cloud Run に移した後（変数 POS_PROD_ON_CLOUD_RUN が true）の main への push と手動実行。
-  # deploy の代わりに走り、本番の Workers にはデプロイしなかったことを残す（上の
-  # 「本番を Cloud Run に移した後」を参照）。**条件は deploy の if と対にすること。**
-  prod-skipped:
-    name: Skip production deploy (moved to Cloud Run)
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'pull_request' && vars.POS_PROD_ON_CLOUD_RUN == 'true' }}
-    steps:
-      - name: 本番の Workers へのデプロイを飛ばす
-        run: |
-          message="本番は Cloud Run に移した（変数 POS_PROD_ON_CLOUD_RUN が true）ので、Workers の本番にはデプロイしない。本番の画面は pos-deploy-cloudrun.yml が出す。PR のプレビューは今までどおりここから出す"
-          echo "::notice title=本番の Workers へのデプロイを飛ばした::$message"
-          {
-            echo "### 本番の Workers へのデプロイを飛ばした"
-            echo
-            echo "$message"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   deploy:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # 4つ除外している。
+    # 3つ除外している。
     #
-    #   - 本番を Cloud Run に移した後（変数 POS_PROD_ON_CLOUD_RUN が true）の main への push と
-    #     手動実行 … 上の「本番を Cloud Run に移した後」を参照。代わりに prod-skipped が走る
     #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
     #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
@@ -129,10 +111,8 @@ jobs:
     # **PR の条件は上の concurrency と揃えること。**
     if: >-
       ${{ github.actor != 'dependabot[bot]'
-          && ((github.event_name != 'pull_request'
-               && vars.POS_PROD_ON_CLOUD_RUN != 'true')
-              || (github.event_name == 'pull_request'
-                  && github.event.pull_request.head.repo.full_name == github.repository
+          && (github.event_name != 'pull_request'
+              || (github.event.pull_request.head.repo.full_name == github.repository
                   && github.event.pull_request.state == 'open'
                   && contains(github.event.pull_request.labels.*.name, 'preview')
                   && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
@@ -280,10 +260,13 @@ jobs:
           # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
           # README の「API の認証」を参照。
           API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
-          # 本番の Worker に付ける独自ドメイン（pos.cafeore.cafe）。ゾーンが
+          # 本番の Worker に付ける独自ドメイン（非常用の pos-cf.cafeore.cafe）。ゾーンが
           # WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID のアカウントに無いと付けられないので、
           # WORKERS_PROD_* と一緒に入れる（下のスクリプトのコメントを参照）。
           CUSTOM_DOMAIN: ${{ vars.WORKERS_CUSTOM_DOMAIN }}
+          # GCP の LB（IAP）が使うドメイン。Worker には付けさせない（上の冒頭の「本番の画面は GCP」）。
+          # pos-deploy-cloudrun.yml の POS_WEB_API_BASE_URL の既定と揃える。
+          GCP_POS_DOMAIN: ${{ vars.POS_WEB_DOMAIN || 'pos.cafeore.cafe' }}
           # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
           LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
@@ -390,12 +373,25 @@ jobs:
               echo "::error::WORKERS_CUSTOM_DOMAIN にはホスト名だけを入れる（https:// や / を付けない）"
               exit 1
             fi
+            # GCP の LB が使う pos.cafeore.cafe を Worker に付けると、CI の wrangler は infra が作った
+            # DNS レコードを上書きし、本番の画面を GCP から奪う。Workers の本番は pos-cf.cafeore.cafe に出す。
+            if [ "$CUSTOM_DOMAIN" = "$GCP_POS_DOMAIN" ]; then
+              echo "::error::WORKERS_CUSTOM_DOMAIN が $GCP_POS_DOMAIN（GCP の LB が使うドメイン）になっている。Workers の本番は pos-cf.cafeore.cafe に出す（VITE_API_BASE_URL も https://pos-cf.cafeore.cafe にする）"
+              exit 1
+            fi
             # 画面が workers.dev の Worker を向いたままだと、新しい Worker を通らない。
             # このアカウントの workers.dev は上のとおり止まり、前のアカウントの Worker は残っていれば
             # 動くが、消した時点で POS が API に届かなくなる。
+            #
+            # GCP のドメインを向けたままだと、pos-cf の画面が別のオリジンの GCP の API を呼び、IAP に
+            # 止められる（ログインの cookie も CORS も合わない）。非常用として使えないので止める。
             case "$VITE_API_BASE_URL" in
               *.workers.dev*)
                 echo "::error::WORKERS_CUSTOM_DOMAIN があるのに VITE_API_BASE_URL が workers.dev を向いている。https://$CUSTOM_DOMAIN にする"
+                exit 1
+                ;;
+              "https://$GCP_POS_DOMAIN" | "https://$GCP_POS_DOMAIN/"*)
+                echo "::error::VITE_API_BASE_URL が GCP の $GCP_POS_DOMAIN を向いている。Worker（https://$CUSTOM_DOMAIN）を通して呼ぶよう、https://$CUSTOM_DOMAIN にする"
                 exit 1
                 ;;
             esac
