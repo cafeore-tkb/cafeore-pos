@@ -22,8 +22,11 @@ const (
 	RoleNone Role = iota
 	// 読むだけ。呼び出し画面（callscreen）など、表示だけする端末
 	RoleViewer
-	// 何でもできる。レジ・マスター・提供など、スタッフが操作する端末
+	// 営業で使うことは何でもできる。レジ・マスター・提供など、スタッフが操作する端末
 	RoleStaff
+	// スタッフにできることに加えて、営業データのリセットのような取り返しのつかない操作ができる。
+	// 運営の数人だけ。ドメインごとには書けない（validateAdminList）
+	RoleAdmin
 )
 
 // gin.Context に Access か IAP を通ってきた相手（AccessIdentity）を置くキー。
@@ -122,6 +125,20 @@ func validateAllowList(env string, names []string) error {
 	return nil
 }
 
+// 管理者の一覧を確かめる。管理者はドメインごとには書けない。ドメインで書くと、そのドメインで
+// これから作られるアカウントも全部、営業データを消せるようになってしまうため。
+func validateAdminList(env string, names []string) error {
+	if err := validateAllowList(env, names); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if strings.HasPrefix(normalizeName(name), "@") {
+			return fmt.Errorf("%s: %q: write each admin's address (domain entries are not allowed for admins)", env, name)
+		}
+	}
+	return nil
+}
+
 // メールアドレスは大文字・小文字を区別しない扱いにする
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
@@ -136,6 +153,8 @@ func normalizeName(name string) string {
 //	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
+//	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットができる相手。
+//	                        カンマ区切り。ドメインごとには書けない。空なら誰もリセットできない
 //
 // CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
 //
@@ -174,8 +193,13 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	if err := validateAllowList("AUTH_VIEWER_EMAILS", viewers); err != nil {
 		return nil, err
 	}
+	admins := splitList(getenv("AUTH_ADMIN_EMAILS"))
+	if err := validateAdminList("AUTH_ADMIN_EMAILS", admins); err != nil {
+		return nil, err
+	}
 
 	authz := NewAuthorizer(verifier, staff, viewers)
+	authz.allow(admins, RoleAdmin)
 	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }
@@ -242,6 +266,8 @@ func (a *Authorizer) Me(c *gin.Context) {
 		name := v.(AccessIdentity).Name()
 		res.Email = &name
 		switch a.role(name) {
+		case RoleAdmin:
+			role = models.MeRoleAdmin
 		case RoleStaff:
 			role = models.MeRoleStaff
 		case RoleViewer:
@@ -250,6 +276,32 @@ func (a *Authorizer) Me(c *gin.Context) {
 	}
 	res.Role = &role
 	c.JSON(http.StatusOK, res)
+}
+
+// AuthDisabledMessage は、認証を掛けていない（AUTH_MODE が off か *-report-only）ので RequireStrict が断るときの文。
+const AuthDisabledMessage = "この操作は API の認証（AUTH_MODE=iap か cloudflare-access）が有効なときだけ使えます"
+
+// RequireStrict は、取り返しのつかない操作（営業データのリセット）のためのもの。
+// Require と違い、認証を掛けていない設定でも通さない。
+//
+//   - a が nil（AUTH_MODE=off）なら誰も通さない（403）
+//   - *-report-only でも誰も通さない（403）。認証を切り替えている途中（ほかの API はまだ誰でも叩ける）の間は、
+//     取り返しのつかない操作を使わせない
+func (a *Authorizer) RequireStrict(min Role) gin.HandlerFunc {
+	if a == nil {
+		return func(c *gin.Context) {
+			log.Printf("auth: %s %s: rejected because AUTH_MODE is off", c.Request.Method, c.FullPath())
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
+		}
+	}
+	return func(c *gin.Context) {
+		if !a.enforce {
+			log.Printf("auth: %s %s: rejected because AUTH_MODE is report-only", c.Request.Method, c.FullPath())
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
+			return
+		}
+		a.check(c, min)
+	}
 }
 
 func (a *Authorizer) check(c *gin.Context, min Role) {

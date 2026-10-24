@@ -86,6 +86,11 @@ const loginLabel = (user: LoginState | undefined, error: unknown): string => {
 type Badge = { label: string; title: string; className: string };
 
 const ROLE_BADGE = {
+  admin: {
+    label: "管理者",
+    title: "すべての操作と、データのリセットができる",
+    className: "bg-stone-800 text-white",
+  },
   staff: {
     label: "スタッフ",
     title: "すべての操作ができる",

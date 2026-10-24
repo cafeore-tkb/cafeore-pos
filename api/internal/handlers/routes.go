@@ -36,6 +36,7 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	labelPrint := NewLabelPrintHandler(db, hub)
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caos := NewCaosHandler(db, hub, inventory)
+	dataReset := NewDataResetHandler(db, hub)
 
 	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access や IAP を通らず
 	// Cloud Run に直接来る（Google の ID トークンと Webhook の署名で確かめる）。
@@ -123,6 +124,12 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 		sq.POST("/actions/:id/cancel", square.CancelAction)
 		// 注文から Square の決済を返金する。POST なので RequireByMethod でスタッフだけ
 		api.POST("/orders/:id/square-refund", square.RefundOrder)
+
+		// 営業データのリセットは管理者だけ。GET も含めて、認証を掛けていない設定（off・report-only）では誰も使えない
+		admin := api.Group("/admin", authz.RequireStrict(auth.RoleAdmin))
+		admin.GET("/data-reset", dataReset.GetDataResetStatus)
+		admin.GET("/data-reset/backup", dataReset.ExportDataResetBackup)
+		admin.POST("/data-reset", dataReset.ResetData)
 	}
 	api.GET("/printer-settings", printerSetting.GetPrinterSettings)
 	api.PUT("/printer-settings", printerSetting.UpdatePrinterSettings)

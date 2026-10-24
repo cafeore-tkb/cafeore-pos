@@ -175,6 +175,7 @@ const settingLinks = [
   { to: "/printer-settings", label: "プリンター" },
   { to: "/callscreen-cm", label: "呼び出し画面の CM" },
   { to: "/menu-keys", label: "商品のキー" },
+  { to: "/data-reset", label: "データのリセット" },
 ];
 
 export default function Index() {
