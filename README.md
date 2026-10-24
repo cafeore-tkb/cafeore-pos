@@ -18,9 +18,10 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 
 | workflow | 対象 | 何をするか |
 |--|--|--|
-| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` は Docker イメージのビルドも見る。push はしない） |
+| `pos-ci` / `common-ci` / `api-ci` | 各パッケージ | typecheck / lint / unit test（`api-ci` と `pos-ci` は Docker イメージのビルドも見る。push はしない） |
 | `api-build` | `api` | イメージをビルドして Artifact Registry へ push し、Cloud Run へデプロイ |
-| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ |
+| `pos-deploy-workers` | `services/pos` | ビルドして Cloudflare Workers へデプロイ（PR のプレビューと、[GCP に移す](#本番を-gcp-に移すiap)までの本番） |
+| `pos-deploy-cloudrun` | `services/pos` | 本番だけ。画面のイメージを作って Artifact Registry へ push し、Cloud Run `cafeore-pos-web` へデプロイ（変数 `POS_WEB_DEPLOY` が `true` のときだけ） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
@@ -282,6 +283,85 @@ wrangler 4.123.0 のソースで次も確かめた（実物では見ていない
 
 - `versions upload` は workers.dev とプレビューの設定を変えない。secret は前のバージョンから引き継ぎ、変数（`API_ORIGIN`）は引き継がない
 
+### 本番を GCP に移す（IAP）
+
+本番の POS（`pos.cafeore.cafe`）を Cloudflare Workers から GCP に移し、Identity-Aware Proxy（IAP）で守る。
+**PR のプレビューは今までどおり Workers**（`cafeorepos`）に出す。仕組みは作ってあるが、**まだ切り替えていない**
+（どれも変数が off で、merge しただけでは何も変わらない）。
+
+```
+今:       端末 ─→ pos.cafeore.cafe（cafeore の Worker）─(トークン)─→ pos-be-lb.cafeore.cafe（mice の LB ＋ Cloud Armor）─→ cafeore-pos-prod
+移した後: 端末 ─→ pos.cafeore.cafe（mice の LB ＋ IAP）─┬─ /api/*・/status・/health ─→ cafeore-pos-prod
+                                                       └─ それ以外 ─→ cafeore-pos-web（画面と /call-voice）
+          Square の Webhook・デプロイの CI ─→ pos-be-lb.cafeore.cafe（今までどおり）
+          Cloud Scheduler（在庫リマインド）─→ run.app（今までどおり。内部として届く）
+```
+
+- **ログインは IAP**（Google アカウント）。IAP を通れる相手と api の許可リストは、どちらも infra の
+  `api_auth_staff_emails`・`api_auth_viewer_emails` で決まる。Cloudflare Access（[API の認証](#api-の認証cloudflare-access)）は使わない
+- **Worker の中継とトークンが要らなくなる。** 画面と API が同じ LB の同じオリジンに来て、LB の URL map が振り分ける。
+  IAP が付ける JWT はブラウザには出ず、`cafeore-pos-prod` は LB と内部からしか届かないので、Access のときのように
+  JWT を盗まれて Cloud Run を直接叩かれる心配も無い。api は念のため IAP の JWT を確かめる（`AUTH_MODE=iap`。`api/internal/auth/iap.go`）
+- **オリジンは `https://pos.cafeore.cafe` のまま変わらない。** 端末の localStorage（送れていない注文、プリンター・Square の端末・
+  代理印刷の設定など）はそのまま残り、入れ直さなくてよい。各端末で Google アカウントでのログインが 1 回要る
+- 画面は Cloud Run `cafeore-pos-web`（`services/pos/Dockerfile`。Node のサーバーは `services/pos/server/`）。Worker が今やっている
+  ことのうち、`/api` の中継以外（静的ファイル・SPA のフォールバック・`/call-voice`）を受け持つ。呼び出しの音声は
+  `worker/call-voice.ts` をそのまま使い、R2 の代わりに GCS のバケット（`<プロジェクト ID>-call-voices`）に溜める。中身は移さず、
+  呼んだ番号から ElevenLabs で作り直す（利用枠を使う）。ElevenLabs の鍵は mice の Secret Manager の `elevenlabs-api-key`
+- DB は今と同じ mice の Cloud SQL。メニューや注文はそのまま見える
+
+#### 何を作ったか
+
+| どこ | もの |
+| --- | --- |
+| このリポジトリ | `services/pos/server/`・`services/pos/Dockerfile`（画面のサーバーとイメージ）、`pos-deploy-cloudrun.yml`（本番のデプロイ）、`pos-deploy-workers.yml` の `POS_PROD_ON_CLOUD_RUN`（移した後に Workers の本番を止める）、api の `AUTH_MODE=iap`・`iap-report-only` |
+| infra（`gcp/pos_web.tf`・`gcp/pos_iap.tf`、`pos_web_enabled`） | `cafeore-pos-web`・そのランタイム SA・音声のバケット、IAP を付けた backend service 2 つ、`pos.cafeore.cafe` の Google 管理の証明書、mice の LB の URL map の `pos.cafeore.cafe` のルール |
+| infra（`cloudflare/dns.tf`、`pos_lb_ipv4`） | 切り替えるときの `pos.cafeore.cafe` の A レコード（DNS only） |
+
+Terraform の手順・plan の見方・確かめていないことは infra の README「POS を GCP に移す（IAP）」が正本。ここは全体の順番と、
+このリポジトリの設定だけを書く。
+
+#### 切り替える手順
+
+1. **infra を apply する（切り替える日に）。** infra の README の手順 1〜3（OAuth クライアントを決める、`elevenlabs-api-key` を作る、
+   `pos_web_enabled = true`）。証明書は DNS が向くまで発行されず、長く置くと発行を諦めるので、切り替える日にやる。POS は止まらない
+2. **画面を Cloud Run に出す。** このリポジトリの Variables に `POS_WEB_DEPLOY` = `true` を入れ、Actions の
+   「pos / deploy (Cloud Run)」を main で手動実行する。`cafeore-pos-web` が踏み台のイメージから本物に替わる。POS は止まらない
+3. **切り替える前に確かめる。** infra の README の手順 4（IAP がログインに飛ばすこと、`pos-be-lb` が変わっていないこと）
+4. **切り替える（営業していない時間に。ここから数十分 POS が止まる）**
+   1. 各端末で、送れていない注文・CaOS の未送信・刷れなかったシールが無いことを確かめる（オリジンは変わらないので残っていても
+      消えはしないが、止まる間は送れない）
+   2. Variables に `POS_PROD_ON_CLOUD_RUN` = `true` を入れる。入れないと、次の Workers の本番のデプロイが
+      `--domain pos.cafeore.cafe` でカスタムドメインを Worker に付け直す
+   3. infra の README の手順 5（Worker のカスタムドメインを外し、`pos_lb_ipv4` を apply し、証明書が `ACTIVE` になるのを待つ）
+   4. 各端末で `https://pos.cafeore.cafe` を開き直し、決めたアカウントでログインする
+   5. 一通り確かめる：レジで注文できる、ほかの端末に WebSocket で流れる、呼び出し画面で読み上げが鳴る（新しいバケットに音声ができる）、
+      トップページの一番下のビルドの番号が今の main のもの、許可リストに無いアカウントでは開けない
+5. **api の確かめを IAP にする。** infra の README の手順 6（`api_auth_mode` を `iap-report-only` → `iap`）
+6. **後片付け**（落ち着いてから）：旧 `cafeorepos` の本番の workers.dev を止める（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)の手順 5）、
+   infra の README の「後片付け」（Cloud Armor のトークンのルール、`frontend_origins` の古い URL、R2 のバケット）
+
+戻すとき：infra の README の「戻すとき」（`api_auth_mode` を戻し、`pos_lb_ipv4` を消し、`POS_PROD_ON_CLOUD_RUN` を消して
+「pos / deploy (Workers)」を手動実行する。Worker がカスタムドメインを付け直す）。オリジンは同じなので、端末の設定はそのまま。
+
+#### ログインのセッションが切れたとき
+
+画面は 10 秒ごとに `/status` を見ている（`useOnlineStatus`）。同じオリジンの API には `X-Requested-With: XMLHttpRequest` を付けるので、
+IAP のセッションが切れると IAP は Google のログインへ飛ばさずに 401 を返す。そのとき画面を読み込み直して IAP のログインへ戻す
+（Google のログインが続いていれば、何も押さずに戻ってくる）。続けて読み込み直すのは 1 分に 1 回まで。
+
+読み込み直すと、そのタブのメモリにしか無いもの（[呼び出し画面の CM](#呼び出し画面の-cm) で選んだファイル、先払いの途中の支払い）は消える。
+IAP のセッションがどのくらいの間隔で切れるかは確かめていない（Google の資料では、Google アカウントのログインが続く限り続くとある）。
+
+#### 確かめていないこと
+
+- 実物での動き全部（Terraform の plan と apply、IAP のログイン、IAP を通した WebSocket、本物の GCS と ElevenLabs）。
+  手元では、Docker のイメージを作って動かし（CA の証明書を足した写しで）、静的ファイル・SPA のフォールバック・Range・`/api` の 404 を確かめ、
+  GCS の読み書きは偽の GCS のサーバーで確かめた。`services/pos/Dockerfile` そのままのビルドは `pos-ci` の `image` で見る
+- mice のプロジェクトが `id.cafeore.cafe` の組織の下にあるか（Google 管理の OAuth クライアントで足りるか。infra の README の手順 1）
+- IAP の JWT の `email` クレームの形（`accounts.google.com:` などの接頭辞が付かないか）。手順 5 の `iap-report-only` で、弾くはずだったものが
+  ログに出ないことで確かめる
+
 ### 呼び出し画面の CM
 
 呼び出し画面（`/callscreen`）は、呼び出しが無い間は CM を全画面で流す。
@@ -328,6 +408,9 @@ wrangler 4.123.0 のソースで次も確かめた（実物では見ていない
   統合したカードで片方の注文はもう案内していれば、まだの注文の番号だけを読む）。緊急（淹れ直し）のカード、もう呼んだ注文のカードでは流さない
 - 「よろしければぜひ、お近くでご覧ください。」は、前にそれを付けた案内から 1 分以内（立て続け）なら省く。付けた案内から数えるので、
   続いている間も 1 分に 1 回は付く（`@cafeore/common` の `planDripAnnouncement`）
+- [GCP に移した](#本番を-gcp-に移すiap)後の本番は、同じ `worker/call-voice.ts` を Cloud Run の `cafeore-pos-web` が動かし、片は GCS のバケット
+  （`<プロジェクト ID>-call-voices`）に溜める。鍵は mice の Secret Manager の `elevenlabs-api-key`（Terraform が環境変数に入れる）。
+  Cloud Run は応答を返すと CPU を絞るので、作った片を溜め終えてから返す（`server/app.ts`。溜めていない片があるときだけ遅くなる）
 - ElevenLabs の鍵は GitHub の secret `ELEVENLABS_API_KEY`。本番もプレビューもデプロイのたびに
   `--secrets-file` で Worker の secret に入れる（書かなかった secret は前のバージョンから引き継がれるので、
   片方だけで入れると古い値が残る）
@@ -407,7 +490,8 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `SQUARE_LOCATION_ID` | 任意 | 未設定 | 任意（端末をペアリングする店舗。空ならアカウントの既定の店舗） |
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | 任意 | 未設定 | Webhook の署名鍵（Secret Manager に置く） |
 | `SQUARE_WEBHOOK_URL` | 任意 | 未設定 | Developer Console に登録した通知 URL（1 文字も違えないこと） |
-| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
+| `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `iap-report-only` → `iap`（[本番を GCP に移す](#本番を-gcp-に移すiap)）。Access を使うなら `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
+| `IAP_AUDIENCE` | 未設定 | 未設定 | `AUTH_MODE` が `iap*` のとき。IAP を付けた API の backend service の `/projects/<プロジェクト番号>/global/backendServices/<ID>`（infra が渡す。形が違うと起動しない） |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
 | `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り） |
 
@@ -702,7 +786,10 @@ SQUARE_INTEGRATION_DATABASE_URL="postgres://postgres@localhost:5432/square_test?
 
 ### API の認証（Cloudflare Access）
 
-**`AUTH_MODE` を `cloudflare-access` にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
+**本番は Access ではなく IAP で守ることにした（[本番を GCP に移す](#本番を-gcp-に移すiap)）。** この節は Access で守るときの仕組みと手順で、
+Access のアプリは作っていない。api の Access の検証（`AUTH_MODE=cloudflare-access*`）はそのまま残してある。
+
+**`AUTH_MODE` を `cloudflare-access` か `iap` にするまでは、API の URL を知っていれば誰でも全部の操作ができる。**
 URL は POS の JS に入っているので、画面を開けば分かる（秘密ではない）。CORS は止めにならない
 （Origin を付けない curl などには効かない）。
 
@@ -1050,7 +1137,11 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` | Variables | 同上（任意）。上と組で入れる。片方だけだとデプロイを止める |
 | `WORKERS_CUSTOM_DOMAIN` | Variables | 同上（任意）。本番の Worker に付ける独自ドメイン（`pos.cafeore.cafe`。`https://` は付けない）。入れると本番の workers.dev は止まる。ゾーンが `WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID` のアカウントに要るので、`WORKERS_PROD_*` 無しで入れるとデプロイを止める（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)） |
 | `WORKERS_AUTO_DEPLOY_IF_NOT_EXIST` | Variables | 同上（任意。`true` のときだけ上記のフォールバックが働く） |
-| `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
+| `POS_PROD_ON_CLOUD_RUN` | Variables | `pos-deploy-workers`（任意）。`true` で本番（main への push と手動実行）の Workers へのデプロイを止め、PR のプレビューだけを出す。[GCP に移した](#本番を-gcp-に移すiap)後に入れる |
+| `POS_WEB_DEPLOY` | Variables | `pos-deploy-cloudrun`。`true` のときだけ本番の画面を Cloud Run に出す（infra の `pos_web_enabled` を apply してから入れる） |
+| `POS_WEB_CLOUD_RUN_SERVICE` | Variables | `pos-deploy-cloudrun`（任意）。既定 `cafeore-pos-web`（infra の output `pos_web_service_name`） |
+| `POS_WEB_API_BASE_URL` | Variables | `pos-deploy-cloudrun`（任意）。画面に焼き込む API のオリジン。既定 `https://pos.cafeore.cafe`（画面と同じ） |
+| `WEBHOOK_URL` | Secrets | `pos-deploy-workers`・`pos-deploy-cloudrun`（画面に焼き込む。Cloud Run のイメージには BuildKit の secret で渡し、ビルドの記録に残さない） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
 | `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（今は mice の LB の `https://pos-be-lb.cafeore.cafe`）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
@@ -1069,7 +1160,7 @@ POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub
 PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
 `LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
-GCP 側（`api-build`・`pos-deploy-workers`・`pr-cleanup`）の workflow の既定値は、cafeore のプロジェクト
+GCP 側（`api-build`・`pos-deploy-workers`・`pos-deploy-cloudrun`・`pr-cleanup`）の workflow の既定値は、cafeore のプロジェクト
 （`project-5d6e656b-4871-46ff-96f`）のまま。本番もプレビューも mice にあるので（[backend](#backendartifact-registry--cloud-run)）、
 次の Variables に mice の値を入れている（対応は infra の README「GitHub 側の設定」「本番を mice に移す」の手順 4）。
 **消すと既定値の cafeore に戻り、本番のデプロイが落ちる**（cafeore には本番のサービスも、CI のデプロイ権限も無い）。
