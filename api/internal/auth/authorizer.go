@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -42,24 +43,81 @@ type identityVerifier interface {
 // Access のポリシーや IAP の IAM でもログインできる人を絞るが、そちらを緩めすぎたとき
 // （誰でもワンタイム PIN でログインできる設定・allUsers に権限を付けた など）にも
 // API が開かないよう、ここでも許可リストに無い相手は 403 にする。
+//
+// 許可リストには、メールアドレス（サービストークンならクライアント ID）のほかに、
+// 「@id.cafeore.cafe」のように @ で始めてドメインごと書ける。そのドメインのアカウント
+// （今あるものも、これから作るものも）が全部通る。サブドメインは含まない
+// （@cafeore.cafe は a@id.cafeore.cafe に当たらない）。
+// 1 人が複数の項目に当たるときは強い方を取るので、ドメインで表示用にして、その中の
+// 何人かだけをメールでスタッフにはできるが、逆（ドメインでスタッフにして一部を表示用に下げる）はできない。
 type Authorizer struct {
 	verifier identityVerifier
-	roles    map[string]Role
+	// メールアドレス（とクライアント ID）ごと
+	roles map[string]Role
+	// ドメインごと（@ を除いた小文字）
+	domainRoles map[string]Role
 	// false なら弾かずにログにだけ出す（AUTH_MODE=*-report-only）
 	enforce bool
 }
 
 func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authorizer {
-	roles := make(map[string]Role, len(staff)+len(viewers))
-	for _, name := range viewers {
-		roles[normalizeName(name)] = RoleViewer
+	authz := &Authorizer{
+		verifier:    verifier,
+		roles:       make(map[string]Role, len(staff)+len(viewers)),
+		domainRoles: map[string]Role{},
+		enforce:     true,
 	}
 	// 両方に書かれていたら強い方を取る
-	for _, name := range staff {
-		roles[normalizeName(name)] = RoleStaff
+	authz.allow(viewers, RoleViewer)
+	authz.allow(staff, RoleStaff)
+	delete(authz.roles, "")
+	delete(authz.domainRoles, "")
+	return authz
+}
+
+func (a *Authorizer) allow(names []string, role Role) {
+	for _, name := range names {
+		name = normalizeName(name)
+		target, key := a.roles, name
+		if domain, ok := strings.CutPrefix(name, "@"); ok {
+			target, key = a.domainRoles, domain
+		}
+		if target[key] < role {
+			target[key] = role
+		}
 	}
-	delete(roles, "")
-	return &Authorizer{verifier: verifier, roles: roles, enforce: true}
+}
+
+// その相手の権限。メールアドレスの項目と、そのドメインの項目の強い方
+func (a *Authorizer) role(name string) Role {
+	name = normalizeName(name)
+	role := a.roles[name]
+	// サービストークン（クライアント ID）には @ が無いので、ドメインの項目には当たらない
+	if at := strings.LastIndex(name, "@"); at > 0 {
+		if domainRole := a.domainRoles[name[at+1:]]; domainRole > role {
+			role = domainRole
+		}
+	}
+	return role
+}
+
+// ドメインごとの項目の形（@ と、ドットを 1 つ以上含むホスト名）
+var allowedDomainPattern = regexp.MustCompile(`^@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
+// 許可リストの項目を確かめる。「*@example.com」のようなワイルドカードや、形の崩れた
+// ドメインの項目は、どこにも当たらずに黙って誰も通れなくなる（か、意図より広く読まれる）ので、
+// 起動を止める。
+func validateAllowList(env string, names []string) error {
+	for _, name := range names {
+		normalized := normalizeName(name)
+		switch {
+		case strings.ContainsAny(normalized, "* \t"):
+			return fmt.Errorf("%s: %q: use an address or @domain (wildcards and spaces are not supported)", env, name)
+		case strings.HasPrefix(normalized, "@") && !allowedDomainPattern.MatchString(normalized):
+			return fmt.Errorf("%s: %q: a domain entry must look like @example.com", env, name)
+		}
+	}
+	return nil
 }
 
 // メールアドレスは大文字・小文字を区別しない扱いにする
@@ -74,8 +132,8 @@ func normalizeName(name string) string {
 //	CF_ACCESS_AUD         … Access のアプリケーションの AUD タグ
 //	IAP_AUDIENCE          … IAP を掛けたバックエンド サービスの aud。カンマ区切り
 //	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
-//	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り
-//	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り
+//	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
+//	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
 //
 // CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
 //
@@ -107,8 +165,15 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	if len(staff) == 0 {
 		return nil, errors.New("AUTH_STAFF_EMAILS is empty: nobody could write")
 	}
+	viewers := splitList(getenv("AUTH_VIEWER_EMAILS"))
+	if err := validateAllowList("AUTH_STAFF_EMAILS", staff); err != nil {
+		return nil, err
+	}
+	if err := validateAllowList("AUTH_VIEWER_EMAILS", viewers); err != nil {
+		return nil, err
+	}
 
-	authz := NewAuthorizer(verifier, staff, splitList(getenv("AUTH_VIEWER_EMAILS")))
+	authz := NewAuthorizer(verifier, staff, viewers)
 	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }
@@ -174,7 +239,7 @@ func (a *Authorizer) check(c *gin.Context, min Role) {
 		c.Set(IdentityContextKey, identity)
 	}
 
-	if role := a.roles[normalizeName(identity.Name())]; role < min {
+	if role := a.role(identity.Name()); role < min {
 		a.reject(c, http.StatusForbidden, fmt.Sprintf("%q is not allowed", identity.Name()))
 		return
 	}

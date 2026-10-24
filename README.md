@@ -303,7 +303,8 @@ wrangler 4.123.0 のソースで次も確かめた（実物では見ていない
 ```
 
 - **ログインは IAP**（Google アカウント）。IAP を通れる相手と api の許可リストは、どちらも infra の
-  `api_auth_staff_emails`・`api_auth_viewer_emails` で決まる。Cloudflare Access（[API の認証](#api-の認証cloudflare-access)）は使わない
+  `api_auth_staff_emails`・`api_auth_viewer_emails` で決まる。`@id.cafeore.cafe` のようにドメインごとにも書ける
+  （IAP の権限は `domain:id.cafeore.cafe` になる。Google Workspace か Cloud Identity のドメインだけ）。Cloudflare Access（[API の認証](#api-の認証cloudflare-access)）は使わない
 - **`pos.cafeore.cafe` では Worker の中継とトークンが要らない。** 画面と API が同じ LB の同じオリジンに来て、LB の URL map が振り分ける。
   IAP が付ける JWT はブラウザには出ず、`cafeore-pos-prod` は LB と内部からしか届かないので、Access のときのように
   JWT を盗まれて Cloud Run を直接叩かれる心配も無い。api は念のため IAP の JWT を確かめる（`AUTH_MODE=iap`。`api/internal/auth/iap.go`）
@@ -520,7 +521,7 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `AUTH_MODE` | 未設定（`off`） | 未設定（`off`） | `off` → `iap-report-only` → `iap`（[本番を GCP に移す](#本番を-gcp-に移すiap)）。Access を使うなら `cloudflare-access-report-only` → `cloudflare-access`（[API の認証](#api-の認証cloudflare-access)） |
 | `IAP_AUDIENCE` | 未設定 | 未設定 | `AUTH_MODE` が `iap*` のとき。IAP を付けた API の backend service の `/projects/<プロジェクト番号>/global/backendServices/<ID>`（infra が渡す。形が違うと起動しない） |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
-| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り） |
+| `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り）。`@id.cafeore.cafe` のように `@` で始めるとドメインごと（[API の認証](#api-の認証cloudflare-access)） |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -838,6 +839,13 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
   JWT の検証は api にそのまま残す（Cloud Armor はヘッダーの文字列を比べるだけ）
 - api はメールの許可リストで振り分ける。`AUTH_STAFF_EMAILS` は何でもでき、`AUTH_VIEWER_EMAILS` は
   GET（Square を除く）と WebSocket だけ。呼び出し画面などの表示用の端末は後者でログインする
+  - `@id.cafeore.cafe` のように `@` で始めると、そのドメインのアカウントを全部通す（今あるものも、これから作るものも）。
+    サブドメインは含まない（`@cafeore.cafe` は `a@id.cafeore.cafe` に当たらない）。**スタッフにドメインごと入れるのは、
+    アカウントを作れる人を自分たちで決められるドメインだけにする**
+  - 1 人が複数の項目に当たるときは強い方を取る。ドメインで表示用にして何人かだけをメールでスタッフにはできるが、
+    ドメインでスタッフにして一部を表示用に下げることはできない
+  - `*@example.com` のようなワイルドカード、形の崩れたドメイン（`@`・`@localhost` など）があると api は起動しない
+    （`api/internal/auth/authorizer.go` の `validateAllowList`）
 - `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
   書き込みは開かない（`api/cmd/server/main.go`）
 - 次は Access を通らずに来るので、`/api` のグループの外に置いて自前で確かめている
