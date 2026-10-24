@@ -380,6 +380,22 @@ IAP のセッションが切れると IAP は Google のログインへ飛ばさ
 読み込み直すと、そのタブのメモリにしか無いもの（[呼び出し画面の CM](#呼び出し画面の-cm) で選んだファイル、先払いの途中の支払い）は消える。
 IAP のセッションがどのくらいの間隔で切れるかは確かめていない（Google の資料では、Google アカウントのログインが続く限り続くとある）。
 
+#### ログイン中のアカウントとログアウト
+
+トップページの右上に、ログインしている Google アカウントのメールとログアウトのボタンを出す（`LoginUser`）。
+
+- メールは画面の Cloud Run の `/auth/me` が返す。IAP が付ける `X-Goog-Authenticated-User-Email`（`accounts.google.com:<メール>`）から
+  名前空間を外したもの。署名の無いヘッダーなので、**出すだけで、誰に何を許すかには使わない**（API は JWT を確かめる）。
+  API の `AUTH_MODE` が `off` でも出る
+- ログアウトは、押し間違えないよう 2 回押すと `/?gcp-iap-mode=CLEAR_LOGIN_COOKIE` を開く。IAP が自分の cookie を消し、
+  もう一度ログインを求める。**Google アカウントのログインは消さない**ので、そのブラウザーが Google に 1 つのアカウントでしか
+  ログインしていなければ、何も聞かれずに同じアカウントで戻ってくる。別のアカウントに替えるときは、Google の
+  アカウントの切り替えで足すか、Google からログアウトしてから開き直す
+- PR のプレビュー（Workers。ログインが無い）では、メールの代わりに「プレビュー」と出し、ボタンは出さない。
+  `pos-deploy-workers.yml` が PR のビルドにだけ `VITE_BUILD_PREVIEW=true` を焼き込む
+- 非常用の `pos-cf.cafeore.cafe`（Workers の本番。ログインが無い）では、Worker の `/auth/me` が `null` を返し、「ログインなし」と出す。
+  ローカルの `pnpm dev` では「ローカル」と出す
+
 #### 確かめていないこと
 
 - 実物での動き全部（Terraform の plan と apply、IAP のログイン、IAP を通した WebSocket、本物の GCS と ElevenLabs）。
@@ -389,6 +405,9 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
 - mice のプロジェクトが `id.cafeore.cafe` の組織の下にあるか（Google 管理の OAuth クライアントで足りるか。infra の README の手順 1）
 - IAP の JWT の `email` クレームの形（`accounts.google.com:` などの接頭辞が付かないか）。手順 5 の `iap-report-only` で、弾くはずだったものが
   ログに出ないことで確かめる
+- [ログアウト](#ログイン中のアカウントとログアウト)の `CLEAR_LOGIN_COOKIE` が、API の backend service の IAP の cookie も消すか。
+  消さないと、別のアカウントでログインし直しても、API には前のアカウントで届くことがある（`/auth/me` の表示は新しいアカウントになる）。
+  ログアウトして別のアカウントでログインし直し、ブラウザーの開発者ツールで `pos.cafeore.cafe` の IAP の cookie が全部入れ替わったかを見る
 
 ### 呼び出し画面の CM
 
