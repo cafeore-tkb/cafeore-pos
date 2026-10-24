@@ -499,6 +499,12 @@ jobs:
           if [ -n "${NEON_LISTEN_URL:-}" ]; then
             env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
           fi
+          # プレビューは AUTH_MODE が off で、DB も PR ごとの使い捨てなので、営業データのリセット
+          # （/data-reset）を誰でも使えるようにする。本番（タグ無し）には渡さない。api は認証を掛けて
+          # いるときはこれを見ない（README「データのリセット」）。
+          if [ -n "$tag" ]; then
+            env_pairs+=("DATA_RESET_WITHOUT_AUTH=true")
+          fi
           for pair in "${env_pairs[@]}"; do
             case "$pair" in
               *,*)

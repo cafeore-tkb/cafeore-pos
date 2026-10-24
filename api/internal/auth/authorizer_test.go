@@ -244,7 +244,8 @@ func TestAuthorizerRequireStrict(t *testing.T) {
 	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
 	api := r.Group("/api", authz.RequireByMethod())
 	api.POST("/orders", ok)
-	admin := api.Group("/admin", authz.RequireStrict(RoleAdmin))
+	// プレビュー用の DATA_RESET_WITHOUT_AUTH を入れていても、認証を掛けているときは効かない
+	admin := api.Group("/admin", authz.RequireStrict(RoleAdmin, true))
 	admin.GET("/data-reset", ok)
 	admin.POST("/data-reset", ok)
 
@@ -275,7 +276,8 @@ func TestAuthorizerRequireStrict(t *testing.T) {
 	}
 }
 
-// 認証を掛けていない設定（off と report-only）では、RequireStrict は管理者でも通さない
+// 認証を掛けていない設定（off と report-only）では、RequireStrict は管理者でも通さない。
+// DATA_RESET_WITHOUT_AUTH（allowWithoutAuth）のときだけ誰でも通す
 func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -291,7 +293,9 @@ func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 		r := gin.New()
 		ok := func(c *gin.Context) { c.Status(http.StatusOK) }
 		api := r.Group("/api", authz.RequireByMethod())
-		api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin), ok)
+		api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin, false), ok)
+		// プレビュー（DATA_RESET_WITHOUT_AUTH）は、認証を掛けていなければ誰でも通す
+		api.POST("/preview/data-reset", authz.RequireStrict(RoleAdmin, true), ok)
 
 		req := httptest.NewRequest("POST", "/api/admin/data-reset", nil)
 		req.Header.Set(AccessJWTHeader, "admin@example.com")
@@ -302,6 +306,18 @@ func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 		}
 		if !strings.Contains(w.Body.String(), AuthDisabledMessage) {
 			t.Errorf("%s: body = %s, want the reason", name, w.Body.String())
+		}
+
+		for _, token := range []string{"", "stranger@example.com"} {
+			req := httptest.NewRequest("POST", "/api/preview/data-reset", nil)
+			if token != "" {
+				req.Header.Set(AccessJWTHeader, token)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Errorf("%s with DATA_RESET_WITHOUT_AUTH as %q: got %d, want 200", name, token, w.Code)
+			}
 		}
 	}
 }

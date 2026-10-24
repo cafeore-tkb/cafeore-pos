@@ -82,6 +82,22 @@ func dbMaxOpenConnsFromEnv() (int, error) {
 	return n, nil
 }
 
+// DATA_RESET_WITHOUT_AUTH を読む。true なら、認証を掛けていない設定（AUTH_MODE が off か *-report-only）でも
+// 営業データのリセットを誰にでも使わせる（handlers.RouteOptions）。DB が PR ごとの使い捨てのプレビューのためのもので、
+// CI（api-build.yml）がプレビューのリビジョンにだけ渡す。本番には渡さない。未設定なら false。
+// 読めない値は起動を止める（綴りの誤りで黙って変わらないように）。
+func dataResetWithoutAuthFromEnv() (bool, error) {
+	v := strings.TrimSpace(os.Getenv("DATA_RESET_WITHOUT_AUTH"))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("DATA_RESET_WITHOUT_AUTH must be true or false: %q", v)
+	}
+	return b, nil
+}
+
 func initDB() error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -347,11 +363,18 @@ func main() {
 	case authz.ReportOnly():
 		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
 	}
+	dataResetWithoutAuth, err := dataResetWithoutAuthFromEnv()
+	if err != nil {
+		log.Fatalf("Failed to configure data reset: %v", err)
+	}
+	if dataResetWithoutAuth && (authz == nil || authz.ReportOnly()) {
+		log.Println("Warning: DATA_RESET_WITHOUT_AUTH is true. Anyone who knows the URL can reset business data (only for previews)")
+	}
 
 	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、
 	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。
 	registerStatusRoutes(r)
-	handlers.RegisterRoutes(r, authz, db, hub, inventory, orderHandler, squareHandler, activity)
+	handlers.RegisterRoutes(r, authz, handlers.RouteOptions{DataResetWithoutAuth: dataResetWithoutAuth}, db, hub, inventory, orderHandler, squareHandler, activity)
 
 	// サーバー起動
 	port := os.Getenv("PORT")

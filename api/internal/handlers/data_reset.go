@@ -23,7 +23,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// 営業データのリセット（/api/admin/data-reset）。管理者だけが使える（routes.go で auth.RequireStrict(auth.RoleAdmin)）。
+// 営業データのリセット（/api/admin/data-reset）。管理者だけが使える（routes.go で auth.RequireStrict(auth.RoleAdmin, …)）。
+// プレビュー（DATA_RESET_WITHOUT_AUTH）だけは、認証を掛けていなければ誰でも使える。
 //
 // 消すのは営業中に溜まるもの（注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録・受付状態の履歴など）だけで、
 // メニュー・アイテム・在庫対象・色・プリンター・Square 端末の設定は残す。表の中身を消すだけで、DB のユーザーや

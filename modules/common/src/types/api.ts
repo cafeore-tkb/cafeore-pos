@@ -603,7 +603,8 @@ export interface paths {
   "/api/admin/data-reset": {
     /**
      * 営業データのリセットの前の状態
-     * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない。
+     * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+     * （DATA_RESET_WITHOUT_AUTH=true の PR のプレビューだけは、誰でも使える）。
      * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
      */
     get: operations["getDataResetStatus"];
@@ -3943,7 +3944,8 @@ export interface operations {
   };
   /**
    * 営業データのリセットの前の状態
-   * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない。
+   * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+   * （DATA_RESET_WITHOUT_AUTH=true の PR のプレビューだけは、誰でも使える）。
    * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
    */
   getDataResetStatus: {

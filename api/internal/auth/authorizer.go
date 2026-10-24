@@ -282,20 +282,34 @@ func (a *Authorizer) Me(c *gin.Context) {
 const AuthDisabledMessage = "この操作は API の認証（AUTH_MODE=iap か cloudflare-access）が有効なときだけ使えます"
 
 // RequireStrict は、取り返しのつかない操作（営業データのリセット）のためのもの。
-// Require と違い、認証を掛けていない設定でも通さない。
+// Require と違い、認証を掛けていない設定では通さない。
 //
 //   - a が nil（AUTH_MODE=off）なら誰も通さない（403）
 //   - *-report-only でも誰も通さない（403）。認証を切り替えている途中（ほかの API はまだ誰でも叩ける）の間は、
 //     取り返しのつかない操作を使わせない
-func (a *Authorizer) RequireStrict(min Role) gin.HandlerFunc {
+//
+// allowWithoutAuth が true なら、上の 2 つ（認証を掛けていない設定）でだけ誰でも通す。DB が使い捨ての
+// プレビューのためのもの（DATA_RESET_WITHOUT_AUTH）。認証を掛けている（AUTH_MODE が iap か cloudflare-access）
+// ときは効かず、min の権限を確かめる。
+func (a *Authorizer) RequireStrict(min Role, allowWithoutAuth bool) gin.HandlerFunc {
 	if a == nil {
 		return func(c *gin.Context) {
+			if allowWithoutAuth {
+				log.Printf("auth: %s %s: allowed without auth (AUTH_MODE is off and DATA_RESET_WITHOUT_AUTH is true)", c.Request.Method, c.FullPath())
+				c.Next()
+				return
+			}
 			log.Printf("auth: %s %s: rejected because AUTH_MODE is off", c.Request.Method, c.FullPath())
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
 		}
 	}
 	return func(c *gin.Context) {
 		if !a.enforce {
+			if allowWithoutAuth {
+				log.Printf("auth: %s %s: allowed without auth (AUTH_MODE is report-only and DATA_RESET_WITHOUT_AUTH is true)", c.Request.Method, c.FullPath())
+				c.Next()
+				return
+			}
 			log.Printf("auth: %s %s: rejected because AUTH_MODE is report-only", c.Request.Method, c.FullPath())
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
 			return
