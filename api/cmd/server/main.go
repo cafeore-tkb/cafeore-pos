@@ -332,9 +332,12 @@ func main() {
 
 	// API を叩ける相手。AUTH_MODE=cloudflare-access のときは、Cloudflare Access を
 	// 通ってきた（Cf-Access-Jwt-Assertion の JWT が正しい）許可リストの相手だけ。
-	// 本番では POS の Worker が /api を中継し、Access がその手前でログインさせる
-	// （README の「API の認証」を参照）。off のときは今までどおり誰でも叩ける。
-	// cloudflare-access-report-only は確かめるが弾かず、弾くはずだったものをログに出す。
+	// Workers の本番では POS の Worker が /api を中継し、Access がその手前でログインさせる。
+	// AUTH_MODE=iap のときは、GCP の LB の IAP を通ってきた（X-Goog-Iap-Jwt-Assertion の
+	// JWT が正しい）許可リストの相手だけ。cloudflare-access+iap はどちらも受け付ける
+	// （Workers から GCP の LB へ移す途中に使う）。README の「API の認証」を参照。
+	// off のときは今までどおり誰でも叩ける。後ろに -report-only を付けると確かめるが弾かず、
+	// 弾くはずだったものをログに出す。
 	authz, err := auth.AuthorizerFromEnv(os.Getenv)
 	if err != nil {
 		log.Fatalf("Failed to configure auth: %v", err)
@@ -343,11 +346,16 @@ func main() {
 	case authz == nil:
 		log.Println("Warning: AUTH_MODE is off. Anyone who knows the URL can call the API")
 	case authz.ReportOnly():
-		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
+		log.Printf("Warning: AUTH_MODE is report-only (checking %s). Requests that would be rejected are only logged",
+			strings.Join(authz.Headers(), ", "))
+	default:
+		log.Printf("Auth: checking the JWT in %s against AUTH_STAFF_EMAILS / AUTH_VIEWER_EMAILS", strings.Join(authz.Headers(), " or "))
 	}
 
 	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、
-	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。
+	// POS が Access のセッション切れに気づくのに使う（useOnlineStatus）。GCP の LB では
+	// IAP を掛けない backend に振り分けるので、IAP のセッション切れはここでは分からない
+	// （POS は web の /session-check で確かめる）。
 	registerStatusRoutes(r)
 	handlers.RegisterRoutes(r, authz, db, hub, inventory, orderHandler, squareHandler, activity)
 

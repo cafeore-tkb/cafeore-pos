@@ -30,10 +30,11 @@ type AccessVerifier struct {
 	verifier *oidc.IDTokenVerifier
 }
 
-// Access を通ってきた相手。人ならメール、サービストークンならクライアント ID が入る。
+// Access か IAP を通ってきた相手。人ならメール、Access のサービストークンなら
+// クライアント ID が入る（IAP はメールだけ。iap.go）。
 type AccessIdentity struct {
 	Email string
-	// サービストークン（CF-Access-Client-Id で入ってきたもの）のクライアント ID
+	// Access のサービストークン（CF-Access-Client-Id で入ってきたもの）のクライアント ID
 	CommonName string
 }
 
@@ -84,6 +85,10 @@ func normalizeTeamDomain(teamDomain string) (string, error) {
 		return "", fmt.Errorf("invalid access team domain %q", teamDomain)
 	}
 	return u.Scheme + "://" + u.Host, nil
+}
+
+func (v *AccessVerifier) Header() string {
+	return AccessJWTHeader
 }
 
 func (v *AccessVerifier) Verify(ctx context.Context, token string) (AccessIdentity, error) {
