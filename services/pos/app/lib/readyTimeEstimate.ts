@@ -4,7 +4,7 @@ import { type OrderEntity, jstDate } from "@cafeore/common";
  * 提供時間を予測する stack モデルの係数。
  * 雙峰祭2025（11/2〜11/3、978 注文、抽出担当 6 人）の実績で当てはめた値（cafeore_analysis の R/model_svtime.R）。
  */
-const STACK_MODEL = {
+export const STACK_MODEL = {
   /** 平坦部のしきい値（杯） */
   a1: 7.2829,
   /** 傾きの定数部分（分/杯） */

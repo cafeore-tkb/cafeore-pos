@@ -3,6 +3,7 @@ import {
   Activity,
   Banknote,
   BarChart3,
+  ChartSpline,
   ChevronLeft,
   CircleDollarSign,
   Clock3,
@@ -60,6 +61,7 @@ import {
   ProductTimeChart,
 } from "./operations/OverviewVisuals";
 import { SnapshotComparison } from "./operations/SnapshotComparison";
+import { StackModelSection } from "./stackModel/StackModelSection";
 
 const SECTIONS = [
   {
@@ -97,6 +99,12 @@ const SECTIONS = [
     name: "25年度比較",
     description: "2025年度の実績と比較",
     icon: History,
+  },
+  {
+    id: "model",
+    name: "提供時間モデル",
+    description: "stack杯数で提供時間を当てはめ",
+    icon: ChartSpline,
   },
 ] as const;
 
@@ -419,7 +427,8 @@ export function DashboardWorkspace() {
               showInterval={
                 section === "analysis" ||
                 section === "comparison" ||
-                section === "inventory"
+                section === "inventory" ||
+                section === "model"
               }
               onDate={setSelectedDate}
               onStart={setStartTime}
@@ -481,6 +490,14 @@ export function DashboardWorkspace() {
               ) : section === "analysis" ? (
                 <AnalysisSection
                   report={report}
+                  intervalMinutes={intervalMinutes}
+                />
+              ) : section === "model" ? (
+                <StackModelSection
+                  orders={sourceOrders}
+                  day={selectedDate}
+                  window={window}
+                  cutoff={cutoff}
                   intervalMinutes={intervalMinutes}
                 />
               ) : (
