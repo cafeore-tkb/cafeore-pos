@@ -222,6 +222,8 @@ jobs:
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           VITE_BUILD_PR: ${{ steps.build_info.outputs.pr }}
           VITE_BUILD_COMMIT: ${{ steps.build_info.outputs.commit }}
+          # PR のプレビューのビルドか。トップページのログイン中の相手の代わりに「プレビュー」と出す
+          VITE_BUILD_PREVIEW: ${{ github.event_name == 'pull_request' }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
           # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
           # 順にフォールバックする。

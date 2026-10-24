@@ -5,6 +5,7 @@
 //     来ないはず。来たら JSON の 404 を返す（index.html を返すと、画面が API の応答として読んで
 //     分かりにくい壊れ方をする）。Worker のように中継はしない
 //   - /call-voice/* … 呼び出し画面の音声。Worker と同じ worker/call-voice.ts で作る
+//   - /auth/me … ログインしている相手（IAP がログインさせた Google アカウントのメール）。トップページに出す
 //   - それ以外 … build/client の静的ファイル（server/static-files.ts）
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -18,6 +19,26 @@ import { createStaticFiles, sendText } from "./static-files";
 // worker/index.ts の API_PATH・CALL_VOICE_PREFIX と揃える（/api は末尾の / が無くても API とみなす）
 const API_PATH = /^\/(?:api(?:\/|$)|status$|health$)/;
 const CALL_VOICE_PREFIX = "/call-voice/";
+// worker/index.ts の LOGIN_USER_PATH と揃える
+const LOGIN_USER_PATH = "/auth/me";
+
+// IAP が後ろに渡すヘッダー。値は「accounts.google.com:<メール>」の形（名前空間が前に付く）。
+//
+// 署名は無い。api は相手を決めるのに使わず、署名のある JWT（X-Goog-IAP-JWT-Assertion）を
+// 確かめる（api/internal/auth/iap.go）。ここは画面に出すだけで、誰に何を許すかには使わないので、
+// JWT を確かめずにこちらを読む（確かめるには、画面の backend service の aud を infra から渡すことになる）。
+// このサービスの ingress は内部と LB だけ（infra の gcp/pos_web.tf）なので、インターネットからは
+// IAP を通ってきたものしか来ない。
+const IAP_USER_EMAIL_HEADER = "x-goog-authenticated-user-email";
+
+/** IAP が付けてきたメールから名前空間を外す。無ければ null */
+export const loginUserEmail = (
+  value: string | string[] | undefined,
+): string | null => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const email = raw?.replace(/^[^:@]*:/, "").trim();
+  return email || null;
+};
 
 /** 溜めるのを待つ上限。GCS が詰まっても、呼び出しの音声はこれだけ待てば返る */
 const WAIT_UNTIL_TIMEOUT_MS = 10_000;
@@ -131,6 +152,14 @@ export const createApp = (options: AppOptions) => {
       sendText(res, 405, "Method Not Allowed", { allow: "GET, HEAD" });
       return;
     }
+
+    if (url.pathname === LOGIN_USER_PATH) {
+      sendJson(res, 200, {
+        email: loginUserEmail(req.headers[IAP_USER_EMAIL_HEADER]),
+      });
+      return;
+    }
+
     serveStatic(req, res, url.pathname);
   };
 

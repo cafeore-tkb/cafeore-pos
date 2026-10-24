@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { BuildInfo } from "~/components/organisms/top/BuildInfo";
+import { LoginUser } from "~/components/organisms/top/LoginUser";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -179,11 +180,14 @@ const settingLinks = [
 export default function Index() {
   return (
     <div className="mx-auto max-w-6xl space-y-10 px-4 py-6 font-noto">
-      <header>
-        <h1 className="font-bold text-3xl text-ore">珈琲・俺POS</h1>
-        <p className="mt-1 text-muted-foreground text-sm">
-          使う画面を選んでください。各画面は担当の端末で開いたままにしておきます。
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-bold text-3xl text-ore">珈琲・俺POS</h1>
+          <p className="mt-1 text-muted-foreground text-sm">
+            使う画面を選んでください。各画面は担当の端末で開いたままにしておきます。
+          </p>
+        </div>
+        <LoginUser />
       </header>
 
       {sections.map((section) => (
