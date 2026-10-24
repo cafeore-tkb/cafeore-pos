@@ -2,6 +2,9 @@
 // /api・/status・/health だけをここで Cloud Run の API へ中継する。
 // 呼び出し画面の音声（/call-voice）もここで返す（worker/call-voice.ts）。
 //
+// 本番は GCP の LB（IAP）の後ろの Cloud Run（server/、Dockerfile）に移す。移した後
+// （変数 POS_PROD_ON_CLOUD_RUN が true）は、この Worker を使うのは PR のプレビューだけになる。
+//
 // ## なぜ中継するのか
 //
 // 本番はこの Worker の URL ごと Cloudflare Access で守る。Access はログインした
