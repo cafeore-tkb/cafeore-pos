@@ -761,7 +761,7 @@ type MeResponse struct {
 	// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
 	Enforcement MeResponseEnforcement `json:"enforcement"`
 
-	// Role admin はスタッフにできることに加えて営業データのリセットができる（AUTH_ADMIN_EMAILS）、
+	// Role admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
 	// staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
 	// enforce なら 403 になる）。off のときは null
 	Role *MeResponseRole `json:"role"`
@@ -772,7 +772,7 @@ type MeResponse struct {
 // report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
 type MeResponseEnforcement string
 
-// MeResponseRole admin はスタッフにできることに加えて営業データのリセットができる（AUTH_ADMIN_EMAILS）、
+// MeResponseRole admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
 // staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
 // enforce なら 403 になる）。off のときは null
 type MeResponseRole string

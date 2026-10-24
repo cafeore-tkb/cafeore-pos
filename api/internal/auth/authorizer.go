@@ -24,7 +24,8 @@ const (
 	RoleViewer
 	// 営業で使うことは何でもできる。レジ・マスター・提供など、スタッフが操作する端末
 	RoleStaff
-	// スタッフにできることに加えて、営業データのリセットのような取り返しのつかない操作ができる。
+	// スタッフにできることに加えて、営業データのリセットと、「運営・管理」「マスタ設定」の画面だけが使う
+	// 設定の書き込み（商品管理・プリンター・Square 端末など。handlers/routes.go の adminOnly）ができる。
 	// 運営の数人だけ。ドメインごとには書けない（validateAdminList）
 	RoleAdmin
 )
@@ -65,7 +66,8 @@ type Authorizer struct {
 	enforce bool
 }
 
-func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authorizer {
+// admins は管理者（AUTH_ADMIN_EMAILS）。validateAdminList で確かめてから渡すこと。
+func NewAuthorizer(verifier identityVerifier, staff, viewers []string, admins ...string) *Authorizer {
 	authz := &Authorizer{
 		verifier:    verifier,
 		roles:       make(map[string]Role, len(staff)+len(viewers)),
@@ -75,6 +77,7 @@ func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authoriz
 	// 両方に書かれていたら強い方を取る
 	authz.allow(viewers, RoleViewer)
 	authz.allow(staff, RoleStaff)
+	authz.allow(admins, RoleAdmin)
 	delete(authz.roles, "")
 	delete(authz.domainRoles, "")
 	return authz
@@ -153,8 +156,9 @@ func normalizeName(name string) string {
 //	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
-//	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットができる相手。
-//	                        カンマ区切り。ドメインごとには書けない。空なら誰もリセットできない
+//	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットと設定の書き込み
+//	                        （商品管理・プリンター・Square 端末など）ができる相手。カンマ区切り。
+//	                        ドメインごとには書けない。空なら誰もそれらをできない
 //
 // CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
 //
@@ -198,8 +202,7 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 		return nil, err
 	}
 
-	authz := NewAuthorizer(verifier, staff, viewers)
-	authz.allow(admins, RoleAdmin)
+	authz := NewAuthorizer(verifier, staff, viewers, admins...)
 	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }

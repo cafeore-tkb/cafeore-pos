@@ -55,27 +55,31 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db
 	// GET は表示用の端末（呼び出し画面など）も、それ以外はスタッフの端末だけ。
 	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
 	api := r.Group("/api", authz.RequireByMethod())
+	// 「運営・管理」と「マスタ設定」の画面（商品管理・プリンター・Square 端末など）だけが使う書き込みは、管理者だけ。
+	// 読み取り（GET）と棚卸し・入荷の記録は、レジ・マスター・CaOS も使うのでスタッフのまま。
+	// Require なので、認証を掛けていない設定（off・report-only。プレビューや手元）では今までどおり通る
+	adminOnly := authz.Require(auth.RoleAdmin)
 	{
 		// 呼んだ相手と権限（トップページに出す）。authz が nil でも登録する
 		api.GET("/me", authz.Me)
 
 		api.GET("/items", item.GetItems)
-		api.POST("/items", item.CreateItem)
+		api.POST("/items", adminOnly, item.CreateItem)
 		api.GET("/items/:id", item.GetItem)
-		api.PUT("/items/:id", item.UpdateItem)
-		api.DELETE("/items/:id", item.DeleteItem)
+		api.PUT("/items/:id", adminOnly, item.UpdateItem)
+		api.DELETE("/items/:id", adminOnly, item.DeleteItem)
 
 		api.GET("/menus", menu.GetMenus)
-		api.POST("/menus", menu.CreateMenu)
+		api.POST("/menus", adminOnly, menu.CreateMenu)
 		api.GET("/menus/:id", menu.GetMenu)
-		api.PUT("/menus/:id", menu.UpdateMenu)
-		api.DELETE("/menus/:id", menu.DeleteMenu)
+		api.PUT("/menus/:id", adminOnly, menu.UpdateMenu)
+		api.DELETE("/menus/:id", adminOnly, menu.DeleteMenu)
 
 		api.GET("/item-types", itemType.GetItemTypes)
-		api.POST("/item-types", itemType.CreateItemType)
+		api.POST("/item-types", adminOnly, itemType.CreateItemType)
 		api.GET("/item-types/:id", itemType.GetItemType)
-		api.PUT("/item-types/:id", itemType.UpdateItemType)
-		api.DELETE("/item-types/:id", itemType.DeleteItemType)
+		api.PUT("/item-types/:id", adminOnly, itemType.UpdateItemType)
+		api.DELETE("/item-types/:id", adminOnly, itemType.DeleteItemType)
 
 		api.GET("/orders", order.GetOrders)
 		api.GET("/ws/orders", order.WSHandler)
@@ -101,13 +105,14 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db
 		api.PUT("/cashier-state", cashierState.UpdateCashierState)
 
 		api.GET("/inventory", inv.GetInventory)
-		api.POST("/inventory/resources", inv.CreateStockResource)
-		api.PUT("/inventory/resources/:id", inv.UpdateStockResource)
-		api.DELETE("/inventory/resources/:id", inv.DeleteStockResource)
+		api.POST("/inventory/resources", adminOnly, inv.CreateStockResource)
+		api.PUT("/inventory/resources/:id", adminOnly, inv.UpdateStockResource)
+		api.DELETE("/inventory/resources/:id", adminOnly, inv.DeleteStockResource)
+		// 棚卸し・入荷の記録は CaOS の「豆残量確認」からもするのでスタッフのまま
 		api.POST("/inventory/resources/:id/events", inv.CreateStockEvent)
 		api.GET("/color-settings", colorSetting.GetColorSettings)
-		api.PUT("/color-settings", colorSetting.UpsertColorSetting)
-		api.DELETE("/color-settings/:id", colorSetting.DeleteColorSetting)
+		api.PUT("/color-settings", adminOnly, colorSetting.UpsertColorSetting)
+		api.DELETE("/color-settings/:id", adminOnly, colorSetting.DeleteColorSetting)
 		api.PUT("/caos/cups", caos.WriteCaosCups)
 		api.POST("/caos/discard", caos.DiscardCaosCups)
 		api.POST("/caos/drippers/:dripper/next", caos.AdvanceCaosDripper)
@@ -117,11 +122,12 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db
 		sq := api.Group("/square", authz.Require(auth.RoleStaff))
 		sq.GET("/status", square.GetStatus)
 		sq.GET("/devices", square.GetDevices)
-		sq.POST("/devices", square.CreateDevice)
-		sq.POST("/devices/pair", square.PairDevice)
-		sq.POST("/devices/import", square.ImportDevices)
-		sq.POST("/devices/:id/code", square.IssueDeviceCode)
-		sq.DELETE("/devices/:id", square.DeleteDevice)
+		// 端末の登録・ペアリング・削除は管理者だけ（Square 端末の画面）。一覧はレジが端末を選ぶのに使う
+		sq.POST("/devices", adminOnly, square.CreateDevice)
+		sq.POST("/devices/pair", adminOnly, square.PairDevice)
+		sq.POST("/devices/import", adminOnly, square.ImportDevices)
+		sq.POST("/devices/:id/code", adminOnly, square.IssueDeviceCode)
+		sq.DELETE("/devices/:id", adminOnly, square.DeleteDevice)
 		sq.POST("/checkouts", square.CreateCheckout)
 		sq.GET("/checkouts/unlinked", square.GetUnlinkedCheckouts)
 		sq.GET("/checkouts/:id", square.GetCheckout)
@@ -141,7 +147,7 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db
 		admin.POST("/data-reset", dataReset.ResetData)
 	}
 	api.GET("/printer-settings", printerSetting.GetPrinterSettings)
-	api.PUT("/printer-settings", printerSetting.UpdatePrinterSettings)
+	api.PUT("/printer-settings", adminOnly, printerSetting.UpdatePrinterSettings)
 	api.POST("/label-print-requests", labelPrint.CreateLabelPrintRequest)
 	api.GET("/label-print-requests", labelPrint.GetLabelPrintRequests)
 	api.POST("/label-print-requests/:id/claim", labelPrint.ClaimLabelPrintRequest)
