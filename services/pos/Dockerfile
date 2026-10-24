@@ -38,11 +38,14 @@ RUN pnpm install --frozen-lockfile --offline
 #   - VITE_API_BASE_URL … API のオリジン。本番は画面と同じ https://pos.cafeore.cafe
 #     （LB が /api・/status・/health を API に送る）。無いと localhost を向くので、止める
 #   - VITE_BUILD_PR・VITE_BUILD_COMMIT … どの PR・コミットのビルドか（トップページに出す）
+#   - VITE_DEPLOY_ENV … どこに出したビルドか。このイメージは本番だけなので既定は production
+#     （レジの「常に返金」を出さない）
 #   - VITE_WEBHOOK_URL … Slack の Webhook。secret で渡す（--secret id=VITE_WEBHOOK_URL,env=...）。
 #     ビルド引数にするとイメージのビルドの記録に残るため。無ければ空
 ARG VITE_API_BASE_URL
 ARG VITE_BUILD_PR=""
 ARG VITE_BUILD_COMMIT=""
+ARG VITE_DEPLOY_ENV=production
 
 WORKDIR /repo/services/pos
 RUN test -n "$VITE_API_BASE_URL" \
