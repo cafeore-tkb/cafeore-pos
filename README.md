@@ -65,9 +65,11 @@ POS は `ssr: false` の SPA。画面は `build/client` を静的アセットと
 配信する（`services/pos/wrangler.jsonc`）。アセットに無いパスは `index.html` を返す
 （`not_found_handling: single-page-application`）。
 
-Worker のスクリプトで `/api/*`・`/status`・`/health` を Cloud Run の API へ
+Worker のスクリプトで `/api/*`・`/status`・`/health` を本番の API へ
 中継する（`services/pos/worker/index.ts`。理由は [API の認証](#api-の認証cloudflare-access)）。
 中継先は本番のデプロイのときだけ `WORKERS_API_ORIGIN` を `--var API_ORIGIN:...` で渡す。
+今の中継先は mice の LB（`https://pos-be-lb.cafeore.cafe`）で、本番の画面は `VITE_API_BASE_URL` が
+`https://pos.cafeore.cafe` なので、API を Worker 経由で呼ぶ。
 PR のプレビューでは渡さないので、プレビューの URL の `/api` は 503 を返す
 （プレビューの画面は Cloud Run を直接呼ぶので使わない）。
 
@@ -76,10 +78,11 @@ main への push と手動実行では本番へ `wrangler deploy` する。PR（
 プレビュー URL 付きのバージョンだけ作る。
 
 本番の URL は Cloudflare の `cafeore` アカウントの独自ドメイン `https://pos.cafeore.cafe`。
-`cafeorepos` アカウントの `https://cafeore-pos.cafeorepos.workers.dev` から移す
-（[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)。済むまでは workers.dev が本番）。
-移すのは本番だけで、PR のプレビューは今までどおり `cafeorepos` に出す。本番の deploy は
-`WORKERS_PROD_CLOUDFLARE_*` があればそのアカウントへ、無ければプレビューと同じ `WORKERS_CLOUDFLARE_*` のアカウントへ出す。
+2026-10-24 に `cafeorepos` アカウントの `https://cafeore-pos.cafeorepos.workers.dev` から移した
+（[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)）。
+移したのは本番だけで、PR のプレビューは今までどおり `cafeorepos` に出す。本番の deploy は
+`WORKERS_PROD_CLOUDFLARE_*` があればそのアカウントへ、無ければプレビューと同じ `WORKERS_CLOUDFLARE_*` のアカウントへ出す
+（今は `WORKERS_PROD_*` に `cafeore` を入れてある）。
 独自ドメインは、本番の deploy のときだけ変数 `WORKERS_CUSTOM_DOMAIN` を `--domain` で渡して付ける。
 渡すと wrangler が本番の workers.dev（`cafeore-pos.<subdomain>.workers.dev`）を止める
 （プレビュー URL は `wrangler.jsonc` の `preview_urls` で別に決まる）。
@@ -125,9 +128,9 @@ backend は PR ごとに `--no-traffic --tag=pr-<番号>` でデプロイされ�
 | `cafeore-pos` | `services/pos` |
 
 ローカルからは `pnpm pos deploy` で同じことができる。
-POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のように中継先を必ず渡すこと。
-渡さないと、画面が Worker 経由で API を呼ぶ設定のときに本番の POS が API に届かなくなる。
-独自ドメインに移した後は、`CLOUDFLARE_ACCOUNT_ID` を `cafeore` のものにし、`--domain pos.cafeore.cafe` も渡すこと。
+POS は `pnpm pos deploy --var API_ORIGIN:https://pos-be-lb.cafeore.cafe` のように中継先を必ず渡すこと。
+渡さないと、画面は Worker 経由で API を呼ぶので、本番の POS が API に届かなくなる。
+`CLOUDFLARE_ACCOUNT_ID` は `cafeore` のもの（`b52dd4bd917c4ef7537befffcb1dea42`）にし、`--domain pos.cafeore.cafe` も渡すこと。
 渡さないと本番の workers.dev がまた開く。
 
 ### POS の Worker を cafeore のアカウントに移す
@@ -147,6 +150,14 @@ POS は `pnpm pos deploy --var API_ORIGIN:<本番の Cloud Run の URL>` のよ�
           PR の確認 ─→ pr-<番号>-cafeore-pos.cafeorepos.workers.dev（cafeorepos の Worker のプレビュー）─→ プレビュー用の Cloud Run
 ```
 
+**今の状況（2026-10-24）**
+
+- 手順 1〜3 は済んだ。`pos.cafeore.cafe` は `cafeore` の `cafeore-pos` を指し、その本番の workers.dev
+  （`cafeore-pos.cafeore.workers.dev`）は止まっている。R2 のバケット `cafeore-call-voices` もある
+- 手順 4（端末を移す）は現場の作業なので、ここからは確かめられない
+- **手順 5 はまだ。** `cafeorepos` の `cafeore-pos` の本番の workers.dev が開いたままで、前のビルドがトークンを付けて
+  API に中継できる。端末を移し終えたら止める
+
 Worker をアカウントの間で動かす機能は無いので、`cafeore` に同じ名前の Worker を新しくデプロイする。
 `pos-deploy-workers` は、本番の deploy を `WORKERS_PROD_CLOUDFLARE_*` のアカウントへ、PR の `versions upload` を
 `WORKERS_CLOUDFLARE_*` のアカウントへ出す。中継先（`WORKERS_API_ORIGIN`）とトークン（`LB_PROXY_TOKEN`）は変えない。
@@ -165,7 +176,8 @@ backend を mice に移す手順（infra の README「本番を mice に移す�
 
 決めてあること:
 
-- ドメインは `pos.cafeore.cafe`（`WORKERS_CUSTOM_DOMAIN`）。DNS のレコードは、最初のデプロイで Cloudflare が作る（今は無い）
+- ドメインは `pos.cafeore.cafe`（`WORKERS_CUSTOM_DOMAIN`）。DNS のレコードは、最初のデプロイで Cloudflare が作った
+  （独自ドメインに付いてくる読み取り専用のレコード。infra の Terraform では管理しない）
 - 新しい Worker の本番の workers.dev（`cafeore-pos.cafeore.workers.dev`）は止める（`--domain` を渡すと wrangler が止める）
 - **`cafeorepos` の `cafeore-pos` は消さない。** `versions upload` は Worker が既にあることが前提なので、消すとプレビューを
   出せなくなる。代わりに、端末を移し終えたら本番の workers.dev だけを止める（手順 5）
@@ -176,11 +188,9 @@ backend を mice に移す手順（infra の README「本番を mice に移す�
 
 1. Workers を Paid プランにする。契約はアカウントごとで、無料枠を超えると POS が止まる
    （[API の認証](#api-の認証cloudflare-access)の手順 1-1）
-2. R2 を有効にし、`services/pos` でバケットを作る。無いと本番のデプロイが失敗する
-
-   ```sh
-   CLOUDFLARE_ACCOUNT_ID=b52dd4bd917c4ef7537befffcb1dea42 pnpm exec wrangler r2 bucket create cafeore-call-voices
-   ```
+2. R2 を有効にし、バケット `cafeore-call-voices` を作る。無いと本番のデプロイが失敗する。
+   バケットは wrangler ではなく infra の `cloudflare/`（workspace `cloudflare`）が Terraform で作る
+   （infra の README「POS の Worker を cafeore のアカウントに移す」）
 
 3. 本番のデプロイ用の API トークンを作る。テンプレートの「Edit Cloudflare Workers」で、Account Resources を `cafeore`、
    Zone Resources を `cafeore.cafe` だけにする。独自ドメインを付けるのに、ゾーンの Workers Routes の Edit が要る。
@@ -260,13 +270,17 @@ Worker と `pos.cafeore.cafe` ができる。
   `pos.cafeore.cafe` は `cafeore` の Worker を指したまま残るので、要らなければダッシュボードで独自ドメインを外す
 - 新しい URL で入れ直した端末の設定は、旧 URL には戻らない（旧 URL に残っているものはそのまま使える）
 
-#### 確かめていないこと
+#### 確かめたこと
 
-- 実際のデプロイ。wrangler 4.123.0 のソースで次は確かめた
-  - `--domain` を渡すと本番の workers.dev が止まり、`preview_urls` を書いてあればプレビュー URL は残る
-  - CI では、既にある DNS レコードを上書きして独自ドメインを付ける
-  - `versions upload` は workers.dev とプレビューの設定を変えない。secret は前のバージョンから引き継ぎ、変数（`API_ORIGIN`）は引き継がない
-- 手順 1-3 のトークンの権限で足りるか
+2026-10-24 の本番の deploy（「pos / deploy (Workers)」の手動実行）で次を確かめた。
+
+- 手順 1-3 のトークンの権限で、`cafeore` に Worker を出して `pos.cafeore.cafe` を付けられた
+- `--domain` を渡すと本番の workers.dev が止まり、`preview_urls` を書いてあればプレビュー URL は残る
+  （`cafeore` の `cafeore-pos` は、本番の workers.dev が止まり、プレビューは開いている）
+
+wrangler 4.123.0 のソースで次も確かめた（実物では見ていない）。
+
+- `versions upload` は workers.dev とプレビューの設定を変えない。secret は前のバージョンから引き継ぎ、変数（`API_ORIGIN`）は引き継がない
 
 ### 呼び出し画面の CM
 
@@ -301,7 +315,7 @@ Worker と `pos.cafeore.cafe` ができる。
   番号の片は呼び出し・催促・ドリップの案内で同じものを使う
 - 番号（注文番号とドリッパーの番号）は、数字のままではなく仮名の読みにして渡す（`numberReading`。303 なら「さんびゃくさん番」）。
   数字のままだと「サンゼロサン」と 1 桁ずつ読まれる。ドリッパーは画面では「3rd」だが、「さん番ドリッパー」と読ませる
-- 片は R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。[移した](#pos-の-worker-を-cafeore-のアカウントに移す)後は `cafeore`）に溜め、溜めてあれば ElevenLabs を呼ばない。
+- 片は R2 のバケット `cafeore-call-voices`（Worker と同じ Cloudflare のアカウント。本番は `cafeore`、プレビューは `cafeorepos`）に溜め、溜めてあれば ElevenLabs を呼ばない。
   鍵は ElevenLabs に送る中身（片の文・声・モデル・設定）のハッシュなので、文や声を変えると自然に作り直す。
   同じ鍵のまま作り直したいときは、`call-voice.ts` の `CACHE_VERSION` を上げるか、バケットの中身を消す。本番とプレビューは別のアカウント（本番は `cafeore`、プレビューは `cafeorepos`）の、同じ名前の別のバケットを使う
 - 間を空けないように：呼び出しは音声が届いてからチャイムを鳴らし、鳴り終わったらすぐ読む（8 秒待っても届かなければチャイムだけ）。
@@ -336,6 +350,21 @@ main への push と手動実行では、続けて Cloud Run サービス `cafeo
 そのイメージで更新する。**PR では本番に触らず、プレビュー用の別サービス**
 （既定 `cafeore-pos-preview`）へデプロイし、その URL を PR にコメントする。
 
+**本番もプレビューも mice の GCP プロジェクト（`cafeore-mice-512509`）にある。** 2026-10-23 に cafeore の
+プロジェクト（`project-5d6e656b-4871-46ff-96f`）から移し、cafeore の本番（`cafeore-pos-prod`）と旧本番（`cafeore-pos-git`）は
+消した（infra の README「本番を mice に移す」「cafeore の本番を消す」）。DB は mice の Cloud SQL で、cafeore の DB の
+中身は移していない。
+
+| | 値 |
+| --- | --- |
+| 本番のサービス | `cafeore-pos-prod`（`https://cafeore-pos-prod-1035412238902.asia-northeast1.run.app`） |
+| 本番の入口 | mice の LB `https://pos-be-lb.cafeore.cafe`（Cloud Armor でトークンの無いものを落とす。[API の認証](#api-の認証cloudflare-access)）。run.app に直接も届くかは infra の `api_lb_only` 次第 |
+| プレビューのサービス | mice の `cafeore-pos-preview` |
+| Artifact Registry | `asia-northeast1-docker.pkg.dev/cafeore-mice-512509/cafeore-pos/api` |
+
+workflow の既定値（`GCP_PROJECT_ID` などの `vars.* || '...'` の右側）は cafeore のままなので、Variables で mice の値を入れている
+（[必要な設定](#必要な設定)）。**Variables を消すと、本番の無い cafeore にデプロイしに行って落ちる。**
+
 本番と分けているのは、同じサービスにリビジョンタグを足すとトラフィック設定が
 「常に最新リビジョン」から「特定リビジョンへの固定」に変わり、main のデプロイが
 自動で切り替わらなくなるため。プレビュー用サービスの側では**リビジョンタグを使う**
@@ -363,10 +392,10 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 
 | 変数 | ローカル | プレビュー | 本番 |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | Cloud SQL。Secret Manager の `cloudsql-database-url`（Unix ソケット `/cloudsql/...` でつなぐ）。infra の `api_database` を `cloud_sql` にするまでは Supabase（`supabase-database-url`）。手順は infra の README「Cloud SQL」 |
-| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（Cloud SQL はプーラーを通さず直接つなぐので不要。Supabase の間もセッションプーラーなので不要） |
+| `DATABASE_URL` | `api/.env` | CI が Neon の接続文字列を渡す | mice の Cloud SQL。Secret Manager の `cloudsql-database-url`（Unix ソケット `/cloudsql/...` でつなぐ）。mice は Cloud SQL だけで、Supabase にはつながない（infra の README「Cloud SQL」） |
+| `DATABASE_LISTEN_URL` | 未設定（`DATABASE_URL` を使う） | CI が Neon の pooler を通らない接続文字列を渡す | 未設定（Cloud SQL はプーラーを通さず直接つなぐので不要） |
 | `DB_MAX_OPEN_CONNS` | 未設定（5） | 未設定（5） | infra の `api_db_max_open_conns`。1 インスタンスが張る接続の上限（LISTEN の 1 本は別）。Cloud Run のインスタンス数の上限 ×（これ + 1）が Cloud SQL の `max_connections` に収まるようにする |
-| `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | Workers の URL をカンマ区切り |
+| `FRONTEND_ORIGINS` | 未設定（`localhost` を許可） | `*` | POS の URL をカンマ区切り（infra の `frontend_origins`。`https://pos.cafeore.cafe` など） |
 | `PORT` | `8080` | Cloud Run が渡す | Cloud Run が渡す |
 | `SLACK_WEBHOOK_URL` | 未設定（通知せずログに出す） | 未設定 | Slack Incoming Webhook の URL |
 | `SLACK_ACTIVITY_WEBHOOK_URL` | 未設定（`SLACK_WEBHOOK_URL` に流す） | 未設定 | 任意。商品の登録・変更・削除、棚卸し・入荷、オーダーストップの通知を別のチャンネルに分けるときだけ |
@@ -717,10 +746,19 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
 順番を守ること。どの段階でも、前の段階に戻せば元に戻る。
 
-**本番の Cloud Run は `cafeore-pos-git` から `cafeore-pos-prod` へ移している途中**（infra の README
-「本番サービスの改名」）。認証の設定が渡るのは新しい `cafeore-pos-prod` だけで、旧サービスは
-**消すまで誰でも叩ける**（DB は同じ）。中継先には新しいサービスの URL を使い、保護が完成するのは
-旧サービスを消してから。
+**今の状況（2026-10-24）**
+
+| 段階 | 状況 |
+| --- | --- |
+| 1. Access | **まだ。** `cafeore` アカウントに POS の Access のアプリが無い |
+| 2. Worker 経由にする | 済み。`WORKERS_API_ORIGIN` は LB（4-3）、`VITE_API_BASE_URL` は `https://pos.cafeore.cafe` |
+| 3. `api_auth_mode` | **まだ。** Access が無いので、mice の `cafeore-pos-prod` は `off` のはず（infra の workspace `gcp-mice` の変数は確かめていない） |
+| 4. LB と Cloud Armor | 4-1〜4-3 は済み（mice の LB。`pos-be-lb.cafeore.cafe` は mice の LB を向いている）。4-4 の `api_lb_only` は確かめていない |
+
+**今は誰でも全部の操作ができる。** `pos.cafeore.cafe` は Access で守っておらず、Worker が LB のトークンを付けて
+中継するので、開けばそのまま API に届く。旧 `cafeorepos` の本番の workers.dev（[移す手順](#pos-の-worker-を-cafeore-のアカウントに移す)の
+手順 5 がまだ）と、本番に出したバージョンごとのプレビュー URL も同じ。旧本番の `cafeore-pos-git` は消したので、
+そちらからの抜け道はもう無い。
 
 1. **Cloudflare（`cafeore` アカウントのダッシュボードで手作業）**。[POS の Worker を cafeore のアカウントに移す](#pos-の-worker-を-cafeore-のアカウントに移す)が済んでいる前提
    1. Workers を Paid プランにする。`/api` が Worker を通るとリクエストに数えられ、無料枠（1 日 10 万。
@@ -739,7 +777,7 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
    ここで画面はログインが要るようになる。API はまだ今までどおり直接呼ばれている
 2. **GitHub（このリポジトリの Variables）**
-   1. `WORKERS_API_ORIGIN` に `cafeore-pos-prod` の URL（infra の `terraform output prod_service_url`）を入れ、
+   1. `WORKERS_API_ORIGIN` に本番の API の URL（LB を置く前は infra の `terraform output prod_service_url`。今は手順 4-3 の LB の URL）を入れ、
       Actions の「pos / deploy (Workers)」を手動実行する
    2. ログインしたブラウザで `https://pos.cafeore.cafe/status` を開き、JSON が返ることを確かめる
    3. `VITE_API_BASE_URL` を `https://pos.cafeore.cafe` にして、もう一度手動実行する。
@@ -751,16 +789,16 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
       ```sh
       gcloud logging read 'resource.type="cloud_run_revision"
-        AND resource.labels.service_name=~"^cafeore-pos-(git|prod)$"
+        AND resource.labels.service_name="cafeore-pos-prod"
         AND textPayload:"auth(report-only)"' \
-        --project project-5d6e656b-4871-46ff-96f --freshness 1h --format 'value(textPayload)'
+        --project cafeore-mice-512509 --freshness 1h --format 'value(textPayload)'
       ```
 
    3. `api_auth_mode = "cloudflare-access"` にして apply する
    4. `curl https://<本番の Cloud Run の URL>/api/items` が 401 になること、レジで注文が通ること、
       表示用のアカウントで開いた画面からは書き込めない（403）ことを確かめる
 4. **LB と Cloud Armor（infra と Cloudflare）**。詳しくは infra の README の「LB と Cloud Armor」
-   1. infra で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
+   1. infra（本番のある workspace。今は `gcp-mice`）で `api_proxy_token`（sensitive。`openssl rand -hex 32`）を入れ、`api_lb_enabled = true` で apply する。
       LB のドメインは `pos-be-lb.cafeore.cafe`。Cloudflare の `cafeore` アカウントの `cafeore.cafe` に、A レコードを
       `terraform output api_lb_ip` に向けて作る（DNS only）。証明書が発行されるまで数十分かかる
    2. このリポジトリの Secrets の `LB_PROXY_TOKEN` に同じトークンを入れる。本番のデプロイで Worker の `PROXY_TOKEN` になる
@@ -779,10 +817,8 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
 
 Cloud Run を直接呼んでいるものは 401 になる。手順 3-2 のログで、使われているかどうかが分かる。
 
-- **CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）**。別のリポジトリに Cloud Run の URL が直書きされていて、
-  WebSocket で注文を直接読んでいる（infra の README「本番サービスの改名」）。Access のログインは POS の
-  workers.dev に付くもので、別のサイト（github.io）からの通信には付けにくいので、そのままでは通せない。
-  POS の中の CaOS（`/master-sheet`）は Worker 経由なので動く。続けて使うならそちらに寄せる
+- 今は無い。CaOS の公開版（GitHub Pages、`cafeore-tkb.github.io`）は Cloud Run を直接呼んでいたが、使っておらず、
+  直書きされていた旧本番の `cafeore-pos-git` も消した。CaOS は POS の中の `/master-sheet`（Worker 経由）を使う
 
 人ではない相手を通したいときは、Access のサービストークンを作り、その Client ID を `AUTH_STAFF_EMAILS`
 か `AUTH_VIEWER_EMAILS` に入れる（api はメールの代わりに JWT の `common_name` を見る）。呼ぶ側は Worker の
@@ -934,11 +970,6 @@ PR を閉じるか `preview` ラベルを外すと `pr-cleanup` が compute ご�
 イメージはタグではなく**ダイジェスト**で指定している。タグは後から別のイメージへ
 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指すため。
 
-デプロイ先のサービスは既存の Cloud Build トリガー（infra の `cloud_build.tf`）も
-更新している。あちらの発火条件は **`disable-auth` ブランチへの push** なので普段は
-ぶつからないが、`disable-auth` に push するとそちらのビルドで上書きされる。
-移行が済んだら Cloud Build トリガーを止めること。
-
 GCP への認証は Workload Identity Federation で、サービスアカウントキーは使わない。
 そのため job に `permissions: id-token: write` が要る（消すと認証が落ちる）。
 GCP 側の構成は [infra リポジトリ](https://github.com/cafeore-tkb/infra) の
@@ -1022,10 +1053,10 @@ workflow が落ちた PR や閉じられないまま放置された PR 用に、
 | `WEBHOOK_URL` | Secrets | `pos-deploy-workers`（既存の `pos-deploy-*` と共用） |
 | `VITE_API_BASE_URL` | Variables | `pos-deploy-workers` |
 | `VITE_API_BASE_URL_PREVIEW` | Variables | 任意。PR で backend の URL を引けなかったときのフォールバック |
-| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（本番の Cloud Run の URL。LB を置いたら LB の URL）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
+| `WORKERS_API_ORIGIN` | Variables | `pos-deploy-workers`。本番の Worker が `/api` を中継する先（今は mice の LB の `https://pos-be-lb.cafeore.cafe`）。`VITE_API_BASE_URL` を Worker に向けたのにこれが無いと、デプロイを止める |
 | `LB_PROXY_TOKEN` | Secrets | `pos-deploy-workers`。本番の Worker の secret `PROXY_TOKEN` に入れる、LB の Cloud Armor と照らし合わせるトークン（infra の `api_proxy_token` と同じ値）。`WORKERS_API_ORIGIN` があるのにこれが無いと、デプロイを止める |
 | `ELEVENLABS_API_KEY` | Secrets | `pos-deploy-workers`。呼び出し画面の音声を作る ElevenLabs の鍵。本番の deploy にもプレビューの versions upload にも、Worker の secret `ELEVENLABS_API_KEY` として入れる（[呼び出しの音声](#呼び出しの音声elevenlabsr2)）。無いと音声は流れず、チャイムだけになる |
-| `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`）。Cloud Run の入口を LB だけにしたら要る |
+| `GCP_API_LB_URL` | Variables | `api-build`。任意。本番のデプロイの後の `/status` の確認を LB を通して行う（infra の `api_lb_url`。今は `https://pos-be-lb.cafeore.cafe`）。Cloud Run の入口を LB だけにしたら要る |
 | `NEON_API_KEY` | Secrets | PR ごとの Neon ブランチ作成・削除。project-scoped キー推奨 |
 | `NEON_PROJECT_ID` | Variables | 同上。**未設定なら Neon 連携ごとスキップ** |
 | `NEON_PREVIEW_CU` | Variables | 任意。既定 `0.25-1` |
@@ -1038,7 +1069,16 @@ POS の Worker の `PROXY_TOKEN` は `wrangler secret put` で置かず、GitHub
 PR のプレビューの `versions upload` の直後の deploy で消えたことがある。トークンを変えるときは
 `LB_PROXY_TOKEN` を変えて「pos / deploy (Workers)」を手動実行する（infra の `api_proxy_token` も揃えること）。
 
-GCP 側（`api-build`）は Terraform を既定値のまま apply していれば追加設定は不要。
-値を変えたときだけ `GCP_WORKLOAD_IDENTITY_PROVIDER` / `GCP_SERVICE_ACCOUNT` /
-`GCP_PROJECT_ID` / `GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` /
-`GCP_CLOUD_RUN_PREVIEW_SERVICE` を Variables で上書きする。
+GCP 側（`api-build`・`pos-deploy-workers`・`pr-cleanup`）の workflow の既定値は、cafeore のプロジェクト
+（`project-5d6e656b-4871-46ff-96f`）のまま。本番もプレビューも mice にあるので（[backend](#backendartifact-registry--cloud-run)）、
+次の Variables に mice の値を入れている（対応は infra の README「GitHub 側の設定」「本番を mice に移す」の手順 4）。
+**消すと既定値の cafeore に戻り、本番のデプロイが落ちる**（cafeore には本番のサービスも、CI のデプロイ権限も無い）。
+
+| Variables | 値 |
+| --- | --- |
+| `GCP_PROJECT_ID` | `cafeore-mice-512509` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | mice の `terraform output github_actions_workload_identity_provider` |
+| `GCP_SERVICE_ACCOUNT` | mice の `terraform output github_actions_service_account_email` |
+
+`GCP_REGION` / `GCP_AR_CONTAINER_REPOSITORY` / `GCP_CLOUD_RUN_SERVICE` / `GCP_CLOUD_RUN_PREVIEW_SERVICE` は
+mice でも既定値と同じ（`asia-northeast1` / `cafeore-pos` / `cafeore-pos-prod` / `cafeore-pos-preview`）なので、入れなくてよい。
