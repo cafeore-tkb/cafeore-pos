@@ -11,6 +11,9 @@ on:
       - 'pnpm-lock.yaml'
   merge_group:
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: services/pos
