@@ -23,7 +23,7 @@ const (
 	RoleStaff
 )
 
-// gin.Context に Access を通ってきた相手（AccessIdentity）を置くキー。
+// gin.Context に Access か IAP を通ってきた相手（AccessIdentity）を置くキー。
 const IdentityContextKey = "auth.identity"
 
 // report-only で、このリクエストをもうログに出したか。二重に掛けたミドルウェアで
@@ -31,19 +31,21 @@ const IdentityContextKey = "auth.identity"
 const reportedContextKey = "auth.reported"
 
 type identityVerifier interface {
+	// JWT が載ってくるヘッダー。Access と IAP で違う
+	Header() string
 	Verify(ctx context.Context, token string) (AccessIdentity, error)
 }
 
-// Access を通ってきた相手を、メール（サービストークンならクライアント ID）の
+// Access か IAP を通ってきた相手を、メール（サービストークンならクライアント ID）の
 // 許可リストで権限に振り分ける。
 //
-// Access のポリシーでもログインできる人を絞るが、そちらを緩めすぎたとき
-// （誰でもワンタイム PIN でログインできる設定など）にも API が開かないよう、
-// ここでも許可リストに無い相手は 403 にする。
+// Access のポリシーや IAP の IAM でもログインできる人を絞るが、そちらを緩めすぎたとき
+// （誰でもワンタイム PIN でログインできる設定・allUsers に権限を付けた など）にも
+// API が開かないよう、ここでも許可リストに無い相手は 403 にする。
 type Authorizer struct {
 	verifier identityVerifier
 	roles    map[string]Role
-	// false なら弾かずにログにだけ出す（AUTH_MODE=cloudflare-access-report-only）
+	// false なら弾かずにログにだけ出す（AUTH_MODE=*-report-only）
 	enforce bool
 }
 
@@ -67,30 +69,37 @@ func normalizeName(name string) string {
 
 // 環境変数から組み立てる。AUTH_MODE が空か off なら nil を返す（認証しない）。
 //
-//	AUTH_MODE             … off | cloudflare-access | cloudflare-access-report-only
+//	AUTH_MODE             … off | cloudflare-access | cloudflare-access-report-only | iap | iap-report-only
 //	CF_ACCESS_TEAM_DOMAIN … Zero Trust のチームのドメイン（<team>.cloudflareaccess.com）
 //	CF_ACCESS_AUD         … Access のアプリケーションの AUD タグ
+//	IAP_AUDIENCE          … IAP を掛けたバックエンド サービスの aud。カンマ区切り
+//	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り
 //
-// cloudflare-access-report-only は、cloudflare-access と同じように確かめるが弾かず、
-// 弾くはずだったものをログに出すだけにする。切り替える前に本番で流し、POS の通信が
-// 全部 Access を通ってきていること（WebSocket も）と、Cloud Run を直接叩いている
-// ものが残っていないことを確かめるために使う。
+// CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
+//
+// *-report-only は、それぞれ同じように確かめるが弾かず、弾くはずだったものをログに
+// 出すだけにする。切り替える前に本番で流し、POS の通信が全部 Access や IAP を通って
+// きていること（WebSocket も）と、Cloud Run を直接叩いているものが残っていないことを
+// 確かめるために使う。
 //
 // 綴りの誤りで認証が外れないよう、知らない AUTH_MODE と設定の漏れはエラーにする
 // （main が起動を止める）。
 func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	mode := strings.TrimSpace(getenv("AUTH_MODE"))
+	var verifier identityVerifier
+	var err error
 	switch mode {
 	case "", "off":
 		return nil, nil
 	case "cloudflare-access", "cloudflare-access-report-only":
+		verifier, err = NewAccessVerifier(getenv("CF_ACCESS_TEAM_DOMAIN"), strings.TrimSpace(getenv("CF_ACCESS_AUD")))
+	case "iap", "iap-report-only":
+		verifier, err = NewIAPVerifier(splitList(getenv("IAP_AUDIENCE")))
 	default:
-		return nil, fmt.Errorf("unknown AUTH_MODE %q (want off, cloudflare-access or cloudflare-access-report-only)", mode)
+		return nil, fmt.Errorf("unknown AUTH_MODE %q (want off, cloudflare-access, cloudflare-access-report-only, iap or iap-report-only)", mode)
 	}
-
-	verifier, err := NewAccessVerifier(getenv("CF_ACCESS_TEAM_DOMAIN"), strings.TrimSpace(getenv("CF_ACCESS_AUD")))
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +109,7 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	}
 
 	authz := NewAuthorizer(verifier, staff, splitList(getenv("AUTH_VIEWER_EMAILS")))
-	authz.enforce = mode == "cloudflare-access"
+	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }
 
@@ -156,7 +165,7 @@ func (a *Authorizer) check(c *gin.Context, min Role) {
 	identity, ok := v.(AccessIdentity)
 	if !ok {
 		var err error
-		identity, err = a.verifier.Verify(c.Request.Context(), c.GetHeader(AccessJWTHeader))
+		identity, err = a.verifier.Verify(c.Request.Context(), c.GetHeader(a.verifier.Header()))
 		if err != nil {
 			// トークンそのものはログに出さない
 			a.reject(c, http.StatusUnauthorized, err.Error())

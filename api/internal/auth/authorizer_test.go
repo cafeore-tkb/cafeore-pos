@@ -16,6 +16,8 @@ import (
 // トークン文字列をそのまま相手の名前として扱う。"bad" は正しくないトークン。
 type stubVerifier struct{}
 
+func (stubVerifier) Header() string { return AccessJWTHeader }
+
 func (stubVerifier) Verify(_ context.Context, token string) (AccessIdentity, error) {
 	if token == "" || token == "bad" {
 		return AccessIdentity{}, ErrInvalidAccessToken

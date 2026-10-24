@@ -37,9 +37,9 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	// CaOS（ドリップ管制）。盤面は注文のカップの列で持ち、書いた注文を今の注文の配信で配る
 	caos := NewCaosHandler(db, hub, inventory)
 
-	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access を通らず
+	// 自前で相手を確かめるもの。Cloud Scheduler と Square は Access や IAP を通らず
 	// Cloud Run に直接来る（Google の ID トークンと Webhook の署名で確かめる）。
-	// /api のグループに入れると Access の認証が掛かって届かなくなる。
+	// /api のグループに入れると Access や IAP の JWT を求められて届かなくなる。
 	r.POST("/api/inventory/remind", inv.RemindInventory)
 	r.POST("/api/square/webhook", square.ReceiveWebhook)
 
