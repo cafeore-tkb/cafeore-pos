@@ -14,6 +14,12 @@ on:
       - '.dockerignore'
   merge_group:
 
+# どの job も読むだけ（GITHUB_TOKEN で書くものは無い）。書かないと、リポジトリの既定の
+# 権限（書き込みを許していることがある）で走る。api-ci と同じ。
+# image の GHA キャッシュは GITHUB_TOKEN ではなく Actions のランタイムのトークンで読むので、これで足りる。
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: services/pos
