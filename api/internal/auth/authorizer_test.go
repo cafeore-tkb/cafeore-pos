@@ -28,10 +28,21 @@ func (stubVerifier) Verify(_ context.Context, token string) (AccessIdentity, err
 	return AccessIdentity{Email: token}, nil
 }
 
+func mustNewAuthorizer(t *testing.T, staff, viewers []string, verifiers ...identityVerifier) *Authorizer {
+	t.Helper()
+
+	authz, err := NewAuthorizer(staff, viewers, verifiers...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authz
+}
+
 func TestAuthorizerRequire(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	authz := NewAuthorizer(
+	authz := mustNewAuthorizer(
+		t,
 		[]string{"Staff@example.com"},
 		[]string{"display@example.com", "staff@example.com"},
 		stubVerifier{AccessJWTHeader},
@@ -89,7 +100,7 @@ func TestAuthorizerRequireByMethod(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	verifier := &countingVerifier{stubVerifier: stubVerifier{AccessJWTHeader}}
-	authz := NewAuthorizer([]string{"staff@example.com"}, []string{"display@example.com"}, verifier)
+	authz := mustNewAuthorizer(t, []string{"staff@example.com"}, []string{"display@example.com"}, verifier)
 
 	r := gin.New()
 	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
@@ -148,7 +159,7 @@ func TestAuthorizerReportOnly(t *testing.T) {
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
-	authz := NewAuthorizer([]string{"staff@example.com"}, []string{"display@example.com"}, stubVerifier{AccessJWTHeader})
+	authz := mustNewAuthorizer(t, []string{"staff@example.com"}, []string{"display@example.com"}, stubVerifier{AccessJWTHeader})
 	authz.enforce = false
 
 	r := gin.New()
@@ -217,7 +228,8 @@ func TestAuthorizerNilAllowsAll(t *testing.T) {
 func TestAuthorizerMultipleVerifiers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	authz := NewAuthorizer(
+	authz := mustNewAuthorizer(
+		t,
 		[]string{"staff@example.com"},
 		[]string{"display@example.com"},
 		stubVerifier{AccessJWTHeader},
@@ -302,7 +314,7 @@ func TestAuthorizerIgnoresOtherHeaders(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			authz := NewAuthorizer([]string{"staff@example.com"}, nil, tc.verifier)
+			authz := mustNewAuthorizer(t, []string{"staff@example.com"}, nil, tc.verifier)
 			r := gin.New()
 			r.POST("/api/orders", authz.RequireByMethod(), ok)
 
@@ -325,7 +337,8 @@ func TestAuthorizerReportOnlyMultipleVerifiers(t *testing.T) {
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
-	authz := NewAuthorizer(
+	authz := mustNewAuthorizer(
+		t,
 		[]string{"staff@example.com"},
 		nil,
 		stubVerifier{AccessJWTHeader},
@@ -357,6 +370,136 @@ func TestAuthorizerReportOnlyMultipleVerifiers(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("log does not contain %q:\n%s", want, got)
+		}
+	}
+}
+
+// *@<ドメイン> で、そのドメインのメールの全員に権限を与える。名指しの行が優先する
+func TestAuthorizerDomainRoles(t *testing.T) {
+	authz := mustNewAuthorizer(
+		t,
+		[]string{"*@id.cafeore.cafe", "register@example.com", "both@id.cafeore.cafe"},
+		[]string{"callscreen@id.cafeore.cafe", "*@viewer.example.com", "*@ID.Cafeore.Cafe", "both@id.cafeore.cafe"},
+	)
+
+	cases := map[string]struct {
+		identity AccessIdentity
+		want     Role
+	}{
+		"domain":                {AccessIdentity{Email: "someone@id.cafeore.cafe"}, RoleStaff},
+		"domain upper case":     {AccessIdentity{Email: "Someone@ID.CAFEORE.CAFE"}, RoleStaff},
+		"named":                 {AccessIdentity{Email: "register@example.com"}, RoleStaff},
+		"other in named domain": {AccessIdentity{Email: "someone@example.com"}, RoleNone},
+		"viewer domain":         {AccessIdentity{Email: "display@viewer.example.com"}, RoleViewer},
+		// 名指しの行（表示用）がドメインの行（スタッフ）より優先する
+		"named beats domain":            {AccessIdentity{Email: "callscreen@id.cafeore.cafe"}, RoleViewer},
+		"named beats domain upper case": {AccessIdentity{Email: "CallScreen@Id.Cafeore.Cafe"}, RoleViewer},
+		// 名指しの行が両方の一覧にあれば強い方
+		"named in both": {AccessIdentity{Email: "both@id.cafeore.cafe"}, RoleStaff},
+		// サブドメインや、後ろだけが同じドメインは一致しない
+		"subdomain":     {AccessIdentity{Email: "foo@x.id.cafeore.cafe"}, RoleNone},
+		"suffix only":   {AccessIdentity{Email: "foo@evilid.cafeore.cafe"}, RoleNone},
+		"parent domain": {AccessIdentity{Email: "foo@cafeore.cafe"}, RoleNone},
+		"longer domain": {AccessIdentity{Email: "foo@id.cafeore.cafe.evil.com"}, RoleNone},
+		"no at":         {AccessIdentity{Email: "id.cafeore.cafe"}, RoleNone},
+		"at in local":   {AccessIdentity{Email: `"a@b"@id.cafeore.cafe`}, RoleStaff},
+		"empty":         {AccessIdentity{}, RoleNone},
+		// サービストークンのクライアント ID にはドメインを効かせない
+		"common name": {AccessIdentity{CommonName: "client@id.cafeore.cafe"}, RoleNone},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := authz.role(tc.identity); got != tc.want {
+				t.Fatalf("role(%+v) = %d, want %d", tc.identity, got, tc.want)
+			}
+		})
+	}
+
+	// ドメインの行が両方の一覧にあれば強い方
+	both := mustNewAuthorizer(t, []string{"*@id.cafeore.cafe"}, []string{"*@id.cafeore.cafe"})
+	if got := both.role(AccessIdentity{Email: "a@id.cafeore.cafe"}); got != RoleStaff {
+		t.Errorf("domain in both: role = %d, want %d", got, RoleStaff)
+	}
+	// 名指しのサービストークンは今までどおり通る
+	token := mustNewAuthorizer(t, []string{"*@id.cafeore.cafe"}, []string{"client-id.access"})
+	if got := token.role(AccessIdentity{CommonName: "client-id.access"}); got != RoleViewer {
+		t.Errorf("named common name: role = %d, want %d", got, RoleViewer)
+	}
+}
+
+// main.go と同じ組み方で、ドメインの行が効くこと
+func TestAuthorizerDomainRequireByMethod(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	authz := mustNewAuthorizer(
+		t,
+		[]string{"*@id.cafeore.cafe"},
+		[]string{"callscreen@id.cafeore.cafe"},
+		stubVerifier{IAPJWTHeader},
+	)
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	api := r.Group("/api", authz.RequireByMethod())
+	api.GET("/orders", ok)
+	api.POST("/orders", ok)
+
+	cases := []struct {
+		method, token string
+		want          int
+	}{
+		{"POST", "someone@id.cafeore.cafe", http.StatusOK},
+		{"GET", "callscreen@id.cafeore.cafe", http.StatusOK},
+		{"POST", "callscreen@id.cafeore.cafe", http.StatusForbidden},
+		{"GET", "foo@x.id.cafeore.cafe", http.StatusForbidden},
+		{"GET", "someone@gmail.com", http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, "/api/orders", nil)
+		req.Header.Set(IAPJWTHeader, tc.token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("%s as %q: got %d, want %d", tc.method, tc.token, w.Code, tc.want)
+		}
+	}
+}
+
+// * を含むのに *@<ドメイン> の形でない要素は、起動を止める
+func TestNewAuthorizerInvalidDomain(t *testing.T) {
+	for _, entry := range []string{
+		"*",
+		"*@",
+		"*foo@id.cafeore.cafe",
+		"foo*@id.cafeore.cafe",
+		"*@*.id.cafeore.cafe",
+		"*@id.*.cafe",
+		"*@id.cafeore.cafe*",
+		"**@id.cafeore.cafe",
+		"*@id@cafeore.cafe",
+		"*@id cafeore.cafe",
+		"*@id\tcafeore.cafe",
+		"*@ id.cafeore.cafe",
+		"*@.id.cafeore.cafe",
+		"*@id.cafeore.cafe.",
+		"*@id..cafeore.cafe",
+		"*@id.cafeore.cafe/",
+		"@*id.cafeore.cafe",
+		"foo@*",
+	} {
+		for _, lists := range [][2][]string{
+			{{entry}, nil},
+			{{"staff@example.com"}, {entry}},
+		} {
+			if _, err := NewAuthorizer(lists[0], lists[1]); err == nil {
+				t.Errorf("NewAuthorizer(%q, %q): want error", lists[0], lists[1])
+			}
+		}
+	}
+
+	// 前後の空白と大文字は書き方の誤りにしない
+	for _, entry := range []string{"*@id.cafeore.cafe", " *@id.cafeore.cafe ", "*@ID.Cafeore.Cafe", "*@id-1.example.com"} {
+		if _, err := NewAuthorizer([]string{entry}, nil); err != nil {
+			t.Errorf("NewAuthorizer(%q): %v", entry, err)
 		}
 	}
 }
@@ -442,6 +585,12 @@ func TestAuthorizerFromEnv(t *testing.T) {
 		"report-only inside":     {env: with("AUTH_MODE", "iap-report-only+cloudflare-access"), wantErr: true},
 		"report-only twice":      {env: with("AUTH_MODE", "iap-report-only-report-only"), wantErr: true},
 		"report-only per method": {env: with("AUTH_MODE", "cloudflare-access-report-only+iap-report-only"), wantErr: true},
+
+		"staff domain":           {env: with("AUTH_MODE", "iap", "AUTH_STAFF_EMAILS", "*@id.cafeore.cafe"), wantHeaders: iap},
+		"viewer domain":          {env: with("AUTH_VIEWER_EMAILS", "*@id.cafeore.cafe, display@example.com"), wantHeaders: access},
+		"staff bad domain":       {env: with("AUTH_STAFF_EMAILS", "register@example.com, *id.cafeore.cafe"), wantErr: true},
+		"viewer bad domain":      {env: with("AUTH_VIEWER_EMAILS", "*"), wantErr: true},
+		"report-only bad domain": {env: with("AUTH_MODE", "iap-report-only", "AUTH_STAFF_EMAILS", "*@"), wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -461,6 +610,26 @@ func TestAuthorizerFromEnv(t *testing.T) {
 				t.Fatalf("Headers() = %v, want %v", authz.Headers(), tc.wantHeaders)
 			}
 		})
+	}
+
+	domain, err := AuthorizerFromEnv(func(k string) string {
+		return with(
+			"AUTH_MODE", "iap",
+			"AUTH_STAFF_EMAILS", " *@ID.cafeore.cafe ",
+			"AUTH_VIEWER_EMAILS", "callscreen@id.cafeore.cafe",
+		)[k]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for email, role := range map[string]Role{
+		"someone@id.cafeore.cafe":    RoleStaff,
+		"callscreen@id.cafeore.cafe": RoleViewer,
+		"foo@x.id.cafeore.cafe":      RoleNone,
+	} {
+		if got := domain.role(AccessIdentity{Email: email}); got != role {
+			t.Errorf("domain: role(%q) = %d, want %d", email, got, role)
+		}
 	}
 
 	for _, mode := range []string{"cloudflare-access", "iap", "cloudflare-access+iap"} {

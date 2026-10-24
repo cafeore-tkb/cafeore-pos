@@ -193,7 +193,8 @@ func TestAuthorizerAccessAndIAP(t *testing.T) {
 	}
 	iap := newFakeIAP(t)
 
-	authz := NewAuthorizer(
+	authz := mustNewAuthorizer(
+		t,
 		[]string{"staff@example.com"},
 		[]string{"display@example.com"},
 		accessVerifier,

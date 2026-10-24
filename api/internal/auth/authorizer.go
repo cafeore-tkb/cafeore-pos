@@ -38,7 +38,7 @@ type identityVerifier interface {
 }
 
 // Access か IAP を通ってきた相手を、メール（Access のサービストークンならクライアント ID）の
-// 許可リストで権限に振り分ける。
+// 許可リストで権限に振り分ける。許可リストにはメールのドメイン（*@<ドメイン>）も書ける。
 //
 // Access や IAP のポリシーでもログインできる人を絞るが、そちらを緩めすぎたとき
 // （誰でもワンタイム PIN でログインできる設定など）にも API が開かないよう、
@@ -46,29 +46,84 @@ type identityVerifier interface {
 type Authorizer struct {
 	// AUTH_MODE で並べた方式の検証器。それぞれが自分のヘッダーの JWT を確かめる
 	verifiers []identityVerifier
-	roles     map[string]Role
+	// 名指しで書いた相手（メールか、サービストークンのクライアント ID）
+	roles map[string]Role
+	// *@<ドメイン> で書いたドメイン。メールにだけ効き、名指しの方が優先する
+	domains map[string]Role
 	// false なら弾かずにログにだけ出す（AUTH_MODE の -report-only）
 	enforce bool
 }
 
 // verifiers のヘッダーに付いている JWT を確かめ、その相手を許可リストで振り分ける
 // （どのヘッダーを確かめるかは identify）。
-func NewAuthorizer(staff, viewers []string, verifiers ...identityVerifier) *Authorizer {
-	roles := make(map[string]Role, len(staff)+len(viewers))
-	for _, name := range viewers {
-		roles[normalizeName(name)] = RoleViewer
+//
+// staff と viewers の要素は、名指し（メールかサービストークンのクライアント ID）か、
+// *@<ドメイン>（そのドメインのメールの全員）。決まりは role を参照。* を含むのに
+// *@<ドメイン> の形でない要素はエラーにする。
+func NewAuthorizer(staff, viewers []string, verifiers ...identityVerifier) (*Authorizer, error) {
+	a := &Authorizer{
+		verifiers: verifiers,
+		roles:     make(map[string]Role, len(staff)+len(viewers)),
+		domains:   map[string]Role{},
+		enforce:   true,
 	}
-	// 両方に書かれていたら強い方を取る
-	for _, name := range staff {
-		roles[normalizeName(name)] = RoleStaff
+	// 両方に書かれていたら強い方を取る（後に入れる staff で上書きする）
+	for _, list := range []struct {
+		names []string
+		role  Role
+	}{{viewers, RoleViewer}, {staff, RoleStaff}} {
+		for _, name := range list.names {
+			name = normalizeName(name)
+			domain, isDomain, err := allowListDomain(name)
+			switch {
+			case err != nil:
+				return nil, err
+			case isDomain:
+				a.domains[domain] = list.role
+			case name != "":
+				a.roles[name] = list.role
+			}
+		}
 	}
-	delete(roles, "")
-	return &Authorizer{verifiers: verifiers, roles: roles, enforce: true}
+	return a, nil
 }
 
 // メールアドレスは大文字・小文字を区別しない扱いにする
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// 許可リストの要素（normalizeName 済み）が *@<ドメイン> なら、そのドメインを返す。
+// * を含むのにその形でないもの（*、*@、*foo@x、foo*@x、*@*.x、ドメインに @ や空白を
+// 含むものなど）は、書き方の誤りで思わぬ相手を通したり誰も通さなくなったりしないよう、
+// エラーにする（起動を止める）。
+func allowListDomain(entry string) (domain string, ok bool, err error) {
+	if !strings.Contains(entry, "*") {
+		return "", false, nil
+	}
+	domain, found := strings.CutPrefix(entry, "*@")
+	if !found || !validDomain(domain) {
+		return "", false, fmt.Errorf("invalid allow list entry %q (want an email address or *@<domain>)", entry)
+	}
+	return domain, true, nil
+}
+
+// 英小文字・数字・- のラベルを . でつないだものか。
+func validDomain(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if label == "" {
+			return false
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // AUTH_MODE で + で並べられる方式。
@@ -88,6 +143,9 @@ const reportOnlySuffix = "-report-only"
 //	IAP_AUDIENCE          … IAP の JWT の aud（/projects/<番号>/global/backendServices/<ID>）。カンマ区切り
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り
+//
+// 許可リストの要素には、名指しのほかに *@<ドメイン>（そのドメインのメールの全員）も
+// 書ける（role を参照）。
 //
 // cloudflare-access は Cloudflare Access の JWT（Cf-Access-Jwt-Assertion）を、iap は
 // GCP の IAP の JWT（X-Goog-Iap-Jwt-Assertion）を確かめる。+ で並べると（順は問わない）
@@ -134,7 +192,10 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 		return nil, errors.New("AUTH_STAFF_EMAILS is empty: nobody could write")
 	}
 
-	authz := NewAuthorizer(staff, splitList(getenv("AUTH_VIEWER_EMAILS")), verifiers...)
+	authz, err := NewAuthorizer(staff, splitList(getenv("AUTH_VIEWER_EMAILS")), verifiers...)
+	if err != nil {
+		return nil, fmt.Errorf("AUTH_STAFF_EMAILS / AUTH_VIEWER_EMAILS: %w", err)
+	}
 	authz.enforce = !reportOnly
 	return authz, nil
 }
@@ -283,8 +344,21 @@ func (a *Authorizer) identify(r *http.Request) (AccessIdentity, error) {
 }
 
 // 許可リストでの権限。載っていなければ RoleNone。
+//
+// 名指しの行があれば、ドメインの行より優先する。AUTH_STAFF_EMAILS=*@id.cafeore.cafe、
+// AUTH_VIEWER_EMAILS=callscreen@id.cafeore.cafe なら、callscreen@ は表示用で、ほかの
+// id.cafeore.cafe の人はスタッフ。ドメインはメールの @ より後ろ全体と比べるので、
+// サブドメイン（foo@x.id.cafeore.cafe）は一致しない。サービストークンのクライアント ID
+// （common_name）はメールではないので、ドメインでは一致させない。
 func (a *Authorizer) role(identity AccessIdentity) Role {
-	return a.roles[normalizeName(identity.Name())]
+	if role, ok := a.roles[normalizeName(identity.Name())]; ok {
+		return role
+	}
+	at := strings.LastIndex(identity.Email, "@")
+	if at < 0 {
+		return RoleNone
+	}
+	return a.domains[normalizeName(identity.Email[at+1:])]
 }
 
 func (a *Authorizer) reject(c *gin.Context, status int, reason string) {
