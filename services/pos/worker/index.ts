@@ -2,6 +2,10 @@
 // /api・/status・/health だけをここで Cloud Run の API へ中継する。
 // 呼び出し画面の音声（/call-voice）もここで返す（worker/call-voice.ts）。
 //
+// 本番の画面（pos.cafeore.cafe）は GCP の LB（IAP）の後ろの Cloud Run（server/、Dockerfile）が出す。
+// この Worker の本番は、GCP が止まったときの非常用の予備として pos-cf.cafeore.cafe に出し続ける
+// （README の「本番を GCP に移す（IAP）」）。PR のプレビューも今までどおりこの Worker。
+//
 // ## なぜ中継するのか
 //
 // 本番はこの Worker の URL ごと Cloudflare Access で守る。Access はログインした

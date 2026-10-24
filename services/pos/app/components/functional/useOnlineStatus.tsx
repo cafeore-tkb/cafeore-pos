@@ -7,25 +7,35 @@ const backendHostname = new URL(API_BASE_URL).hostname;
 const IS_LOCAL_BACKEND = ["localhost", "127.0.0.1", "::1"].includes(
   backendHostname,
 );
-// Access のセッション切れで再読み込みした時刻。続けて読み込み直さないために覚えておく
-const ACCESS_RELOAD_KEY = "cafeore:access-reload-at";
-const ACCESS_RELOAD_INTERVAL_MS = 60_000;
+// ログインのセッション切れで再読み込みした時刻。続けて読み込み直さないために覚えておく
+// （鍵の名前は Cloudflare Access のころのまま）
+const LOGIN_RELOAD_KEY = "cafeore:access-reload-at";
+const LOGIN_RELOAD_INTERVAL_MS = 60_000;
 
-// 本番は API を POS の Worker が中継していて（同じオリジン）、その手前に
-// Cloudflare Access がいる。セッションが切れると Access が API への fetch と
-// WebSocket をログイン画面へ飛ばすので、通信は失敗し続け、画面は自分では戻らない。
+// 本番は画面と API が同じオリジン（https://pos.cafeore.cafe）で、その手前でログインを
+// 求めている。GCP の LB の IAP（LB が /api・/status・/health を API の Cloud Run へ、
+// それ以外を画面の Cloud Run へ送る）で、その前は Cloudflare Access（API は POS の Worker が
+// 中継）だった。どちらもセッションが切れると API への fetch と WebSocket をログイン画面
+// （Google・Access）へ飛ばすので、通信は失敗し続け、画面は自分では戻らない。
 //
-// /status は API では認証しないので、ここが 401 になるのは Access のセッション切れ
-// だけ（X-Requested-With を付けると、Access は飛ばさずに 401 を返す）。そのときは
-// 画面を読み込み直して Access のログインへ戻す。
-const reloadForAccessLogin = () => {
+// どちらも X-Requested-With: XMLHttpRequest を付けた fetch は、ログイン画面へ飛ばさずに
+// 401 を返す。/status は API では認証しないので、ここが 401 になるのはセッション切れだけ。
+// そのときは画面を読み込み直してログインへ戻す（Google にログインしたままなら、IAP は
+// 何も聞かずに画面へ戻す）。
+//
+//   - IAP が /status に 401 を返すのは、/status を受ける API のバックエンド（LB）にも IAP が
+//     付いているとき。画面の方にだけ付けると、ここは働かない
+//   - IAP の 403 は、ログインはしているが POS を使う権限が無いとき。読み込み直しても変わらない
+//     ので、ここでは扱わない
+//   - PR のプレビュー（Workers）とローカルは API が別のオリジンで、ログインも無いので働かない
+const reloadForLogin = () => {
   try {
-    const last = Number(sessionStorage.getItem(ACCESS_RELOAD_KEY) ?? 0);
+    const last = Number(sessionStorage.getItem(LOGIN_RELOAD_KEY) ?? 0);
     // 読み込み直してもまだ 401 なら、セッション切れ以外の何か。繰り返さない
-    if (Date.now() - last < ACCESS_RELOAD_INTERVAL_MS) {
+    if (Date.now() - last < LOGIN_RELOAD_INTERVAL_MS) {
       return;
     }
-    sessionStorage.setItem(ACCESS_RELOAD_KEY, String(Date.now()));
+    sessionStorage.setItem(LOGIN_RELOAD_KEY, String(Date.now()));
   } catch {
     // sessionStorage が使えないときは、続けて読み込み直さないよう諦める
     return;
@@ -54,8 +64,9 @@ export const useOnlineStatus = () => {
     let disposed = false;
     let controller: AbortController | undefined;
     let requestId = 0;
-    // window はビルド時（SPA の index.html の生成）には無いので、ここで見る
-    const isBehindAccess =
+    // window はビルド時（SPA の index.html の生成）には無いので、ここで見る。
+    // 本番（画面も API も https://pos.cafeore.cafe）だけが同じオリジンになる
+    const isBehindLogin =
       new URL(API_BASE_URL).origin === window.location.origin;
 
     const checkBackendConnection = async () => {
@@ -74,13 +85,13 @@ export const useOnlineStatus = () => {
           cache: "no-store",
           signal: currentController.signal,
           // 別オリジン（ローカル・プレビュー）に付けると CORS の preflight が要るので、
-          // Worker 経由のときだけ付ける
-          headers: isBehindAccess
+          // 同じオリジン（本番）のときだけ付ける
+          headers: isBehindLogin
             ? { "X-Requested-With": "XMLHttpRequest" }
             : undefined,
         });
-        if (isBehindAccess && response.status === 401) {
-          reloadForAccessLogin();
+        if (isBehindLogin && response.status === 401) {
+          reloadForLogin();
         }
         if (!data) {
           throw new Error(`Status check failed: ${response.status}`);

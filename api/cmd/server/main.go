@@ -334,7 +334,9 @@ func main() {
 	// 通ってきた（Cf-Access-Jwt-Assertion の JWT が正しい）許可リストの相手だけ。
 	// 本番では POS の Worker が /api を中継し、Access がその手前でログインさせる
 	// （README の「API の認証」を参照）。off のときは今までどおり誰でも叩ける。
-	// cloudflare-access-report-only は確かめるが弾かず、弾くはずだったものをログに出す。
+	// AUTH_MODE=iap は、Google Cloud のロードバランサーの IAP を通ってきた
+	// （X-Goog-IAP-JWT-Assertion の JWT が正しい）許可リストの相手だけ。
+	// *-report-only は確かめるが弾かず、弾くはずだったものをログに出す。
 	authz, err := auth.AuthorizerFromEnv(os.Getenv)
 	if err != nil {
 		log.Fatalf("Failed to configure auth: %v", err)

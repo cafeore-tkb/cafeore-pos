@@ -26,6 +26,18 @@ name: pos / deploy (Workers)
 # （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
 # ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
 # コメントは消す（pr-cleanup.yml を参照）。
+#
+# ## 本番の画面は GCP、Workers の本番は非常用の pos-cf.cafeore.cafe
+#
+# 本番の画面（pos.cafeore.cafe）は GCP の LB（IAP）の後ろの Cloud Run が出す（pos-deploy-cloudrun.yml）。
+# ここからの本番（main への push と手動実行）は、非常用の予備として pos-cf.cafeore.cafe
+# （WORKERS_CUSTOM_DOMAIN）に出し続ける。中継先は今までどおり pos-be-lb.cafeore.cafe（トークン付き）。
+# 使い方は README の「本番を GCP に移す（IAP）」の「非常用の pos-cf」。
+#
+# **WORKERS_CUSTOM_DOMAIN を GCP のドメイン（変数 POS_WEB_DOMAIN。既定 pos.cafeore.cafe）にしたら、
+# 出す前に止める。** CI の wrangler deploy --domain は、同じ名前の DNS レコードがあっても上書きして
+# 独自ドメインを付ける（README の「POS の Worker を cafeore のアカウントに移す」の「確かめたこと」）ので、
+# infra が GCP の LB に向けた pos.cafeore.cafe を Worker に奪ってしまう。
 
 on:
   push:
@@ -248,10 +260,13 @@ jobs:
           # 本番の Worker が /api を中継する先（Cloud Run の API のオリジン）。
           # README の「API の認証」を参照。
           API_ORIGIN: ${{ vars.WORKERS_API_ORIGIN }}
-          # 本番の Worker に付ける独自ドメイン（pos.cafeore.cafe）。ゾーンが
+          # 本番の Worker に付ける独自ドメイン（非常用の pos-cf.cafeore.cafe）。ゾーンが
           # WORKERS_PROD_CLOUDFLARE_ACCOUNT_ID のアカウントに無いと付けられないので、
           # WORKERS_PROD_* と一緒に入れる（下のスクリプトのコメントを参照）。
           CUSTOM_DOMAIN: ${{ vars.WORKERS_CUSTOM_DOMAIN }}
+          # GCP の LB（IAP）が使うドメイン。Worker には付けさせない（上の冒頭の「本番の画面は GCP」）。
+          # pos-deploy-cloudrun.yml の POS_WEB_API_BASE_URL の既定と揃える。
+          GCP_POS_DOMAIN: ${{ vars.POS_WEB_DOMAIN || 'pos.cafeore.cafe' }}
           # 中継するときに付ける、LB の Cloud Armor と照らし合わせるトークン
           # （infra の api_proxy_token と同じ値）。Worker の secret の PROXY_TOKEN として渡す。
           LB_PROXY_TOKEN: ${{ secrets.LB_PROXY_TOKEN }}
@@ -358,12 +373,25 @@ jobs:
               echo "::error::WORKERS_CUSTOM_DOMAIN にはホスト名だけを入れる（https:// や / を付けない）"
               exit 1
             fi
+            # GCP の LB が使う pos.cafeore.cafe を Worker に付けると、CI の wrangler は infra が作った
+            # DNS レコードを上書きし、本番の画面を GCP から奪う。Workers の本番は pos-cf.cafeore.cafe に出す。
+            if [ "$CUSTOM_DOMAIN" = "$GCP_POS_DOMAIN" ]; then
+              echo "::error::WORKERS_CUSTOM_DOMAIN が $GCP_POS_DOMAIN（GCP の LB が使うドメイン）になっている。Workers の本番は pos-cf.cafeore.cafe に出す（VITE_API_BASE_URL も https://pos-cf.cafeore.cafe にする）"
+              exit 1
+            fi
             # 画面が workers.dev の Worker を向いたままだと、新しい Worker を通らない。
             # このアカウントの workers.dev は上のとおり止まり、前のアカウントの Worker は残っていれば
             # 動くが、消した時点で POS が API に届かなくなる。
+            #
+            # GCP のドメインを向けたままだと、pos-cf の画面が別のオリジンの GCP の API を呼び、IAP に
+            # 止められる（ログインの cookie も CORS も合わない）。非常用として使えないので止める。
             case "$VITE_API_BASE_URL" in
               *.workers.dev*)
                 echo "::error::WORKERS_CUSTOM_DOMAIN があるのに VITE_API_BASE_URL が workers.dev を向いている。https://$CUSTOM_DOMAIN にする"
+                exit 1
+                ;;
+              "https://$GCP_POS_DOMAIN" | "https://$GCP_POS_DOMAIN/"*)
+                echo "::error::VITE_API_BASE_URL が GCP の $GCP_POS_DOMAIN を向いている。Worker（https://$CUSTOM_DOMAIN）を通して呼ぶよう、https://$CUSTOM_DOMAIN にする"
                 exit 1
                 ;;
             esac

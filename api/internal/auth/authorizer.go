@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ const (
 	RoleStaff
 )
 
-// gin.Context に Access を通ってきた相手（AccessIdentity）を置くキー。
+// gin.Context に Access か IAP を通ってきた相手（AccessIdentity）を置くキー。
 const IdentityContextKey = "auth.identity"
 
 // report-only で、このリクエストをもうログに出したか。二重に掛けたミドルウェアで
@@ -31,33 +32,92 @@ const IdentityContextKey = "auth.identity"
 const reportedContextKey = "auth.reported"
 
 type identityVerifier interface {
+	// JWT が載ってくるヘッダー。Access と IAP で違う
+	Header() string
 	Verify(ctx context.Context, token string) (AccessIdentity, error)
 }
 
-// Access を通ってきた相手を、メール（サービストークンならクライアント ID）の
+// Access か IAP を通ってきた相手を、メール（サービストークンならクライアント ID）の
 // 許可リストで権限に振り分ける。
 //
-// Access のポリシーでもログインできる人を絞るが、そちらを緩めすぎたとき
-// （誰でもワンタイム PIN でログインできる設定など）にも API が開かないよう、
-// ここでも許可リストに無い相手は 403 にする。
+// Access のポリシーや IAP の IAM でもログインできる人を絞るが、そちらを緩めすぎたとき
+// （誰でもワンタイム PIN でログインできる設定・allUsers に権限を付けた など）にも
+// API が開かないよう、ここでも許可リストに無い相手は 403 にする。
+//
+// 許可リストには、メールアドレス（サービストークンならクライアント ID）のほかに、
+// 「@id.cafeore.cafe」のように @ で始めてドメインごと書ける。そのドメインのアカウント
+// （今あるものも、これから作るものも）が全部通る。サブドメインは含まない
+// （@cafeore.cafe は a@id.cafeore.cafe に当たらない）。
+// 1 人が複数の項目に当たるときは強い方を取るので、ドメインで表示用にして、その中の
+// 何人かだけをメールでスタッフにはできるが、逆（ドメインでスタッフにして一部を表示用に下げる）はできない。
 type Authorizer struct {
 	verifier identityVerifier
-	roles    map[string]Role
-	// false なら弾かずにログにだけ出す（AUTH_MODE=cloudflare-access-report-only）
+	// メールアドレス（とクライアント ID）ごと
+	roles map[string]Role
+	// ドメインごと（@ を除いた小文字）
+	domainRoles map[string]Role
+	// false なら弾かずにログにだけ出す（AUTH_MODE=*-report-only）
 	enforce bool
 }
 
 func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authorizer {
-	roles := make(map[string]Role, len(staff)+len(viewers))
-	for _, name := range viewers {
-		roles[normalizeName(name)] = RoleViewer
+	authz := &Authorizer{
+		verifier:    verifier,
+		roles:       make(map[string]Role, len(staff)+len(viewers)),
+		domainRoles: map[string]Role{},
+		enforce:     true,
 	}
 	// 両方に書かれていたら強い方を取る
-	for _, name := range staff {
-		roles[normalizeName(name)] = RoleStaff
+	authz.allow(viewers, RoleViewer)
+	authz.allow(staff, RoleStaff)
+	delete(authz.roles, "")
+	delete(authz.domainRoles, "")
+	return authz
+}
+
+func (a *Authorizer) allow(names []string, role Role) {
+	for _, name := range names {
+		name = normalizeName(name)
+		target, key := a.roles, name
+		if domain, ok := strings.CutPrefix(name, "@"); ok {
+			target, key = a.domainRoles, domain
+		}
+		if target[key] < role {
+			target[key] = role
+		}
 	}
-	delete(roles, "")
-	return &Authorizer{verifier: verifier, roles: roles, enforce: true}
+}
+
+// その相手の権限。メールアドレスの項目と、そのドメインの項目の強い方
+func (a *Authorizer) role(name string) Role {
+	name = normalizeName(name)
+	role := a.roles[name]
+	// サービストークン（クライアント ID）には @ が無いので、ドメインの項目には当たらない
+	if at := strings.LastIndex(name, "@"); at > 0 {
+		if domainRole := a.domainRoles[name[at+1:]]; domainRole > role {
+			role = domainRole
+		}
+	}
+	return role
+}
+
+// ドメインごとの項目の形（@ と、ドットを 1 つ以上含むホスト名）
+var allowedDomainPattern = regexp.MustCompile(`^@[a-z0-9-]+(\.[a-z0-9-]+)+$`)
+
+// 許可リストの項目を確かめる。「*@example.com」のようなワイルドカードや、形の崩れた
+// ドメインの項目は、どこにも当たらずに黙って誰も通れなくなる（か、意図より広く読まれる）ので、
+// 起動を止める。
+func validateAllowList(env string, names []string) error {
+	for _, name := range names {
+		normalized := normalizeName(name)
+		switch {
+		case strings.ContainsAny(normalized, "* \t"):
+			return fmt.Errorf("%s: %q: use an address or @domain (wildcards and spaces are not supported)", env, name)
+		case strings.HasPrefix(normalized, "@") && !allowedDomainPattern.MatchString(normalized):
+			return fmt.Errorf("%s: %q: a domain entry must look like @example.com", env, name)
+		}
+	}
+	return nil
 }
 
 // メールアドレスは大文字・小文字を区別しない扱いにする
@@ -67,30 +127,37 @@ func normalizeName(name string) string {
 
 // 環境変数から組み立てる。AUTH_MODE が空か off なら nil を返す（認証しない）。
 //
-//	AUTH_MODE             … off | cloudflare-access | cloudflare-access-report-only
+//	AUTH_MODE             … off | cloudflare-access | cloudflare-access-report-only | iap | iap-report-only
 //	CF_ACCESS_TEAM_DOMAIN … Zero Trust のチームのドメイン（<team>.cloudflareaccess.com）
 //	CF_ACCESS_AUD         … Access のアプリケーションの AUD タグ
-//	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り
-//	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り
+//	IAP_AUDIENCE          … IAP を掛けたバックエンド サービスの aud。カンマ区切り
+//	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
+//	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
+//	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
 //
-// cloudflare-access-report-only は、cloudflare-access と同じように確かめるが弾かず、
-// 弾くはずだったものをログに出すだけにする。切り替える前に本番で流し、POS の通信が
-// 全部 Access を通ってきていること（WebSocket も）と、Cloud Run を直接叩いている
-// ものが残っていないことを確かめるために使う。
+// CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
+//
+// *-report-only は、それぞれ同じように確かめるが弾かず、弾くはずだったものをログに
+// 出すだけにする。切り替える前に本番で流し、POS の通信が全部 Access や IAP を通って
+// きていること（WebSocket も）と、Cloud Run を直接叩いているものが残っていないことを
+// 確かめるために使う。
 //
 // 綴りの誤りで認証が外れないよう、知らない AUTH_MODE と設定の漏れはエラーにする
 // （main が起動を止める）。
 func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	mode := strings.TrimSpace(getenv("AUTH_MODE"))
+	var verifier identityVerifier
+	var err error
 	switch mode {
 	case "", "off":
 		return nil, nil
 	case "cloudflare-access", "cloudflare-access-report-only":
+		verifier, err = NewAccessVerifier(getenv("CF_ACCESS_TEAM_DOMAIN"), strings.TrimSpace(getenv("CF_ACCESS_AUD")))
+	case "iap", "iap-report-only":
+		verifier, err = NewIAPVerifier(splitList(getenv("IAP_AUDIENCE")))
 	default:
-		return nil, fmt.Errorf("unknown AUTH_MODE %q (want off, cloudflare-access or cloudflare-access-report-only)", mode)
+		return nil, fmt.Errorf("unknown AUTH_MODE %q (want off, cloudflare-access, cloudflare-access-report-only, iap or iap-report-only)", mode)
 	}
-
-	verifier, err := NewAccessVerifier(getenv("CF_ACCESS_TEAM_DOMAIN"), strings.TrimSpace(getenv("CF_ACCESS_AUD")))
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +165,16 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	if len(staff) == 0 {
 		return nil, errors.New("AUTH_STAFF_EMAILS is empty: nobody could write")
 	}
+	viewers := splitList(getenv("AUTH_VIEWER_EMAILS"))
+	if err := validateAllowList("AUTH_STAFF_EMAILS", staff); err != nil {
+		return nil, err
+	}
+	if err := validateAllowList("AUTH_VIEWER_EMAILS", viewers); err != nil {
+		return nil, err
+	}
 
-	authz := NewAuthorizer(verifier, staff, splitList(getenv("AUTH_VIEWER_EMAILS")))
-	authz.enforce = mode == "cloudflare-access"
+	authz := NewAuthorizer(verifier, staff, viewers)
+	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }
 
@@ -156,7 +230,7 @@ func (a *Authorizer) check(c *gin.Context, min Role) {
 	identity, ok := v.(AccessIdentity)
 	if !ok {
 		var err error
-		identity, err = a.verifier.Verify(c.Request.Context(), c.GetHeader(AccessJWTHeader))
+		identity, err = a.verifier.Verify(c.Request.Context(), c.GetHeader(a.verifier.Header()))
 		if err != nil {
 			// トークンそのものはログに出さない
 			a.reject(c, http.StatusUnauthorized, err.Error())
@@ -165,7 +239,7 @@ func (a *Authorizer) check(c *gin.Context, min Role) {
 		c.Set(IdentityContextKey, identity)
 	}
 
-	if role := a.roles[normalizeName(identity.Name())]; role < min {
+	if role := a.role(identity.Name()); role < min {
 		a.reject(c, http.StatusForbidden, fmt.Sprintf("%q is not allowed", identity.Name()))
 		return
 	}

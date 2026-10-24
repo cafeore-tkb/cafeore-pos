@@ -16,6 +16,8 @@ import (
 // トークン文字列をそのまま相手の名前として扱う。"bad" は正しくないトークン。
 type stubVerifier struct{}
 
+func (stubVerifier) Header() string { return AccessJWTHeader }
+
 func (stubVerifier) Verify(_ context.Context, token string) (AccessIdentity, error) {
 	if token == "" || token == "bad" {
 		return AccessIdentity{}, ErrInvalidAccessToken
@@ -60,6 +62,51 @@ func TestAuthorizerRequire(t *testing.T) {
 		if tc.token != "" {
 			req.Header.Set(AccessJWTHeader, tc.token)
 		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("%s %s as %q: got %d, want %d", tc.method, tc.path, tc.token, w.Code, tc.want)
+		}
+	}
+}
+
+// @ で始まる項目はドメインごと通す
+func TestAuthorizerDomainEntries(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	authz := NewAuthorizer(
+		stubVerifier{},
+		[]string{"@Staff.example.com", "lead@viewer.example.com"},
+		[]string{"@viewer.example.com"},
+	)
+
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	r.GET("/read", authz.Require(RoleViewer), ok)
+	r.POST("/write", authz.Require(RoleStaff), ok)
+
+	cases := []struct {
+		method, path, token string
+		want                int
+	}{
+		{"POST", "/write", "anyone@staff.example.com", http.StatusOK},
+		// 大文字・小文字は区別しない
+		{"POST", "/write", "Anyone@STAFF.example.com", http.StatusOK},
+		{"GET", "/read", "display@viewer.example.com", http.StatusOK},
+		{"POST", "/write", "display@viewer.example.com", http.StatusForbidden},
+		// ドメインで表示用でも、メールでスタッフに入れた人はスタッフ（強い方）
+		{"POST", "/write", "lead@viewer.example.com", http.StatusOK},
+		// サブドメインも親のドメインも当たらない
+		{"GET", "/read", "someone@sub.staff.example.com", http.StatusForbidden},
+		{"GET", "/read", "someone@example.com", http.StatusForbidden},
+		// @ の無い名前（サービストークンのクライアント ID）はドメインの項目に当たらない
+		{"GET", "/read", "staff.example.com", http.StatusForbidden},
+		// 手前が空の名前も当てない
+		{"GET", "/read", "@staff.example.com", http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.Header.Set(AccessJWTHeader, tc.token)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != tc.want {
@@ -240,6 +287,16 @@ func TestAuthorizerFromEnv(t *testing.T) {
 		"no aud":        {env: with("CF_ACCESS_AUD", " "), wantErr: true},
 		"no staff":      {env: with("AUTH_STAFF_EMAILS", " , "), wantErr: true},
 		"broken domain": {env: with("CF_ACCESS_TEAM_DOMAIN", "https://x.cloudflareaccess.com/path"), wantErr: true},
+		// 許可リストはドメインごとにも書ける
+		"staff domain":  {env: with("AUTH_STAFF_EMAILS", "@id.cafeore.cafe, register@example.com")},
+		"viewer domain": {env: with("AUTH_VIEWER_EMAILS", "@ID.cafeore.cafe")},
+		// ワイルドカードや崩れたドメインは、黙って誰も通れなくなる前に起動を止める
+		"staff wildcard":        {env: with("AUTH_STAFF_EMAILS", "*@example.com"), wantErr: true},
+		"viewer star":           {env: with("AUTH_VIEWER_EMAILS", "*"), wantErr: true},
+		"bare at":               {env: with("AUTH_STAFF_EMAILS", "@"), wantErr: true},
+		"domain without dot":    {env: with("AUTH_STAFF_EMAILS", "@localhost"), wantErr: true},
+		"domain with path":      {env: with("AUTH_VIEWER_EMAILS", "@example.com/x"), wantErr: true},
+		"space inside an entry": {env: with("AUTH_STAFF_EMAILS", "a b@example.com"), wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
