@@ -43,8 +43,14 @@
     // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
     "not_found_handling": "single-page-application",
     // これらだけはアセットより先にスクリプトへ回す。無いと上のフォールバックで
-    // index.html が返り、API に届かない。**worker/index.ts の API_PATH・CALL_VOICE_PREFIX と揃えること。**
-    "run_worker_first": ["/api/*", "/status", "/health", "/call-voice/*"]
+    // index.html が返り、API に届かない。**worker/index.ts の API_PATH・CALL_VOICE_PREFIX・LOGIN_USER_PATH と揃えること。**
+    "run_worker_first": [
+      "/api/*",
+      "/status",
+      "/health",
+      "/call-voice/*",
+      "/auth/me"
+    ]
   },
 
   // 呼び出し画面の音声（ElevenLabs で作ったもの）を溜めておくところ（worker/call-voice.ts）。

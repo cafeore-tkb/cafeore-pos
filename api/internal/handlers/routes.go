@@ -47,6 +47,9 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
 	api := r.Group("/api", authz.RequireByMethod())
 	{
+		// 呼んだ相手と権限（トップページに出す）。authz が nil でも登録する
+		api.GET("/me", authz.Me)
+
 		api.GET("/items", item.GetItems)
 		api.POST("/items", item.CreateItem)
 		api.GET("/items/:id", item.GetItem)

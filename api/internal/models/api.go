@@ -57,6 +57,20 @@ const (
 	Stop        MasterStateUpdateRequestType = "stop"
 )
 
+// Defines values for MeResponseEnforcement.
+const (
+	MeEnforcementEnforce    MeResponseEnforcement = "enforce"
+	MeEnforcementOff        MeResponseEnforcement = "off"
+	MeEnforcementReportOnly MeResponseEnforcement = "report-only"
+)
+
+// Defines values for MeResponseRole.
+const (
+	MeRoleNone   MeResponseRole = "none"
+	MeRoleStaff  MeResponseRole = "staff"
+	MeRoleViewer MeResponseRole = "viewer"
+)
+
 // Defines values for PaymentMethod.
 const (
 	Cash   PaymentMethod = "cash"
@@ -667,6 +681,31 @@ type MasterStateUpdateRequest struct {
 
 // MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
 type MasterStateUpdateRequestType string
+
+// MeResponse API を呼んだ相手と、その権限。
+type MeResponse struct {
+	// Email JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+	// off のときと、report-only で JWT が無い・正しくないときは null
+	Email *string `json:"email"`
+
+	// Enforcement API が相手を確かめて弾くか（AUTH_MODE）。
+	// off は確かめない（誰でも全部の操作ができる。email と role は null）。
+	// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+	Enforcement MeResponseEnforcement `json:"enforcement"`
+
+	// Role staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+	// enforce なら 403 になる）。off のときは null
+	Role *MeResponseRole `json:"role"`
+}
+
+// MeResponseEnforcement API が相手を確かめて弾くか（AUTH_MODE）。
+// off は確かめない（誰でも全部の操作ができる。email と role は null）。
+// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+type MeResponseEnforcement string
+
+// MeResponseRole staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+// enforce なら 403 になる）。off のときは null
+type MeResponseRole string
 
 // MenuCreateRequest defines model for MenuCreateRequest.
 type MenuCreateRequest struct {

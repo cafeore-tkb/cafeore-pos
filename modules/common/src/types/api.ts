@@ -8,6 +8,15 @@ export interface paths {
     /** サーバーステータス取得 */
     get: operations["getStatus"];
   };
+  "/api/me": {
+    /**
+     * API を呼んだ相手と権限
+     * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+     * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+     * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+     */
+    get: operations["getMe"];
+  };
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
@@ -1288,6 +1297,31 @@ export interface components {
       first: number;
       second: number;
     };
+    /** @description API を呼んだ相手と、その権限。 */
+    MeResponse: {
+      /**
+       * @description API が相手を確かめて弾くか（AUTH_MODE）。
+       * off は確かめない（誰でも全部の操作ができる。email と role は null）。
+       * report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+       *
+       * @enum {string}
+       */
+      enforcement: "off" | "report-only" | "enforce";
+      /**
+       * @description JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+       * off のときと、report-only で JWT が無い・正しくないときは null
+       *
+       * @example register@id.cafeore.cafe
+       */
+      email: string | null;
+      /**
+       * @description staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+       * enforce なら 403 になる）。off のときは null
+       *
+       * @enum {string|null}
+       */
+      role: "staff" | "viewer" | "none" | null;
+    };
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
@@ -1655,6 +1689,34 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["StatusResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * API を呼んだ相手と権限
+   * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+   * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+   * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+   */
+  getMe: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MeResponse"];
+        };
+      };
+      /** @description JWT が無い・正しくない */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 権限が無い */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };

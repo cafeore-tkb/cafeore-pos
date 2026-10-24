@@ -20,7 +20,7 @@ import {
   callVoiceCacheKey,
   callVoiceRequestBody,
 } from "../worker/call-voice";
-import { createApp } from "./app";
+import { createApp, loginUserEmail } from "./app";
 import {
   IMMUTABLE_CACHE,
   REVALIDATE_CACHE,
@@ -321,6 +321,48 @@ describe("[unit] Cloud Run の画面のサーバー: 無いパスの扱い", () 
     expect(acceptsEncoding("br;q=0", "br")).toBe(false);
     expect(acceptsEncoding("gzip", "br")).toBe(false);
     expect(acceptsEncoding(undefined, "gzip")).toBe(false);
+  });
+});
+
+describe("[unit] Cloud Run の画面のサーバー: ログインしている相手", () => {
+  test("IAP が付けたメールを、名前空間を外して返す", async () => {
+    await withServer({}, async (send) => {
+      const res = await send("/auth/me", {
+        "x-goog-authenticated-user-email":
+          "accounts.google.com:register@id.cafeore.cafe",
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/^application\/json/);
+      expect(res.headers["cache-control"]).toBe("no-store");
+      expect(JSON.parse(res.body.toString())).toEqual({
+        email: "register@id.cafeore.cafe",
+      });
+    });
+  });
+
+  test("IAP を通っていなければ null（index.html は返さない）", async () => {
+    await withServer({}, async (send) => {
+      const res = await send("/auth/me", NAVIGATE);
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body.toString())).toEqual({ email: null });
+    });
+  });
+
+  test("GET と HEAD のほかは受けない", async () => {
+    await withServer({}, async (send) => {
+      const res = await send("/auth/me", {}, "POST");
+      expect(res.status).toBe(405);
+    });
+  });
+
+  test("名前空間が無くても、空でもよい", () => {
+    expect(loginUserEmail("a@example.com")).toBe("a@example.com");
+    expect(loginUserEmail(["accounts.google.com:a@example.com"])).toBe(
+      "a@example.com",
+    );
+    expect(loginUserEmail("accounts.google.com:")).toBeNull();
+    expect(loginUserEmail("")).toBeNull();
+    expect(loginUserEmail(undefined)).toBeNull();
   });
 });
 

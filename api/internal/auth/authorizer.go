@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 
+	"cafeore-pos/api/internal/models"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -217,6 +219,37 @@ func (a *Authorizer) RequireByMethod() gin.HandlerFunc {
 		}
 		a.check(c, min)
 	}
+}
+
+// 呼んだ相手と、その権限を返す（GET /api/me。POS のトップページに出す）。
+//
+// /api のグループ（RequireByMethod）の中に置き、確かめた相手をそこから受け取る。なので
+// 弾く設定なら、権限の無い相手（401・403）はここに来ない。role が none になるのは report-only だけ。
+// a が nil（認証しない設定）なら、相手が分からないので email も role も null。
+func (a *Authorizer) Me(c *gin.Context) {
+	if a == nil {
+		c.JSON(http.StatusOK, models.MeResponse{Enforcement: models.MeEnforcementOff})
+		return
+	}
+
+	res := models.MeResponse{Enforcement: models.MeEnforcementEnforce}
+	if !a.enforce {
+		res.Enforcement = models.MeEnforcementReportOnly
+	}
+	role := models.MeRoleNone
+	// report-only で JWT が無い・正しくなかったときは、相手が置かれていない
+	if v, ok := c.Get(IdentityContextKey); ok {
+		name := v.(AccessIdentity).Name()
+		res.Email = &name
+		switch a.role(name) {
+		case RoleStaff:
+			role = models.MeRoleStaff
+		case RoleViewer:
+			role = models.MeRoleViewer
+		}
+	}
+	res.Role = &role
+	c.JSON(http.StatusOK, res)
 }
 
 func (a *Authorizer) check(c *gin.Context, min Role) {
