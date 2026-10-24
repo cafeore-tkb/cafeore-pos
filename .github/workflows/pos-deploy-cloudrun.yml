@@ -1,0 +1,180 @@
+name: pos / deploy (Cloud Run)
+
+# POS の画面をビルドして、本番の Cloud Run（既定 cafeore-pos-web）へデプロイする。
+#
+# 本番は GCP の外部アプリケーション LB（https://pos.cafeore.cafe、IAP 付き）の後ろにある。
+# LB の URL マップが /api/*・/status・/health を API の Cloud Run へ、それ以外をこのサービスへ
+# 送る（infra の Terraform）。画面と API が同じオリジンなので、VITE_API_BASE_URL も
+# https://pos.cafeore.cafe にする。
+#
+# イメージは services/pos/Dockerfile（画面の build/client と、それを配る Node のサーバー
+# services/pos/server/）。API と同じ Artifact Registry のリポジトリ（既定 cafeore-pos）に
+# pos-web という名前で置く。サービスの環境変数（CALL_VOICES_BUCKET・ELEVENLABS_API_KEY）は
+# Terraform が入れるので、ここではイメージだけを差し替える。
+#
+# **本番だけ。PR のプレビューはここでは出さない。** 今までどおり pos-deploy-workers.yml が
+# Workers に出す。Workers の本番のデプロイは、変数 POS_PROD_ON_CLOUD_RUN を true にすると止まる
+# （pos-deploy-workers.yml の prod-skipped を参照）。
+#
+# 変数 POS_WEB_DEPLOY が true のときだけ動く。Cloud Run のサービスや LB を Terraform で作る前に
+# マージしても、何もしない（job がスキップされるだけ）。
+#
+# 認証は api-build.yml と同じ Workload Identity Federation。GCP 側の構成は infra リポジトリの
+# gcp/github_actions.tf を参照。サービスアカウントには、Artifact Registry への push、このサービスの
+# 更新、サービスの実行用サービスアカウントの actAs が要る。
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/pos/**'
+      - 'modules/common/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.dockerignore'
+      - '.github/scripts/build-info.sh'
+      - '.github/workflows/pos-deploy-cloudrun.yml'
+  workflow_dispatch:
+
+# WIF の OIDC トークン発行に id-token: write が必須。
+# 足りないと google-github-actions/auth が "Failed to get ID token" で落ちる。
+permissions:
+  contents: read
+  id-token: write
+
+# 本番へのデプロイは取り消さない（api-build.yml と同じ理由）。取り消した後に新しい実行が
+# 失敗すると、取り消された方のコミットもデプロイされず、本番が 2 つ前の状態のまま残るため。
+# 待機できるのは最新の 1 件だけなので、実行は溜まらない。
+concurrency:
+  group: pos-deploy-cloudrun-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    # 3つ除外している。
+    #
+    #   - 変数 POS_WEB_DEPLOY が true でないとき … インフラがまだ無い（上を参照）
+    #   - Dependabot が起点の実行 … Actions の secrets も id-token も渡らないので認証で落ちる
+    #   - fork … push しても変数が無く、GCP にも入れない
+    if: >-
+      ${{ vars.POS_WEB_DEPLOY == 'true'
+          && github.actor != 'dependabot[bot]'
+          && !github.event.repository.fork }}
+
+    env:
+      # いずれも秘密情報ではない。既定値は api-build.yml と同じ（infra の `terraform output` の値）。
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: pos-web
+      CLOUD_RUN_SERVICE: ${{ vars.POS_WEB_CLOUD_RUN_SERVICE || 'cafeore-pos-web' }}
+      # 画面に焼き込む API のオリジン。LB が /api などを API に送るので、画面と同じ URL にする
+      VITE_API_BASE_URL: ${{ vars.POS_WEB_API_BASE_URL || 'https://pos.cafeore.cafe' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GCP に認証する
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+          # docker login にそのまま渡せる短期トークンを受け取る。
+          # SA を impersonate するので service_account の指定が必要。
+          token_format: access_token
+
+      - name: Artifact Registry に docker login する
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: タグを決める
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          # コミットの SHA と latest（main のときだけ）。デプロイはタグではなくダイジェストで指す
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # どの PR・コミットのビルドかを画面に焼き、トップページに出す。
+      # main のマージコミットから PR を引く（.github/scripts/build-info.sh）。
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ビルドして push する
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          # pnpm のワークスペース（modules/common）を使うので、コンテキストはルート
+          context: .
+          file: services/pos/Dockerfile
+          # Cloud Run は amd64
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 画面に焼き込む値。pos-deploy-workers.yml の「ビルドする」と揃える
+          build-args: |
+            VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
+            VITE_BUILD_PR=${{ steps.build_info.outputs.pr }}
+            VITE_BUILD_COMMIT=${{ steps.build_info.outputs.commit }}
+          # 画面に焼き込むが、イメージのビルドの記録には残したくないものは secret で渡す
+          # （Dockerfile の RUN --mount=type=secret）
+          secrets: |
+            VITE_WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}
+          # api-build.yml と同じく、provenance を付けず単一のイメージにする
+          provenance: false
+          # キャッシュは api-build.yml と分ける（既定の scope は共有で、互いに上書きしてしまう）
+          cache-from: type=gha,scope=pos-web
+          cache-to: type=gha,mode=max,scope=pos-web
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cloud Run にデプロイする
+        env:
+          # タグではなくダイジェストで指定する。タグは後から別のイメージへ
+          # 付け替わりうるが、ダイジェストは今ビルドしたものを必ず指す。
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # traffic は LATEST に向いているので、image を差し替えれば切り替わる。新しいリビジョンが
+          # 起動して（PORT で待ち受けて）からなので、起動しないイメージでは切り替わらずにここで落ちる。
+          # image は Terraform 側で ignore_changes してあるので、次の apply で巻き戻ることはない。
+          gcloud run services update "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="$image" \
+            --quiet
+
+          revision=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.latestReadyRevisionName)')
+
+          {
+            echo "### Cloud Run にデプロイした"
+            echo '```'
+            echo "service:  $CLOUD_RUN_SERVICE ($GCP_REGION)"
+            echo "revision: $revision"
+            echo "image:    $image"
+            echo "API:      $VITE_API_BASE_URL"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

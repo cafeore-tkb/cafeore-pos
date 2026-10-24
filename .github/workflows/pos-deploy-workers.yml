@@ -26,6 +26,16 @@ name: pos / deploy (Workers)
 # （api-build.yml の「PR では preview ラベルが付いているときだけ」を参照）。
 # ラベルを外しても、作ったバージョンは消せないので残る。PR に書いたプレビューの
 # コメントは消す（pr-cleanup.yml を参照）。
+#
+# ## 本番を Cloud Run に移した後
+#
+# 本番の画面は GCP の LB（IAP）の後ろの Cloud Run に移す（pos-deploy-cloudrun.yml）。
+# 移した後は変数 POS_PROD_ON_CLOUD_RUN を true にして、ここからの本番（main への push と
+# 手動実行）のデプロイを止める。PR のプレビューは今までどおり出す。
+#
+# 止めないと、本番の deploy が --domain（WORKERS_CUSTOM_DOMAIN）で pos.cafeore.cafe を Worker に
+# 付け直し、GCP の LB に向けた DNS を上書きしてしまう。止めた実行は prod-skipped の job が
+# そのことをまとめ（Summary）に出す。
 
 on:
   push:
@@ -82,12 +92,32 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # 本番を Cloud Run に移した後（変数 POS_PROD_ON_CLOUD_RUN が true）の main への push と手動実行。
+  # deploy の代わりに走り、本番の Workers にはデプロイしなかったことを残す（上の
+  # 「本番を Cloud Run に移した後」を参照）。**条件は deploy の if と対にすること。**
+  prod-skipped:
+    name: Skip production deploy (moved to Cloud Run)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' && vars.POS_PROD_ON_CLOUD_RUN == 'true' }}
+    steps:
+      - name: 本番の Workers へのデプロイを飛ばす
+        run: |
+          message="本番は Cloud Run に移した（変数 POS_PROD_ON_CLOUD_RUN が true）ので、Workers の本番にはデプロイしない。本番の画面は pos-deploy-cloudrun.yml が出す。PR のプレビューは今までどおりここから出す"
+          echo "::notice title=本番の Workers へのデプロイを飛ばした::$message"
+          {
+            echo "### 本番の Workers へのデプロイを飛ばした"
+            echo
+            echo "$message"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     name: Deploy to Cloudflare Workers
     runs-on: ubuntu-latest
 
-    # 3つ除外している。
+    # 4つ除外している。
     #
+    #   - 本番を Cloud Run に移した後（変数 POS_PROD_ON_CLOUD_RUN が true）の main への push と
+    #     手動実行 … 上の「本番を Cloud Run に移した後」を参照。代わりに prod-skipped が走る
     #   - fork からの PR … secrets が渡らないので実行しても必ず落ちる
     #   - Dependabot の PR … 同じリポジトリのブランチから来るので上の条件は
     #     通ってしまうが、Dependabot が起点の実行には Actions の secrets が
@@ -99,8 +129,10 @@ jobs:
     # **PR の条件は上の concurrency と揃えること。**
     if: >-
       ${{ github.actor != 'dependabot[bot]'
-          && (github.event_name != 'pull_request'
-              || (github.event.pull_request.head.repo.full_name == github.repository
+          && ((github.event_name != 'pull_request'
+               && vars.POS_PROD_ON_CLOUD_RUN != 'true')
+              || (github.event_name == 'pull_request'
+                  && github.event.pull_request.head.repo.full_name == github.repository
                   && github.event.pull_request.state == 'open'
                   && contains(github.event.pull_request.labels.*.name, 'preview')
                   && (github.event.action != 'labeled' || github.event.label.name == 'preview'))) }}
