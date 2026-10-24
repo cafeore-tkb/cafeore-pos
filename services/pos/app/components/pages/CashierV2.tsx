@@ -86,7 +86,10 @@ import {
   subtotalRemaining,
   unpaidLines,
 } from "../functional/cashierSplit";
-import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
+import {
+  autoSquareRefundAvailable,
+  cashierAutoSquareRefundAtom,
+} from "../functional/cashierUiAtoms";
 import type { ConnectionIssue } from "../functional/connectionIssues";
 import {
   type HeldKeys,
@@ -1335,7 +1338,8 @@ const CashierV2 = ({
                   disabled={squarePaymentActive}
                 />
               )}
-              {squareEnabled && (
+              {/* 本番では出さない（autoSquareRefundAvailable） */}
+              {squareEnabled && autoSquareRefundAvailable && (
                 <div className="flex items-center gap-2">
                   <Switch
                     id="auto-square-refund"

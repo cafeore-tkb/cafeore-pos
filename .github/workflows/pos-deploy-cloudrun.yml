@@ -134,6 +134,7 @@ jobs:
             VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
             VITE_BUILD_PR=${{ steps.build_info.outputs.pr }}
             VITE_BUILD_COMMIT=${{ steps.build_info.outputs.commit }}
+            VITE_DEPLOY_ENV=production
           # 画面に焼き込むが、イメージのビルドの記録には残したくないものは secret で渡す
           # （Dockerfile の RUN --mount=type=secret）
           secrets: |

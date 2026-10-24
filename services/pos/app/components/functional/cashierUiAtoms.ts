@@ -8,4 +8,11 @@ import { atom } from "jotai";
 // 本番で消し忘れないよう、ブラウザには覚えず、ページを読み込み直すとオフに戻る。
 const cashierAutoSquareRefundAtom = atom(false);
 
-export { cashierAutoSquareRefundAtom };
+// 「常に返金」のトグルを出すか。本番（VITE_DEPLOY_ENV が production）では出さない。
+// 本番に出てしまう方が困るので、出すのは PR のプレビュー（preview）とローカルの dev だけにし、
+// 値の無いビルド（ローカルの vite build など）でも出さない。
+// 出さなければ上の atom は false のままなので、返金もしない
+const autoSquareRefundAvailable =
+  import.meta.env.DEV || import.meta.env.VITE_DEPLOY_ENV === "preview";
+
+export { autoSquareRefundAvailable, cashierAutoSquareRefundAtom };

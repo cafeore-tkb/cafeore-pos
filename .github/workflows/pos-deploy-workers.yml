@@ -222,6 +222,10 @@ jobs:
           VITE_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           VITE_BUILD_PR: ${{ steps.build_info.outputs.pr }}
           VITE_BUILD_COMMIT: ${{ steps.build_info.outputs.commit }}
+          # どこに出すビルドか。PR はプレビュー、main への push と手動実行は本番（非常用の
+          # pos-cf.cafeore.cafe）。本番ではレジの「常に返金」を出さない（cashierUiAtoms.ts）。
+          # PR で deploy に倒したとき（WORKERS_AUTO_DEPLOY_IF_NOT_EXIST）もプレビューのアカウントなので preview
+          VITE_DEPLOY_ENV: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
           # PR では上で引いたプレビュー用 backend の URL を焼き込む。
           # 引けなかった場合は VITE_API_BASE_URL_PREVIEW → VITE_API_BASE_URL の
           # 順にフォールバックする。
