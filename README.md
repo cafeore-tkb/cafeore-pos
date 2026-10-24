@@ -382,19 +382,29 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
 
 #### ログイン中のアカウントとログアウト
 
-トップページの右上に、ログインしている Google アカウントのメールとログアウトのボタンを出す（`LoginUser`）。
+トップページの右上に、ログインしている Google アカウントのメールと権限、ログアウトのボタンを出す（`LoginUser`）。
 
 - メールは画面の Cloud Run の `/auth/me` が返す。IAP が付ける `X-Goog-Authenticated-User-Email`（`accounts.google.com:<メール>`）から
   名前空間を外したもの。署名の無いヘッダーなので、**出すだけで、誰に何を許すかには使わない**（API は JWT を確かめる）。
   API の `AUTH_MODE` が `off` でも出る
-- ログアウトは、押し間違えないよう 2 回押すと `/?gcp-iap-mode=CLEAR_LOGIN_COOKIE` を開く。IAP が自分の cookie を消し、
+- 権限は API の `GET /api/me` が返す（API が JWT で確かめた相手を、`AUTH_STAFF_EMAILS`・`AUTH_VIEWER_EMAILS` と照らした結果）。
+
+  | API の `AUTH_MODE` | 出るもの |
+  | --- | --- |
+  | `iap`・`cloudflare-access` | 「スタッフ」か「閲覧のみ」。許可リストに無ければ（403）「権限なし」 |
+  | `*-report-only` | 「スタッフ（report-only）」など。API はまだ弾かないので「権限なし」でも操作はできる |
+  | `off` | 「権限の確認なし」（誰でもすべての操作ができる） |
+
+  API が確かめた相手が画面のメールと違うとき（ログアウトしても API の方の IAP の cookie が残っていた、など）は、
+  「API には … として届いています」と赤字で出す。出している権限は API の方の相手のもの
+- ログアウトのボタンを押すと `/?gcp-iap-mode=CLEAR_LOGIN_COOKIE` を開く。IAP が自分の cookie を消し、
   もう一度ログインを求める。**Google アカウントのログインは消さない**ので、そのブラウザーが Google に 1 つのアカウントでしか
   ログインしていなければ、何も聞かれずに同じアカウントで戻ってくる。別のアカウントに替えるときは、Google の
   アカウントの切り替えで足すか、Google からログアウトしてから開き直す
-- PR のプレビュー（Workers。ログインが無い）では、メールの代わりに「プレビュー」と出し、ボタンは出さない。
+- PR のプレビュー（Workers。ログインが無い）では、メールの代わりに「プレビュー」と出し、権限とボタンは出さない。
   `pos-deploy-workers.yml` が PR のビルドにだけ `VITE_BUILD_PREVIEW=true` を焼き込む
-- 非常用の `pos-cf.cafeore.cafe`（Workers の本番。ログインが無い）では、Worker の `/auth/me` が `null` を返し、「ログインなし」と出す。
-  ローカルの `pnpm dev` では「ローカル」と出す
+- 非常用の `pos-cf.cafeore.cafe`（Workers の本番。ログインが無い）では、Worker の `/auth/me` が `null` を返し、「ログインなし」と出す
+  （API を `off` にして使うので、権限は「権限の確認なし」）。ローカルの `pnpm dev` では「ローカル」とだけ出す
 
 #### 確かめていないこと
 
@@ -407,7 +417,8 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
   ログに出ないことで確かめる
 - [ログアウト](#ログイン中のアカウントとログアウト)の `CLEAR_LOGIN_COOKIE` が、API の backend service の IAP の cookie も消すか。
   消さないと、別のアカウントでログインし直しても、API には前のアカウントで届くことがある（`/auth/me` の表示は新しいアカウントになる）。
-  ログアウトして別のアカウントでログインし直し、ブラウザーの開発者ツールで `pos.cafeore.cafe` の IAP の cookie が全部入れ替わったかを見る
+  `AUTH_MODE` が `iap*` なら、ログアウトして別のアカウントでログインし直し、トップページに「API には … として届いています」が
+  出ないことで確かめる
 
 ### 呼び出し画面の CM
 
@@ -865,6 +876,8 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
     ドメインでスタッフにして一部を表示用に下げることはできない
   - `*@example.com` のようなワイルドカード、形の崩れたドメイン（`@`・`@localhost` など）があると api は起動しない
     （`api/internal/auth/authorizer.go` の `validateAllowList`）
+  - その端末がどちらに当たっているかは `GET /api/me`（`role` が `staff`・`viewer`、report-only なら `none` も）で分かる。
+    POS のトップページにも出す（[ログイン中のアカウントとログアウト](#ログイン中のアカウントとログアウト)）
 - `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
   書き込みは開かない（`api/cmd/server/main.go`）
 - 次は Access を通らずに来るので、`/api` のグループの外に置いて自前で確かめている

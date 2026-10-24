@@ -1541,6 +1541,36 @@
       }
     }
   },
+  "MeResponse": {
+    "type": "object",
+    "description": "API を呼んだ相手と、その権限。",
+    "required": ["enforcement", "email", "role"],
+    "properties": {
+      "enforcement": {
+        "type": "string",
+        "enum": ["off", "report-only", "enforce"],
+        "x-enum-varnames": [
+          "MeEnforcementOff",
+          "MeEnforcementReportOnly",
+          "MeEnforcementEnforce"
+        ],
+        "description": "API が相手を確かめて弾くか（AUTH_MODE）。\noff は確かめない（誰でも全部の操作ができる。email と role は null）。\nreport-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。\n"
+      },
+      "email": {
+        "type": "string",
+        "nullable": true,
+        "description": "JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。\noff のときと、report-only で JWT が無い・正しくないときは null\n",
+        "example": "register@id.cafeore.cafe"
+      },
+      "role": {
+        "type": "string",
+        "nullable": true,
+        "enum": ["staff", "viewer", "none"],
+        "x-enum-varnames": ["MeRoleStaff", "MeRoleViewer", "MeRoleNone"],
+        "description": "staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。\nenforce なら 403 になる）。off のときは null\n"
+      }
+    }
+  },
   "ErrorResponse": {
     "type": "object",
     "required": ["error"],

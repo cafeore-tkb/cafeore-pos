@@ -24,6 +24,36 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
 
+  /api/me:
+    get:
+      summary: API を呼んだ相手と権限
+      description: |
+        Access か IAP の JWT で確かめた相手と、その権限（AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+        POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+        （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+      operationId: getMe
+      tags:
+        - system
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          description: JWT が無い・正しくない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: 権限が無い
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/items:
     get:
       summary: アイテム一覧取得
@@ -3594,6 +3624,34 @@ components:
           type: integer
           minimum: 1
           maximum: 6
+    MeResponse:
+      type: object
+      description: API を呼んだ相手と、その権限。
+      required: [enforcement, email, role]
+      properties:
+        enforcement:
+          type: string
+          enum: ['off', report-only, enforce]
+          x-enum-varnames: [MeEnforcementOff, MeEnforcementReportOnly, MeEnforcementEnforce]
+          description: |
+            API が相手を確かめて弾くか（AUTH_MODE）。
+            off は確かめない（誰でも全部の操作ができる。email と role は null）。
+            report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+        email:
+          type: string
+          nullable: true
+          description: |
+            JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+            off のときと、report-only で JWT が無い・正しくないときは null
+          example: register@id.cafeore.cafe
+        role:
+          type: string
+          nullable: true
+          enum: [staff, viewer, none]
+          x-enum-varnames: [MeRoleStaff, MeRoleViewer, MeRoleNone]
+          description: |
+            staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+            enforce なら 403 になる）。off のときは null
     ErrorResponse:
       type: object
       required:

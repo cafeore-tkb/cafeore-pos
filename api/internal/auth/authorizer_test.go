@@ -251,6 +251,59 @@ func TestAuthorizerNilAllowsAll(t *testing.T) {
 	}
 }
 
+// GET /api/me は、/api のグループで確かめた相手とその権限を返す
+func TestAuthorizerMe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	enforced := NewAuthorizer(stubVerifier{}, []string{"staff@example.com"}, []string{"display@example.com"})
+	reportOnly := NewAuthorizer(stubVerifier{}, []string{"staff@example.com"}, []string{"display@example.com"})
+	reportOnly.enforce = false
+	var off *Authorizer
+
+	cases := []struct {
+		name   string
+		authz  *Authorizer
+		token  string
+		want   int
+		wantMe string
+	}{
+		{"enforce staff", enforced, "Staff@example.com", http.StatusOK,
+			`{"email":"Staff@example.com","enforcement":"enforce","role":"staff"}`},
+		{"enforce viewer", enforced, "display@example.com", http.StatusOK,
+			`{"email":"display@example.com","enforcement":"enforce","role":"viewer"}`},
+		// 弾く設定なら、権限の無い相手はハンドラーまで来ない
+		{"enforce stranger", enforced, "stranger@example.com", http.StatusForbidden, ""},
+		{"enforce no token", enforced, "", http.StatusUnauthorized, ""},
+		{"report-only stranger", reportOnly, "stranger@example.com", http.StatusOK,
+			`{"email":"stranger@example.com","enforcement":"report-only","role":"none"}`},
+		{"report-only no token", reportOnly, "", http.StatusOK,
+			`{"email":null,"enforcement":"report-only","role":"none"}`},
+		{"report-only staff", reportOnly, "staff@example.com", http.StatusOK,
+			`{"email":"staff@example.com","enforcement":"report-only","role":"staff"}`},
+		{"off", off, "staff@example.com", http.StatusOK,
+			`{"email":null,"enforcement":"off","role":null}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := gin.New()
+			r.Group("/api", tc.authz.RequireByMethod()).GET("/me", tc.authz.Me)
+
+			req := httptest.NewRequest("GET", "/api/me", nil)
+			if tc.token != "" {
+				req.Header.Set(AccessJWTHeader, tc.token)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.want {
+				t.Fatalf("got %d, want %d", w.Code, tc.want)
+			}
+			if tc.wantMe != "" && w.Body.String() != tc.wantMe {
+				t.Fatalf("got %s, want %s", w.Body.String(), tc.wantMe)
+			}
+		})
+	}
+}
+
 func TestAuthorizerFromEnv(t *testing.T) {
 	complete := map[string]string{
 		"AUTH_MODE":             "cloudflare-access",
