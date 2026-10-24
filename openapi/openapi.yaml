@@ -2394,6 +2394,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 消す表をロックしてから決まった時間（60 秒）以内に確かめきれなかった。ロールバックしたので何も消していない。error を画面にそのまま出す
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/admin/data-reset/backup:
     get:
       summary: 営業データのリセットで消す表の中身を全部書き出す

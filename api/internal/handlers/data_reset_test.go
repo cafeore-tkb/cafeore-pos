@@ -169,6 +169,29 @@ func TestDataResetRefusesUnknownTables(t *testing.T) {
 	}
 }
 
+// 締め切りまでに確かめきれなければ、ロールバックして何も消さない
+func TestDataResetTimesOut(t *testing.T) {
+	api := newTestAPI(t)
+	m := api.seedMaster()
+	api.createOrder(1, m.blendMenu)
+	api.do(http.MethodPost, "/api/master-status", models.MasterStateUpdateRequest{Type: models.Stop}).expect(http.StatusCreated)
+	api.waitBackground()
+	backup := api.do(http.MethodGet, "/api/admin/data-reset/backup", nil).expect(http.StatusOK).Body
+
+	saved := dataResetTimeout
+	dataResetTimeout = time.Nanosecond
+	t.Cleanup(func() { dataResetTimeout = saved })
+
+	res := api.do(http.MethodPost, "/api/admin/data-reset", models.DataResetRequest{Confirmation: dataResetConfirmation, BackupSha256: sha256Hex(backup)}).
+		expect(http.StatusServiceUnavailable)
+	if !strings.Contains(string(res.Body), "何も消していません") {
+		t.Fatalf("body: %s", res.Body)
+	}
+	if n := api.count(&models.Order{}, "1 = 1"); n != 1 {
+		t.Fatalf("orders = %d, want 1", n)
+	}
+}
+
 func TestPendingChangesDataReset(t *testing.T) {
 	q := newPendingChanges()
 	// 自分が送ったものは積まない

@@ -4000,6 +4000,12 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      /** @description 消す表をロックしてから決まった時間（60 秒）以内に確かめきれなかった。ロールバックしたので何も消していない。error を画面にそのまま出す */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
   /**

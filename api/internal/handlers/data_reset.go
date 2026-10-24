@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -60,6 +61,15 @@ var dataResetKeptTables = []string{
 
 // 消す前の表のロックを待つ長さ。営業中の書き込みが残っていても、いつまでも止まらないように。
 const dataResetLockTimeout = "10s"
+
+// リセット全体（ロックを取ってから消し終わるまで）にかけてよい長さ。消す表を全部ロックしたまま
+// バックアップを作り直して比べるので、その間はほかのインスタンスもその表を読み書きできない。
+// 超えたら問い合わせを取り消してロールバックし（ロックも外れる）、何も消さない。
+//
+// lock_timeout はロックを取るまでの待ちにしか、statement_timeout は 1 文ごとにしか効かないので、
+// トランザクション全体の締め切りは context で付ける（statement_timeout は DB 側の念のため）。
+// テストで短くするため変数にしている。
+var dataResetTimeout = 60 * time.Second
 
 // リセットを断った理由。errors.As で応答の形に振り分ける。
 type dataResetRefusal struct {
@@ -160,8 +170,10 @@ func (h *DataResetHandler) ResetData(c *gin.Context) {
 		return
 	}
 
+	ctx, cancel := context.WithTimeout(c.Request.Context(), dataResetTimeout)
+	defer cancel()
 	var deleted []models.DataResetTable
-	err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		deleted, err = resetData(tx, backupSHA256)
 		return err
@@ -170,6 +182,10 @@ func (h *DataResetHandler) ResetData(c *gin.Context) {
 	switch {
 	case errors.As(err, &refusal):
 		c.JSON(refusal.status, gin.H{"error": refusal.message})
+		return
+	case err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
+		log.Printf("data reset timed out after %s: %v", dataResetTimeout, err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": fmt.Sprintf("%s 以内に確かめきれなかったので、何も消していません。データが多すぎる可能性があります", dataResetTimeout)})
 		return
 	case err != nil:
 		log.Printf("failed to reset data: %v", err)
@@ -185,6 +201,9 @@ func (h *DataResetHandler) ResetData(c *gin.Context) {
 // 確かめてから消す。tx の中で呼ぶこと。消した表と、消す前の行数を返す。
 func resetData(tx *gorm.DB, backupSHA256 string) ([]models.DataResetTable, error) {
 	if err := tx.Exec("SET LOCAL lock_timeout = '" + dataResetLockTimeout + "'").Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Exec(fmt.Sprintf("SET LOCAL statement_timeout = %d", dataResetTimeout.Milliseconds())).Error; err != nil {
 		return nil, err
 	}
 	// 確かめてから消すまでの間に書き込まれないよう、消す表を先に全部ロックする（読むのも待たせる）
@@ -264,7 +283,7 @@ func writeDataResetRows(tx *gorm.DB, w io.Writer, table string) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	first := true
 	for rows.Next() {
 		var row string
