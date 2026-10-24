@@ -55,8 +55,8 @@ importers:
         specifier: ^2.3.2
         version: 2.4.1(react@18.3.1)
       zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/node':
         specifier: ^24.5.2
@@ -81,7 +81,7 @@ importers:
         version: link:../../modules/common
       '@conform-to/zod':
         specifier: ^1.2.2
-        version: 1.17.1(zod@3.25.76)
+        version: 1.17.1(zod@4.6.6)
       '@fontsource-variable/noto-sans-jp':
         specifier: ^5.2.9
         version: 5.2.10
@@ -179,8 +179,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.2(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       zod:
-        specifier: ^3.23.8
-        version: 3.25.76
+        specifier: ^4.6.6
+        version: 4.6.6
     devDependencies:
       '@react-router/dev':
         specifier: ^7.0.0
@@ -3193,8 +3193,8 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
 snapshots:
 
@@ -3476,10 +3476,10 @@ snapshots:
 
   '@conform-to/dom@1.17.1': {}
 
-  '@conform-to/zod@1.17.1(zod@3.25.76)':
+  '@conform-to/zod@1.17.1(zod@4.6.6)':
     dependencies:
       '@conform-to/dom': 1.17.1
-      zod: 3.25.76
+      zod: 4.6.6
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -5819,4 +5819,4 @@ snapshots:
       cookie: 1.1.1
       youch-core: 0.3.3
 
-  zod@3.25.76: {}
+  zod@4.6.6: {}
