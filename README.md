@@ -553,7 +553,7 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
 | `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り）。`@id.cafeore.cafe` のように `@` で始めるとドメインごと（[API の認証](#api-の認証cloudflare-access)） |
 | `AUTH_ADMIN_EMAILS` | 未設定 | 未設定 | 管理者のメール（カンマ区切り。ドメインごとには書けない）。スタッフにできることに加えて[データのリセット](#データのリセット)ができる。未設定なら誰もリセットできない |
-| `DATA_RESET_WITHOUT_AUTH` | 未設定（手元で試すなら `true`） | `true`（CI が渡す） | **渡さない。** `true` なら、`AUTH_MODE` が `off` か `*-report-only` のときに[データのリセット](#データのリセット)を誰でも使える（DB が使い捨てのとき用）。認証を掛けているときは効かない。`true`・`false` 以外だと起動しない |
+| `DATA_RESET_WITHOUT_AUTH` | 未設定（手元で試すなら `true`） | `true`（CI が渡す。Neon のブランチがあるときだけ） | **渡さない。** `true` なら、`AUTH_MODE` が `off` か `*-report-only` のときに[データのリセット](#データのリセット)を誰でも使える（DB が使い捨てのとき用）。認証を掛けているときは効かない。`true`・`false` 以外だと起動しない |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -1068,7 +1068,9 @@ API は `internal/handlers/data_reset.go`。
   （`auth.RequireStrict`）
 - **PR のプレビューでは誰でも使える。** プレビューは `AUTH_MODE` が `off` で、DB も PR ごとの Neon のブランチなので、
   CI（`api-build`）がプレビューのリビジョンにだけ `DATA_RESET_WITHOUT_AUTH=true` を渡す。消えるのはその PR の
-  プレビューの DB（向き先の PR の backend を使う PR なら、向き先の PR のもの）。手元で試すときも同じ環境変数を入れる。
+  プレビューの DB（向き先の PR の backend を使う PR なら、向き先の PR のもの）。
+  その PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも消す（環境変数はサービスの設定を
+  引き継ぐので、`DATABASE_URL` がほかの PR のブランチのままのことがあるため）。手元で試すときも同じ環境変数を入れる。
   **本番には渡さない**（渡しても、`AUTH_MODE` が `iap` か `cloudflare-access` なら効かない。非常用に `off` に戻すと効いてしまう）
 - 次を全部満たすときだけ消す。どれかが欠ければ何も消さない
   - 受付を止めている（オーダーストップの最後の記録が `stop`）
