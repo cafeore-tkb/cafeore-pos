@@ -402,7 +402,7 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
   ログインしていなければ、何も聞かれずに同じアカウントで戻ってくる。別のアカウントに替えるときは、Google の
   アカウントの切り替えで足すか、Google からログアウトしてから開き直す
 - PR のプレビュー（Workers。ログインが無い）では、メールの代わりに「プレビュー」と出し、権限とボタンは出さない。
-  `pos-deploy-workers.yml` が PR のビルドにだけ `VITE_BUILD_PREVIEW=true` を焼き込む
+  プレビューかどうかは画面に焼き込む `VITE_DEPLOY_ENV` が `preview` かで決める（`pos-deploy-workers.yml` が PR のビルドにだけ入れる）
 - 非常用の `pos-cf.cafeore.cafe`（Workers の本番。ログインが無い）では、Worker の `/auth/me` が `null` を返し、「ログインなし」と出す
   （API を `off` にして使うので、権限は「権限の確認なし」）。ローカルの `pnpm dev` では「ローカル」とだけ出す
 
@@ -776,6 +776,10 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
     - 返金できなかったら、閉じるまで消えないトーストで知らせる。過去の注文のその注文から頼み直す。
       返金を頼む前にレジを閉じたなどで頼めなかったときも、過去の注文から返金する。
     - 本番で消し忘れないよう、オンにしている間はトグルを赤く出し、ページを読み込み直すとオフに戻る。決済中は切り替えられない。
+    - **本番（`pos.cafeore.cafe` と非常用の `pos-cf.cafeore.cafe`）では、このトグルを出さない。** 出すのは PR のプレビューと
+      ローカルの dev（`pnpm dev`）だけ。画面に焼き込む `VITE_DEPLOY_ENV` で決め、デプロイの workflow が入れる
+      （`pos-deploy-cloudrun` は `production`、`pos-deploy-workers` は PR なら `preview`、それ以外は `production`）。
+      本番に出てしまわないよう、値の無いビルド（ローカルの `vite build` など）でも出さない。
 - 商品明細を端末やレシートに出す件は [#778](https://github.com/cafeore-tkb/cafeore-pos/issues/778)。
 
 お客さんが端末で決済手段を選ぶ:

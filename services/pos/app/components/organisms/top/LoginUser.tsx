@@ -12,8 +12,9 @@ const LOGIN_USER_PATH = "/auth/me";
 // Google に 1 つのアカウントでしかログインしていなければ、何も聞かれずに同じアカウントで戻ってくる
 const LOGOUT_URL = "/?gcp-iap-mode=CLEAR_LOGIN_COOKIE";
 
-// PR のプレビュー（Workers）。ログインが無いので、相手の代わりに「プレビュー」と出す
-const IS_PREVIEW = import.meta.env.VITE_BUILD_PREVIEW === "true";
+// PR のプレビュー（Workers）。ログインが無いので、相手の代わりに「プレビュー」と出す。
+// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、ローカルは無い
+const IS_PREVIEW = import.meta.env.VITE_DEPLOY_ENV === "preview";
 
 // ローカルの dev（react-router dev）には画面のサーバーが無く、何を聞いても index.html が返るので聞かない。
 // 権限も本番（IAP の後ろ）でだけ意味があるので、プレビューとローカルでは聞かない
