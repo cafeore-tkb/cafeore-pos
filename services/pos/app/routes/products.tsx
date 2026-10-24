@@ -9,6 +9,7 @@ import {
 import { useMemo, useState } from "react";
 import { type MetaFunction, useSearchParams } from "react-router";
 import { toast } from "sonner";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { ColorSettingsTab } from "~/components/organisms/products/ColorSettingsTab";
 import {
   DeleteDialog,
@@ -63,7 +64,16 @@ const repositories = {
   itemType: itemTypeRepository,
 } satisfies Record<ProductKind, { delete: (id: string) => Promise<void> }>;
 
-export default function ProductsPage() {
+// 本番では管理者だけが開ける
+export default function ProductsRoute() {
+  return (
+    <AdminOnly>
+      <ProductsPage />
+    </AdminOnly>
+  );
+}
+
+function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const tab: Tab = isTab(tabParam) ? tabParam : "menus";

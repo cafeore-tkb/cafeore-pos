@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -35,7 +36,16 @@ const statusLabel: Record<SquareDevice["status"], string> = {
 const errorText = (e: unknown, fallback: string) =>
   e instanceof Error ? e.message : fallback;
 
-export default function SquareDevicesPage() {
+// 本番では管理者だけが開ける
+export default function SquareDevicesRoute() {
+  return (
+    <AdminOnly>
+      <SquareDevicesPage />
+    </AdminOnly>
+  );
+}
+
+function SquareDevicesPage() {
   const { data: status } = useSWR("square-status", squareRepository.getStatus);
   const {
     data: devices,

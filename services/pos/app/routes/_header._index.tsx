@@ -128,7 +128,7 @@ const sections: Section[] = [
   {
     audience: "admin",
     title: "運営・管理",
-    lead: "売れ行きや在庫の確認、オペ練、メニューの設定",
+    lead: "売れ行きや在庫の確認、オペ練、メニューの設定。本番では管理者だけが開けます",
     screens: [
       {
         kind: "dashboard",
@@ -212,7 +212,8 @@ export default function Index() {
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
             Square 端末・プリンター・呼び出し画面の
-            CM・レジの商品のキーを設定します
+            CM・レジの商品のキーを設定します。本番では、呼び出し画面の CM
+            のほかは管理者だけが開けます
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (

@@ -9,6 +9,7 @@ import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -87,7 +88,16 @@ const saveBlob = (blob: Blob, fileName: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
-export default function DataResetPage() {
+// 本番では管理者だけが開ける
+export default function DataResetRoute() {
+  return (
+    <AdminOnly>
+      <DataResetPage />
+    </AdminOnly>
+  );
+}
+
+function DataResetPage() {
   const {
     data: status,
     error,

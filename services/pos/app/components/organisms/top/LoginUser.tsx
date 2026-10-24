@@ -1,5 +1,10 @@
-import { API_BASE_URL, apiClient } from "@cafeore/common";
 import useSWR from "swr";
+import {
+  IS_PREVIEW,
+  type Permission,
+  SHOULD_FETCH,
+  usePermission,
+} from "~/components/functional/usePermission";
 import { buttonVariants } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
 
@@ -11,14 +16,6 @@ const LOGIN_USER_PATH = "/auth/me";
 // また Google のログインを求める。Google アカウントのログインまでは消さないので、ブラウザーが
 // Google に 1 つのアカウントでしかログインしていなければ、何も聞かれずに同じアカウントで戻ってくる
 const LOGOUT_URL = "/?gcp-iap-mode=CLEAR_LOGIN_COOKIE";
-
-// PR のプレビュー（Workers）。ログインが無いので、相手の代わりに「プレビュー」と出す。
-// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、ローカルは無い
-const IS_PREVIEW = import.meta.env.VITE_DEPLOY_ENV === "preview";
-
-// ローカルの dev（react-router dev）には画面のサーバーが無く、何を聞いても index.html が返るので聞かない。
-// 権限も本番（IAP の後ろ）でだけ意味があるので、プレビューとローカルでは聞かない
-const SHOULD_FETCH = !IS_PREVIEW && !import.meta.env.DEV;
 
 type LoginState =
   // email は、IAP を通っていない（非常用の pos-cf.cafeore.cafe など）なら null
@@ -42,30 +39,6 @@ const fetchLoginUser = async (): Promise<LoginState> => {
   const body: { email?: string | null } = await response.json();
   return { status: "ok", email: body.email || null };
 };
-
-/** API が決めている権限（AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS）。API の /api/me に聞く */
-const fetchPermission = async () => {
-  // 別オリジン（ローカル・プレビュー）に付けると CORS の preflight が要るので、
-  // 同じオリジン（本番）のときだけ付ける（useOnlineStatus と同じ）
-  const sameOrigin = new URL(API_BASE_URL).origin === window.location.origin;
-  const { data, response } = await apiClient.GET("/api/me", {
-    cache: "no-store",
-    headers: sameOrigin ? { "X-Requested-With": "XMLHttpRequest" } : undefined,
-  });
-  // 弾く設定（AUTH_MODE=iap）で、許可リストに無い相手
-  if (response.status === 403) {
-    return { status: "forbidden" } as const;
-  }
-  if (response.status === 401) {
-    return { status: "expired" } as const;
-  }
-  if (!data) {
-    throw new Error(`/api/me failed: ${response.status}`);
-  }
-  return { status: "ok", me: data } as const;
-};
-
-type Permission = Awaited<ReturnType<typeof fetchPermission>>;
 
 const loginLabel = (user: LoginState | undefined, error: unknown): string => {
   if (import.meta.env.DEV) {
@@ -158,8 +131,9 @@ const permissionBadge = (
  */
 export function LoginUser() {
   const login = useSWR(SHOULD_FETCH ? "auth/me" : null, fetchLoginUser);
-  const permission = useSWR(SHOULD_FETCH ? "api/me" : null, fetchPermission);
+  const permission = usePermission();
 
+  // PR のプレビューにはログインが無いので、相手の代わりに「プレビュー」と出す
   if (IS_PREVIEW) {
     return (
       <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">

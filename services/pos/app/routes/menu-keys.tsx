@@ -7,6 +7,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import {
   type KeyCapture,
   cancelHeldKeys,
@@ -25,7 +26,16 @@ export const meta: MetaFunction = () => {
   return [{ title: "商品のキー / 珈琲・俺POS" }];
 };
 
-export default function MenuKeysPage() {
+// 本番では管理者だけが開ける
+export default function MenuKeysRoute() {
+  return (
+    <AdminOnly>
+      <MenuKeysPage />
+    </AdminOnly>
+  );
+}
+
+function MenuKeysPage() {
   const { menus, error, isLoading, mutateMenus } = useMenuMaster();
   // キーを押して登録しているメニュー
   const [capturingId, setCapturingId] = useState<string | null>(null);

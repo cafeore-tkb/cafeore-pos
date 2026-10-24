@@ -22,6 +22,7 @@ import {
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import {
   MenuPlanEditor,
@@ -140,7 +141,16 @@ const clock = (sec: number) => {
 // 乱数を生成器と分けて、メニューの割り当てを変えても客の流れ（時刻・杯数）は変わらないようにする
 const MENU_SEED_SALT = 0x5bd1e995;
 
-export default function Rehearsal() {
+// 本番では管理者だけが開ける
+export default function RehearsalRoute() {
+  return (
+    <AdminOnly>
+      <Rehearsal />
+    </AdminOnly>
+  );
+}
+
+function Rehearsal() {
   const [params, setParams] = useState<GeneratorParams | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [level, setLevel] = useState(1.0);
