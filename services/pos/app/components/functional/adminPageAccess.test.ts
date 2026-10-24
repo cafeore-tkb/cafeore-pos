@@ -22,7 +22,7 @@ const access = (
 ) => adminPageAccess({ shouldFetch, permission, error });
 
 describe("[unit] adminPageAccess", () => {
-  test("プレビューとローカルでは聞かずに開ける", () => {
+  test("ローカルでは聞かずに開ける", () => {
     expect(access(undefined, undefined, false)).toBe("allow");
     expect(access(undefined, new Error("failed"), false)).toBe("allow");
     expect(access({ status: "forbidden" }, undefined, false)).toBe("allow");

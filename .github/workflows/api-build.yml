@@ -499,17 +499,18 @@ jobs:
           if [ -n "${NEON_LISTEN_URL:-}" ]; then
             env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
           fi
-          # プレビューは AUTH_MODE が off で、DB も PR ごとの使い捨てなので、営業データのリセット
-          # （/data-reset）を誰でも使えるようにする。本番（タグ無し）には渡さない。api は認証を掛けて
-          # いるときはこれを見ない（README「データのリセット」）。
-          # この PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも消す。
-          # 環境変数はサービスの設定を引き継ぐので、DATABASE_URL がほかの PR のブランチのままのことがあり、
-          # そこを認証なしで消せてしまうため。
+          # プレビューは、全部のリクエストを管理者 preview がログインしてきたものとして扱う（AUTH_PREVIEW_ADMIN。
+          # 実際にはログインさせない。README「プレビューは管理者としてログインした扱い」）。本番（タグ無し）には渡さない。
+          # この PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも消す。環境変数は
+          # サービスの設定を引き継ぐので、DATABASE_URL がほかの PR のブランチのままのことがあり、そこを管理者として
+          # 消せてしまうため。
+          # AUTH_MODE の値にしないのは、プレビューのサービスはほかの PR と共有で、それを知らない古い api が
+          # 引き継ぐと起動しなくなるため（知らない環境変数は読まれないだけで済む）。
           remove_env=()
           if [ -n "$tag" ] && [ -n "${NEON_DB_URL:-}" ]; then
-            env_pairs+=("DATA_RESET_WITHOUT_AUTH=true")
+            env_pairs+=("AUTH_PREVIEW_ADMIN=true")
           elif [ -n "$tag" ]; then
-            remove_env+=(--remove-env-vars "DATA_RESET_WITHOUT_AUTH")
+            remove_env+=(--remove-env-vars "AUTH_PREVIEW_ADMIN")
           fi
           for pair in "${env_pairs[@]}"; do
             case "$pair" in

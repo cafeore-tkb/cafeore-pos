@@ -3,14 +3,14 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { adminPageAccess } from "./adminPageAccess";
-import { SHOULD_FETCH, usePermission } from "./usePermission";
+import { SHOULD_FETCH_PERMISSION, usePermission } from "./usePermission";
 
 // 聞けなかったときは聞き直す。ログインが切れているときは、読み込み直すと IAP がログインへ戻す
 const reload = () => window.location.reload();
 
 /**
  * 本番（API が弾く設定）では、管理者にだけ children を出す。ほかの人には children を
- * マウントしない（ページのデータも読まない）。プレビューとローカルではそのまま出す
+ * マウントしない（ページのデータも読まない）。ローカルではそのまま出す。プレビューは API が管理者として扱うので出す
  *
  * 画面で弾くのは開かせないためだけで、管理者だけの操作は API も弾く
  */
@@ -22,7 +22,7 @@ export function AdminOnly({ children }: { children: ReactNode }) {
     revalidateOnReconnect: false,
   });
   const access = adminPageAccess({
-    shouldFetch: SHOULD_FETCH,
+    shouldFetch: SHOULD_FETCH_PERMISSION,
     permission: permission.data,
     error: permission.error,
   });

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"cafeore-pos/api/internal/models"
@@ -159,6 +160,9 @@ func normalizeName(name string) string {
 //	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットと設定の書き込み
 //	                        （商品管理・プリンター・Square 端末など）ができる相手。カンマ区切り。
 //	                        ドメインごとには書けない。空なら誰もそれらをできない
+//	AUTH_PREVIEW_ADMIN    … true なら、全部のリクエストを管理者 PreviewAdminName がログインしてきたものとして
+//	                        扱う（PR のプレビュー用。CI が渡す）。AUTH_MODE が off（か空）のときだけ使え、
+//	                        ほかの AUTH_MODE と一緒なら起動を止める
 //
 // CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
 //
@@ -171,8 +175,18 @@ func normalizeName(name string) string {
 // （main が起動を止める）。
 func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	mode := strings.TrimSpace(getenv("AUTH_MODE"))
+	previewAdmin, err := previewAdminFromEnv(getenv)
+	if err != nil {
+		return nil, err
+	}
+	if previewAdmin {
+		// 本番の設定に紛れ込んでも認証が外れないよう、AUTH_MODE を掛けているときは起動を止める
+		if mode != "" && mode != "off" {
+			return nil, fmt.Errorf("AUTH_PREVIEW_ADMIN cannot be used with AUTH_MODE=%q (it is only for PR previews, where AUTH_MODE is off)", mode)
+		}
+		return newPreviewAuthorizer(), nil
+	}
 	var verifier identityVerifier
-	var err error
 	switch mode {
 	case "", "off":
 		return nil, nil
@@ -210,6 +224,28 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 // 弾かずにログにだけ出す設定か。
 func (a *Authorizer) ReportOnly() bool {
 	return a != nil && !a.enforce
+}
+
+// 全部のリクエストを管理者 PreviewAdminName として扱う、PR のプレビューの設定か（AUTH_PREVIEW_ADMIN）。
+func (a *Authorizer) PreviewAdmin() bool {
+	if a == nil {
+		return false
+	}
+	_, ok := a.verifier.(previewVerifier)
+	return ok
+}
+
+// AUTH_PREVIEW_ADMIN を読む。未設定なら false。読めない値は起動を止める（綴りの誤りで黙って変わらないように）。
+func previewAdminFromEnv(getenv func(string) string) (bool, error) {
+	v := strings.TrimSpace(getenv("AUTH_PREVIEW_ADMIN"))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("AUTH_PREVIEW_ADMIN must be true or false: %q", v)
+	}
+	return b, nil
 }
 
 func splitList(s string) []string {
@@ -291,28 +327,16 @@ const AuthDisabledMessage = "この操作は API の認証（AUTH_MODE=iap か c
 //   - *-report-only でも誰も通さない（403）。認証を切り替えている途中（ほかの API はまだ誰でも叩ける）の間は、
 //     取り返しのつかない操作を使わせない
 //
-// allowWithoutAuth が true なら、上の 2 つ（認証を掛けていない設定）でだけ誰でも通す。DB が使い捨ての
-// プレビューのためのもの（DATA_RESET_WITHOUT_AUTH）。認証を掛けている（AUTH_MODE が iap か cloudflare-access）
-// ときは効かず、min の権限を確かめる。
-func (a *Authorizer) RequireStrict(min Role, allowWithoutAuth bool) gin.HandlerFunc {
+// PR のプレビュー（AUTH_PREVIEW_ADMIN）は弾く設定で、相手は管理者なので通る。
+func (a *Authorizer) RequireStrict(min Role) gin.HandlerFunc {
 	if a == nil {
 		return func(c *gin.Context) {
-			if allowWithoutAuth {
-				log.Printf("auth: %s %s: allowed without auth (AUTH_MODE is off and DATA_RESET_WITHOUT_AUTH is true)", c.Request.Method, c.FullPath())
-				c.Next()
-				return
-			}
 			log.Printf("auth: %s %s: rejected because AUTH_MODE is off", c.Request.Method, c.FullPath())
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
 		}
 	}
 	return func(c *gin.Context) {
 		if !a.enforce {
-			if allowWithoutAuth {
-				log.Printf("auth: %s %s: allowed without auth (AUTH_MODE is report-only and DATA_RESET_WITHOUT_AUTH is true)", c.Request.Method, c.FullPath())
-				c.Next()
-				return
-			}
 			log.Printf("auth: %s %s: rejected because AUTH_MODE is report-only", c.Request.Method, c.FullPath())
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
 			return

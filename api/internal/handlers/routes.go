@@ -8,14 +8,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// RouteOptions は、ルートの守り方のうち環境ごとに変えるもの。main.go が環境変数から決める。
-type RouteOptions struct {
-	// 認証を掛けていない設定（AUTH_MODE が off か *-report-only）でも、営業データのリセットを誰にでも使わせる
-	// （DATA_RESET_WITHOUT_AUTH）。DB が PR ごとの使い捨てのプレビューのためのもので、本番には渡さない。
-	// 認証を掛けているときは効かず、管理者だけ
-	DataResetWithoutAuth bool
-}
-
 // RegisterRoutes は API のルートを登録する。main.go も、テストで API を丸ごと立てるときもこれを呼ぶ。
 //
 // openapi.yaml の全操作をここで手書きで登録する（/status・/health は DB の状態と起動時に調べた
@@ -25,8 +17,8 @@ type RouteOptions struct {
 // openapi.yaml との食い違いは cmd/server/routes_test.go で確かめる。
 // order（DB の通知の待ち受けと Square でも使う）と square（環境変数から作る。無効なら status が
 // enabled: false を返す）は main.go で作って渡す。
-// authz が nil（AUTH_MODE=off）なら誰でも叩ける（営業データのリセットだけは opts で決める）。
-func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db *gorm.DB, hub *Hub, inventory *Inventory, order *OrderHandler, square *SquareHandler, activities ...*notify.Activity) {
+// authz が nil（AUTH_MODE=off）なら誰でも叩ける（営業データのリセットだけは誰も使えない）。
+func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub, inventory *Inventory, order *OrderHandler, square *SquareHandler, activities ...*notify.Activity) {
 	var activity *notify.Activity
 	if len(activities) > 0 {
 		activity = activities[0]
@@ -140,8 +132,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, opts RouteOptions, db
 		api.POST("/orders/:id/square-refund", square.RefundOrder)
 
 		// 営業データのリセットは管理者だけ。GET も含めて、認証を掛けていない設定（off・report-only）では誰も使えない
-		// （プレビューで DATA_RESET_WITHOUT_AUTH を入れたときだけ誰でも使える）
-		admin := api.Group("/admin", authz.RequireStrict(auth.RoleAdmin, opts.DataResetWithoutAuth))
+		// （PR のプレビューは AUTH_PREVIEW_ADMIN で管理者としてログインした扱いなので使える）
+		admin := api.Group("/admin", authz.RequireStrict(auth.RoleAdmin))
 		admin.GET("/data-reset", dataReset.GetDataResetStatus)
 		admin.GET("/data-reset/backup", dataReset.ExportDataResetBackup)
 		admin.POST("/data-reset", dataReset.ResetData)

@@ -553,7 +553,7 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
 | `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り）。`@id.cafeore.cafe` のように `@` で始めるとドメインごと（[API の認証](#api-の認証cloudflare-access)） |
 | `AUTH_ADMIN_EMAILS` | 未設定 | 未設定 | 管理者のメール（カンマ区切り。ドメインごとには書けない）。スタッフにできることに加えて、[データのリセット](#データのリセット)と、商品管理・プリンター・Square 端末などの設定の書き込みができる（[運営・管理とマスタ設定は管理者だけ](#運営管理とマスタ設定は管理者だけ)）。未設定なら、認証を掛けている本番では誰もそれらを変えられない |
-| `DATA_RESET_WITHOUT_AUTH` | 未設定（手元で試すなら `true`） | `true`（CI が渡す。Neon のブランチがあるときだけ） | **渡さない。** `true` なら、`AUTH_MODE` が `off` か `*-report-only` のときに[データのリセット](#データのリセット)を誰でも使える（DB が使い捨てのとき用）。認証を掛けているときは効かない。`true`・`false` 以外だと起動しない |
+| `AUTH_PREVIEW_ADMIN` | 未設定（手元で試すなら `true`） | `true`（CI が渡す。Neon のブランチがあるときだけ） | **渡さない。** `true` なら、全部のリクエストを管理者 `preview` がログインしてきたものとして扱う（[プレビューは管理者としてログインした扱い](#プレビューは管理者としてログインした扱い)）。`AUTH_MODE` が `off`（か空）のときだけ使え、ほかの `AUTH_MODE` と一緒だと起動しない。`true`・`false` 以外でも起動しない |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -1072,8 +1072,24 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
   棚卸し・入荷の記録（`POST /api/inventory/resources/{id}/events`）も、CaOS の「豆残量確認」から記録するのでスタッフのまま
 - **画面**：`GET /api/me` が `enforcement: enforce` で `role` が `admin` でなければ、ページを開かずに「管理者だけが開けます」と出す
   （`AdminOnly`）。読み取りの API は開いているので、画面で閉じているのは見せないためで、API の守りではない
-- 認証を掛けていない設定（`off`・`*-report-only`。手元・プレビュー）では、今までどおり誰でも開けて書ける
+- 認証を掛けていない設定（`off`・`*-report-only`。手元）では、今までどおり誰でも開けて書ける。PR のプレビューは管理者としてログインした扱いなので、全部開けて書ける
 - **本番では、管理者を `AUTH_ADMIN_EMAILS`（infra の `api_auth_admin_emails`）に入れないと、メニューやプリンターの設定を誰も変えられない**
+
+### プレビューは管理者としてログインした扱い
+
+PR のプレビューには Access も IAP も無い。そこで CI（`api-build`）がプレビューのリビジョンにだけ `AUTH_PREVIEW_ADMIN=true` を渡し、
+api は全部のリクエストを管理者 `preview` がログインしてきたものとして扱う（実際にはログインさせない。`internal/auth/preview.go`）。
+弾く設定（`GET /api/me` は `enforcement: enforce`・`role: admin`・`email: preview`）のまま管理者として通るので、
+[データのリセット](#データのリセット)も[運営・管理とマスタ設定](#運営管理とマスタ設定は管理者だけ)も本番と同じ確かめ方で使える。
+画面もプレビューでは `/api/me` を聞き、トップページに「プレビュー」と「管理者」を出す。
+
+- **本番には渡さない。** `AUTH_MODE` が `off`（か空）のときだけ使え、`iap`・`cloudflare-access`（`*-report-only` も）と一緒だと
+  api は起動しない。infra の `api_auth_mode` もこの値を受け付けない
+- その PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも `--remove-env-vars` で消す。環境変数は
+  サービスの設定を引き継ぐので、`DATABASE_URL` がほかの PR のブランチのままのことがあり、そこを管理者として消せてしまうため。
+  そのリビジョンは `AUTH_MODE` が `off` で動く（データのリセットは使えない）
+- `AUTH_MODE` の値にしなかったのは、プレビューのサービスはほかの PR と共有で、環境変数を引き継ぐため。知らない `AUTH_MODE` を
+  引き継いだ古い api は起動しなくなるが、知らない環境変数は読まれないだけで済む
 
 ### データのリセット
 
@@ -1084,12 +1100,9 @@ API は `internal/handlers/data_reset.go`。
 
 - **管理者（`AUTH_ADMIN_EMAILS`）だけ。** `AUTH_MODE` が `off` か `*-report-only` のときは、管理者でも使えない
   （`auth.RequireStrict`）
-- **PR のプレビューでは誰でも使える。** プレビューは `AUTH_MODE` が `off` で、DB も PR ごとの Neon のブランチなので、
-  CI（`api-build`）がプレビューのリビジョンにだけ `DATA_RESET_WITHOUT_AUTH=true` を渡す。消えるのはその PR の
-  プレビューの DB（向き先の PR の backend を使う PR なら、向き先の PR のもの）。
-  その PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも消す（環境変数はサービスの設定を
-  引き継ぐので、`DATABASE_URL` がほかの PR のブランチのままのことがあるため）。手元で試すときも同じ環境変数を入れる。
-  **本番には渡さない**（渡しても、`AUTH_MODE` が `iap` か `cloudflare-access` なら効かない。非常用に `off` に戻すと効いてしまう）
+- **PR のプレビューでは使える。** プレビューは管理者としてログインした扱いなので
+  （[プレビューは管理者としてログインした扱い](#プレビューは管理者としてログインした扱い)）。消えるのはその PR のプレビューの DB
+  （向き先の PR の backend を使う PR なら、向き先の PR のもの）。手元で試すときは `AUTH_PREVIEW_ADMIN=true` を入れる
 - 次を全部満たすときだけ消す。どれかが欠ければ何も消さない
   - 受付を止めている（オーダーストップの最後の記録が `stop`）
   - 消す表の今の中身を全部ダウンロードしている。画面がダウンロードしたファイルの SHA-256 を送り、api は消す直前に表をロックして

@@ -244,8 +244,7 @@ func TestAuthorizerRequireStrict(t *testing.T) {
 	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
 	api := r.Group("/api", authz.RequireByMethod())
 	api.POST("/orders", ok)
-	// プレビュー用の DATA_RESET_WITHOUT_AUTH を入れていても、認証を掛けているときは効かない
-	admin := api.Group("/admin", authz.RequireStrict(RoleAdmin, true))
+	admin := api.Group("/admin", authz.RequireStrict(RoleAdmin))
 	admin.GET("/data-reset", ok)
 	admin.POST("/data-reset", ok)
 
@@ -276,8 +275,7 @@ func TestAuthorizerRequireStrict(t *testing.T) {
 	}
 }
 
-// 認証を掛けていない設定（off と report-only）では、RequireStrict は管理者でも通さない。
-// DATA_RESET_WITHOUT_AUTH（allowWithoutAuth）のときだけ誰でも通す
+// 認証を掛けていない設定（off と report-only）では、RequireStrict は管理者でも通さない
 func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -293,9 +291,7 @@ func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 		r := gin.New()
 		ok := func(c *gin.Context) { c.Status(http.StatusOK) }
 		api := r.Group("/api", authz.RequireByMethod())
-		api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin, false), ok)
-		// プレビュー（DATA_RESET_WITHOUT_AUTH）は、認証を掛けていなければ誰でも通す
-		api.POST("/preview/data-reset", authz.RequireStrict(RoleAdmin, true), ok)
+		api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin), ok)
 
 		req := httptest.NewRequest("POST", "/api/admin/data-reset", nil)
 		req.Header.Set(AccessJWTHeader, "admin@example.com")
@@ -307,18 +303,44 @@ func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
 		if !strings.Contains(w.Body.String(), AuthDisabledMessage) {
 			t.Errorf("%s: body = %s, want the reason", name, w.Body.String())
 		}
+	}
+}
 
-		for _, token := range []string{"", "stranger@example.com"} {
-			req := httptest.NewRequest("POST", "/api/preview/data-reset", nil)
-			if token != "" {
-				req.Header.Set(AccessJWTHeader, token)
-			}
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
-			if w.Code != http.StatusOK {
-				t.Errorf("%s with DATA_RESET_WITHOUT_AUTH as %q: got %d, want 200", name, token, w.Code)
-			}
+// PR のプレビュー（AUTH_PREVIEW_ADMIN）は、ログインしなくても全部のリクエストが管理者 preview として通る
+func TestAuthorizerPreviewAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	authz, err := AuthorizerFromEnv(func(k string) string {
+		return map[string]string{"AUTH_PREVIEW_ADMIN": "true"}[k]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authz.PreviewAdmin() || authz.ReportOnly() {
+		t.Fatalf("PreviewAdmin() = %v, ReportOnly() = %v", authz.PreviewAdmin(), authz.ReportOnly())
+	}
+
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	api := r.Group("/api", authz.RequireByMethod())
+	api.GET("/me", authz.Me)
+	api.POST("/orders", ok)
+	api.PUT("/menus/1", authz.Require(RoleAdmin), ok)
+	api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin), ok)
+
+	for _, route := range []string{"POST /api/orders", "PUT /api/menus/1", "POST /api/admin/data-reset"} {
+		method, path, _ := strings.Cut(route, " ")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("%s without a token: got %d, want 200", route, w.Code)
 		}
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/me", nil))
+	if want := `{"email":"preview","enforcement":"enforce","role":"admin"}`; w.Body.String() != want {
+		t.Fatalf("got %s, want %s", w.Body.String(), want)
 	}
 }
 
@@ -442,6 +464,14 @@ func TestAuthorizerFromEnv(t *testing.T) {
 		"domain without dot":    {env: with("AUTH_STAFF_EMAILS", "@localhost"), wantErr: true},
 		"domain with path":      {env: with("AUTH_VIEWER_EMAILS", "@example.com/x"), wantErr: true},
 		"space inside an entry": {env: with("AUTH_STAFF_EMAILS", "a b@example.com"), wantErr: true},
+		// PR のプレビュー。AUTH_MODE が off（か空）のときだけ。ほかと一緒なら起動を止める（本番の認証が外れないように）
+		"preview admin":             {env: map[string]string{"AUTH_PREVIEW_ADMIN": "true"}},
+		"preview admin off":         {env: map[string]string{"AUTH_MODE": "off", "AUTH_PREVIEW_ADMIN": "true"}},
+		"preview admin false":       {env: map[string]string{"AUTH_PREVIEW_ADMIN": "false"}, wantNil: true},
+		"preview admin typo":        {env: map[string]string{"AUTH_PREVIEW_ADMIN": "yes"}, wantErr: true},
+		"preview admin with auth":   {env: with("AUTH_PREVIEW_ADMIN", "true"), wantErr: true},
+		"preview admin with iap":    {env: map[string]string{"AUTH_MODE": "iap", "IAP_AUDIENCE": "/projects/1/global/backendServices/2", "AUTH_STAFF_EMAILS": "a@example.com", "AUTH_PREVIEW_ADMIN": "true"}, wantErr: true},
+		"preview admin with iap-ro": {env: map[string]string{"AUTH_MODE": "iap-report-only", "IAP_AUDIENCE": "/projects/1/global/backendServices/2", "AUTH_STAFF_EMAILS": "a@example.com", "AUTH_PREVIEW_ADMIN": "true"}, wantErr: true},
 		// 管理者はアドレスで 1 人ずつ。ドメインごとには書けない
 		"admin":          {env: with("AUTH_ADMIN_EMAILS", "lead@example.com")},
 		"admin domain":   {env: with("AUTH_ADMIN_EMAILS", "lead@example.com, @example.com"), wantErr: true},

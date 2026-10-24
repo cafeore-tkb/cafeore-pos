@@ -34,7 +34,7 @@ func TestRegisterRoutesAdminOnly(t *testing.T) {
 	r := gin.New()
 	// ハンドラーは DB などが nil のままなので、権限を通ると落ちる（500 になる）。見るのは 401・403 かどうかだけ
 	r.Use(gin.RecoveryWithWriter(io.Discard))
-	handlers.RegisterRoutes(r, authz, handlers.RouteOptions{}, nil, nil, nil, nil, nil)
+	handlers.RegisterRoutes(r, authz, nil, nil, nil, nil, nil)
 
 	const id = "00000000-0000-0000-0000-000000000001"
 	adminOnly := []string{

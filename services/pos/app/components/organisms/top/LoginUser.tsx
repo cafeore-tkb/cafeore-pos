@@ -3,6 +3,7 @@ import {
   IS_PREVIEW,
   type Permission,
   SHOULD_FETCH,
+  SHOULD_FETCH_PERMISSION,
   usePermission,
 } from "~/components/functional/usePermission";
 import { buttonVariants } from "~/components/ui/button";
@@ -133,7 +134,12 @@ export function LoginUser() {
   const login = useSWR(SHOULD_FETCH ? "auth/me" : null, fetchLoginUser);
   const permission = usePermission();
 
-  // PR のプレビューにはログインが無いので、相手の代わりに「プレビュー」と出す
+  const badge = SHOULD_FETCH_PERMISSION
+    ? permissionBadge(permission.data, permission.error)
+    : null;
+
+  // PR のプレビューにはログインが無いので、相手の代わりに「プレビュー」と出す。
+  // API は管理者 preview としてログインした扱いなので、権限は「管理者」になる（AUTH_PREVIEW_ADMIN）
   if (IS_PREVIEW) {
     return (
       <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
@@ -141,14 +147,22 @@ export function LoginUser() {
         <span className="rounded-full bg-amber-500 px-2 py-0.5 font-bold text-white text-xs">
           プレビュー
         </span>
+        {badge && (
+          <span
+            title={badge.title}
+            className={cn(
+              "rounded-full px-2 py-0.5 font-medium text-xs",
+              badge.className,
+            )}
+          >
+            {badge.label}
+          </span>
+        )}
       </div>
     );
   }
 
   const email = login.data?.status === "ok" ? login.data.email : null;
-  const badge = SHOULD_FETCH
-    ? permissionBadge(permission.data, permission.error)
-    : null;
   // API が確かめた相手が、画面のログインと違う（ログアウトしても API の方の IAP の cookie が
   // 残っていた、など）。出している権限は API の方の相手のもの
   const apiEmail =

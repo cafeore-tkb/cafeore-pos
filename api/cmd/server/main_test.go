@@ -35,37 +35,3 @@ func TestDBMaxOpenConnsFromEnv(t *testing.T) {
 		})
 	}
 }
-
-// DATA_RESET_WITHOUT_AUTH は未設定なら false。読めない値は起動を止める（綴りの誤りで黙って変わらないように）。
-func TestDataResetWithoutAuthFromEnv(t *testing.T) {
-	tests := []struct {
-		value   string
-		want    bool
-		wantErr bool
-	}{
-		{value: "", want: false},
-		{value: "true", want: true},
-		{value: " true ", want: true},
-		{value: "false", want: false},
-		{value: "yes", wantErr: true},
-		{value: "allow", wantErr: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.value, func(t *testing.T) {
-			t.Setenv("DATA_RESET_WITHOUT_AUTH", tt.value)
-			got, err := dataResetWithoutAuthFromEnv()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("エラーにならなかった（%v）", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tt.want {
-				t.Fatalf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}

@@ -16,7 +16,7 @@ export type AdminPageAccess =
   | "deny";
 
 type Input = {
-  /** /api/me に聞くか（SHOULD_FETCH）。プレビューとローカルでは聞かない */
+  /** /api/me に聞くか（SHOULD_FETCH_PERMISSION）。ローカルでは聞かない */
   shouldFetch: boolean;
   /** /api/me の結果。聞いている間は undefined */
   permission: Permission | undefined;
@@ -36,7 +36,7 @@ export const adminPageAccess = ({
   permission,
   error,
 }: Input): AdminPageAccess => {
-  // プレビューとローカルにはログインが無く、権限も聞かない
+  // ローカルにはログインが無く、権限も聞かない
   if (!shouldFetch) {
     return "allow";
   }

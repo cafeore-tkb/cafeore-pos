@@ -6,8 +6,12 @@ import useSWR, { type SWRConfiguration } from "swr";
 export const IS_PREVIEW = import.meta.env.VITE_DEPLOY_ENV === "preview";
 
 // ローカルの dev（react-router dev）には画面のサーバーが無く、何を聞いても index.html が返るので聞かない。
-// 権限も本番（IAP の後ろ）でだけ意味があるので、プレビューとローカルでは聞かない
+// 画面のサーバーに聞くログインのメール（/auth/me）は、ログインの無いプレビューでも聞かない
 export const SHOULD_FETCH = !IS_PREVIEW && !import.meta.env.DEV;
+
+// 権限（/api/me）は API に聞くので、プレビューでも聞く。プレビューの API は、全部のリクエストを管理者
+// preview がログインしてきたものとして扱う（AUTH_PREVIEW_ADMIN）。ローカルの dev では聞かない
+export const SHOULD_FETCH_PERMISSION = !import.meta.env.DEV;
 
 /** API が決めている権限（AUTH_ADMIN_EMAILS・AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS）。API の /api/me に聞く */
 export const fetchPermission = async () => {
@@ -36,7 +40,7 @@ export type Permission = Awaited<ReturnType<typeof fetchPermission>>;
 /**
  * API が決めている権限。トップページのログインの表示（LoginUser）と、管理者だけが開けるページ（AdminOnly）で
  * 同じキーを使うので、トップページから開けば聞き直すまでの間も前の結果で決められる。
- * プレビューとローカルでは聞かない（data は undefined のまま）
+ * ローカルでは聞かない（data は undefined のまま）
  */
 export const usePermission = (config?: SWRConfiguration<Permission>) =>
-  useSWR(SHOULD_FETCH ? "api/me" : null, fetchPermission, config);
+  useSWR(SHOULD_FETCH_PERMISSION ? "api/me" : null, fetchPermission, config);
