@@ -11,6 +11,7 @@ import {
 import { type ReactNode, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -124,13 +125,11 @@ export default function PrinterSettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6">
-      <header className="space-y-1">
-        <h1 className="font-semibold text-2xl tracking-tight">プリンター</h1>
-        <p className="text-muted-foreground text-sm">
-          レジがつなぐ Epson のプリンター（ePOS-Print）の IP
-          アドレスと用紙（種類と幅）、レシート用のプリンターの機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。
-        </p>
-      </header>
+      <AdminPageHeader
+        group="settings"
+        title="プリンター"
+        description="レジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。"
+      />
 
       {error ? (
         <p className="text-red-700 text-sm">

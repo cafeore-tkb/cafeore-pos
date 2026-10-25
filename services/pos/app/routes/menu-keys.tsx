@@ -16,6 +16,7 @@ import {
   checkCapturedKey,
   emptyKeyCapture,
 } from "~/components/functional/keyCapture";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { groupByItemType } from "~/components/organisms/cashier/MenuPanel";
 import { Button } from "~/components/ui/button";
 import { menuKeyLabel, menuKeyPartLabel, menuKeyParts } from "~/lib/menuKey";
@@ -34,15 +35,19 @@ export default function MenuKeysPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-6">
-      <header className="space-y-2">
-        <h1 className="font-semibold text-2xl tracking-tight">商品のキー</h1>
-        <p className="text-muted-foreground text-sm">
-          レジで押すと商品を足すキーを、実際にキーを押して登録します。名前や値段は
-          <Link to="/products" className="underline underline-offset-4">
-            商品管理
-          </Link>
-          で変えます。
-        </p>
+      <AdminPageHeader
+        group="settings"
+        title="商品のキー"
+        description={
+          <>
+            レジで押すと商品を足すキーを、実際にキーを押して登録します。名前や値段は
+            <Link to="/products" className="underline underline-offset-4">
+              商品管理
+            </Link>
+            で変えます。
+          </>
+        }
+      >
         <ul className="list-disc space-y-1 pl-5 text-sm">
           <li>
             「キーを登録」を押してから、レジで使うキーボード（キーパッド）のキーを押します。離すと決まり、「登録」で保存します
@@ -57,7 +62,7 @@ export default function MenuKeysPage() {
           </li>
           <li>Esc で登録をやめます</li>
         </ul>
-      </header>
+      </AdminPageHeader>
 
       {error ? (
         <p>エラー: {error instanceof Error ? error.message : String(error)}</p>
