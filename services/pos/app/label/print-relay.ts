@@ -348,22 +348,26 @@ export const useLabelPrintProxy = (
   return { waiting: requests.length };
 };
 
+// 手でオフにした（オプトアウト）なら "off"。前はオンにしたレジが "on" を置いていたので、"on" はオフにしていないとみなす
 const PROXY_SETTING_KEY = "cafeore:label-print-proxy";
 
-/** このレジで代理印刷をするか。この端末に覚える（開き直してもそのまま） */
+/**
+ * このレジで代理印刷をするか。既定はする（刷るのはラベル用のプリンターにつながっている間だけ。useLabelPrintProxy）。
+ * 手でオフにしたときだけこの端末に覚え（開き直してもオフのまま）、手でオンに戻したら消す
+ */
 export const useLabelPrintProxySetting = () => {
   const [enabled, setEnabled] = useState(() => {
     try {
-      return localStorage.getItem(PROXY_SETTING_KEY) === "on";
+      return localStorage.getItem(PROXY_SETTING_KEY) !== "off";
     } catch {
-      return false;
+      return true;
     }
   });
   const save = useCallback((next: boolean) => {
     setEnabled(next);
     try {
-      if (next) localStorage.setItem(PROXY_SETTING_KEY, "on");
-      else localStorage.removeItem(PROXY_SETTING_KEY);
+      if (next) localStorage.removeItem(PROXY_SETTING_KEY);
+      else localStorage.setItem(PROXY_SETTING_KEY, "off");
     } catch {
       // 覚えられなくても、開いている間は使える
     }
