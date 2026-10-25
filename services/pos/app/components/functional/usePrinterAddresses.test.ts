@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { parseStoredPrinterSettings } from "./usePrinterAddresses";
 
 describe("[unit] parseStoredPrinterSettings", () => {
-  test("覚えておいた IP アドレスと機種・用紙の幅・種類・シールの大きさを読む", () => {
+  test("覚えておいた IP アドレスと機種・用紙の幅・種類・シールの大きさ・向き・最後の送り方を読む", () => {
     const stored = {
       label_printer_ip: "192.168.77.12",
       receipt_printer_ip: "192.168.77.13",
@@ -14,6 +14,8 @@ describe("[unit] parseStoredPrinterSettings", () => {
       label_printer_label_length_mm: 30.5,
       label_printer_print_width_dots: 384,
       label_printer_margin_mm: 1.5,
+      label_printer_rotate_180: false,
+      label_printer_trailing_feed: "peeling",
     };
     expect(parseStoredPrinterSettings(JSON.stringify(stored))).toEqual(stored);
   });
@@ -23,11 +25,13 @@ describe("[unit] parseStoredPrinterSettings", () => {
     receipt_printer_ip: "192.168.77.13",
   };
 
-  /** シールの大きさの既定（29mm・360 ドット・余白なし） */
+  /** シールの大きさ・向き・最後の送り方の既定（29mm・360 ドット・余白なしで 180° 回し、空のシールを 1 枚送る） */
   const defaultLabelSize = {
     label_printer_label_length_mm: 29,
     label_printer_print_width_dots: 360,
     label_printer_margin_mm: 0,
+    label_printer_rotate_180: true,
+    label_printer_trailing_feed: "blank_label",
   };
 
   test("用紙の種類を選べるようにする前に覚えた設定は、機種・用紙の幅はそのまま、種類（ラベル用はダイカットラベル・レシート用はレシート紙）とシールの大きさを既定にする", () => {
@@ -45,7 +49,7 @@ describe("[unit] parseStoredPrinterSettings", () => {
     });
   });
 
-  test("機種・用紙の幅・種類・シールの大きさが無い・知らない値なら、既定にする", () => {
+  test("機種・用紙の幅・種類・シールの大きさ・向き・最後の送り方が無い・知らない値なら、既定にする", () => {
     for (const stored of [
       ips,
       {
@@ -58,6 +62,8 @@ describe("[unit] parseStoredPrinterSettings", () => {
         label_printer_label_length_mm: 0,
         label_printer_print_width_dots: "360",
         label_printer_margin_mm: null,
+        label_printer_rotate_180: 0,
+        label_printer_trailing_feed: "toString",
       },
       {
         ...ips,

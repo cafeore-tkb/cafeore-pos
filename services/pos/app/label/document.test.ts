@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { type RasterImage, packImage, unpackImage } from "./document";
+import {
+  type RasterImage,
+  packImage,
+  rotateImage180,
+  unpackImage,
+} from "./document";
 
 /** "#" を黒、"." を白にした白黒の画像 */
 const imageOf = (rows: string[]): RasterImage => {
@@ -42,5 +47,18 @@ describe("[unit] packImage / unpackImage", () => {
   test("360 × 232 ドットのシールは 14 KB ほどの文字にする（代理印刷の上限 64 KiB に収まる）", () => {
     const image = imageOf(Array(232).fill("#".repeat(360)));
     expect(packImage(image).bits.length).toBe(13920);
+  });
+});
+
+describe("[unit] rotateImage180", () => {
+  test("上下と左右を入れ替える（シールの真ん中を中心に 180° 回す）", () => {
+    expect(rotateImage180(imageOf(["##...", "#...."]))).toEqual(
+      imageOf(["....#", "...##"]),
+    );
+  });
+
+  test("2 回回すと元に戻る", () => {
+    const image = imageOf(["#..#.", ".##..", "....#"]);
+    expect(rotateImage180(rotateImage180(image))).toEqual(image);
   });
 });

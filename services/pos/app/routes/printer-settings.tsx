@@ -1,6 +1,7 @@
 import {
   DEFAULT_PRINTER_SETTINGS,
   LABEL_SIZE_LIMITS,
+  type LabelPrinterTrailingFeed,
   PRINTER_DOTS_PER_MM,
   type PrinterPaperType,
   type PrinterPaperWidth,
@@ -22,11 +23,12 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
+import { Switch } from "~/components/ui/switch";
 import {
-  DEFAULT_EPOS_PRINTER_CONFIG,
   RECEIPT_EPOS_PRINTER_CONFIG,
   eposCertificateUrl,
   eposPrinterAt,
+  labelPrinterAt,
 } from "~/label/infra/epos";
 import { labelGeometry, printableWidths } from "~/label/paper";
 import {
@@ -54,7 +56,7 @@ const printers = {
     description:
       "注文を送ったときにカップに貼るシールを、緊急で淹れ直したとき・注文をキャンセルしたときにそのシールを刷るプリンター",
     ip: "label_printer_ip",
-    sample: "緊急のシールとカップのシール",
+    sample: "緊急のシール（ここから・ここまで）で挟んだカップのシール",
   },
   receipt: {
     name: "レシート用",
@@ -76,6 +78,7 @@ const printers = {
 const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
 const paperTypeLabels = openapiEnumLabels("PrinterPaperType");
 const paperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
+const trailingFeedLabels = openapiEnumLabels("LabelPrinterTrailingFeed");
 
 /** 選べるレシート用のプリンターの機種（openapi.yaml の並び） */
 const receiptPrinterModels = Object.keys(
@@ -85,6 +88,11 @@ const receiptPrinterModels = Object.keys(
 /** 選べる用紙の種類・幅（openapi.yaml の並び） */
 const paperTypes = Object.keys(paperTypeLabels) as PrinterPaperType[];
 const paperWidths = Object.keys(paperWidthLabels) as PrinterPaperWidth[];
+
+/** 選べる、ラベル用の一連の印刷の最後の送り方（openapi.yaml の並び） */
+const trailingFeeds = Object.keys(
+  trailingFeedLabels,
+) as LabelPrinterTrailingFeed[];
 
 /** 用紙の幅ごとのレシート用の印字幅（ドット）。用紙の種類と機種で変わる */
 const receiptPrintableWidths = (values: PrinterSettings) =>
@@ -192,7 +200,7 @@ export default function PrinterSettingsPage() {
       <AdminPageHeader
         group="settings"
         title="プリンター"
-        description="レジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレスと、ラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。"
+        description="レジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレスと、ラベル用のシールの大きさと向き、レシート用の用紙（種類と幅）と機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。"
       />
 
       {error ? (
@@ -271,8 +279,14 @@ function PrinterSettingsForm({
         return;
       }
       const result = await printOnce(
-        eposPrinterAt(address, DEFAULT_EPOS_PRINTER_CONFIG),
-        labelTestPrintJob({ address, geometry: labelGeometry(labelSize.size) }),
+        labelPrinterAt(address, values.label_printer_trailing_feed),
+        labelTestPrintJob({
+          address,
+          geometry: labelGeometry({
+            ...labelSize.size,
+            label_printer_rotate_180: values.label_printer_rotate_180,
+          }),
+        }),
       );
       notifyTestPrint(kind, address, result);
       return;
@@ -404,6 +418,44 @@ function PrinterSettingsForm({
               ? labelSize.error
               : labelSizeSummary(labelSize.size)}
           </p>
+          <div className="flex items-start gap-3">
+            <Switch
+              id="label_printer_rotate_180"
+              checked={values.label_printer_rotate_180}
+              onCheckedChange={(checked) =>
+                setValues((prev) => ({
+                  ...prev,
+                  label_printer_rotate_180: checked,
+                }))
+              }
+            />
+            <div className="grid gap-1">
+              <Label htmlFor="label_printer_rotate_180" className="font-bold">
+                180° 回して刷る
+              </Label>
+              <p className="text-muted-foreground text-sm">
+                カップ・緊急・キャンセルのシールを上下逆さまに刷ります（シールの真ん中を中心に回します）。テスト印刷の確認用のページは、目盛りの読み方が変わらないよう回しません
+              </p>
+              <p className="text-muted-foreground text-xs">
+                既定値:{" "}
+                {DEFAULT_PRINTER_SETTINGS.label_printer_rotate_180
+                  ? "回す"
+                  : "回さない"}
+              </p>
+            </div>
+          </div>
+          <ChoiceField
+            id="label_printer_trailing_feed"
+            label="印刷の最後の送り方"
+            description="1 回に刷るシールの最後に、どう送るか。空のシールを 1 枚送ると、刷ったシールの後ろに空のシールを 1 枚送ります（少しの高さの白を刷って、次のシールの先頭まで送ります）。剥離位置まで送ると、ピーラーで剥がす所で止め、そのシールを取るまで次を刷りません"
+            choices={trailingFeeds}
+            labels={trailingFeedLabels}
+            value={values.label_printer_trailing_feed}
+            defaultValue={DEFAULT_PRINTER_SETTINGS.label_printer_trailing_feed}
+            onChange={(value) =>
+              choose("label_printer_trailing_feed", trailingFeeds, value)
+            }
+          />
         </>,
       )}
       {section(
@@ -458,7 +510,8 @@ function PrinterSettingsForm({
           mm ごとの線と 10 mm
           ごとの数字）を入れます。シールの右端・下端がどの数字の所にあるかを読み、印字幅（mm
           × 8
-          ドット）とラベルの長さを合わせます。右と下の辺の三角は、刷る範囲の真ん中です。ラベル用は、一連の印刷の最後に剥離位置まで送ります。
+          ドット）とラベルの長さを合わせます。右と下の辺の三角は、刷る範囲の真ん中です。確認用のページは、180°
+          回す設定でも回しません。見本は設定の向きで刷ります。ラベル用は、最後に設定の送り方で送ります。
         </p>
         <p>
           レシート用の確認用のページは、印字幅いっぱいを枠で囲みます。枠の左右が欠けていれば、紙より広い幅を選んでいます。枠の外に広い余白があれば、紙より狭い幅を選んでいます。
@@ -480,7 +533,11 @@ function PrinterSettingsForm({
 
 /** シールの大きさを、ドットと mm で書く（360 × 232 ドット（45 × 29 mm）、余白 0 mm） */
 const labelSizeSummary = (size: LabelSize) => {
-  const { width, height } = labelGeometry(size);
+  // 大きさは向きによらない
+  const { width, height } = labelGeometry({
+    ...size,
+    label_printer_rotate_180: false,
+  });
   return `シールの大きさ: ${width} × ${height} ドット（${width / PRINTER_DOTS_PER_MM} × ${size.label_printer_label_length_mm} mm）、余白 ${size.label_printer_margin_mm} mm`;
 };
 

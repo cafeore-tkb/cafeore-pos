@@ -12,7 +12,7 @@ const STORAGE_KEY = "cafeore:printer-settings";
 /**
  * 覚えておいたプリンター設定を読む。読めなければ null
  *
- * 機種・用紙の幅・種類・シールの大きさを選べるようにする前に覚えた設定にはそれが無いので、そのときは既定にする。
+ * 機種・用紙の幅・種類・シールの大きさ・向き・最後の送り方を選べるようにする前に覚えた設定にはそれが無いので、そのときは既定にする。
  */
 export const parseStoredPrinterSettings = (
   raw: string | null,
@@ -37,6 +37,8 @@ export const parseStoredPrinterSettings = (
         label_printer_label_length_mm,
         label_printer_print_width_dots,
         label_printer_margin_mm,
+        label_printer_rotate_180,
+        label_printer_trailing_feed,
       }: Record<string, unknown> = parsed;
       return withPrinterSettingDefaults({
         label_printer_ip: parsed.label_printer_ip,
@@ -49,6 +51,8 @@ export const parseStoredPrinterSettings = (
         label_printer_label_length_mm,
         label_printer_print_width_dots,
         label_printer_margin_mm,
+        label_printer_rotate_180,
+        label_printer_trailing_feed,
       });
     }
     return null;
@@ -74,7 +78,7 @@ const storeSettings = (settings: PrinterSettings) => {
 };
 
 /**
- * レジがつなぐプリンターの IP アドレス、ラベル用のシールの大きさ、レシート用のプリンターの用紙（幅と種類）と機種
+ * レジがつなぐプリンターの IP アドレス、ラベル用のシールの大きさと向きと最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種
  *
  * 設定は管理画面で決め、サーバーから取る。レジは API に届かなくても会計を続けられるので、
  * 取れないとき（取れるまでの間も）は最後に取れた設定、それも無ければ既定値でつなぐ。

@@ -35,7 +35,7 @@ func NewLabelPrintHandler(db *gorm.DB, hub *Hub) *LabelPrintHandler {
 const (
 	// 引き受けが切れるまでの長さ。レジがラベル用のプリンターの返事を待つ長さ（50 秒。画面の infra/epos.ts）より長くする
 	labelPrintClaimTTL = 60 * time.Second
-	// 印刷データ（JSON）の大きさの上限。緊急のシールは、緊急の画像（360 × 232 ドットで 14 KiB ほど）を含めて 15 KiB ほど
+	// 印刷データ（JSON）の大きさの上限。緊急のシールは、1 杯だけなら緊急の画像 2 枚（ここから・ここまで。360 × 232 ドットで 1 枚 14 KiB ほど）を含めて 28 KiB ほど
 	labelPrintJobMaxBytes = 64 * 1024
 	// 刷るレジの id の長さ（文字。OpenAPI の maxLength と同じ）
 	labelPrintDeviceMax = 64

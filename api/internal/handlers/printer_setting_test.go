@@ -35,12 +35,37 @@ func TestBuildPrinterSettingNormalizesAddresses(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      boolPtr(false),
+		LabelPrinterTrailingFeed:   ptr(models.LabelPrinterTrailingFeedPeeling),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 {
+	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 || setting.Rotate180() || setting.LabelPrinterTrailingFeed != "peeling" {
 		t.Fatalf("incorrect setting: %+v", setting)
+	}
+}
+
+// 180° 回すか・最後の送り方が無ければ（選べるようにする前のレジ）、既定（回す・空のシールを 1 枚送る）にする
+func TestBuildPrinterSettingDefaultsRotationAndTrailingFeed(t *testing.T) {
+	setting, err := buildPrinterSetting(validPrinterSettingsRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !setting.Rotate180() || setting.LabelPrinterTrailingFeed != "blank_label" {
+		t.Fatalf("defaults: %+v", setting)
+	}
+}
+
+func TestBuildPrinterSettingRejectsUnknownTrailingFeeds(t *testing.T) {
+	for _, feed := range []models.LabelPrinterTrailingFeed{"", "peel", "BLANK_LABEL", "next_tof"} {
+		t.Run(string(feed), func(t *testing.T) {
+			request := validPrinterSettingsRequest()
+			request.LabelPrinterTrailingFeed = &feed
+			if _, err := buildPrinterSetting(request); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
@@ -192,6 +217,8 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  29,
 		LabelPrinterPrintWidthDots: 360,
 		LabelPrinterMarginMm:       0,
+		LabelPrinterRotate180:      true,
+		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedBlankLabel,
 	}) {
 		t.Fatalf("defaults: %+v", got)
 	}
@@ -208,6 +235,8 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      boolPtr(false),
+		LabelPrinterTrailingFeed:   ptr(models.LabelPrinterTrailingFeedPeeling),
 	}).expect(http.StatusOK).decode(&saved)
 	if saved != (models.PrinterSettingsResponse{
 		LabelPrinterIp:             "192.168.77.12",
@@ -220,11 +249,13 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      false,
+		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedPeeling,
 	}) {
 		t.Fatalf("saved: %+v", saved)
 	}
 
-	// 2 回目は 1 行を丸ごと置き換える
+	// 2 回目は 1 行を丸ごと置き換える。180° 回すか・最後の送り方が無ければ（選べるようにする前のレジ）、保存してある値のまま
 	replacement := models.PrinterSettingsUpdateRequest{
 		LabelPrinterIp:             "192.168.77.22",
 		ReceiptPrinterIp:           "192.168.77.23",
@@ -237,11 +268,37 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterPrintWidthDots: 560,
 		LabelPrinterMarginMm:       2,
 	}
-	want := models.PrinterSettingsResponse(replacement)
-	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK)
+	want := models.PrinterSettingsResponse{
+		LabelPrinterIp:             "192.168.77.22",
+		ReceiptPrinterIp:           "192.168.77.23",
+		ReceiptPrinterModel:        models.ReceiptPrinterModelTmL90,
+		LabelPrinterPaperWidth:     models.PrinterPaperWidth80mm,
+		ReceiptPrinterPaperWidth:   models.PrinterPaperWidth58mm,
+		LabelPrinterPaperType:      models.PrinterPaperTypeDieCutLabel,
+		ReceiptPrinterPaperType:    models.PrinterPaperTypeReceipt,
+		LabelPrinterLabelLengthMm:  40,
+		LabelPrinterPrintWidthDots: 560,
+		LabelPrinterMarginMm:       2,
+		LabelPrinterRotate180:      false,
+		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedPeeling,
+	}
+	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK).decode(&saved)
+	if saved != want {
+		t.Fatalf("replaced response: %+v", saved)
+	}
 	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
 	if got != want {
 		t.Fatalf("replaced: %+v", got)
+	}
+	// 180° 回すか・最後の送り方を送れば、それにする
+	replacement.LabelPrinterRotate180 = boolPtr(true)
+	replacement.LabelPrinterTrailingFeed = ptr(models.LabelPrinterTrailingFeedBlankLabel)
+	want.LabelPrinterRotate180 = true
+	want.LabelPrinterTrailingFeed = models.LabelPrinterTrailingFeedBlankLabel
+	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK)
+	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
+	if got != want {
+		t.Fatalf("rotation and trailing feed changed: %+v", got)
 	}
 	if n := api.count(&models.PrinterSetting{}, ""); n != 1 {
 		t.Fatalf("%d printer settings", n)
@@ -262,6 +319,8 @@ func TestPrinterSettings(t *testing.T) {
 	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt", "label_printer_label_length_mm": 200, "label_printer_print_width_dots": 360, "label_printer_margin_mm": 0}`).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt", "label_printer_label_length_mm": 29, "label_printer_print_width_dots": 362, "label_printer_margin_mm": 0}`).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt", "label_printer_label_length_mm": 10, "label_printer_print_width_dots": 360, "label_printer_margin_mm": 5}`).expect(http.StatusBadRequest)
+	// 知らない最後の送り方
+	api.do(http.MethodPut, "/api/printer-settings", `{"label_printer_ip": "192.168.77.2", "receipt_printer_ip": "192.168.77.3", "receipt_printer_model": "tm_l90", "label_printer_paper_width": "80mm", "receipt_printer_paper_width": "58mm", "label_printer_paper_type": "die_cut_label", "receipt_printer_paper_type": "receipt", "label_printer_label_length_mm": 29, "label_printer_print_width_dots": 360, "label_printer_margin_mm": 0, "label_printer_trailing_feed": "cutting"}`).expect(http.StatusBadRequest)
 	api.do(http.MethodPut, "/api/printer-settings", `{`).expect(http.StatusBadRequest)
 	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
 	if got != want {
