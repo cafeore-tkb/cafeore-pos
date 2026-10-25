@@ -212,9 +212,7 @@ export function ProductEditor({
           key={formKey}
           items={items}
           initialMenu={initialMenu}
-          usedKeys={menus
-            .filter((menu) => !(isEdit && menu.id === id))
-            .map((menu) => menu.key)}
+          otherMenus={menus.filter((menu) => !(isEdit && menu.id === id))}
           submitting={submitting}
           onSubmit={(values) =>
             save(() =>
@@ -252,7 +250,7 @@ export function ProductEditor({
           initialStock={sourceStock && stockAmounts(sourceStock)}
           submitting={submitting}
           onCreateItemType={createItemType}
-          menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
+          otherMenus={isEdit ? undefined : menus}
           onSubmit={(values, menu) =>
             menu
               ? saveItemWithMenu(values, menu)
