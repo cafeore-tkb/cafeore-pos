@@ -1,4 +1,10 @@
-import type { Label, PrintJob, RasterImage, TextLine } from "../document";
+import {
+  type Label,
+  type PrintJob,
+  type RasterImage,
+  type TextLine,
+  unpackImage,
+} from "../document";
 import type {
   CreateLabelPrinter,
   LabelPrinter,
@@ -12,6 +18,7 @@ import type {
  */
 export type EposBuilder = {
   FEED_CURRENT_TOF: string;
+  FEED_PEELING: string;
   ALIGN_LEFT: string;
   ALIGN_CENTER: string;
   CUT_FEED: string;
@@ -45,6 +52,8 @@ export type EposBuilder = {
 type EposResponse = { success: boolean; code: string };
 
 type EposPrinterDevice = EposBuilder & {
+  /** プリンターが刷り終えるのを待つ長さ（ミリ秒）。SDK の既定は 10 秒 */
+  timeout: number;
   send: () => unknown;
   onreceive: ((response: EposResponse) => void) | null;
   onerror: ((error: unknown) => void) | null;
@@ -81,11 +90,22 @@ export type EposPrinterConfig = {
   deviceId: string;
   /** プリンターに登録してあるロゴのキー（key1, key2） */
   logoKey: readonly [number, number];
-  /** 最後のシールを刷った後に送る行数 */
-  trailingFeedLines: number;
+  /**
+   * 最後のシールを刷った後の送り方。数なら、その行数だけ送る。
+   * peeling なら剥離位置（ピーラーでシールを台紙から剥がす所）まで送る
+   */
+  trailingFeed: number | "peeling";
   /** 送った後に紙を切るか（レシート用のプリンター） */
   cut: boolean;
-  /** 送ってから返事を待つ時間（ミリ秒）。来なければ刷れなかったとみなし、つなぎ直すまで送らない */
+  /**
+   * プリンターが刷り終えるのを待つ長さ（ミリ秒。ePOS の timeout）。過ぎるとプリンターは刷れなかったと返す。
+   * ピーラーは、剥離位置で止めたシールを取るまで次を刷らないので、ラベル用は長くする
+   */
+  printTimeoutMs: number;
+  /**
+   * 送ってから返事を待つ時間（ミリ秒）。来なければ刷れなかったとみなし、つなぎ直すまで送らない。
+   * printTimeoutMs より長くする（プリンターが待っている間に、こちらが切らないように）
+   */
   responseTimeoutMs: number;
 };
 
@@ -120,23 +140,31 @@ const storePort = (address: string, port: number) => {
   }
 };
 
-/** 今使っているプリンター（ラベル用） */
+/**
+ * 今使っているプリンター（ラベル用）。一連の印刷（1 回に送るシール）の最後に、剥離位置まで送る
+ *
+ * 返事を待つ長さ（50 秒）は、代理印刷の引き受けが切れる長さ（サーバーの labelPrintClaimTTL、60 秒）より短くする
+ * （刷っている間に引き受けが切れて、ほかのレジも同じシールを刷らないように）。
+ */
 export const DEFAULT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   address: "192.168.77.2",
   port: 8008,
   deviceId: "local_printer",
   logoKey: [32, 32],
-  trailingFeedLines: 7,
+  trailingFeed: "peeling",
   cut: false,
-  responseTimeoutMs: 30_000,
+  printTimeoutMs: 40_000,
+  responseTimeoutMs: 50_000,
 };
 
-/** レシート用のプリンター。刷るたびに紙を切る */
+/** レシート用のプリンター。刷るたびに 1 行送って紙を切る */
 export const RECEIPT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   ...DEFAULT_EPOS_PRINTER_CONFIG,
   address: "192.168.77.3",
-  trailingFeedLines: 1,
+  trailingFeed: 1,
   cut: true,
+  printTimeoutMs: 10_000,
+  responseTimeoutMs: 30_000,
 };
 
 const writeLine = (builder: EposBuilder, line: TextLine) => {
@@ -150,25 +178,36 @@ const writeLine = (builder: EposBuilder, line: TextLine) => {
   });
 };
 
+/** 白黒の画像をそのまま刷る（今の寄せ方で） */
+const writeImage = (builder: EposBuilder, image: RasterImage) => {
+  builder.addImage(
+    { getImageData: () => image },
+    0,
+    0,
+    image.width,
+    image.height,
+    builder.COLOR_1,
+    builder.MODE_MONO,
+  );
+};
+
 const writeLabel = (
   builder: EposBuilder,
   label: Label,
   config: Pick<EposPrinterConfig, "logoKey">,
 ) => {
   if (label.type === "image") {
-    const { image } = label;
-    if (label.top) builder.addFeedPosition(builder.FEED_CURRENT_TOF);
     builder.addTextAlign(builder.ALIGN_CENTER);
-    builder.addImage(
-      { getImageData: () => image },
-      0,
-      0,
-      image.width,
-      image.height,
-      builder.COLOR_1,
-      builder.MODE_MONO,
-    );
+    writeImage(builder, label.image);
     builder.addTextAlign(builder.ALIGN_LEFT);
+    return;
+  }
+
+  // シール 1 枚分の画像：シールの先頭へ送り、左端から刷る（シールの大きさは描くときに合わせてある）
+  if (label.type === "sticker") {
+    builder.addFeedPosition(builder.FEED_CURRENT_TOF);
+    builder.addTextAlign(builder.ALIGN_LEFT);
+    writeImage(builder, unpackImage(label.image));
     return;
   }
 
@@ -202,14 +241,18 @@ const writeLabel = (
 export const writeEposJob = (
   builder: EposBuilder,
   job: PrintJob,
-  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeedLines" | "cut">,
+  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeed" | "cut">,
 ) => {
   builder.addTextLang("ja");
   builder.addTextSize(2, 2);
   for (const label of job.labels) {
     writeLabel(builder, label, config);
   }
-  builder.addFeedLine(config.trailingFeedLines);
+  if (config.trailingFeed === "peeling") {
+    builder.addFeedPosition(builder.FEED_PEELING);
+  } else {
+    builder.addFeedLine(config.trailingFeed);
+  }
   if (config.cut) builder.addCut(builder.CUT_FEED);
 };
 
@@ -338,6 +381,7 @@ export const createEposPrinter = (
         drop();
       };
       try {
+        target.timeout = config.printTimeoutMs;
         writeEposJob(target, job, config);
         target.send();
       } catch (error) {

@@ -973,12 +973,21 @@ type PrinterSettingsResponse struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterLabelLengthMm ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+	LabelPrinterLabelLengthMm float64 `json:"label_printer_label_length_mm"`
+
+	// LabelPrinterMarginMm 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+	LabelPrinterMarginMm float64 `json:"label_printer_margin_mm"`
+
 	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
 	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
 	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
 
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
+	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
@@ -1000,12 +1009,21 @@ type PrinterSettingsUpdateRequest struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterLabelLengthMm ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+	LabelPrinterLabelLengthMm float64 `json:"label_printer_label_length_mm"`
+
+	// LabelPrinterMarginMm 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+	LabelPrinterMarginMm float64 `json:"label_printer_margin_mm"`
+
 	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
 	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
 	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
 
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
+	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`

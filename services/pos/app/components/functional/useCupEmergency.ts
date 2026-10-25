@@ -10,7 +10,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
-import { labelPrintableWidth } from "~/label/paper";
+import { labelGeometry } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { useLabelPrintQueue } from "~/label/print-relay";
 import { usePrinter } from "~/label/print-util";
@@ -43,7 +43,7 @@ export const useCupEmergency = (
   const { label_printer_ip } = printerSettings;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
-    labelPrintableWidth(printerSettings),
+    labelGeometry(printerSettings),
     onActivity,
     requestLabelPrint,
   );
