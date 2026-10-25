@@ -6,10 +6,10 @@ import {
 import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 import type { MetaFunction } from "react-router";
-import { Link } from "react-router";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { AdminOnly } from "~/components/functional/AdminOnly";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -167,19 +167,11 @@ function DataResetPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-6 font-noto">
-      <header className="space-y-2">
-        <Link to="/" className="text-sm underline">
-          Topへ戻る
-        </Link>
-        <h1 className="font-bold text-3xl">データのリセット</h1>
-        <p className="text-muted-foreground text-sm">
-          注文・CaOS の記録・Square
-          の決済の記録・棚卸しと入荷の記録など、営業で溜まったデータを消します。
-          メニュー・アイテム・在庫対象・背景色・プリンター・Square
-          端末の設定は残します。消したデータは元に戻せません。管理者だけが使えます（PR
-          のプレビューでは誰でも使えます）。
-        </p>
-      </header>
+      <AdminPageHeader
+        group="settings"
+        title="データのリセット"
+        description="注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録など、営業で溜まったデータを消します。メニュー・アイテム・在庫対象・背景色・プリンター・Square 端末の設定は残します。消したデータは元に戻せません。管理者だけが使えます（PR のプレビューでは誰でも使えます）。"
+      />
 
       {error && (
         <p className="rounded border border-red-300 bg-red-50 p-3 text-red-700 text-sm">

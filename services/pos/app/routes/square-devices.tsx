@@ -4,6 +4,7 @@ import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { AdminOnly } from "~/components/functional/AdminOnly";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import {
@@ -62,18 +63,17 @@ function SquareDevicesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-4 py-6">
-      <header className="space-y-1">
-        <h1 className="font-semibold text-2xl tracking-tight">Square 端末</h1>
-        <p className="text-muted-foreground text-sm">
-          レジから決済画面を出す Square Terminal
-          を登録します。どのレジでどの端末を使うかは、各レジの画面右上で選びます。
-        </p>
+      <AdminPageHeader
+        group="settings"
+        title="Square 端末"
+        description="レジから決済画面を出す Square Terminal を登録します。どのレジでどの端末を使うかは、各レジの画面右上で選びます。"
+      >
         {status && (
           <p className="text-sm">
             接続先: <span className="font-mono">{status.environment}</span>
           </p>
         )}
-      </header>
+      </AdminPageHeader>
 
       {status && !enabled && (
         <p className="rounded border border-red-300 bg-red-50 p-3 text-red-700 text-sm">

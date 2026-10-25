@@ -1,10 +1,10 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import type { Label, TextLine } from "./document";
+import type { Label, StickerLabel, TextLine } from "./document";
 import { emergencyLabelJob, orderLabelJob } from "./order-label";
 import { DIE_CUT_LABEL_WIDTHS, RECEIPT_PAPER_WIDTHS } from "./paper";
 
-/** 80mm のダイカットラベル（いつものシール）の印字幅 */
+/** 80mm のダイカットラベルの印字幅 */
 const WIDTH = DIE_CUT_LABEL_WIDTHS["80mm"];
 
 const hotType: ItemType = {
@@ -168,17 +168,30 @@ describe("[unit] emergencyLabelJob", () => {
     });
   };
 
-  test("緊急のシールの後に、注文で刷ったそのカップのシールと同じものを刷る（「2/2」は抽出が要るカップの中の順番）", () => {
+  /** 描いた緊急のシールの代わり（画像は canvas が要るので、ここでは描かない） */
+  const emergency: StickerLabel = {
+    type: "sticker",
+    image: { width: 8, height: 1, bits: "gA==" },
+  };
+
+  test("緊急のシール（画像）の後に、注文で刷ったそのカップのシールと同じものを刷る（「2/2」は抽出が要るカップの中の順番）", () => {
     const order = orderOf(7, [
       menu("ブレンド", hotType, null),
       menu("クッキー", goodsType, null),
       menu("カフェオレ", hotType, "やまだ"),
     ]);
 
-    const job = emergencyLabelJob(savedOf(order), "cup-カフェオレ", WIDTH);
+    const job = emergencyLabelJob(
+      savedOf(order),
+      "cup-カフェオレ",
+      WIDTH,
+      emergency,
+    );
 
-    expect(job?.labels.map(cupLines)).toEqual([["緊急"], expect.anything()]);
-    expect(job?.labels[1]).toEqual(orderLabelJob(order, WIDTH).labels[1]);
+    expect(job?.labels).toEqual([
+      emergency,
+      orderLabelJob(order, WIDTH).labels[1],
+    ]);
   });
 
   test("抽出が要らないカップ（注文に無いカップ）なら null", () => {
@@ -187,31 +200,22 @@ describe("[unit] emergencyLabelJob", () => {
       menu("クッキー", goodsType, null),
     ]);
 
-    expect(emergencyLabelJob(savedOf(order), "cup-クッキー", WIDTH)).toBeNull();
-    expect(emergencyLabelJob(savedOf(order), "cup-無い", WIDTH)).toBeNull();
+    expect(
+      emergencyLabelJob(savedOf(order), "cup-クッキー", WIDTH, emergency),
+    ).toBeNull();
+    expect(
+      emergencyLabelJob(savedOf(order), "cup-無い", WIDTH, emergency),
+    ).toBeNull();
   });
 
-  test("緊急のシールは、カップのシールと同じ範囲の中央に 6 倍の「緊急」を置く", () => {
+  test("カップのシールの範囲の幅は、刷るプリンターの印字幅（360 ドットなど）に縮める", () => {
     const order = orderOf(7, [menu("ブレンド", hotType, null)]);
-    const emergencyOf = (width: number) =>
-      emergencyLabelJob(savedOf(order), "cup-ブレンド", width)?.labels[0];
-
-    // 全角 1 文字は 24 ドットなので、6 倍の 2 文字で幅 288・高さ 144
-    expect(emergencyOf(WIDTH)).toEqual({
-      type: "fixed",
-      area: { x: 0, y: 24, width: 560, height: 210 },
-      elements: [
-        {
-          type: "text",
-          x: 136,
-          y: 177,
-          line: [{ text: "緊急", size: [6, 6] }],
-        },
-      ],
-    });
-    // いちばん狭い 58mm のダイカットラベルでも、範囲に収まる
-    const narrow = emergencyOf(DIE_CUT_LABEL_WIDTHS["58mm"]);
-    expect(narrow?.type === "fixed" && narrow.area.width).toBe(384);
-    expect(narrow?.type === "fixed" && narrow.elements[0].x).toBe(48);
+    const cup = emergencyLabelJob(
+      savedOf(order),
+      "cup-ブレンド",
+      360,
+      emergency,
+    )?.labels[1];
+    expect(cup?.type === "fixed" && cup.area.width).toBe(360);
   });
 });

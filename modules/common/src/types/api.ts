@@ -84,12 +84,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -1055,10 +1055,29 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -1072,10 +1091,29 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -2091,7 +2129,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -2105,7 +2143,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {

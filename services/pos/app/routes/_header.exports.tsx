@@ -1,5 +1,6 @@
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { DownloadButton } from "~/components/organisms/DownloadData";
 import { DownloadMasterStates } from "~/components/organisms/DownloadMasterStates";
 import { MasterDataExport } from "~/components/organisms/products/MasterDataExport";
@@ -12,15 +13,11 @@ export const meta: MetaFunction = () => [
 export default function ExportsPage() {
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-4 py-6 font-noto">
-      <header className="space-y-2">
-        <Link to="/" className="text-sm underline">
-          Topへ戻る
-        </Link>
-        <h1 className="font-bold text-3xl">各種データ書き出し</h1>
-        <p className="text-muted-foreground text-sm">
-          必要なデータを選んでダウンロードしてください。
-        </p>
-      </header>
+      <AdminPageHeader
+        group="exports"
+        title="各種データ書き出し"
+        description="必要なデータを選んでダウンロードしてください。"
+      />
       <section className="space-y-3 rounded-lg border p-4">
         <h2 className="font-bold text-xl">オーダーデータ</h2>
         <p className="text-muted-foreground text-sm">

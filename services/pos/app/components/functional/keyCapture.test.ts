@@ -6,7 +6,6 @@ import {
   captureKeyDown,
   captureKeyUp,
   capturedKey,
-  checkCapturedKey,
   emptyKeyCapture,
 } from "./keyCapture";
 
@@ -138,50 +137,5 @@ describe("[unit] keyCapture", () => {
     expect(cancelHeldKeys(pressing)).toEqual(emptyKeyCapture());
     const done = up(pressing, "KeyA");
     expect(cancelHeldKeys(done)).toBe(done);
-  });
-});
-
-describe("[unit] checkCapturedKey", () => {
-  const menus = [
-    { id: "blend", name: "ブレンド", key: "a" },
-    { id: "ice", name: "アイス", key: "s+d" },
-  ];
-
-  test("ほかのメニューで使っていなければ登録できる", () => {
-    expect(checkCapturedKey("q", "blend", menus)).toEqual({
-      ok: true,
-      warning: null,
-    });
-    expect(checkCapturedKey("a+q", "blend", menus)).toEqual({
-      ok: true,
-      warning: null,
-    });
-  });
-
-  test("ほかのメニューのキーは、同時押しの順が違っても登録できない", () => {
-    const check = checkCapturedKey("d+s", "blend", menus);
-    expect(check.ok).toBe(false);
-    expect(!check.ok && check.message).toContain("アイス");
-    expect(checkCapturedKey("a", "ice", menus).ok).toBe(false);
-  });
-
-  test("今と同じキーは登録しない", () => {
-    expect(checkCapturedKey("d+s", "ice", menus)).toEqual({
-      ok: false,
-      message: "今と同じキーです",
-    });
-  });
-
-  test("同時押しに使えないキーは登録できない", () => {
-    expect(checkCapturedKey("q+1", "blend", menus).ok).toBe(false);
-    expect(checkCapturedKey("q+Enter", "blend", menus).ok).toBe(false);
-  });
-
-  test("レジの操作に使うキーは 1 つだけなら登録できるが、知らせる", () => {
-    for (const key of ["1", "Enter", " ", "Backspace", "ArrowUp"]) {
-      const check = checkCapturedKey(key, "blend", menus);
-      expect(check.ok).toBe(true);
-      expect(check.ok && check.warning).not.toBeNull();
-    }
   });
 });

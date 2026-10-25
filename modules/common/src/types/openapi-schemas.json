@@ -936,7 +936,10 @@
       "label_printer_paper_width",
       "receipt_printer_paper_width",
       "label_printer_paper_type",
-      "receipt_printer_paper_type"
+      "receipt_printer_paper_type",
+      "label_printer_label_length_mm",
+      "label_printer_print_width_dots",
+      "label_printer_margin_mm"
     ],
     "properties": {
       "label_printer_ip": {
@@ -953,16 +956,42 @@
         "$ref": "#/components/schemas/ReceiptPrinterModel"
       },
       "label_printer_paper_width": {
-        "$ref": "#/components/schemas/PrinterPaperWidth"
+        "$ref": "#/components/schemas/PrinterPaperWidth",
+        "description": "使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す"
       },
       "receipt_printer_paper_width": {
         "$ref": "#/components/schemas/PrinterPaperWidth"
       },
       "label_printer_paper_type": {
-        "$ref": "#/components/schemas/PrinterPaperType"
+        "$ref": "#/components/schemas/PrinterPaperType",
+        "description": "使わない（label_printer_paper_width と同じく残している）"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"
+      },
+      "label_printer_label_length_mm": {
+        "type": "number",
+        "format": "double",
+        "minimum": 5,
+        "maximum": 100,
+        "description": "ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く",
+        "example": 29
+      },
+      "label_printer_print_width_dots": {
+        "type": "integer",
+        "minimum": 64,
+        "maximum": 576,
+        "multipleOf": 8,
+        "description": "ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る",
+        "example": 360
+      },
+      "label_printer_margin_mm": {
+        "type": "number",
+        "format": "double",
+        "minimum": 0,
+        "maximum": 10,
+        "description": "緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで",
+        "example": 0
       }
     }
   },
@@ -975,7 +1004,10 @@
       "label_printer_paper_width",
       "receipt_printer_paper_width",
       "label_printer_paper_type",
-      "receipt_printer_paper_type"
+      "receipt_printer_paper_type",
+      "label_printer_label_length_mm",
+      "label_printer_print_width_dots",
+      "label_printer_margin_mm"
     ],
     "properties": {
       "label_printer_ip": {
@@ -992,16 +1024,42 @@
         "$ref": "#/components/schemas/ReceiptPrinterModel"
       },
       "label_printer_paper_width": {
-        "$ref": "#/components/schemas/PrinterPaperWidth"
+        "$ref": "#/components/schemas/PrinterPaperWidth",
+        "description": "使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す"
       },
       "receipt_printer_paper_width": {
         "$ref": "#/components/schemas/PrinterPaperWidth"
       },
       "label_printer_paper_type": {
-        "$ref": "#/components/schemas/PrinterPaperType"
+        "$ref": "#/components/schemas/PrinterPaperType",
+        "description": "使わない（label_printer_paper_width と同じく残している）"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"
+      },
+      "label_printer_label_length_mm": {
+        "type": "number",
+        "format": "double",
+        "minimum": 5,
+        "maximum": 100,
+        "description": "ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く",
+        "example": 29
+      },
+      "label_printer_print_width_dots": {
+        "type": "integer",
+        "minimum": 64,
+        "maximum": 576,
+        "multipleOf": 8,
+        "description": "ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る",
+        "example": 360
+      },
+      "label_printer_margin_mm": {
+        "type": "number",
+        "format": "double",
+        "minimum": 0,
+        "maximum": 10,
+        "description": "緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで",
+        "example": 0
       }
     }
   },

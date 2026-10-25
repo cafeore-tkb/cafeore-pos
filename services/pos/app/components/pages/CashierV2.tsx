@@ -19,7 +19,7 @@ import {
   eposCertificateUrl,
   eposPrinterAt,
 } from "~/label/infra/epos";
-import { labelPrintableWidth, receiptPrintableWidth } from "~/label/paper";
+import { labelGeometry, receiptPrintableWidth } from "~/label/paper";
 import {
   useLabelPrintProxy,
   useLabelPrintProxySetting,
@@ -344,11 +344,11 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレスが変わったら、つなぎ直す。用紙が変わっても、つなぎ直さずに刷るものの幅だけ変える
+  // プリンターの IP アドレスが変わったら、つなぎ直す。シールの大きさが変わっても、つなぎ直さずに刷るものの大きさだけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
-    labelPrintableWidth(printerAddresses),
+    labelGeometry(printerAddresses),
   );
   // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る
   const [labelPrintProxy, setLabelPrintProxy] = useLabelPrintProxySetting();
