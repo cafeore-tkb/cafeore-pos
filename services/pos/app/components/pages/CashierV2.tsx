@@ -350,8 +350,12 @@ const CashierV2 = ({
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
     labelGeometry(printerAddresses),
   );
-  // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る
-  const [labelPrintProxy, setLabelPrintProxy] = useLabelPrintProxySetting();
+  // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る。
+  // 手でオフにしていなければ、ラベル用のプリンターにつながっている間はオン
+  const [labelPrintProxySetting, setLabelPrintProxy] =
+    useLabelPrintProxySetting();
+  const labelPrintProxy =
+    labelPrintProxySetting && printer.status === "connected";
   const labelPrintRelay = useLabelPrintProxy(labelPrintProxy, printer);
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
   // 機種・用紙が変わっても、つなぎ直さずに画像の幅だけ変える
@@ -1313,6 +1317,7 @@ const CashierV2 = ({
               />
               <LabelPrintProxySwitch
                 checked={labelPrintProxy}
+                disabled={printer.status !== "connected"}
                 onCheckedChange={setLabelPrintProxy}
                 waiting={labelPrintRelay.waiting}
               />
