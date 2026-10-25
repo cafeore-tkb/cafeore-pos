@@ -34,12 +34,12 @@ describe("[unit] printableWidths", () => {
 });
 
 describe("[unit] labelGeometry", () => {
-  test("既定の設定では、印字幅 360 ドット・長さ 29mm（232 ドット）・余白なしで、回さない", () => {
+  test("既定の設定では、印字幅 360 ドット・長さ 29mm（232 ドット）・余白なしで、180° 回す", () => {
     expect(labelGeometry(DEFAULT_PRINTER_SETTINGS)).toEqual({
       width: 360,
       height: 232,
       margin: 0,
-      rotate180: false,
+      rotate180: true,
     });
   });
 
@@ -50,13 +50,13 @@ describe("[unit] labelGeometry", () => {
       label_printer_label_length_mm: 30.06,
       label_printer_print_width_dots: 384,
       label_printer_margin_mm: 1.5,
-      label_printer_rotate_180: true,
+      label_printer_rotate_180: false,
     } as const;
     expect(labelGeometry(settings)).toEqual({
       width: 384,
       height: 240,
       margin: 12,
-      rotate180: true,
+      rotate180: false,
     });
   });
 });

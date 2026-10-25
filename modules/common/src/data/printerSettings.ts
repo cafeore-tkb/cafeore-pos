@@ -7,6 +7,7 @@ import {
   DEFAULT_LABEL_PRINTER_PAPER_WIDTH,
   DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS,
   DEFAULT_LABEL_PRINTER_ROTATE_180,
+  DEFAULT_LABEL_PRINTER_TRAILING_FEED,
   DEFAULT_RECEIPT_PRINTER_MODEL,
   DEFAULT_RECEIPT_PRINTER_PAPER_TYPE,
   DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
@@ -29,10 +30,11 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   label_printer_print_width_dots: DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS,
   label_printer_margin_mm: DEFAULT_LABEL_PRINTER_MARGIN_MM,
   label_printer_rotate_180: DEFAULT_LABEL_PRINTER_ROTATE_180,
+  label_printer_trailing_feed: DEFAULT_LABEL_PRINTER_TRAILING_FEED,
 };
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさと向き、レシート用のプリンターの用紙（幅と種類）と機種（全レジで共通）
+ * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさと向きと最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種（全レジで共通）
  *
  * 取れるまで（と取れなかったとき）は undefined。
  */

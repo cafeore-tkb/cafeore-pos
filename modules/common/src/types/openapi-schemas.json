@@ -927,6 +927,16 @@
     ],
     "x-enum-descriptions": ["レシート紙", "ダイカットラベル"]
   },
+  "LabelPrinterTrailingFeed": {
+    "type": "string",
+    "description": "ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。\nblank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。\npeeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）\n",
+    "enum": ["blank_label", "peeling"],
+    "x-enum-varnames": [
+      "LabelPrinterTrailingFeedBlankLabel",
+      "LabelPrinterTrailingFeedPeeling"
+    ],
+    "x-enum-descriptions": ["空のシールを 1 枚送る", "剥離位置まで送る"]
+  },
   "PrinterSettingsResponse": {
     "type": "object",
     "required": [
@@ -940,7 +950,8 @@
       "label_printer_label_length_mm",
       "label_printer_print_width_dots",
       "label_printer_margin_mm",
-      "label_printer_rotate_180"
+      "label_printer_rotate_180",
+      "label_printer_trailing_feed"
     ],
     "properties": {
       "label_printer_ip": {
@@ -997,7 +1008,10 @@
       "label_printer_rotate_180": {
         "type": "boolean",
         "description": "ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない",
-        "example": false
+        "example": true
+      },
+      "label_printer_trailing_feed": {
+        "$ref": "#/components/schemas/LabelPrinterTrailingFeed"
       }
     }
   },
@@ -1070,7 +1084,11 @@
       "label_printer_rotate_180": {
         "type": "boolean",
         "description": "ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）",
-        "example": false
+        "example": true
+      },
+      "label_printer_trailing_feed": {
+        "$ref": "#/components/schemas/LabelPrinterTrailingFeed",
+        "description": "省略したら今の値のまま（設定できるようにする前のレジのため）"
       }
     }
   },

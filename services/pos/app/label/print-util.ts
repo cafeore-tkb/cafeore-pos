@@ -88,7 +88,7 @@ export type EmergencyPrint = {
  * シールのプリンター
  *
  * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
- * 使うプリンターは createPrinter で差し替えられる（Epson の ePOS なら infra/epos の eposPrinterAt）。
+ * 使うプリンターは createPrinter で差し替えられる（Epson の ePOS なら infra/epos の labelPrinterAt）。
  * シールはラベル用のシールの大きさと向き（geometry。paper.ts の labelGeometry）に合わせる。カップのシールは印字幅に収め、
  * 緊急・キャンセルのシールはシール 1 枚分の画像に描く（sticker.ts）。向きが 180° なら、どれも回して刷る。
  *

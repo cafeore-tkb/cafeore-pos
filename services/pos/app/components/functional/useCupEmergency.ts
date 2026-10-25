@@ -9,7 +9,7 @@ import {
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
+import { eposCertificateUrl, labelPrinterAt } from "~/label/infra/epos";
 import { labelGeometry } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { useLabelPrintQueue } from "~/label/print-relay";
@@ -40,9 +40,12 @@ export const useCupEmergency = (
   onActivity?: (event: string, details: Record<string, unknown>) => void,
 ) => {
   const printerSettings = usePrinterAddresses();
-  const { label_printer_ip } = printerSettings;
+  const { label_printer_ip, label_printer_trailing_feed } = printerSettings;
   const printer = usePrinter(
-    useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
+    useMemo(
+      () => labelPrinterAt(label_printer_ip, label_printer_trailing_feed),
+      [label_printer_ip, label_printer_trailing_feed],
+    ),
     labelGeometry(printerSettings),
     onActivity,
     requestLabelPrint,

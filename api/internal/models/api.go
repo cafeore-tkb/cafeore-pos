@@ -45,6 +45,12 @@ const (
 	Printed LabelPrintClaimResponseStatus = "printed"
 )
 
+// Defines values for LabelPrinterTrailingFeed.
+const (
+	LabelPrinterTrailingFeedBlankLabel LabelPrinterTrailingFeed = "blank_label"
+	LabelPrinterTrailingFeedPeeling    LabelPrinterTrailingFeed = "peeling"
+)
+
 // Defines values for MasterStateExpectedType.
 const (
 	ExpectedOperational MasterStateExpectedType = "operational"
@@ -657,6 +663,11 @@ type LabelPrintRequestResponse struct {
 	Job LabelPrintJob `json:"job"`
 }
 
+// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+type LabelPrinterTrailingFeed string
+
 // MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
 type MasterStateExpected struct {
 	CreatedAt *time.Time              `json:"created_at"`
@@ -992,6 +1003,11 @@ type PrinterSettingsResponse struct {
 	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
 	LabelPrinterRotate180 bool `json:"label_printer_rotate_180"`
 
+	// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+	// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+	LabelPrinterTrailingFeed LabelPrinterTrailingFeed `json:"label_printer_trailing_feed"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
@@ -1030,6 +1046,11 @@ type PrinterSettingsUpdateRequest struct {
 
 	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
 	LabelPrinterRotate180 *bool `json:"label_printer_rotate_180,omitempty"`
+
+	// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+	// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+	LabelPrinterTrailingFeed *LabelPrinterTrailingFeed `json:"label_printer_trailing_feed,omitempty"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`

@@ -3,8 +3,8 @@ import { openapiEnumLabels } from "../lib/openapi-enum";
 import type { components } from "../types/api";
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）と向き（180° 回すか）、
- * レシート用のプリンターの用紙（幅と種類）と機種。全レジで共通
+ * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）と向き（180° 回すか）と
+ * 一連の印刷の最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種。全レジで共通
  */
 export type PrinterSettings = components["schemas"]["PrinterSettingsResponse"];
 
@@ -16,6 +16,10 @@ export type PrinterPaperWidth = components["schemas"]["PrinterPaperWidth"];
 
 /** プリンターに入れる紙の種類（レシート紙・ダイカットラベル）。刷るものの幅が変わる */
 export type PrinterPaperType = components["schemas"]["PrinterPaperType"];
+
+/** ラベル用のプリンターで、一連の印刷の最後にどう送るか（空のシールを 1 枚送る・剥離位置まで送る） */
+export type LabelPrinterTrailingFeed =
+  components["schemas"]["LabelPrinterTrailingFeed"];
 
 /** 一度も保存していないときのレシート用のプリンターの機種。サーバーの既定値（models.DefaultReceiptPrinterModel）とそろえる */
 export const DEFAULT_RECEIPT_PRINTER_MODEL: ReceiptPrinterModel = "tm_l90";
@@ -39,7 +43,11 @@ export const DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS = 360;
 export const DEFAULT_LABEL_PRINTER_MARGIN_MM = 0;
 
 /** 一度も保存していないときに、ラベル用のシールを 180° 回して刷るか。サーバーの既定値（models.DefaultLabelPrinterRotate180）とそろえる */
-export const DEFAULT_LABEL_PRINTER_ROTATE_180 = false;
+export const DEFAULT_LABEL_PRINTER_ROTATE_180 = true;
+
+/** 一度も保存していないときの、ラベル用のプリンターの一連の印刷の最後の送り方。サーバーの既定値（models.DefaultLabelPrinterTrailingFeed）とそろえる */
+export const DEFAULT_LABEL_PRINTER_TRAILING_FEED: LabelPrinterTrailingFeed =
+  "blank_label";
 
 /** ラベル用のシールの大きさの範囲。サーバー（handlers/printer_setting.go）・openapi.yaml とそろえる */
 export const LABEL_SIZE_LIMITS = {
@@ -82,6 +90,9 @@ export const labelMarginFits = (
 const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
 const printerPaperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
 const printerPaperTypeLabels = openapiEnumLabels("PrinterPaperType");
+const labelPrinterTrailingFeedLabels = openapiEnumLabels(
+  "LabelPrinterTrailingFeed",
+);
 
 /** 知っているレシート用のプリンターの機種か */
 export const isReceiptPrinterModel = (
@@ -99,6 +110,13 @@ export const isPrinterPaperWidth = (
 export const isPrinterPaperType = (value: unknown): value is PrinterPaperType =>
   typeof value === "string" && Object.hasOwn(printerPaperTypeLabels, value);
 
+/** 知っている、一連の印刷の最後の送り方か */
+export const isLabelPrinterTrailingFeed = (
+  value: unknown,
+): value is LabelPrinterTrailingFeed =>
+  typeof value === "string" &&
+  Object.hasOwn(labelPrinterTrailingFeedLabels, value);
+
 /** IP アドレスのほかは、無い・知らない値かもしれない設定（前の API・端末に覚えた設定） */
 type LoosePrinterSettings = Pick<
   PrinterSettings,
@@ -113,6 +131,7 @@ type LoosePrinterSettings = Pick<
   label_printer_print_width_dots?: unknown;
   label_printer_margin_mm?: unknown;
   label_printer_rotate_180?: unknown;
+  label_printer_trailing_feed?: unknown;
 };
 
 /** シールの大きさ。無い・知らない値なら既定にする。3 つそろって余白が収まらなければ、3 つとも既定にする */
@@ -146,9 +165,10 @@ const labelSizeWithDefaults = (settings: LoosePrinterSettings) => {
 };
 
 /**
- * 機種・用紙の幅・種類・シールの大きさ・向きが無い・知らない値なら、既定にする
+ * 機種・用紙の幅・種類・シールの大きさ・向き・最後の送り方が無い・知らない値なら、既定にする
  *
- * レジと API は別々に出すので、機種や用紙・シールの大きさ・向きを返す前の API に届くことがある。そのときも刷るものの大きさを決められるように。
+ * レジと API は別々に出すので、機種や用紙・シールの大きさ・向き・最後の送り方を返す前の API に届くことがある。
+ * そのときも刷るものの大きさを決められるように。
  */
 export const withPrinterSettingDefaults = (
   settings: LoosePrinterSettings,
@@ -183,6 +203,11 @@ export const withPrinterSettingDefaults = (
     typeof settings.label_printer_rotate_180 === "boolean"
       ? settings.label_printer_rotate_180
       : DEFAULT_LABEL_PRINTER_ROTATE_180,
+  label_printer_trailing_feed: isLabelPrinterTrailingFeed(
+    settings.label_printer_trailing_feed,
+  )
+    ? settings.label_printer_trailing_feed
+    : DEFAULT_LABEL_PRINTER_TRAILING_FEED,
 });
 
 const errorMessage = (error: unknown, fallback: string): string => {

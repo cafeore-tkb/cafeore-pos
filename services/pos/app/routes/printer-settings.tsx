@@ -1,6 +1,7 @@
 import {
   DEFAULT_PRINTER_SETTINGS,
   LABEL_SIZE_LIMITS,
+  type LabelPrinterTrailingFeed,
   PRINTER_DOTS_PER_MM,
   type PrinterPaperType,
   type PrinterPaperWidth,
@@ -24,10 +25,10 @@ import { Label } from "~/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
 import { Switch } from "~/components/ui/switch";
 import {
-  DEFAULT_EPOS_PRINTER_CONFIG,
   RECEIPT_EPOS_PRINTER_CONFIG,
   eposCertificateUrl,
   eposPrinterAt,
+  labelPrinterAt,
 } from "~/label/infra/epos";
 import { labelGeometry, printableWidths } from "~/label/paper";
 import {
@@ -77,6 +78,7 @@ const printers = {
 const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
 const paperTypeLabels = openapiEnumLabels("PrinterPaperType");
 const paperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
+const trailingFeedLabels = openapiEnumLabels("LabelPrinterTrailingFeed");
 
 /** 選べるレシート用のプリンターの機種（openapi.yaml の並び） */
 const receiptPrinterModels = Object.keys(
@@ -86,6 +88,11 @@ const receiptPrinterModels = Object.keys(
 /** 選べる用紙の種類・幅（openapi.yaml の並び） */
 const paperTypes = Object.keys(paperTypeLabels) as PrinterPaperType[];
 const paperWidths = Object.keys(paperWidthLabels) as PrinterPaperWidth[];
+
+/** 選べる、ラベル用の一連の印刷の最後の送り方（openapi.yaml の並び） */
+const trailingFeeds = Object.keys(
+  trailingFeedLabels,
+) as LabelPrinterTrailingFeed[];
 
 /** 用紙の幅ごとのレシート用の印字幅（ドット）。用紙の種類と機種で変わる */
 const receiptPrintableWidths = (values: PrinterSettings) =>
@@ -272,7 +279,7 @@ function PrinterSettingsForm({
         return;
       }
       const result = await printOnce(
-        eposPrinterAt(address, DEFAULT_EPOS_PRINTER_CONFIG),
+        labelPrinterAt(address, values.label_printer_trailing_feed),
         labelTestPrintJob({
           address,
           geometry: labelGeometry({
@@ -437,6 +444,18 @@ function PrinterSettingsForm({
               </p>
             </div>
           </div>
+          <ChoiceField
+            id="label_printer_trailing_feed"
+            label="印刷の最後の送り方"
+            description="1 回に刷るシールの最後に、どう送るか。空のシールを 1 枚送ると、刷ったシールの後ろに空のシールを 1 枚送ります（少しの高さの白を刷って、次のシールの先頭まで送ります）。剥離位置まで送ると、ピーラーで剥がす所で止め、そのシールを取るまで次を刷りません"
+            choices={trailingFeeds}
+            labels={trailingFeedLabels}
+            value={values.label_printer_trailing_feed}
+            defaultValue={DEFAULT_PRINTER_SETTINGS.label_printer_trailing_feed}
+            onChange={(value) =>
+              choose("label_printer_trailing_feed", trailingFeeds, value)
+            }
+          />
         </>,
       )}
       {section(
@@ -492,7 +511,7 @@ function PrinterSettingsForm({
           ごとの数字）を入れます。シールの右端・下端がどの数字の所にあるかを読み、印字幅（mm
           × 8
           ドット）とラベルの長さを合わせます。右と下の辺の三角は、刷る範囲の真ん中です。確認用のページは、180°
-          回す設定でも回しません。見本は設定の向きで刷ります。ラベル用は、一連の印刷の最後に剥離位置まで送ります。
+          回す設定でも回しません。見本は設定の向きで刷ります。ラベル用は、最後に設定の送り方で送ります。
         </p>
         <p>
           レシート用の確認用のページは、印字幅いっぱいを枠で囲みます。枠の左右が欠けていれば、紙より広い幅を選んでいます。枠の外に広い余白があれば、紙より狭い幅を選んでいます。

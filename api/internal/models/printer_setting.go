@@ -39,10 +39,14 @@ const (
 
 // DefaultLabelPrinterRotate180 は一度も保存していないときに、ラベル用のシールを 180° 回して刷るか。
 // 回せるようにする前に保存した行も、これになる（列の既定値）。
-const DefaultLabelPrinterRotate180 = false
+const DefaultLabelPrinterRotate180 = true
+
+// DefaultLabelPrinterTrailingFeed は一度も保存していないときの、ラベル用のプリンターの一連の印刷の最後の送り方。
+// 選べるようにする前に保存した行も、これになる（列の既定値）。
+const DefaultLabelPrinterTrailingFeed = LabelPrinterTrailingFeedBlankLabel
 
 // PrinterSetting はレジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレス、ラベル用のシールの大きさ
-// （長さ・印字幅・余白）と向き（180° 回すか）、レシート用のプリンターの用紙（幅と種類）と機種。
+// （長さ・印字幅・余白）と向き（180° 回すか）と一連の印刷の最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種。
 //
 // レジのブラウザがこの IP アドレスへ直接つなぐ。サーバーはプリンターにはつながず、
 // 値を持っておくだけ。シールの大きさ・機種・用紙は、レジが刷るものの大きさを決めるのに使う。
@@ -58,12 +62,25 @@ type PrinterSetting struct {
 	LabelPrinterLabelLengthMm  float64   `gorm:"type:double precision;not null;default:29"` // シール 1 枚の長さ（mm。DefaultLabelPrinterLabelLengthMm と同じ）
 	LabelPrinterPrintWidthDots int       `gorm:"not null;default:360"`                      // 印字幅（ドット。DefaultLabelPrinterPrintWidthDots と同じ）
 	LabelPrinterMarginMm       float64   `gorm:"type:double precision;not null;default:0"`  // 四辺の余白（mm。DefaultLabelPrinterMarginMm と同じ）
-	LabelPrinterRotate180      bool      `gorm:"not null;default:false"`                    // カップ・緊急・キャンセルのシールを 180° 回して刷るか（DefaultLabelPrinterRotate180 と同じ）
+	LabelPrinterRotate180      *bool     `gorm:"not null;default:true"`                     // カップ・緊急・キャンセルのシールを 180° 回して刷るか（DefaultLabelPrinterRotate180 と同じ。Rotate180 で読む）
+	LabelPrinterTrailingFeed   string    `gorm:"not null;default:'blank_label'"`            // LabelPrinterTrailingFeed（openapi.yaml）のいずれか（DefaultLabelPrinterTrailingFeed と同じ）
 	UpdatedAt                  time.Time `gorm:"not null"`
+}
+
+// Rotate180 はシールを 180° 回して刷るか。値が無ければ既定（DefaultLabelPrinterRotate180）。
+//
+// LabelPrinterRotate180 がポインタなのは、列の既定値が true でも false を書けるようにするため
+// （GORM は既定値のある列のゼロ値を、INSERT で列の既定値に置き換える）。
+func (s *PrinterSetting) Rotate180() bool {
+	if s.LabelPrinterRotate180 == nil {
+		return DefaultLabelPrinterRotate180
+	}
+	return *s.LabelPrinterRotate180
 }
 
 // DefaultPrinterSetting は一度も保存していないときの設定。
 func DefaultPrinterSetting() PrinterSetting {
+	rotate180 := DefaultLabelPrinterRotate180
 	return PrinterSetting{
 		ID:                         PrinterSettingID,
 		LabelPrinterIP:             DefaultLabelPrinterIP,
@@ -76,6 +93,7 @@ func DefaultPrinterSetting() PrinterSetting {
 		LabelPrinterLabelLengthMm:  DefaultLabelPrinterLabelLengthMm,
 		LabelPrinterPrintWidthDots: DefaultLabelPrinterPrintWidthDots,
 		LabelPrinterMarginMm:       DefaultLabelPrinterMarginMm,
-		LabelPrinterRotate180:      DefaultLabelPrinterRotate180,
+		LabelPrinterRotate180:      &rotate180,
+		LabelPrinterTrailingFeed:   string(DefaultLabelPrinterTrailingFeed),
 	}
 }

@@ -7,6 +7,7 @@ import {
   RECEIPT_EPOS_PRINTER_CONFIG,
   createEposPrinter,
   eposPrinterAt,
+  labelPrinterAt,
   writeEposJob,
 } from "./epos";
 import type { PrinterConnectionStatus } from "./printer";
@@ -36,6 +37,7 @@ const recordingBuilder = (
   } = {
     timeout: 10_000,
     FEED_CURRENT_TOF: "current_tof",
+    FEED_NEXT_TOF: "next_tof",
     FEED_PEELING: "peeling",
     ALIGN_LEFT: "left",
     ALIGN_CENTER: "center",
@@ -70,6 +72,12 @@ const recordingBuilder = (
   return { builder, calls };
 };
 
+/** ラベル用で、剥離位置まで送る設定 */
+const PEELING_CONFIG = {
+  ...DEFAULT_EPOS_PRINTER_CONFIG,
+  trailingFeed: "peeling",
+} as const;
+
 const job: PrintJob = {
   labels: [
     {
@@ -93,10 +101,10 @@ const job: PrintJob = {
 };
 
 describe("[unit] writeEposJob", () => {
-  test("印刷データを ePOS の命令にし、ラベル用は最後に剥離位置まで送る", () => {
+  test("印刷データを ePOS の命令にし、剥離位置まで送るなら最後に 1 回だけ送る", () => {
     const { builder, calls } = recordingBuilder();
 
-    writeEposJob(builder, job, DEFAULT_EPOS_PRINTER_CONFIG);
+    writeEposJob(builder, job, PEELING_CONFIG);
 
     expect(calls).toEqual([
       ["addTextLang", "ja"],
@@ -122,6 +130,43 @@ describe("[unit] writeEposJob", () => {
     ]);
   });
 
+  test("空のシールを 1 枚送るなら、最後に次のシールの先頭へ送って白（8 × 8 ドット）を刷り、その次のシールの先頭まで送る", () => {
+    const { builder, calls } = recordingBuilder();
+
+    writeEposJob(
+      builder,
+      { labels: [{ type: "flow", lines: [[{ text: "ラテ", size: [1, 1] }]] }] },
+      { ...DEFAULT_EPOS_PRINTER_CONFIG, trailingFeed: "blank_label" },
+    );
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ["addTextSize", 1, 1],
+      ["addText", "ラテ\n"],
+      ["addFeedPosition", "current_tof"],
+      [
+        "addImage",
+        {
+          width: 8,
+          height: 8,
+          data: new Uint8ClampedArray(8 * 8 * 4).fill(255),
+        },
+        0,
+        0,
+        8,
+        8,
+        "color_1",
+        "mono",
+      ],
+      ["addFeedPosition", "next_tof"],
+    ]);
+  });
+
+  test("ラベル用の既定は、空のシールを 1 枚送る", () => {
+    expect(DEFAULT_EPOS_PRINTER_CONFIG.trailingFeed).toBe("blank_label");
+  });
+
   test("rotate180 の fixed は、範囲を置いてから向きを 180° にして置く", () => {
     const { builder, calls } = recordingBuilder();
     const rotated: PrintJob = {
@@ -135,7 +180,7 @@ describe("[unit] writeEposJob", () => {
       ],
     };
 
-    writeEposJob(builder, rotated, DEFAULT_EPOS_PRINTER_CONFIG);
+    writeEposJob(builder, rotated, PEELING_CONFIG);
 
     expect(calls).toEqual([
       ["addTextLang", "ja"],
@@ -217,11 +262,7 @@ describe("[unit] writeEposJob", () => {
     };
     const sticker = { type: "sticker", image: packImage(image) } as const;
 
-    writeEposJob(
-      builder,
-      { labels: [sticker, sticker] },
-      DEFAULT_EPOS_PRINTER_CONFIG,
-    );
+    writeEposJob(builder, { labels: [sticker, sticker] }, PEELING_CONFIG);
 
     const printed = [
       ["addFeedPosition", "current_tof"],
@@ -486,6 +527,23 @@ describe("[unit] createEposPrinter", () => {
       ["send"],
     ]);
     expect(builder.timeout).toBe(RECEIPT_EPOS_PRINTER_CONFIG.printTimeoutMs);
+  });
+
+  test("labelPrinterAt はラベル用の設定で、アドレスと最後の送り方だけ変える", async () => {
+    const { builder, calls } = recordingBuilder();
+    const { connect } = stubEpson(builder);
+
+    const printer = labelPrinterAt("10.0.0.2", "peeling")(() => {});
+    printer.connect();
+    await printer.print({ labels: [{ type: "flow", lines: [] }] });
+
+    expect(connect).toHaveBeenCalledWith(
+      "10.0.0.2",
+      DEFAULT_EPOS_PRINTER_CONFIG.port,
+      expect.any(Function),
+    );
+    expect(calls.slice(-2)).toEqual([["addFeedPosition", "peeling"], ["send"]]);
+    expect(builder.timeout).toBe(DEFAULT_EPOS_PRINTER_CONFIG.printTimeoutMs);
   });
 
   const connectedPorts = (connect: ReturnType<typeof stubEpson>["connect"]) =>
