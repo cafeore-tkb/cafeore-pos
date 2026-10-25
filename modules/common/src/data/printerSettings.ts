@@ -1,8 +1,11 @@
 // data/printerSettings.ts
 import useSWR from "swr";
 import {
+  DEFAULT_LABEL_PRINTER_LABEL_LENGTH_MM,
+  DEFAULT_LABEL_PRINTER_MARGIN_MM,
   DEFAULT_LABEL_PRINTER_PAPER_TYPE,
   DEFAULT_LABEL_PRINTER_PAPER_WIDTH,
+  DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS,
   DEFAULT_RECEIPT_PRINTER_MODEL,
   DEFAULT_RECEIPT_PRINTER_PAPER_TYPE,
   DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
@@ -21,10 +24,13 @@ export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   receipt_printer_paper_width: DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH,
   label_printer_paper_type: DEFAULT_LABEL_PRINTER_PAPER_TYPE,
   receipt_printer_paper_type: DEFAULT_RECEIPT_PRINTER_PAPER_TYPE,
+  label_printer_label_length_mm: DEFAULT_LABEL_PRINTER_LABEL_LENGTH_MM,
+  label_printer_print_width_dots: DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS,
+  label_printer_margin_mm: DEFAULT_LABEL_PRINTER_MARGIN_MM,
 };
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレスと用紙（幅と種類）、レシート用のプリンターの機種（全レジで共通）
+ * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ、レシート用のプリンターの用紙（幅と種類）と機種（全レジで共通）
  *
  * 取れるまで（と取れなかったとき）は undefined。
  */
