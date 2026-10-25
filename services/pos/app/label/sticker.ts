@@ -48,10 +48,13 @@ export const toStickerLabel = (
 
 const EMERGENCY_TEXT = "緊急";
 
-/** 緊急のシールの帯に書く文字と、帯を置く側。帯は挟んだカップのシールの側に置き、両脇の三角でそちらを指す */
+/**
+ * 緊急のシールの帯に書く文字と、帯を置く側。帯は台紙の上で挟んだカップのシールの側に置き、両脇の三角でそちらを指す。
+ * 「ここから」は紙の送りで後ろ（後に刷るカップのシールの側）、「ここまで」は前（先に刷ったカップのシールの側）
+ */
 const MARKERS = {
-  start: { text: "ここから", band: "bottom" },
-  end: { text: "ここまで", band: "top" },
+  start: { text: "ここから", band: "trailing" },
+  end: { text: "ここまで", band: "leading" },
 } as const;
 
 type Marker = keyof typeof MARKERS;
@@ -90,13 +93,13 @@ const drawEmergencyText = (ctx: CanvasRenderingContext2D, area: Area) => {
   ctx.restore();
 };
 
-/** 白い帯の真ん中に「▼ ここから ▼」「▲ ここまで ▲」を黒で描く。三角は帯の側（挟んだカップのシールの側）を指す */
+/** 白い帯の真ん中に、両脇に三角を付けた text を黒で描く。三角は onTop なら上、そうでなければ下を指す（帯の側） */
 const drawBand = (
   ctx: CanvasRenderingContext2D,
-  marker: Marker,
+  text: string,
+  onTop: boolean,
   area: Area,
 ) => {
-  const { text, band } = MARKERS[marker];
   const textW = textWidth(ctx, text, MARKER);
   const triangleW = MARKER.size * TRIANGLE.width;
   const triangleH = MARKER.size * TRIANGLE.height;
@@ -110,7 +113,7 @@ const drawBand = (
   ctx.scale(scale, scale);
   drawText(ctx, text, 0, 0, MARKER);
   // 下向きなら先が下（drawText のあとも塗りは黒のまま）
-  const tip = band === "bottom" ? triangleH / 2 : -triangleH / 2;
+  const tip = onTop ? -triangleH / 2 : triangleH / 2;
   for (const side of [-1, 1]) {
     const center = side * (textW / 2 + gap + triangleW / 2);
     ctx.beginPath();
@@ -125,12 +128,16 @@ const drawBand = (
 
 /**
  * 緊急のシール 1 枚：余白の内側を、白い帯と、黒地に白抜きで大きく「緊急」を描いた所に分ける。
- * 帯は「ここから」なら下、「ここまで」なら上（どちらも、挟んだカップのシールの側）
+ *
+ * 帯は台紙の上で挟んだカップのシールの側に置く。回さなければ紙の送りの前が上なので、「ここから」は下で ▼、「ここまで」は上で ▲。
+ * 180° 回すなら、描いたあと画像ごと回る（読む向きでは紙の送りの後ろが上になる）ので、上下を入れ替えて
+ * 「ここから」は上で ▲、「ここまで」は下で ▼ に描く。どちらでも、三角は挟んだカップのシールを指す
  */
 const drawEmergencySticker = (geometry: LabelGeometry, marker: Marker) => {
   const { ctx, inner } = createStickerCanvas(geometry);
+  const { text, band } = MARKERS[marker];
   const bandHeight = Math.round(inner.height * BAND_RATIO);
-  const bandOnTop = MARKERS[marker].band === "top";
+  const bandOnTop = (band === "leading") !== geometry.rotate180;
   const body = {
     top: bandOnTop ? bandHeight : 0,
     width: inner.width,
@@ -139,7 +146,7 @@ const drawEmergencySticker = (geometry: LabelGeometry, marker: Marker) => {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, body.top, body.width, body.height);
   drawEmergencyText(ctx, body);
-  drawBand(ctx, marker, {
+  drawBand(ctx, text, bandOnTop, {
     top: bandOnTop ? 0 : body.height,
     width: inner.width,
     height: bandHeight,
