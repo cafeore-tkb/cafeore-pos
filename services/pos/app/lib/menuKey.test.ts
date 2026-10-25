@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  checkMenuKey,
   isSameMenuKey,
   menuKeyChord,
   menuKeyError,
@@ -54,5 +55,40 @@ describe("[unit] menuKey", () => {
     expect(menuKeyError("a+1")).not.toBeNull();
     expect(menuKeyError("a+Enter")).not.toBeNull();
     expect(menuKeyError("a+Shift")).not.toBeNull();
+  });
+});
+
+describe("[unit] checkMenuKey", () => {
+  const otherMenus = [
+    { name: "ブレンド", key: "a" },
+    { name: "アイス", key: "s+d" },
+  ];
+
+  test("他のメニューで使っていなければ使える", () => {
+    expect(checkMenuKey("q", otherMenus)).toEqual({ ok: true, warning: null });
+    expect(checkMenuKey("a+q", otherMenus)).toEqual({
+      ok: true,
+      warning: null,
+    });
+  });
+
+  test("他のメニューのキーは、同時押しの順が違っても使えない", () => {
+    const check = checkMenuKey("d+s", otherMenus);
+    expect(check.ok).toBe(false);
+    expect(!check.ok && check.message).toContain("アイス");
+    expect(checkMenuKey("a", otherMenus).ok).toBe(false);
+  });
+
+  test("同時押しに使えないキーは使えない", () => {
+    expect(checkMenuKey("q+1", otherMenus).ok).toBe(false);
+    expect(checkMenuKey("q+Enter", otherMenus).ok).toBe(false);
+  });
+
+  test("レジの操作に使うキーは 1 つだけなら使えるが、知らせる", () => {
+    for (const key of ["1", "Enter", " ", "Backspace", "ArrowUp"]) {
+      const check = checkMenuKey(key, otherMenus);
+      expect(check.ok).toBe(true);
+      expect(check.ok && check.warning).not.toBeNull();
+    }
   });
 });

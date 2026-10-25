@@ -212,9 +212,7 @@ export function ProductEditor({
           key={formKey}
           items={items}
           initialMenu={initialMenu}
-          usedKeys={menus
-            .filter((menu) => !(isEdit && menu.id === id))
-            .map((menu) => menu.key)}
+          otherMenus={menus.filter((menu) => !(isEdit && menu.id === id))}
           submitting={submitting}
           onSubmit={(values) =>
             save(() =>
