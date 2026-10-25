@@ -250,7 +250,7 @@ export function ProductEditor({
           initialStock={sourceStock && stockAmounts(sourceStock)}
           submitting={submitting}
           onCreateItemType={createItemType}
-          menuKeysInUse={isEdit ? undefined : menus.map((menu) => menu.key)}
+          otherMenus={isEdit ? undefined : menus}
           onSubmit={(values, menu) =>
             menu
               ? saveItemWithMenu(values, menu)

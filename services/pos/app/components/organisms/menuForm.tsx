@@ -156,7 +156,7 @@ export function MenuForm({
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="a"
-              className="w-auto min-w-24 flex-1 font-mono"
+              className="w-auto min-w-20 flex-1 font-mono"
               aria-invalid={keyCheck?.ok === false}
               required
             />
