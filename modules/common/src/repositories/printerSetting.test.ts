@@ -7,7 +7,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
     receipt_printer_ip: "192.168.77.3",
   };
 
-  test("知っている機種・用紙の幅・種類・シールの大きさはそのまま", () => {
+  test("知っている機種・用紙の幅・種類・シールの大きさ・向きはそのまま", () => {
     const settings = {
       ...ips,
       receipt_printer_model: "tm_m30",
@@ -18,11 +18,12 @@ describe("[unit] withPrinterSettingDefaults", () => {
       label_printer_label_length_mm: 30.5,
       label_printer_print_width_dots: 384,
       label_printer_margin_mm: 1.5,
+      label_printer_rotate_180: true,
     } as const;
     expect(withPrinterSettingDefaults(settings)).toEqual(settings);
   });
 
-  test("機種・用紙・シールの大きさを返さない前の API・知らない値なら、既定にする（ラベル用は 29mm・360 ドット・余白なし、レシート用は 58mm のレシート紙）", () => {
+  test("機種・用紙・シールの大きさ・向きを返さない前の API・知らない値なら、既定にする（ラベル用は 29mm・360 ドット・余白なしで回さない、レシート用は 58mm のレシート紙）", () => {
     for (const settings of [
       ips,
       {
@@ -35,6 +36,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
         label_printer_label_length_mm: "29",
         label_printer_print_width_dots: 361,
         label_printer_margin_mm: -1,
+        label_printer_rotate_180: "true",
       },
     ]) {
       expect(withPrinterSettingDefaults(settings)).toEqual({
@@ -47,6 +49,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
         label_printer_label_length_mm: 29,
         label_printer_print_width_dots: 360,
         label_printer_margin_mm: 0,
+        label_printer_rotate_180: false,
       });
     }
   });

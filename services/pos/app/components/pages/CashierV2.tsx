@@ -344,7 +344,7 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレスが変わったら、つなぎ直す。シールの大きさが変わっても、つなぎ直さずに刷るものの大きさだけ変える
+  // プリンターの IP アドレスが変わったら、つなぎ直す。シールの大きさ・向きが変わっても、つなぎ直さずに刷るものの大きさ・向きだけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
   const printer = usePrinter(
     useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),

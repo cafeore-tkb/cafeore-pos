@@ -3,7 +3,7 @@ import { openapiEnumLabels } from "../lib/openapi-enum";
 import type { components } from "../types/api";
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、
+ * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）と向き（180° 回すか）、
  * レシート用のプリンターの用紙（幅と種類）と機種。全レジで共通
  */
 export type PrinterSettings = components["schemas"]["PrinterSettingsResponse"];
@@ -37,6 +37,9 @@ export const DEFAULT_RECEIPT_PRINTER_PAPER_TYPE: PrinterPaperType = "receipt";
 export const DEFAULT_LABEL_PRINTER_LABEL_LENGTH_MM = 29;
 export const DEFAULT_LABEL_PRINTER_PRINT_WIDTH_DOTS = 360;
 export const DEFAULT_LABEL_PRINTER_MARGIN_MM = 0;
+
+/** 一度も保存していないときに、ラベル用のシールを 180° 回して刷るか。サーバーの既定値（models.DefaultLabelPrinterRotate180）とそろえる */
+export const DEFAULT_LABEL_PRINTER_ROTATE_180 = false;
 
 /** ラベル用のシールの大きさの範囲。サーバー（handlers/printer_setting.go）・openapi.yaml とそろえる */
 export const LABEL_SIZE_LIMITS = {
@@ -109,6 +112,7 @@ type LoosePrinterSettings = Pick<
   label_printer_label_length_mm?: unknown;
   label_printer_print_width_dots?: unknown;
   label_printer_margin_mm?: unknown;
+  label_printer_rotate_180?: unknown;
 };
 
 /** シールの大きさ。無い・知らない値なら既定にする。3 つそろって余白が収まらなければ、3 つとも既定にする */
@@ -142,9 +146,9 @@ const labelSizeWithDefaults = (settings: LoosePrinterSettings) => {
 };
 
 /**
- * 機種・用紙の幅・種類・シールの大きさが無い・知らない値なら、既定にする
+ * 機種・用紙の幅・種類・シールの大きさ・向きが無い・知らない値なら、既定にする
  *
- * レジと API は別々に出すので、機種や用紙・シールの大きさを返す前の API に届くことがある。そのときも刷るものの大きさを決められるように。
+ * レジと API は別々に出すので、機種や用紙・シールの大きさ・向きを返す前の API に届くことがある。そのときも刷るものの大きさを決められるように。
  */
 export const withPrinterSettingDefaults = (
   settings: LoosePrinterSettings,
@@ -175,6 +179,10 @@ export const withPrinterSettingDefaults = (
     ? settings.receipt_printer_paper_type
     : DEFAULT_RECEIPT_PRINTER_PAPER_TYPE,
   ...labelSizeWithDefaults(settings),
+  label_printer_rotate_180:
+    typeof settings.label_printer_rotate_180 === "boolean"
+      ? settings.label_printer_rotate_180
+      : DEFAULT_LABEL_PRINTER_ROTATE_180,
 });
 
 const errorMessage = (error: unknown, fallback: string): string => {

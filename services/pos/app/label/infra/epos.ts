@@ -22,6 +22,8 @@ export type EposBuilder = {
   ALIGN_LEFT: string;
   ALIGN_CENTER: string;
   CUT_FEED: string;
+  /** ページモードの向き：180° 回し、範囲の右下から置く */
+  DIRECTION_RIGHT_TO_LEFT: string;
   COLOR_1: string;
   MODE_MONO: string;
   addTextLang: (lang: string) => unknown;
@@ -31,6 +33,8 @@ export type EposBuilder = {
   addPageBegin: () => unknown;
   addPageEnd: () => unknown;
   addPageArea: (x: number, y: number, width: number, height: number) => unknown;
+  /** ページモードの範囲の中の向き。addPageArea の後、置く前に呼ぶ */
+  addPageDirection: (direction: string) => unknown;
   addPagePosition: (x: number, y: number) => unknown;
   addLogo: (key1: number, key2: number) => unknown;
   /** context からは getImageData で画素（data・width・height）を読むだけ */
@@ -226,6 +230,8 @@ const writeLabel = (
   builder.addPageBegin();
   const { x, y, width, height } = label.area;
   builder.addPageArea(x, y, width, height);
+  if (label.rotate180)
+    builder.addPageDirection(builder.DIRECTION_RIGHT_TO_LEFT);
   for (const element of label.elements) {
     builder.addPagePosition(element.x, element.y);
     if (element.type === "text") {

@@ -37,6 +37,7 @@ func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSet
 		LabelPrinterLabelLengthMm:  setting.LabelPrinterLabelLengthMm,
 		LabelPrinterPrintWidthDots: setting.LabelPrinterPrintWidthDots,
 		LabelPrinterMarginMm:       setting.LabelPrinterMarginMm,
+		LabelPrinterRotate180:      setting.LabelPrinterRotate180,
 	}
 }
 
@@ -100,6 +101,7 @@ func validateLabelSize(lengthMm float64, widthDots int, marginMm float64) error 
 }
 
 // リクエストを検証して DB モデルに変換する。
+// label_printer_rotate_180 が無ければ既定にする（保存してある値のままにするのは UpdatePrinterSettings）。
 func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.PrinterSetting, error) {
 	label, err := parsePrinterIP("label_printer_ip", request.LabelPrinterIp)
 	if err != nil {
@@ -129,6 +131,10 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	if err := validateLabelSize(request.LabelPrinterLabelLengthMm, request.LabelPrinterPrintWidthDots, request.LabelPrinterMarginMm); err != nil {
 		return models.PrinterSetting{}, err
 	}
+	rotate180 := models.DefaultLabelPrinterRotate180
+	if request.LabelPrinterRotate180 != nil {
+		rotate180 = *request.LabelPrinterRotate180
+	}
 	return models.PrinterSetting{
 		ID:                         models.PrinterSettingID,
 		LabelPrinterIP:             label,
@@ -141,6 +147,7 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 		LabelPrinterLabelLengthMm:  request.LabelPrinterLabelLengthMm,
 		LabelPrinterPrintWidthDots: request.LabelPrinterPrintWidthDots,
 		LabelPrinterMarginMm:       request.LabelPrinterMarginMm,
+		LabelPrinterRotate180:      rotate180,
 		UpdatedAt:                  time.Now(),
 	}, nil
 }
@@ -166,7 +173,7 @@ func (h *PrinterSettingHandler) GetPrinterSettings(c *gin.Context) {
 
 // PUT /api/printer-settings - プリンター設定の更新
 //
-// 単一行を丸ごと置き換える。
+// 単一行を丸ごと置き換える。label_printer_rotate_180 が無ければ（回せるようにする前のレジ）、保存してある値のままにする。
 func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 	var request models.UpdatePrinterSettingsJSONRequestBody
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -180,7 +187,21 @@ func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&setting).Error; err != nil {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if request.LabelPrinterRotate180 == nil {
+			// 読んでから書くまでに、ほかの保存で変わらないよう行を押さえる（まだ行が無ければ既定のまま）
+			var saved models.PrinterSetting
+			result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Limit(1).Find(&saved, "id = ?", models.PrinterSettingID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				setting.LabelPrinterRotate180 = saved.LabelPrinterRotate180
+			}
+		}
+		return tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(&setting).Error
+	})
+	if err != nil {
 		log.Printf("failed to save printer settings: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return

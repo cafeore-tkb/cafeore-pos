@@ -40,6 +40,7 @@ const recordingBuilder = (
     ALIGN_LEFT: "left",
     ALIGN_CENTER: "center",
     CUT_FEED: "cut_feed",
+    DIRECTION_RIGHT_TO_LEFT: "right_to_left",
     COLOR_1: "color_1",
     MODE_MONO: "mono",
     addTextLang: record("addTextLang"),
@@ -49,6 +50,7 @@ const recordingBuilder = (
     addPageBegin: record("addPageBegin"),
     addPageEnd: record("addPageEnd"),
     addPageArea: record("addPageArea"),
+    addPageDirection: record("addPageDirection"),
     addPagePosition: record("addPagePosition"),
     addLogo: record("addLogo"),
     // 画像は context から読める画素を覚える
@@ -116,6 +118,35 @@ describe("[unit] writeEposJob", () => {
       ["addTextSize", 1, 1],
       ["addText", "ラテ\n"],
       // 一連の印刷の最後に 1 回だけ
+      ["addFeedPosition", "peeling"],
+    ]);
+  });
+
+  test("rotate180 の fixed は、範囲を置いてから向きを 180° にして置く", () => {
+    const { builder, calls } = recordingBuilder();
+    const rotated: PrintJob = {
+      labels: [
+        {
+          type: "fixed",
+          area: { x: 0, y: 0, width: 360, height: 208 },
+          elements: [{ type: "logo", x: 230, y: 204 }],
+          rotate180: true,
+        },
+      ],
+    };
+
+    writeEposJob(builder, rotated, DEFAULT_EPOS_PRINTER_CONFIG);
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ["addFeedPosition", "current_tof"],
+      ["addPageBegin"],
+      ["addPageArea", 0, 0, 360, 208],
+      ["addPageDirection", "right_to_left"],
+      ["addPagePosition", 230, 204],
+      ["addLogo", 32, 32],
+      ["addPageEnd"],
       ["addFeedPosition", "peeling"],
     ]);
   });

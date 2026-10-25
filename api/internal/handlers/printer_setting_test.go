@@ -35,12 +35,24 @@ func TestBuildPrinterSettingNormalizesAddresses(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      boolPtr(true),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 {
+	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 || !setting.LabelPrinterRotate180 {
 		t.Fatalf("incorrect setting: %+v", setting)
+	}
+}
+
+// 180° 回すかが無ければ（回せるようにする前のレジ）、既定の回さないにする
+func TestBuildPrinterSettingDefaultsRotation(t *testing.T) {
+	setting, err := buildPrinterSetting(validPrinterSettingsRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if setting.LabelPrinterRotate180 != models.DefaultLabelPrinterRotate180 {
+		t.Fatalf("rotate: %+v", setting)
 	}
 }
 
@@ -192,6 +204,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  29,
 		LabelPrinterPrintWidthDots: 360,
 		LabelPrinterMarginMm:       0,
+		LabelPrinterRotate180:      false,
 	}) {
 		t.Fatalf("defaults: %+v", got)
 	}
@@ -208,6 +221,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      boolPtr(true),
 	}).expect(http.StatusOK).decode(&saved)
 	if saved != (models.PrinterSettingsResponse{
 		LabelPrinterIp:             "192.168.77.12",
@@ -220,11 +234,12 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterLabelLengthMm:  30.5,
 		LabelPrinterPrintWidthDots: 384,
 		LabelPrinterMarginMm:       1.5,
+		LabelPrinterRotate180:      true,
 	}) {
 		t.Fatalf("saved: %+v", saved)
 	}
 
-	// 2 回目は 1 行を丸ごと置き換える
+	// 2 回目は 1 行を丸ごと置き換える。180° 回すかが無ければ（回せるようにする前のレジ）、保存してある値のまま
 	replacement := models.PrinterSettingsUpdateRequest{
 		LabelPrinterIp:             "192.168.77.22",
 		ReceiptPrinterIp:           "192.168.77.23",
@@ -237,11 +252,34 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterPrintWidthDots: 560,
 		LabelPrinterMarginMm:       2,
 	}
-	want := models.PrinterSettingsResponse(replacement)
-	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK)
+	want := models.PrinterSettingsResponse{
+		LabelPrinterIp:             "192.168.77.22",
+		ReceiptPrinterIp:           "192.168.77.23",
+		ReceiptPrinterModel:        models.ReceiptPrinterModelTmL90,
+		LabelPrinterPaperWidth:     models.PrinterPaperWidth80mm,
+		ReceiptPrinterPaperWidth:   models.PrinterPaperWidth58mm,
+		LabelPrinterPaperType:      models.PrinterPaperTypeDieCutLabel,
+		ReceiptPrinterPaperType:    models.PrinterPaperTypeReceipt,
+		LabelPrinterLabelLengthMm:  40,
+		LabelPrinterPrintWidthDots: 560,
+		LabelPrinterMarginMm:       2,
+		LabelPrinterRotate180:      true,
+	}
+	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK).decode(&saved)
+	if saved != want {
+		t.Fatalf("replaced response: %+v", saved)
+	}
 	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
 	if got != want {
 		t.Fatalf("replaced: %+v", got)
+	}
+	// 180° 回すかを送れば、それにする
+	replacement.LabelPrinterRotate180 = boolPtr(false)
+	want.LabelPrinterRotate180 = false
+	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK)
+	api.do(http.MethodGet, "/api/printer-settings", nil).expect(http.StatusOK).decode(&got)
+	if got != want {
+		t.Fatalf("rotation turned off: %+v", got)
 	}
 	if n := api.count(&models.PrinterSetting{}, ""); n != 1 {
 		t.Fatalf("%d printer settings", n)

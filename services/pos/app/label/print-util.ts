@@ -8,12 +8,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { cancelLabelJob } from "./cancel-label";
-import type { PrintJob, StickerLabel } from "./document";
+import type { PrintJob } from "./document";
 import type {
   CreateLabelPrinter,
   PrinterConnectionStatus,
 } from "./infra/printer";
-import { emergencyLabelJob, orderLabelJob } from "./order-label";
+import { emergencyLabelJobs, orderLabelJob } from "./order-label";
 import type { LabelGeometry } from "./paper";
 import {
   addPendingPrint,
@@ -35,7 +35,7 @@ import {
   formalReceiptJob,
   orderReceiptJob,
 } from "./receipt-canvas";
-import { emergencySticker } from "./sticker";
+import { type EmergencyStickers, emergencyStickers } from "./sticker";
 
 /**
  * プリンターにつないでおき、印刷データを刷る
@@ -77,13 +77,20 @@ const useRetryInterval = (active: boolean, retry: () => void) => {
 
 const countPendingPrints = () => readPendingPrints().length;
 
+/** 緊急で淹れ直したカップ 1 杯と、その淹れ直しの id（刷れなかったら、この id で残す） */
+export type EmergencyPrint = {
+  order: OrderEntity;
+  cupId: string;
+  emergencyId: string;
+};
+
 /**
  * シールのプリンター
  *
  * 注文から印刷データを作り（order-label）、プリンター（infra）に渡して刷る。
  * 使うプリンターは createPrinter で差し替えられる（Epson の ePOS なら infra/epos の eposPrinterAt）。
- * シールはラベル用のシールの大きさ（geometry。paper.ts の labelGeometry）に合わせる。カップのシールは印字幅に収め、
- * 緊急・キャンセルのシールはシール 1 枚分の画像に描く（sticker.ts）。
+ * シールはラベル用のシールの大きさと向き（geometry。paper.ts の labelGeometry）に合わせる。カップのシールは印字幅に収め、
+ * 緊急・キャンセルのシールはシール 1 枚分の画像に描く（sticker.ts）。向きが 180° なら、どれも回して刷る。
  *
  * 刷れなかったもの（プリンターが失敗を返した・つながらない・返事が来ない）は端末に残し（pending-prints）、
  * つながったとき・残っているあいだは一定の間隔で送り直す（つながっていなければ、つなぎ直す）。刷れたら消す。
@@ -100,8 +107,8 @@ export const usePrinter = (
   relay?: (id: string, job: PrintJob) => Promise<LabelPrintRequestResult>,
 ) => {
   const { status, print, reconnect } = useConnectedPrinter(createPrinter);
-  // 描くたびに作り直す geometry ではなく数で持つ（大きさが変わったときだけ、下の関数を作り直す）
-  const { width, height, margin } = geometry;
+  // 描くたびに作り直す geometry ではなく値で持つ（大きさ・向きが変わったときだけ、下の関数を作り直す）
+  const { width, height, margin, rotate180 } = geometry;
   const pendingCount = useSyncExternalStore(
     subscribePendingPrints,
     countPendingPrints,
@@ -221,31 +228,45 @@ export const usePrinter = (
   /** 注文のシールを刷る。刷るシールが無い（抽出が要るものが無い）注文は、紙を送るだけになるので送らない */
   const printOrderLabel = useCallback(
     async (order: OrderEntity) => {
-      const job = orderLabelJob(order, width);
+      const job = orderLabelJob(order, { width, height, rotate180 });
       if (job.labels.length > 0) await printJob(job);
     },
-    [printJob, width],
+    [printJob, width, height, rotate180],
   );
 
   /**
-   * 緊急で淹れ直したカップのシールを 1 枚、前に緊急のシールを付けて刷る。
-   * 刷れなければ淹れ直しの id で残す（取り消したら removePendingPrint で消す）。
-   * 緊急のシールの画像を描けなければ（canvas が使えないなど）、刷らずに記録だけ残す
+   * 一度に緊急で淹れ直したカップのシールを、1 杯につき 1 枚、緊急のシールで挟んで刷る
+   * （最初の杯の前に「ここから」、最後の杯の後ろに「ここまで」。order-label の emergencyLabelJobs）。
+   * 1 杯ずつ送り、刷れなければその淹れ直しの id で残す（取り消したら removePendingPrint で消す）。
+   * 緊急のシールの画像を描けなければ（canvas が使えないなど）、どの杯も刷らずに記録だけ残す
    */
-  const printCupLabel = useCallback(
-    async (order: OrderEntity, cupId: string, emergencyId: string) => {
-      let sticker: StickerLabel;
+  const printEmergencyLabels = useCallback(
+    async (cups: readonly EmergencyPrint[]) => {
+      let stickers: EmergencyStickers;
       try {
-        sticker = await emergencySticker({ width, height, margin });
+        stickers = await emergencyStickers({
+          width,
+          height,
+          margin,
+          rotate180,
+        });
       } catch (error) {
         console.error("緊急のシールを描けませんでした", error);
-        onActivity?.("printer.print.failed", { emergencyId });
+        for (const { emergencyId } of cups)
+          onActivity?.("printer.print.failed", { emergencyId });
         return;
       }
-      const job = emergencyLabelJob(order, cupId, width, sticker);
-      if (job) await printJob(job, emergencyId);
+      const jobs = emergencyLabelJobs(
+        cups,
+        { width, height, rotate180 },
+        stickers,
+      );
+      // 待たずに続けて頼む。printJob はプリンターに送るまでは待たずに進むので、この順に刷られる
+      await Promise.all(
+        jobs.map(({ cup, job }) => printJob(job, cup.emergencyId)),
+      );
     },
-    [printJob, onActivity, width, height, margin],
+    [printJob, onActivity, width, height, margin, rotate180],
   );
 
   /**
@@ -256,14 +277,19 @@ export const usePrinter = (
   const printCancelLabel = useCallback(
     async (order: OrderEntity) => {
       try {
-        const job = await cancelLabelJob(order, { width, height, margin });
+        const job = await cancelLabelJob(order, {
+          width,
+          height,
+          margin,
+          rotate180,
+        });
         return job === null || (await print(job));
       } catch (error) {
         console.error("キャンセルのシールを印刷できませんでした", error);
         return false;
       }
     },
-    [print, width, height, margin],
+    [print, width, height, margin, rotate180],
   );
 
   return {
@@ -273,7 +299,7 @@ export const usePrinter = (
     /** 印刷データをそのまま刷る（刷れなくても残さない・頼まない）。刷れたら true（代理印刷で使う） */
     print,
     printOrderLabel,
-    printCupLabel,
+    printEmergencyLabels,
     printCancelLabel,
   };
 };

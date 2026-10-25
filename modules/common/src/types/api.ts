@@ -1053,6 +1053,11 @@ export interface components {
        * @example 0
        */
       label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
+       * @example false
+       */
+      label_printer_rotate_180: boolean;
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -1089,6 +1094,11 @@ export interface components {
        * @example 0
        */
       label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
+       * @example false
+       */
+      label_printer_rotate_180?: boolean;
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */

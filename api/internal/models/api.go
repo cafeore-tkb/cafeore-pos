@@ -989,6 +989,9 @@ type PrinterSettingsResponse struct {
 	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
 	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
 
+	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
+	LabelPrinterRotate180 bool `json:"label_printer_rotate_180"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
@@ -1024,6 +1027,9 @@ type PrinterSettingsUpdateRequest struct {
 
 	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
 	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
+
+	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
+	LabelPrinterRotate180 *bool `json:"label_printer_rotate_180,omitempty"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`

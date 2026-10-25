@@ -939,7 +939,8 @@
       "receipt_printer_paper_type",
       "label_printer_label_length_mm",
       "label_printer_print_width_dots",
-      "label_printer_margin_mm"
+      "label_printer_margin_mm",
+      "label_printer_rotate_180"
     ],
     "properties": {
       "label_printer_ip": {
@@ -992,6 +993,11 @@
         "maximum": 10,
         "description": "緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで",
         "example": 0
+      },
+      "label_printer_rotate_180": {
+        "type": "boolean",
+        "description": "ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない",
+        "example": false
       }
     }
   },
@@ -1060,6 +1066,11 @@
         "maximum": 10,
         "description": "緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで",
         "example": 0
+      },
+      "label_printer_rotate_180": {
+        "type": "boolean",
+        "description": "ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）",
+        "example": false
       }
     }
   },

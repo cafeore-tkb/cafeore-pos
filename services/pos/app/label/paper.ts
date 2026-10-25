@@ -49,27 +49,32 @@ export const printableWidths = (
     : RECEIPT_PAPER_WIDTHS[model];
 
 /**
- * ラベル用のプリンターのシールの大きさ（ドット。1 ドットは 1/8mm）
+ * ラベル用のプリンターのシールの大きさ（ドット。1 ドットは 1/8mm）と向き
  *
  * - width: 印字幅（8 の倍数）。どのシールもこの幅に収める
  * - height: シール 1 枚の長さ。緊急・キャンセル・テスト印刷のシール（sticker）は width × height の画像に描く
  * - margin: sticker の四辺の余白。中身は余白の内側に描く
+ * - rotate180: カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。
+ *   シール（width × height）の真ん中を中心に回す。テスト印刷の確認用のページは回さない
  *
- * カップのシール（ページモードの文字）は、範囲の幅を width に縮めるだけで、長さ・余白は使わない。
+ * カップのシール（ページモードの文字）は、範囲の幅を width に縮めるだけで、余白は使わない。
+ * 長さは、180° 回すときに範囲を置く所を決めるのにだけ使う（order-label.ts）。
  */
 export type LabelGeometry = {
   width: number;
   height: number;
   margin: number;
+  rotate180: boolean;
 };
 
-/** プリンター設定のラベルの長さ・印字幅・余白（withPrinterSettingDefaults で確かめたもの）を、ドットにする */
+/** プリンター設定のラベルの長さ・印字幅・余白（withPrinterSettingDefaults で確かめたもの）をドットにし、向きを添える */
 export const labelGeometry = (
   settings: Pick<
     PrinterSettings,
     | "label_printer_label_length_mm"
     | "label_printer_print_width_dots"
     | "label_printer_margin_mm"
+    | "label_printer_rotate_180"
   >,
 ): LabelGeometry => ({
   width: settings.label_printer_print_width_dots,
@@ -77,6 +82,7 @@ export const labelGeometry = (
     settings.label_printer_label_length_mm * PRINTER_DOTS_PER_MM,
   ),
   margin: Math.round(settings.label_printer_margin_mm * PRINTER_DOTS_PER_MM),
+  rotate180: settings.label_printer_rotate_180,
 });
 
 /** レシート用のプリンターの印字幅（ドット） */

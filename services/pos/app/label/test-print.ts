@@ -21,12 +21,13 @@ import {
   textWidth,
   toRasterImage,
 } from "./receipt-canvas";
-import { emergencySticker, toStickerLabel } from "./sticker";
+import { emergencyStickers, toStickerLabel } from "./sticker";
 
 /**
  * テスト印刷（管理画面のプリンター設定から刷る）
  *
- * 確認用のページの後に、いつも刷るものの見本（ラベル用は緊急のシールとカップのシール、レシート用はレシート）を続けて刷る。
+ * 確認用のページの後に、いつも刷るものの見本（ラベル用は緊急のシールで挟んだカップのシール、レシート用はレシート）を続けて刷る。
+ * ラベル用の見本は、設定の向き（180° 回すか）で刷る。確認用のページは目盛りを最初に刷られる点から測るので、回さない。
  *
  * - ラベル用：確認用のページはシール 1 枚分の画像で、余白の内側を枠で囲み、上と左に最初に刷られる点からの目盛り
  *   （1mm ごとの線と 10mm ごとの数字）を入れる。シールの端がどの数字の所にあるかを読み、印字幅（mm × 8 ドット）と
@@ -159,7 +160,7 @@ const mm = (dots: number) =>
  * ラベル用の確認用のページ（シール 1 枚分）
  *
  * 余白の内側を枠で囲み、上と左に目盛り、右と下の辺の真ん中に三角、大きさ・IP アドレスの文字と、濃さの段階を描く。
- * 目盛りは、最初に刷られる点（画像の左上）からの距離。
+ * 目盛りは、最初に刷られる点（画像の左上）からの距離。180° 回す設定でも回さない（目盛りの読み方が変わらないように）。
  */
 const drawLabelTestPage = async ({
   address,
@@ -259,7 +260,7 @@ const drawLabelTestPage = async ({
     ctx.putImageData(image, 0, 0);
   }
 
-  return toStickerLabel(ctx);
+  return toStickerLabel(ctx, false);
 };
 
 // ---- 見本 ----
@@ -310,17 +311,22 @@ const sampleOrder = () => {
 };
 
 /**
- * ラベル用のテスト印刷。確認用のページ・緊急のシール（シール 1 枚分の画像）と、見本の注文のカップのシール（2 枚）
+ * ラベル用のテスト印刷。確認用のページと、緊急のシール（ここから・ここまで）で挟んだ見本の注文のカップのシール（2 枚）
  */
 export const labelTestPrintJob = async (
   target: LabelTestPrintTarget,
-): Promise<PrintJob> => ({
-  labels: [
-    await drawLabelTestPage(target),
-    await emergencySticker(target.geometry),
-    ...orderLabelJob(sampleOrder(), target.geometry.width).labels,
-  ],
-});
+): Promise<PrintJob> => {
+  const testPage = await drawLabelTestPage(target);
+  const { start, end } = await emergencyStickers(target.geometry);
+  return {
+    labels: [
+      testPage,
+      start,
+      ...orderLabelJob(sampleOrder(), target.geometry).labels,
+      end,
+    ],
+  };
+};
 
 /** レシート用のテスト印刷。確認用のページと見本のレシートを続けて刷り、最後に切る */
 export const receiptTestPrintJob = async (

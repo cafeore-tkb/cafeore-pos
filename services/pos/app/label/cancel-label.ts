@@ -94,13 +94,13 @@ const drawCancelLabel = async (orderId: number, geometry: LabelGeometry) => {
   drawText(ctx, CANCELLED_TEXT, DESIGN_WIDTH / 2, 36, CANCELLED);
   drawNumber(ctx, orderId);
 
-  return toStickerLabel(ctx);
+  return toStickerLabel(ctx, geometry.rotate180);
 };
 
 /**
- * キャンセルした注文のシール。geometry はラベル用のシールの大きさ（paper.ts の labelGeometry）
+ * キャンセルした注文のシール。geometry はラベル用のシールの大きさと向き（paper.ts の labelGeometry）
  *
- * シール 1 枚分の画像で、シールの先頭から刷る。刷らない注文なら null
+ * シール 1 枚分の画像で、シールの先頭から刷る（180° 回すなら、回した画像）。刷らない注文なら null
  */
 export const cancelLabelJob = async (
   order: OrderEntity,

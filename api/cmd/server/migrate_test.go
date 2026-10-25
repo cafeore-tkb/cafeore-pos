@@ -229,7 +229,7 @@ type printerSettingBeforeLabelSize struct {
 
 func (printerSettingBeforeLabelSize) TableName() string { return "printer_settings" }
 
-// 前に保存したプリンター設定は、足した列が既定値（29mm・360 ドット・余白なし）になり、ほかの値はそのまま
+// 前に保存したプリンター設定は、足した列が既定値（29mm・360 ドット・余白なし・回さない）になり、ほかの値はそのまま
 func TestMigrateAddsLabelSizeToSavedPrinterSettings(t *testing.T) {
 	db := testdb.NewDatabase(t, nil)
 	if err := db.AutoMigrate(&printerSettingBeforeLabelSize{}); err != nil {
@@ -259,6 +259,9 @@ func TestMigrateAddsLabelSizeToSavedPrinterSettings(t *testing.T) {
 	}
 	if got.LabelPrinterLabelLengthMm != models.DefaultLabelPrinterLabelLengthMm || got.LabelPrinterPrintWidthDots != models.DefaultLabelPrinterPrintWidthDots || got.LabelPrinterMarginMm != models.DefaultLabelPrinterMarginMm {
 		t.Errorf("label size: %+v", got)
+	}
+	if got.LabelPrinterRotate180 != models.DefaultLabelPrinterRotate180 {
+		t.Errorf("label rotation: %+v", got)
 	}
 	if got.LabelPrinterIP != "192.168.77.12" || got.ReceiptPrinterModel != "tm_m30" || got.ReceiptPrinterPaperWidth != "80mm" {
 		t.Errorf("saved values changed: %+v", got)

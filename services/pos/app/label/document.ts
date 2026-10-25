@@ -79,6 +79,20 @@ export const packImage = (image: RasterImage): PackedImage => {
   return { width, height: rows, bits: btoa(binary) };
 };
 
+/** 白黒の画像を 180° 回す（画素を逆の順に並べる） */
+export const rotateImage180 = (image: RasterImage): RasterImage => {
+  const { width, height, data } = image;
+  const pixels = width * height;
+  const rotated = new Uint8ClampedArray(data.length);
+  for (let pixel = 0; pixel < pixels; pixel++) {
+    rotated.set(
+      data.subarray(pixel * 4, pixel * 4 + 4),
+      (pixels - 1 - pixel) * 4,
+    );
+  }
+  return { width, height, data: rotated };
+};
+
 /** 詰めた画像を、プリンターに渡せる RasterImage に戻す */
 export const unpackImage = (image: PackedImage): RasterImage => {
   const { width, height } = image;
@@ -102,14 +116,15 @@ export type PlacedElement =
 
 /**
  * ダイカットラベル 1 枚分の画像（緊急・キャンセル・テスト印刷のシール）。シールの先頭へ送ってから、左端から刷る。
- * 画像はラベル用のシールの大きさ（paper.ts の labelGeometry）で描く（sticker.ts）
+ * 画像はラベル用のシールの大きさ（paper.ts の labelGeometry）で描く（sticker.ts）。180° 回すときは、描いた画像を回してある
  */
 export type StickerLabel = { type: "sticker"; image: PackedImage };
 
 /**
  * シール 1 枚
  *
- * - fixed: シールの先頭へ送ってから、範囲（area）の中に座標で置く
+ * - fixed: シールの先頭へ送ってから、範囲（area）の中に座標で置く。
+ *   rotate180 なら範囲の中を 180° 回す（座標は範囲の右下から測り、文字も逆さまになる。範囲は回さずに置く）
  * - flow: 先頭へは送らず、前のシールの続きから行を上から順に流す。
  *   align が center なら各行を紙の中央に寄せる（省略したら左寄せ）
  * - image: 前のシールの続きに画像を紙の中央に寄せて刷る（レシート・領収書）
@@ -120,6 +135,7 @@ export type Label =
       type: "fixed";
       area: { x: number; y: number; width: number; height: number };
       elements: readonly PlacedElement[];
+      rotate180?: boolean;
     }
   | { type: "flow"; lines: readonly TextLine[]; align?: "left" | "center" }
   | { type: "image"; image: RasterImage }

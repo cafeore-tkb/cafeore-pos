@@ -37,8 +37,12 @@ const (
 	DefaultLabelPrinterMarginMm       = 0.0
 )
 
+// DefaultLabelPrinterRotate180 は一度も保存していないときに、ラベル用のシールを 180° 回して刷るか。
+// 回せるようにする前に保存した行も、これになる（列の既定値）。
+const DefaultLabelPrinterRotate180 = false
+
 // PrinterSetting はレジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレス、ラベル用のシールの大きさ
-// （長さ・印字幅・余白）、レシート用のプリンターの用紙（幅と種類）と機種。
+// （長さ・印字幅・余白）と向き（180° 回すか）、レシート用のプリンターの用紙（幅と種類）と機種。
 //
 // レジのブラウザがこの IP アドレスへ直接つなぐ。サーバーはプリンターにはつながず、
 // 値を持っておくだけ。シールの大きさ・機種・用紙は、レジが刷るものの大きさを決めるのに使う。
@@ -54,6 +58,7 @@ type PrinterSetting struct {
 	LabelPrinterLabelLengthMm  float64   `gorm:"type:double precision;not null;default:29"` // シール 1 枚の長さ（mm。DefaultLabelPrinterLabelLengthMm と同じ）
 	LabelPrinterPrintWidthDots int       `gorm:"not null;default:360"`                      // 印字幅（ドット。DefaultLabelPrinterPrintWidthDots と同じ）
 	LabelPrinterMarginMm       float64   `gorm:"type:double precision;not null;default:0"`  // 四辺の余白（mm。DefaultLabelPrinterMarginMm と同じ）
+	LabelPrinterRotate180      bool      `gorm:"not null;default:false"`                    // カップ・緊急・キャンセルのシールを 180° 回して刷るか（DefaultLabelPrinterRotate180 と同じ）
 	UpdatedAt                  time.Time `gorm:"not null"`
 }
 
@@ -71,5 +76,6 @@ func DefaultPrinterSetting() PrinterSetting {
 		LabelPrinterLabelLengthMm:  DefaultLabelPrinterLabelLengthMm,
 		LabelPrinterPrintWidthDots: DefaultLabelPrinterPrintWidthDots,
 		LabelPrinterMarginMm:       DefaultLabelPrinterMarginMm,
+		LabelPrinterRotate180:      DefaultLabelPrinterRotate180,
 	}
 }

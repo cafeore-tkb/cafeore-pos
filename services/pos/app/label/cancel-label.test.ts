@@ -59,6 +59,7 @@ describe("[unit] cancelLabelJob", () => {
         width: 360,
         height: 232,
         margin: 0,
+        rotate180: false,
       }),
     ).resolves.toBeNull();
   });
