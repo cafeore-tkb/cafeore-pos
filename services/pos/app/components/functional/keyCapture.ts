@@ -1,12 +1,7 @@
-import {
-  isModifierKey,
-  isRegisterKey,
-  isSameMenuKey,
-  menuKeyError,
-} from "~/lib/menuKey";
+import { isModifierKey } from "~/lib/menuKey";
 
 /**
- * 商品のキーを、実際に押して登録するときに押したキー（`/menu-keys`）
+ * メニューのキーを、実際に押して決めるときに押したキー（商品管理の「キーをキャプチャ」）
  *
  * レジ（CashierV2 の keydown）と同じく event.key を、離すまで event.code ごとに覚える。
  * Shift などの修飾キーは数えない（Shift は * # などの記号を打つのに使う）。
@@ -89,36 +84,3 @@ export const capturedKey = (capture: KeyCapture): string | null =>
   capture.held.size === 0 && capture.keys.length > 0
     ? capture.keys.join("+")
     : null;
-
-export type CapturedKeyCheck =
-  | { ok: true; warning: string | null }
-  | { ok: false; message: string };
-
-/** 押したキーをそのメニューに登録できるか。他のメニューと同じキーは登録できない（同時押しは押す順を問わない） */
-export const checkCapturedKey = (
-  key: string,
-  menuId: string,
-  menus: readonly { id: string; name: string; key: string }[],
-): CapturedKeyCheck => {
-  const error = menuKeyError(key);
-  if (error) return { ok: false, message: error };
-  const current = menus.find((menu) => menu.id === menuId);
-  if (current && isSameMenuKey(current.key, key)) {
-    return { ok: false, message: "今と同じキーです" };
-  }
-  const taken = menus.find(
-    (menu) => menu.id !== menuId && isSameMenuKey(menu.key, key),
-  );
-  if (taken) {
-    return {
-      ok: false,
-      message: `「${taken.name}」で使われています。先にそちらのキーを変えてください`,
-    };
-  }
-  return {
-    ok: true,
-    warning: isRegisterKey(key)
-      ? "レジの操作（数字・Enter・Space・Esc・Backspace・矢印）に使うキーです。登録するとレジでその操作ができなくなります"
-      : null,
-  };
-};

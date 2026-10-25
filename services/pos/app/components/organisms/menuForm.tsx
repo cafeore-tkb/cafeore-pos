@@ -1,9 +1,10 @@
 import type { ItemEntity, WithId } from "@cafeore/common";
-import { useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
+import { MenuKeyCapture } from "~/components/organisms/menuKeyCapture";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
-import { isSameMenuKey, menuKeyError, normalizeMenuKey } from "~/lib/menuKey";
+import { checkMenuKey, normalizeMenuKey } from "~/lib/menuKey";
 
 export type MenuFormValues = {
   name: string;
@@ -18,14 +19,14 @@ export type MenuFormValues = {
 export function MenuForm({
   items,
   initialMenu,
-  usedKeys,
+  otherMenus,
   onSubmit,
   submitting = false,
 }: {
   items: WithId<ItemEntity>[];
   initialMenu?: MenuFormValues;
-  /** 他のメニューが使っているキー。レジで同じキーに 2 つ割り当てないように */
-  usedKeys: string[];
+  /** 他のメニュー。レジで同じキーに 2 つ割り当てないように */
+  otherMenus: { name: string; key: string }[];
   onSubmit: (values: MenuFormValues) => Promise<void>;
   submitting?: boolean;
 }) {
@@ -36,6 +37,9 @@ export function MenuForm({
     initialMenu ? String(initialMenu.price) : "",
   );
   const [key, setKey] = useState(initialMenu?.key ?? "");
+  // キーを実際に押して決めている間
+  const [capturingKey, setCapturingKey] = useState(false);
+  const closeKeyCapture = useCallback(() => setCapturingKey(false), []);
   const [priority, setPriority] = useState(String(initialMenu?.priority ?? 0));
   const [validationError, setValidationError] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>(
@@ -45,10 +49,7 @@ export function MenuForm({
   );
 
   const normalizedKey = normalizeMenuKey(key);
-  const keyError = key === "" ? null : menuKeyError(normalizedKey);
-  // 同時押しは押す順に関わらず同じキー（「a+s」と「s+a」）
-  const keyTaken =
-    key !== "" && usedKeys.some((used) => isSameMenuKey(used, normalizedKey));
+  const keyCheck = key === "" ? null : checkMenuKey(normalizedKey, otherMenus);
 
   const groups = useMemo(() => {
     const byType = new Map<string, WithId<ItemEntity>[]>();
@@ -86,14 +87,8 @@ export function MenuForm({
           setValidationError("優先度は整数で入力してください");
           return;
         }
-        if (keyError) {
-          setValidationError(keyError);
-          return;
-        }
-        if (keyTaken) {
-          setValidationError(
-            `キー「${normalizedKey}」は他のメニューで使われています`,
-          );
+        if (keyCheck && !keyCheck.ok) {
+          setValidationError(keyCheck.message);
           return;
         }
 
@@ -154,21 +149,31 @@ export function MenuForm({
         </div>
         <div className="grid content-start gap-2">
           <Label htmlFor={`${id}-key`}>キー</Label>
-          <Input
-            id={`${id}-key`}
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder="a"
-            className="font-mono"
-            aria-invalid={keyError !== null || keyTaken}
-            required
-          />
-          {keyError ? (
-            <p className="text-destructive text-xs">{keyError}</p>
-          ) : keyTaken ? (
-            <p className="text-destructive text-xs">
-              他のメニューで使われています
-            </p>
+          {/* 狭い画面ではボタンを下に回す */}
+          <div className="flex min-w-0 flex-wrap gap-2">
+            <Input
+              id={`${id}-key`}
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="a"
+              className="w-auto min-w-20 flex-1 font-mono"
+              aria-invalid={keyCheck?.ok === false}
+              required
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-none"
+              disabled={capturingKey}
+              onClick={() => setCapturingKey(true)}
+            >
+              キーをキャプチャ
+            </Button>
+          </div>
+          {keyCheck && !keyCheck.ok ? (
+            <p className="text-destructive text-xs">{keyCheck.message}</p>
+          ) : keyCheck?.warning ? (
+            <p className="text-amber-700 text-xs">{keyCheck.warning}</p>
           ) : (
             <p className="text-muted-foreground text-xs">
               レジでこのキーを押すと追加されます。「a+s」のように +
@@ -176,6 +181,15 @@ export function MenuForm({
             </p>
           )}
         </div>
+        {capturingKey && (
+          <div className="col-span-2">
+            <MenuKeyCapture
+              otherMenus={otherMenus}
+              onCapture={setKey}
+              onClose={closeKeyCapture}
+            />
+          </div>
+        )}
         <div className="grid content-start gap-2">
           <Label htmlFor={`${id}-priority`}>優先度</Label>
           <Input

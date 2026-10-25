@@ -116,3 +116,32 @@ export const menuKeyError = (key: string): string | null => {
   }
   return null;
 };
+
+export type MenuKeyCheck =
+  | { ok: true; warning: string | null }
+  | { ok: false; message: string };
+
+/**
+ * メニューにそのキーを使えるか。他のメニューと同じキー（同時押しは押す順を問わない）は使えない。
+ * レジの操作に使うキーは 1 つだけなら使えるが、レジでその操作ができなくなると知らせる
+ */
+export const checkMenuKey = (
+  key: string,
+  otherMenus: readonly { name: string; key: string }[],
+): MenuKeyCheck => {
+  const error = menuKeyError(key);
+  if (error) return { ok: false, message: error };
+  const taken = otherMenus.find((menu) => isSameMenuKey(menu.key, key));
+  if (taken) {
+    return {
+      ok: false,
+      message: `キー「${menuKeyLabel(key)}」は「${taken.name}」で使われています。先にそちらのキーを変えてください`,
+    };
+  }
+  return {
+    ok: true,
+    warning: isRegisterKey(key)
+      ? "レジの操作（数字・Enter・Space・Esc・Backspace・矢印）に使うキーです。このキーにするとレジでその操作ができなくなります"
+      : null,
+  };
+};
