@@ -1,10 +1,14 @@
 import {
   type LabelPrintClaim,
+  type LabelPrintProxy,
   type LabelPrintRequest,
   type LabelPrintRequestResult,
   claimLabelPrint,
+  deleteLabelPrintProxy,
+  getLabelPrintProxies,
   getLabelPrintRequests,
   markLabelPrinted,
+  putLabelPrintProxy,
   releaseLabelPrint,
 } from "@cafeore/common";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,10 +28,18 @@ import type { PrinterConnectionStatus } from "./infra/printer";
  * 代理印刷をオンにしたレジが刷る。頼むのは print-util の usePrinter（relay）、刷るのはレジの useLabelPrintProxy。
  * レジは刷る前に引き受け（claim）、引き受けたレジだけが刷る（代理印刷のレジが何台あっても 1 枚だけ刷る）。
  * 頼めなければ、頼む端末は未印刷に残して間をあけて頼み直す（relayRetryDelay）。淹れ直しが消えていたら（410）、そのシールは捨てる。
+ * 代理印刷をしている（オンで、ラベル用のプリンターがつながっている）レジは、そうとサーバーに知らせ続け（PROXY_HEARTBEAT_MS）、
+ * 開いたレジは、ほかに代理印刷をしているレジが無ければ代理印刷をオンにする（useLabelPrintProxyAutoEnable）。
  */
 
 /** 刷れなかった・ほかのレジが刷っている頼みを、もう一度引き受けにいくまでの間（ミリ秒） */
 export const PROXY_RETRY_MS = 10_000;
+
+/**
+ * 代理印刷をしているレジが、そうとサーバーに知らせる間隔（ミリ秒）。
+ * サーバーは 60 秒知らせが無ければ数えない（api の labelPrintProxyTTL）ので、2 回取りこぼしても数えられる
+ */
+export const PROXY_HEARTBEAT_MS = 20_000;
 
 /** 頼みの一覧を読み直す間隔（ミリ秒）。配信を受け損ねたとき（ほかのインスタンスの知らせが届かないなど）のため */
 const QUEUE_REFRESH_MS = 30_000;
@@ -281,8 +293,31 @@ export const useLabelPrintQueue = (enabled = true) => {
 };
 
 /**
+ * active（代理印刷がオンで、ラベル用のプリンターがつながっている）のあいだ、このレジが代理印刷をしているとサーバーに知らせ続ける。
+ * active でなくなった・ページを閉じたら、やめたと知らせる（知らせられなくても、サーバーは 60 秒で数えなくなる）
+ */
+const useLabelPrintProxyPresence = (active: boolean, deviceId: string) => {
+  useEffect(() => {
+    if (!active) return;
+    let last = putLabelPrintProxy(deviceId);
+    const timer = setInterval(() => {
+      last = putLabelPrintProxy(deviceId);
+    }, PROXY_HEARTBEAT_MS);
+    const leave = () => void deleteLabelPrintProxy(deviceId, true);
+    window.addEventListener("pagehide", leave);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pagehide", leave);
+      // 知らせ終えてから、やめたと知らせる（入れ違って、やめたのに代理印刷をしているレジに残らないように）
+      void last.then(() => deleteLabelPrintProxy(deviceId));
+    };
+  }, [active, deviceId]);
+};
+
+/**
  * 代理印刷（レジ）。enabled のあいだ、まだ刷れていない頼みを引き受けて、このレジのラベル用のプリンター（printer）で刷る。
- * 頼まれたとき・プリンターがつながったときと、残っているあいだは一定の間隔で回す。刷れたら toast で知らせる
+ * 頼まれたとき・プリンターがつながったときと、残っているあいだは一定の間隔で回す。刷れたら toast で知らせる。
+ * プリンターがつながっているあいだは、代理印刷をしているとサーバーに知らせる。deviceId はこのレジ（ページを開くたびに作る id）
  */
 export const useLabelPrintProxy = (
   enabled: boolean,
@@ -344,8 +379,57 @@ export const useLabelPrintProxy = (
     const timer = setInterval(run, PROXY_RETRY_MS);
     return () => clearInterval(timer);
   }, [active, run]);
+  useLabelPrintProxyPresence(
+    enabled && printer.status === "connected",
+    deviceId,
+  );
 
-  return { waiting: requests.length };
+  return { waiting: requests.length, deviceId };
+};
+
+/** 自分（deviceId）のほかに、代理印刷をしているレジがあるか */
+export const hasOtherLabelPrintProxy = (
+  proxies: readonly Pick<LabelPrintProxy, "device_id">[],
+  deviceId: string,
+) => proxies.some((proxy) => proxy.device_id !== deviceId);
+
+/**
+ * ページを開いて最初に共有の WebSocket がつながったとき、このレジの代理印刷がオフ（enabled でない）で、
+ * ほかに代理印刷をしているレジ（オンで、ラベル用のプリンターがつながっている）が 1 台も無ければ、代理印刷をオンにする（enable）。
+ * 見るのは 1 回だけで、つなぎ直したときは見ない（開いている間に手でオフにしたら、そのまま）。一覧を読めなければオンにしない
+ */
+export const useLabelPrintProxyAutoEnable = (
+  enabled: boolean,
+  enable: (next: boolean) => void,
+  deviceId: string,
+) => {
+  const { status } = useOrdersWSContext();
+  const checked = useRef(false);
+  // 一覧を読んでいる間に変わっても、最新のものを読む
+  const latest = useRef(enabled);
+  latest.current = enabled;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (status !== "open" || checked.current) return;
+    checked.current = true;
+    if (latest.current) return;
+    void getLabelPrintProxies().then((proxies) => {
+      // 読んでいる間に手でオンにした・ページを離れたなら何もしない
+      if (!proxies || !mounted.current || latest.current) return;
+      if (hasOtherLabelPrintProxy(proxies, deviceId)) return;
+      enable(true);
+      toast(
+        "ほかに代理印刷をしているレジが無いので、このレジの代理印刷をオンにしました",
+      );
+    });
+  }, [status, deviceId, enable]);
 };
 
 const PROXY_SETTING_KEY = "cafeore:label-print-proxy";

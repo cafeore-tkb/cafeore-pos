@@ -273,3 +273,61 @@ func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
 	}
 	a.noBroadcast()
 }
+
+// 代理印刷をしているレジの一覧（device_id の順）
+func (a *testAPI) labelPrintProxies() []string {
+	a.t.Helper()
+	var list []models.LabelPrintProxyResponse
+	a.do(http.MethodGet, "/api/label-print-proxies", nil).expect(http.StatusOK).decode(&list)
+	devices := make([]string, 0, len(list))
+	for _, p := range list {
+		devices = append(devices, p.DeviceId)
+	}
+	return devices
+}
+
+// 知らせたレジが代理印刷をしているレジで、やめた・知らせが途絶えたレジは数えない
+func TestLabelPrintProxies(t *testing.T) {
+	a := newTestAPI(t)
+	if got := a.labelPrintProxies(); len(got) != 0 {
+		t.Fatalf("proxies = %v, want none", got)
+	}
+	a.do(http.MethodPut, "/api/label-print-proxies/register-b", nil).expect(http.StatusNoContent)
+	a.do(http.MethodPut, "/api/label-print-proxies/register-a", nil).expect(http.StatusNoContent)
+	// 知らせ直しても 1 台のまま
+	a.do(http.MethodPut, "/api/label-print-proxies/register-a", nil).expect(http.StatusNoContent)
+	if got := strings.Join(a.labelPrintProxies(), ","); got != "register-a,register-b" {
+		t.Fatalf("proxies = %s", got)
+	}
+
+	// やめたら外す。知らせていないレジがやめても何もしない
+	a.do(http.MethodDelete, "/api/label-print-proxies/register-a", nil).expect(http.StatusNoContent)
+	a.do(http.MethodDelete, "/api/label-print-proxies/register-a", nil).expect(http.StatusNoContent)
+	if got := strings.Join(a.labelPrintProxies(), ","); got != "register-b" {
+		t.Fatalf("proxies after delete = %s", got)
+	}
+
+	// 知らせが途絶えた（閉じた・落ちた）レジは数えず、ほかのレジが知らせたときに消す
+	if err := a.db.Model(&models.LabelPrintProxy{}).Where("device_id = ?", "register-b").
+		Update("last_seen_at", time.Now().Add(-labelPrintProxyTTL-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got := a.labelPrintProxies(); len(got) != 0 {
+		t.Fatalf("proxies after ttl = %v, want none", got)
+	}
+	a.do(http.MethodPut, "/api/label-print-proxies/register-c", nil).expect(http.StatusNoContent)
+	var rows []models.LabelPrintProxy
+	if err := a.db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].DeviceID != "register-c" {
+		t.Fatalf("rows = %+v, want only register-c", rows)
+	}
+
+	// レジの id は 1〜64 文字
+	for _, device := range []string{"%20", strings.Repeat("x", labelPrintDeviceMax+1)} {
+		a.do(http.MethodPut, "/api/label-print-proxies/"+device, nil).expect(http.StatusBadRequest)
+		a.do(http.MethodDelete, "/api/label-print-proxies/"+device, nil).expect(http.StatusBadRequest)
+	}
+	a.noBroadcast()
+}

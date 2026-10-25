@@ -22,6 +22,7 @@ import (
 //
 // サーバーはプリンターにつながず、頼みを持っておいて配るだけ。刷るのはレジのブラウザで、刷る前に引き受け（claim）、
 // 引き受けたレジだけが刷る（代理印刷のレジが何台あっても 1 枚だけ刷る）。
+// 代理印刷をしているレジ（models.LabelPrintProxy）も覚えておき、開いたレジはほかに 1 台も無ければ代理印刷をオンにする。
 type LabelPrintHandler struct {
 	db  *gorm.DB
 	hub *Hub
@@ -39,6 +40,9 @@ const (
 	labelPrintJobMaxBytes = 64 * 1024
 	// 刷るレジの id の長さ（文字。OpenAPI の maxLength と同じ）
 	labelPrintDeviceMax = 64
+	// 代理印刷をしているレジが、この長さ知らせて来なければ、もう代理印刷をしていないとみなす。
+	// レジは 20 秒ごとに知らせる（画面の label/print-relay.ts の PROXY_HEARTBEAT_MS）ので、2 回取りこぼしても数える
+	labelPrintProxyTTL = 60 * time.Second
 )
 
 // POST /api/label-print-requests - 緊急（淹れ直し）のシールをレジに代わりに刷ってもらう。id は淹れ直しの id。
@@ -229,14 +233,70 @@ func (h *LabelPrintHandler) ensureExists(id uuid.UUID) error {
 	return nil
 }
 
-// 刷るレジの id を読む。読めなければ 400 を書いて false
+// GET /api/label-print-proxies - 代理印刷をしているレジ（labelPrintProxyTTL 以内に知らせたもの。device_id の順）。
+// レジは、ページを開いて最初に共有の WebSocket がつながったときに読み、自分のほかに 1 台も無ければ代理印刷をオンにする。
+func (h *LabelPrintHandler) GetLabelPrintProxies(c *gin.Context) {
+	var rows []models.LabelPrintProxy
+	if err := h.db.Where("last_seen_at >= ?", h.now().Add(-labelPrintProxyTTL)).
+		Order("device_id").Find(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	resp := make([]models.LabelPrintProxyResponse, 0, len(rows))
+	for _, row := range rows {
+		resp = append(resp, models.LabelPrintProxyResponse{DeviceId: row.DeviceID, LastSeenAt: row.LastSeenAt})
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// PUT /api/label-print-proxies/{deviceId} - レジが、代理印刷をしている（オンで、ラベル用のプリンターがつながっている）と知らせる。
+// 知らせた時刻を残す。知らせが途絶えたレジ（閉じた・落ちた）の行は、もう数えないので、ここで消しておく。
+func (h *LabelPrintHandler) PutLabelPrintProxy(c *gin.Context) {
+	device, ok := labelPrintDevice(c, c.Param("deviceId"))
+	if !ok {
+		return
+	}
+	now := h.now()
+	// 1 つずつでよい（消すのと知らせるのが入れ違っても、知らせが新しければ消す条件に当たらない）
+	if respondError(c, h.db.Where("last_seen_at < ?", now.Add(-labelPrintProxyTTL)).Delete(&models.LabelPrintProxy{}).Error) {
+		return
+	}
+	err := h.db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "device_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"last_seen_at"}),
+	}).Create(&models.LabelPrintProxy{DeviceID: device, LastSeenAt: now}).Error
+	if respondError(c, err) {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// DELETE /api/label-print-proxies/{deviceId} - レジが、代理印刷をやめた（オフにした・プリンターが切れた・ページを閉じた）と知らせる。
+// 知らせていなければ何もしない。
+func (h *LabelPrintHandler) DeleteLabelPrintProxy(c *gin.Context) {
+	device, ok := labelPrintDevice(c, c.Param("deviceId"))
+	if !ok {
+		return
+	}
+	if respondError(c, h.db.Delete(&models.LabelPrintProxy{}, "device_id = ?", device).Error) {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// 刷るレジの id を本文から読む。読めなければ 400 を書いて false
 func bindLabelPrintDevice(c *gin.Context) (string, bool) {
 	var req models.LabelPrintDeviceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return "", false
 	}
-	device := strings.TrimSpace(req.DeviceId)
+	return labelPrintDevice(c, req.DeviceId)
+}
+
+// レジの id（前後の空白は除く）が 1〜64 文字か確かめる。違えば 400 を書いて false
+func labelPrintDevice(c *gin.Context, raw string) (string, bool) {
+	device := strings.TrimSpace(raw)
 	if device == "" || utf8.RuneCountInString(device) > labelPrintDeviceMax {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "device_id は 1〜64 文字にしてください"})
 		return "", false

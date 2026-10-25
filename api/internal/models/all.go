@@ -35,5 +35,6 @@ func All() []any {
 		&SquareDevice{},
 		&PrinterSetting{},
 		&LabelPrintRequest{},
+		&LabelPrintProxy{},
 	}
 }

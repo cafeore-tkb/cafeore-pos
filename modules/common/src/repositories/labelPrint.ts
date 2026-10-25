@@ -114,3 +114,38 @@ export const releaseLabelPrint = (id: string, deviceId: string) =>
       body: { device_id: deviceId },
     }),
   );
+
+/** 代理印刷をしているレジ（代理印刷をオンにしていて、ラベル用のプリンターがつながっている） */
+export type LabelPrintProxy = components["schemas"]["LabelPrintProxyResponse"];
+
+/** 代理印刷をしているレジ（GET /api/label-print-proxies。直近 60 秒に知らせたもの）。読めなければ null */
+export const getLabelPrintProxies = async (): Promise<
+  LabelPrintProxy[] | null
+> => {
+  try {
+    const { data, response } = await apiClient.GET("/api/label-print-proxies");
+    return response.ok && data ? data : null;
+  } catch {
+    return null;
+  }
+};
+
+/** このレジが代理印刷をしていると知らせる（PUT /api/label-print-proxies/{deviceId}）。しているあいだ、間をおいて送り続ける */
+export const putLabelPrintProxy = (deviceId: string) =>
+  ok(
+    apiClient.PUT("/api/label-print-proxies/{deviceId}", {
+      params: { path: { deviceId } },
+    }),
+  );
+
+/**
+ * このレジが代理印刷をやめたと知らせる（DELETE /api/label-print-proxies/{deviceId}）。
+ * keepalive ならページを閉じるときでも送り切る
+ */
+export const deleteLabelPrintProxy = (deviceId: string, keepalive = false) =>
+  ok(
+    apiClient.DELETE("/api/label-print-proxies/{deviceId}", {
+      params: { path: { deviceId } },
+      keepalive,
+    }),
+  );

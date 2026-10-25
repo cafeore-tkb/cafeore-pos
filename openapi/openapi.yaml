@@ -568,6 +568,76 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/label-print-proxies:
+    get:
+      summary: 代理印刷をしているレジ
+      description: |
+        代理印刷をオンにしていて、ラベル用のプリンターがつながっているレジ（直近 60 秒に PUT /api/label-print-proxies/{deviceId} で知らせたもの）。
+        レジは、ページを開いて最初に /api/ws/orders がつながったときに読み、自分のほかに 1 台も無ければ代理印刷をオンにする。
+      operationId: getLabelPrintProxies
+      tags:
+        - printer
+      responses:
+        '200':
+          description: 代理印刷をしているレジ（device_id の順）
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LabelPrintProxyResponse'
+  /api/label-print-proxies/{deviceId}:
+    put:
+      summary: 代理印刷をしていると知らせる
+      description: |
+        代理印刷をオンにしていて、ラベル用のプリンターがつながっているあいだ、レジが 20 秒ごとに呼ぶ。
+        60 秒知らせが無ければ、そのレジはもう代理印刷をしていないとみなす（閉じた・落ちたレジも数えない）。
+      operationId: putLabelPrintProxy
+      tags:
+        - printer
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: 代理印刷をしているレジ（ページを開くたびに画面が作る id。claim の device_id と同じ）
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        '204':
+          description: 知らせを受けた
+        '400':
+          description: deviceId が 1〜64 文字でない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: 代理印刷をやめたと知らせる
+      description: |
+        代理印刷をオフにした・ラベル用のプリンターが切れた・ページを閉じたときに、レジが呼ぶ。知らせていなければ何もしない。
+      operationId: deleteLabelPrintProxy
+      tags:
+        - printer
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          description: 代理印刷をしているレジ（ページを開くたびに画面が作る id。claim の device_id と同じ）
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        '204':
+          description: 代理印刷をしているレジから外した（知らせていなければ何もしない）
+        '400':
+          description: deviceId が 1〜64 文字でない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/orders:
     get:
       summary: オーダー一覧取得
@@ -3505,6 +3575,17 @@ components:
           minLength: 1
           maxLength: 64
           description: 刷るレジ（ページを開くたびに画面が作る id）
+    LabelPrintProxyResponse:
+      type: object
+      required: [device_id, last_seen_at]
+      properties:
+        device_id:
+          type: string
+          description: 代理印刷をしているレジ（ページを開くたびに画面が作る id）
+        last_seen_at:
+          type: string
+          format: date-time
+          description: 最後に知らせた時刻
     LabelPrintClaimResponse:
       type: object
       required: [status]

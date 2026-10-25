@@ -131,6 +131,9 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.POST("/label-print-requests/:id/claim", labelPrintHandler.ClaimLabelPrintRequest)
 	api.POST("/label-print-requests/:id/printed", labelPrintHandler.MarkLabelPrintRequestPrinted)
 	api.POST("/label-print-requests/:id/release", labelPrintHandler.ReleaseLabelPrintRequest)
+	api.GET("/label-print-proxies", labelPrintHandler.GetLabelPrintProxies)
+	api.PUT("/label-print-proxies/:deviceId", labelPrintHandler.PutLabelPrintProxy)
+	api.DELETE("/label-print-proxies/:deviceId", labelPrintHandler.DeleteLabelPrintProxy)
 }
 
 type testResponse struct {

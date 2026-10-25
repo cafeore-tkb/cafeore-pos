@@ -636,6 +636,15 @@ type LabelPrintJob struct {
 	Labels []map[string]interface{} `json:"labels"`
 }
 
+// LabelPrintProxyResponse defines model for LabelPrintProxyResponse.
+type LabelPrintProxyResponse struct {
+	// DeviceId 代理印刷をしているレジ（ページを開くたびに画面が作る id）
+	DeviceId string `json:"device_id"`
+
+	// LastSeenAt 最後に知らせた時刻
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
 // LabelPrintRequestCreateRequest defines model for LabelPrintRequestCreateRequest.
 type LabelPrintRequestCreateRequest struct {
 	// Id 頼みの id（淹れ直しの id）

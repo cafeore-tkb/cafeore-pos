@@ -11,6 +11,7 @@ import {
   addLabelPrintRequest,
   canRelayNow,
   createProxyState,
+  hasOtherLabelPrintProxy,
   isLabelPrintQueueStalled,
   recordRelayResult,
   relayRetryDelay,
@@ -306,5 +307,20 @@ describe("[unit] 頼めなかったシールの頼み直しの間", () => {
       expect(backoff.has("a")).toBe(false);
       expect(canRelayNow(backoff, "a", next)).toBe(true);
     }
+  });
+});
+
+describe("[unit] ほかに代理印刷をしているレジがあるか", () => {
+  test("自分のほかに 1 台でもあれば true、無い・自分だけなら false", () => {
+    expect(hasOtherLabelPrintProxy([], "register-a")).toBe(false);
+    expect(
+      hasOtherLabelPrintProxy([{ device_id: "register-a" }], "register-a"),
+    ).toBe(false);
+    expect(
+      hasOtherLabelPrintProxy(
+        [{ device_id: "register-a" }, { device_id: "register-b" }],
+        "register-a",
+      ),
+    ).toBe(true);
   });
 });

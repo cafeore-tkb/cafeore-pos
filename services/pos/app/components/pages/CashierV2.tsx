@@ -22,6 +22,7 @@ import {
 import { labelPrintableWidth, receiptPrintableWidth } from "~/label/paper";
 import {
   useLabelPrintProxy,
+  useLabelPrintProxyAutoEnable,
   useLabelPrintProxySetting,
 } from "~/label/print-relay";
 import { usePrinter, useReceiptPrinter } from "~/label/print-util";
@@ -353,6 +354,12 @@ const CashierV2 = ({
   // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る
   const [labelPrintProxy, setLabelPrintProxy] = useLabelPrintProxySetting();
   const labelPrintRelay = useLabelPrintProxy(labelPrintProxy, printer);
+  // 開いて最初につながったとき、ほかに代理印刷をしているレジが無ければ、このレジの代理印刷をオンにする
+  useLabelPrintProxyAutoEnable(
+    labelPrintProxy,
+    setLabelPrintProxy,
+    labelPrintRelay.deviceId,
+  );
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
   // 機種・用紙が変わっても、つなぎ直さずに画像の幅だけ変える
   const receiptPrinterIp = printerAddresses.receipt_printer_ip;

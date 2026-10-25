@@ -18,7 +18,7 @@ export const LabelPrintProxySwitch = memo(
   ({ checked, onCheckedChange, waiting }: props) => (
     <div
       className="flex items-center gap-2"
-      title="オンにすると、CaOS・マスターがプリンターに直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで代わりに刷ります"
+      title="オンにすると、CaOS・マスターがプリンターに直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで代わりに刷ります。開いたときに、ほかに代理印刷をしているレジが無ければ自動でオンになります"
     >
       <Switch
         id="label-print-proxy"

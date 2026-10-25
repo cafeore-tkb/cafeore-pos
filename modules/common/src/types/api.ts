@@ -138,6 +138,27 @@ export interface paths {
      */
     post: operations["releaseLabelPrintRequest"];
   };
+  "/api/label-print-proxies": {
+    /**
+     * 代理印刷をしているレジ
+     * @description 代理印刷をオンにしていて、ラベル用のプリンターがつながっているレジ（直近 60 秒に PUT /api/label-print-proxies/{deviceId} で知らせたもの）。
+     * レジは、ページを開いて最初に /api/ws/orders がつながったときに読み、自分のほかに 1 台も無ければ代理印刷をオンにする。
+     */
+    get: operations["getLabelPrintProxies"];
+  };
+  "/api/label-print-proxies/{deviceId}": {
+    /**
+     * 代理印刷をしていると知らせる
+     * @description 代理印刷をオンにしていて、ラベル用のプリンターがつながっているあいだ、レジが 20 秒ごとに呼ぶ。
+     * 60 秒知らせが無ければ、そのレジはもう代理印刷をしていないとみなす（閉じた・落ちたレジも数えない）。
+     */
+    put: operations["putLabelPrintProxy"];
+    /**
+     * 代理印刷をやめたと知らせる
+     * @description 代理印刷をオフにした・ラベル用のプリンターが切れた・ページを閉じたときに、レジが呼ぶ。知らせていなければ何もしない。
+     */
+    delete: operations["deleteLabelPrintProxy"];
+  };
   "/api/orders": {
     /** オーダー一覧取得 */
     get: operations["getOrders"];
@@ -1224,6 +1245,15 @@ export interface components {
       /** @description 刷るレジ（ページを開くたびに画面が作る id） */
       device_id: string;
     };
+    LabelPrintProxyResponse: {
+      /** @description 代理印刷をしているレジ（ページを開くたびに画面が作る id） */
+      device_id: string;
+      /**
+       * Format: date-time
+       * @description 最後に知らせた時刻
+       */
+      last_seen_at: string;
+    };
     LabelPrintClaimResponse: {
       /**
        * @description claimed は引き受けた（job を刷る）、busy はほかのレジが引き受けている、printed はもう刷れた
@@ -2212,6 +2242,70 @@ export interface operations {
       };
       /** @description 頼みが無い（緊急を取り消した） */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 代理印刷をしているレジ
+   * @description 代理印刷をオンにしていて、ラベル用のプリンターがつながっているレジ（直近 60 秒に PUT /api/label-print-proxies/{deviceId} で知らせたもの）。
+   * レジは、ページを開いて最初に /api/ws/orders がつながったときに読み、自分のほかに 1 台も無ければ代理印刷をオンにする。
+   */
+  getLabelPrintProxies: {
+    responses: {
+      /** @description 代理印刷をしているレジ（device_id の順） */
+      200: {
+        content: {
+          "application/json": components["schemas"]["LabelPrintProxyResponse"][];
+        };
+      };
+    };
+  };
+  /**
+   * 代理印刷をしていると知らせる
+   * @description 代理印刷をオンにしていて、ラベル用のプリンターがつながっているあいだ、レジが 20 秒ごとに呼ぶ。
+   * 60 秒知らせが無ければ、そのレジはもう代理印刷をしていないとみなす（閉じた・落ちたレジも数えない）。
+   */
+  putLabelPrintProxy: {
+    parameters: {
+      path: {
+        /** @description 代理印刷をしているレジ（ページを開くたびに画面が作る id。claim の device_id と同じ） */
+        deviceId: string;
+      };
+    };
+    responses: {
+      /** @description 知らせを受けた */
+      204: {
+        content: never;
+      };
+      /** @description deviceId が 1〜64 文字でない */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 代理印刷をやめたと知らせる
+   * @description 代理印刷をオフにした・ラベル用のプリンターが切れた・ページを閉じたときに、レジが呼ぶ。知らせていなければ何もしない。
+   */
+  deleteLabelPrintProxy: {
+    parameters: {
+      path: {
+        /** @description 代理印刷をしているレジ（ページを開くたびに画面が作る id。claim の device_id と同じ） */
+        deviceId: string;
+      };
+    };
+    responses: {
+      /** @description 代理印刷をしているレジから外した（知らせていなければ何もしない） */
+      204: {
+        content: never;
+      };
+      /** @description deviceId が 1〜64 文字でない */
+      400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
