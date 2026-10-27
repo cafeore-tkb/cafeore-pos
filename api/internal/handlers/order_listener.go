@@ -30,11 +30,13 @@ const (
 	labelPrintRequestedChannel = "label_print_requested"
 	// 刷れた代理印刷。通知の中身は "<送ったインスタンスの ID> <頼みの ID>"
 	labelPrintDoneChannel = "label_print_done"
+	// 営業データを消した（data_reset.go）。通知の中身は "<送ったインスタンスの ID>"
+	dataResetChannel = "data_reset"
 )
 
 // 待ち受けるチャンネル。1本の接続でまとめて LISTEN する。
 // CaOS のドリッパーの担当者（dripper_assignees_changed。通知の中身は "<送ったインスタンスの ID>"）は caos_lanes.go にある。
-var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel, orderRecalledChannel, labelPrintRequestedChannel, labelPrintDoneChannel}
+var listenChannels = []string{ordersChangedChannel, masterStateChangedChannel, cashierStateChangedChannel, dripperAssigneesChangedChannel, cupEmergencyCancelledChannel, orderRecalledChannel, labelPrintRequestedChannel, labelPrintDoneChannel, dataResetChannel}
 
 // このプロセスの ID。自分が送った通知を、自分で受けて配り直さないために使う。
 var instanceID = uuid.NewString()
@@ -201,6 +203,8 @@ type changeSet struct {
 	labelPrintRequests map[uuid.UUID]struct{}
 	// 刷れた代理印刷。知らせをそのまま配る
 	labelPrintsDone map[uuid.UUID]struct{}
+	// 営業データを消した。知らせをそのまま配る（待ち受けていなかった間のものは配れないが、つなぎ直した画面は空の注文を受け取る）
+	dataReset bool
 }
 
 func newChangeSet() changeSet {
@@ -252,6 +256,8 @@ func (q *pendingChanges) add(channel, payload string) {
 		if id, err := uuid.Parse(rest); err == nil {
 			q.update(func(s *changeSet) { s.labelPrintsDone[id] = struct{}{} })
 		}
+	case dataResetChannel:
+		q.update(func(s *changeSet) { s.dataReset = true })
 	}
 }
 
@@ -346,6 +352,9 @@ func (h *OrderHandler) publishChanges(ctx context.Context, changes *pendingChang
 		}
 		for id := range s.labelPrintsDone {
 			broadcastLabelPrintDone(h.hub, id)
+		}
+		if s.dataReset {
+			broadcastDataReset(h.hub)
 		}
 		if failed.allOrders || len(failed.orderIDs) > 0 {
 			select {

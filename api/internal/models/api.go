@@ -9,6 +9,16 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for DataResetBackupFormat.
+const (
+	DataResetBackupFormatV1 DataResetBackupFormat = "cafeore-pos-data-reset-backup"
+)
+
+// Defines values for DataResetBackupVersion.
+const (
+	DataResetBackupVersion1 DataResetBackupVersion = 1
+)
+
 // Defines values for CaosHumanLogEntryCategory.
 const (
 	CaosHumanLogEntryCategoryHuman  CaosHumanLogEntryCategory = "human"
@@ -72,6 +82,7 @@ const (
 
 // Defines values for MeResponseRole.
 const (
+	MeRoleAdmin  MeResponseRole = "admin"
 	MeRoleNone   MeResponseRole = "none"
 	MeRoleStaff  MeResponseRole = "staff"
 	MeRoleViewer MeResponseRole = "viewer"
@@ -490,6 +501,63 @@ type CupEmergencyResponse struct {
 	Reason string `json:"reason"`
 }
 
+// DataResetBackup defines model for DataResetBackup.
+type DataResetBackup struct {
+	Format DataResetBackupFormat `json:"format"`
+
+	// Tables 表の名前ごとの全行（DB の列名のままの JSON）
+	Tables  map[string][]map[string]interface{} `json:"tables"`
+	Version DataResetBackupVersion              `json:"version"`
+}
+
+// DataResetBackupFormat defines model for DataResetBackup.Format.
+type DataResetBackupFormat string
+
+// DataResetBackupVersion defines model for DataResetBackup.Version.
+type DataResetBackupVersion int
+
+// DataResetRequest defines model for DataResetRequest.
+type DataResetRequest struct {
+	// BackupSha256 ダウンロードしたバックアップ（GET /api/admin/data-reset/backup）の SHA-256（16 進の小文字 64 文字）
+	BackupSha256 string `json:"backupSha256"`
+
+	// Confirmation 確認の文字（DataResetStatus の confirmation）
+	Confirmation string `json:"confirmation"`
+}
+
+// DataResetResult defines model for DataResetResult.
+type DataResetResult struct {
+	// Tables 消した表と、消した行数
+	Tables []DataResetTable `json:"tables"`
+}
+
+// DataResetStatus defines model for DataResetStatus.
+type DataResetStatus struct {
+	// Confirmation 消すときに confirmation に入れる確認の文字
+	Confirmation string `json:"confirmation"`
+
+	// KeptTables 残す表（設定）
+	KeptTables []string `json:"keptTables"`
+
+	// ReceptionStopped 受付を止めているか（オーダーストップの最後の記録が stop）。止めていなければ消せない
+	ReceptionStopped bool `json:"receptionStopped"`
+
+	// Tables 消す表と今の行数
+	Tables []DataResetTable `json:"tables"`
+
+	// UnknownTables 消す表にも残す表にも入っていない表。1 つでもあれば消せない（API が DB より古いなど）
+	UnknownTables []string `json:"unknownTables"`
+}
+
+// DataResetTable defines model for DataResetTable.
+type DataResetTable struct {
+	// Name 表の名前
+	Name string `json:"name"`
+
+	// Rows 行数
+	Rows int64 `json:"rows"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -704,7 +772,8 @@ type MeResponse struct {
 	// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
 	Enforcement MeResponseEnforcement `json:"enforcement"`
 
-	// Role staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+	// Role admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+	// staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
 	// enforce なら 403 になる）。off のときは null
 	Role *MeResponseRole `json:"role"`
 }
@@ -714,7 +783,8 @@ type MeResponse struct {
 // report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
 type MeResponseEnforcement string
 
-// MeResponseRole staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+// MeResponseRole admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+// staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
 // enforce なら 403 になる）。off のときは null
 type MeResponseRole string
 
@@ -1476,3 +1546,6 @@ type PairSquareDeviceJSONRequestBody = SquareDevicePairRequest
 
 // ReceiveSquareWebhookJSONRequestBody defines body for ReceiveSquareWebhook for application/json ContentType.
 type ReceiveSquareWebhookJSONRequestBody = ReceiveSquareWebhookJSONBody
+
+// ResetDataJSONRequestBody defines body for ResetData for application/json ContentType.
+type ResetDataJSONRequestBody = DataResetRequest

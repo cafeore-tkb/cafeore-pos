@@ -233,6 +233,117 @@ func TestAuthorizerReportOnly(t *testing.T) {
 	}
 }
 
+// 管理者はスタッフにできることもでき、RequireStrict(RoleAdmin) は管理者だけを通す
+func TestAuthorizerRequireStrict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	authz := NewAuthorizer(stubVerifier{}, []string{"staff@example.com", "@staff.example.com"}, []string{"display@example.com"})
+	authz.allow([]string{"Admin@example.com"}, RoleAdmin)
+
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	api := r.Group("/api", authz.RequireByMethod())
+	api.POST("/orders", ok)
+	admin := api.Group("/admin", authz.RequireStrict(RoleAdmin))
+	admin.GET("/data-reset", ok)
+	admin.POST("/data-reset", ok)
+
+	cases := []struct {
+		method, path, token string
+		want                int
+	}{
+		{"POST", "/api/orders", "admin@example.com", http.StatusOK},
+		{"GET", "/api/admin/data-reset", "admin@example.com", http.StatusOK},
+		{"POST", "/api/admin/data-reset", "admin@example.com", http.StatusOK},
+		{"GET", "/api/admin/data-reset", "", http.StatusUnauthorized},
+		{"GET", "/api/admin/data-reset", "display@example.com", http.StatusForbidden},
+		{"GET", "/api/admin/data-reset", "staff@example.com", http.StatusForbidden},
+		{"POST", "/api/admin/data-reset", "staff@example.com", http.StatusForbidden},
+		// ドメインでスタッフにした相手も管理者ではない
+		{"POST", "/api/admin/data-reset", "someone@staff.example.com", http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		if tc.token != "" {
+			req.Header.Set(AccessJWTHeader, tc.token)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("%s %s as %q: got %d, want %d", tc.method, tc.path, tc.token, w.Code, tc.want)
+		}
+	}
+}
+
+// 認証を掛けていない設定（off と report-only）では、RequireStrict は管理者でも通さない
+func TestAuthorizerRequireStrictWithoutEnforcement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	reportOnly := NewAuthorizer(stubVerifier{}, []string{"staff@example.com"}, nil)
+	reportOnly.allow([]string{"admin@example.com"}, RoleAdmin)
+	reportOnly.enforce = false
+
+	for name, authz := range map[string]*Authorizer{"off": nil, "report-only": reportOnly} {
+		r := gin.New()
+		ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+		api := r.Group("/api", authz.RequireByMethod())
+		api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin), ok)
+
+		req := httptest.NewRequest("POST", "/api/admin/data-reset", nil)
+		req.Header.Set(AccessJWTHeader, "admin@example.com")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden {
+			t.Errorf("%s: got %d, want 403", name, w.Code)
+		}
+		if !strings.Contains(w.Body.String(), AuthDisabledMessage) {
+			t.Errorf("%s: body = %s, want the reason", name, w.Body.String())
+		}
+	}
+}
+
+// PR のプレビュー（AUTH_PREVIEW_ADMIN）は、ログインしなくても全部のリクエストが管理者 preview として通る
+func TestAuthorizerPreviewAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	authz, err := AuthorizerFromEnv(func(k string) string {
+		return map[string]string{"AUTH_PREVIEW_ADMIN": "true"}[k]
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authz.PreviewAdmin() || authz.ReportOnly() {
+		t.Fatalf("PreviewAdmin() = %v, ReportOnly() = %v", authz.PreviewAdmin(), authz.ReportOnly())
+	}
+
+	r := gin.New()
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	api := r.Group("/api", authz.RequireByMethod())
+	api.GET("/me", authz.Me)
+	api.POST("/orders", ok)
+	api.PUT("/menus/1", authz.Require(RoleAdmin), ok)
+	api.POST("/admin/data-reset", authz.RequireStrict(RoleAdmin), ok)
+
+	for _, route := range []string{"POST /api/orders", "PUT /api/menus/1", "POST /api/admin/data-reset"} {
+		method, path, _ := strings.Cut(route, " ")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("%s without a token: got %d, want 200", route, w.Code)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/api/me", nil))
+	if want := `{"email":"preview","enforcement":"enforce","role":"admin"}`; w.Body.String() != want {
+		t.Fatalf("got %s, want %s", w.Body.String(), want)
+	}
+}
+
 func TestAuthorizerNilAllowsAll(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -256,6 +367,7 @@ func TestAuthorizerMe(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	enforced := NewAuthorizer(stubVerifier{}, []string{"staff@example.com"}, []string{"display@example.com"})
+	enforced.allow([]string{"admin@example.com"}, RoleAdmin)
 	reportOnly := NewAuthorizer(stubVerifier{}, []string{"staff@example.com"}, []string{"display@example.com"})
 	reportOnly.enforce = false
 	var off *Authorizer
@@ -267,6 +379,8 @@ func TestAuthorizerMe(t *testing.T) {
 		want   int
 		wantMe string
 	}{
+		{"enforce admin", enforced, "admin@example.com", http.StatusOK,
+			`{"email":"admin@example.com","enforcement":"enforce","role":"admin"}`},
 		{"enforce staff", enforced, "Staff@example.com", http.StatusOK,
 			`{"email":"Staff@example.com","enforcement":"enforce","role":"staff"}`},
 		{"enforce viewer", enforced, "display@example.com", http.StatusOK,
@@ -350,6 +464,18 @@ func TestAuthorizerFromEnv(t *testing.T) {
 		"domain without dot":    {env: with("AUTH_STAFF_EMAILS", "@localhost"), wantErr: true},
 		"domain with path":      {env: with("AUTH_VIEWER_EMAILS", "@example.com/x"), wantErr: true},
 		"space inside an entry": {env: with("AUTH_STAFF_EMAILS", "a b@example.com"), wantErr: true},
+		// PR のプレビュー。AUTH_MODE が off（か空）のときだけ。ほかと一緒なら起動を止める（本番の認証が外れないように）
+		"preview admin":             {env: map[string]string{"AUTH_PREVIEW_ADMIN": "true"}},
+		"preview admin off":         {env: map[string]string{"AUTH_MODE": "off", "AUTH_PREVIEW_ADMIN": "true"}},
+		"preview admin false":       {env: map[string]string{"AUTH_PREVIEW_ADMIN": "false"}, wantNil: true},
+		"preview admin typo":        {env: map[string]string{"AUTH_PREVIEW_ADMIN": "yes"}, wantErr: true},
+		"preview admin with auth":   {env: with("AUTH_PREVIEW_ADMIN", "true"), wantErr: true},
+		"preview admin with iap":    {env: map[string]string{"AUTH_MODE": "iap", "IAP_AUDIENCE": "/projects/1/global/backendServices/2", "AUTH_STAFF_EMAILS": "a@example.com", "AUTH_PREVIEW_ADMIN": "true"}, wantErr: true},
+		"preview admin with iap-ro": {env: map[string]string{"AUTH_MODE": "iap-report-only", "IAP_AUDIENCE": "/projects/1/global/backendServices/2", "AUTH_STAFF_EMAILS": "a@example.com", "AUTH_PREVIEW_ADMIN": "true"}, wantErr: true},
+		// 管理者はアドレスで 1 人ずつ。ドメインごとには書けない
+		"admin":          {env: with("AUTH_ADMIN_EMAILS", "lead@example.com")},
+		"admin domain":   {env: with("AUTH_ADMIN_EMAILS", "lead@example.com, @example.com"), wantErr: true},
+		"admin wildcard": {env: with("AUTH_ADMIN_EMAILS", "*@example.com"), wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -369,14 +495,17 @@ func TestAuthorizerFromEnv(t *testing.T) {
 		})
 	}
 
-	authz, err := AuthorizerFromEnv(func(k string) string { return complete[k] })
+	withAdmins := with("AUTH_ADMIN_EMAILS", "Lead@example.com, master@example.com")
+	authz, err := AuthorizerFromEnv(func(k string) string { return withAdmins[k] })
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]Role{
 		"register@example.com": RoleStaff,
-		"master@example.com":   RoleStaff,
-		"display@example.com":  RoleViewer,
+		// スタッフと管理者の両方に書かれていたら強い方
+		"master@example.com":  RoleAdmin,
+		"lead@example.com":    RoleAdmin,
+		"display@example.com": RoleViewer,
 	}
 	for name, role := range want {
 		if got := authz.roles[name]; got != role {

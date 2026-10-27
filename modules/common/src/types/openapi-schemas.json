@@ -1652,9 +1652,14 @@
       "role": {
         "type": "string",
         "nullable": true,
-        "enum": ["staff", "viewer", "none"],
-        "x-enum-varnames": ["MeRoleStaff", "MeRoleViewer", "MeRoleNone"],
-        "description": "staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。\nenforce なら 403 になる）。off のときは null\n"
+        "enum": ["admin", "staff", "viewer", "none"],
+        "x-enum-varnames": [
+          "MeRoleAdmin",
+          "MeRoleStaff",
+          "MeRoleViewer",
+          "MeRoleNone"
+        ],
+        "description": "admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、\nstaff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。\nenforce なら 403 になる）。off のときは null\n"
       }
     }
   },
@@ -1665,6 +1670,116 @@
       "error": {
         "type": "string",
         "example": "Invalid order ID format"
+      }
+    }
+  },
+  "DataResetTable": {
+    "type": "object",
+    "required": ["name", "rows"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "表の名前"
+      },
+      "rows": {
+        "type": "integer",
+        "format": "int64",
+        "description": "行数"
+      }
+    }
+  },
+  "DataResetStatus": {
+    "type": "object",
+    "required": [
+      "receptionStopped",
+      "tables",
+      "keptTables",
+      "unknownTables",
+      "confirmation"
+    ],
+    "properties": {
+      "receptionStopped": {
+        "type": "boolean",
+        "description": "受付を止めているか（オーダーストップの最後の記録が stop）。止めていなければ消せない"
+      },
+      "tables": {
+        "type": "array",
+        "description": "消す表と今の行数",
+        "items": {
+          "$ref": "#/components/schemas/DataResetTable"
+        }
+      },
+      "keptTables": {
+        "type": "array",
+        "description": "残す表（設定）",
+        "items": {
+          "type": "string"
+        }
+      },
+      "unknownTables": {
+        "type": "array",
+        "description": "消す表にも残す表にも入っていない表。1 つでもあれば消せない（API が DB より古いなど）",
+        "items": {
+          "type": "string"
+        }
+      },
+      "confirmation": {
+        "type": "string",
+        "description": "消すときに confirmation に入れる確認の文字"
+      }
+    }
+  },
+  "DataResetRequest": {
+    "type": "object",
+    "required": ["confirmation", "backupSha256"],
+    "properties": {
+      "confirmation": {
+        "type": "string",
+        "description": "確認の文字（DataResetStatus の confirmation）"
+      },
+      "backupSha256": {
+        "type": "string",
+        "description": "ダウンロードしたバックアップ（GET /api/admin/data-reset/backup）の SHA-256（16 進の小文字 64 文字）"
+      }
+    }
+  },
+  "DataResetResult": {
+    "type": "object",
+    "required": ["tables"],
+    "properties": {
+      "tables": {
+        "type": "array",
+        "description": "消した表と、消した行数",
+        "items": {
+          "$ref": "#/components/schemas/DataResetTable"
+        }
+      }
+    }
+  },
+  "DataResetBackup": {
+    "type": "object",
+    "required": ["format", "version", "tables"],
+    "properties": {
+      "format": {
+        "type": "string",
+        "enum": ["cafeore-pos-data-reset-backup"],
+        "x-enum-varnames": ["DataResetBackupFormatV1"]
+      },
+      "version": {
+        "type": "integer",
+        "enum": [1],
+        "x-enum-varnames": ["DataResetBackupVersion1"]
+      },
+      "tables": {
+        "type": "object",
+        "description": "表の名前ごとの全行（DB の列名のままの JSON）",
+        "additionalProperties": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
       }
     }
   },

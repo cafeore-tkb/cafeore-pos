@@ -387,11 +387,11 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
 - メールは画面の Cloud Run の `/auth/me` が返す。IAP が付ける `X-Goog-Authenticated-User-Email`（`accounts.google.com:<メール>`）から
   名前空間を外したもの。署名の無いヘッダーなので、**出すだけで、誰に何を許すかには使わない**（API は JWT を確かめる）。
   API の `AUTH_MODE` が `off` でも出る
-- 権限は API の `GET /api/me` が返す（API が JWT で確かめた相手を、`AUTH_STAFF_EMAILS`・`AUTH_VIEWER_EMAILS` と照らした結果）。
+- 権限は API の `GET /api/me` が返す（API が JWT で確かめた相手を、`AUTH_ADMIN_EMAILS`・`AUTH_STAFF_EMAILS`・`AUTH_VIEWER_EMAILS` と照らした結果）。
 
   | API の `AUTH_MODE` | 出るもの |
   | --- | --- |
-  | `iap`・`cloudflare-access` | 「スタッフ」か「閲覧のみ」。許可リストに無ければ（403）「権限なし」 |
+  | `iap`・`cloudflare-access` | 「管理者」「スタッフ」か「閲覧のみ」。許可リストに無ければ（403）「権限なし」 |
   | `*-report-only` | 「スタッフ（report-only）」など。API はまだ弾かないので「権限なし」でも操作はできる |
   | `off` | 「権限の確認なし」（誰でもすべての操作ができる） |
 
@@ -552,6 +552,8 @@ POS のトップページの一番下に、画面と API がどの PR・コミ�
 | `IAP_AUDIENCE` | 未設定 | 未設定 | `AUTH_MODE` が `iap*` のとき。IAP を付けた API の backend service の `/projects/<プロジェクト番号>/global/backendServices/<ID>`（infra が渡す。形が違うと起動しない） |
 | `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` | 未設定 | 未設定 | Zero Trust のチームのドメインと、POS の Access アプリケーションの AUD タグ |
 | `AUTH_STAFF_EMAILS` / `AUTH_VIEWER_EMAILS` | 未設定 | 未設定 | 何でもできる相手 / 読むだけの相手のメール（カンマ区切り）。`@id.cafeore.cafe` のように `@` で始めるとドメインごと（[API の認証](#api-の認証cloudflare-access)） |
+| `AUTH_ADMIN_EMAILS` | 未設定 | 未設定 | 管理者のメール（カンマ区切り。ドメインごとには書けない）。スタッフにできることに加えて、[データのリセット](#データのリセット)と、商品管理・プリンター・Square 端末などの設定の書き込みができる（[運営・管理とマスタ設定は管理者だけ](#運営管理とマスタ設定は管理者だけ)）。未設定なら、認証を掛けている本番では誰もそれらを変えられない |
+| `AUTH_PREVIEW_ADMIN` | 未設定（手元で試すなら `true`） | `true`（CI が渡す。Neon のブランチがあるときだけ） | **渡さない。** `true` なら、全部のリクエストを管理者 `preview` がログインしてきたものとして扱う（[プレビューは管理者としてログインした扱い](#プレビューは管理者としてログインした扱い)）。`AUTH_MODE` が `off`（か空）のときだけ使え、ほかの `AUTH_MODE` と一緒だと起動しない。`true`・`false` 以外でも起動しない |
 
 プレビューと本番の値は infra リポジトリの `gcp/cloud_run_preview.tf` と
 `gcp/cloud_run.tf` にある。`DATABASE_URL` が未設定だと `initDB` が `log.Fatal` する。
@@ -927,7 +929,12 @@ URL は POS の JS に入っているので、画面を開けば分かる（秘�
     ドメインでスタッフにして一部を表示用に下げることはできない
   - `*@example.com` のようなワイルドカード、形の崩れたドメイン（`@`・`@localhost` など）があると api は起動しない
     （`api/internal/auth/authorizer.go` の `validateAllowList`）
-  - その端末がどちらに当たっているかは `GET /api/me`（`role` が `staff`・`viewer`、report-only なら `none` も）で分かる。
+  - `AUTH_ADMIN_EMAILS`（管理者）はスタッフより強い。メールで 1 人ずつ書き、ドメインごとに書くと api は起動しない（`validateAdminList`）。
+    管理者にしかできないのは次（[運営・管理とマスタ設定は管理者だけ](#運営管理とマスタ設定は管理者だけ)）
+    - [データのリセット](#データのリセット)
+    - 「運営・管理」「マスタ設定」の画面だけが使う書き込み：メニュー・アイテム・タイプ・背景色・在庫対象の追加・変更・削除、
+      プリンター設定の変更、Square 端末の登録・ペアリング・削除
+  - その端末がどちらに当たっているかは `GET /api/me`（`role` が `admin`・`staff`・`viewer`、report-only なら `none` も）で分かる。
     POS のトップページにも出す（[ログイン中のアカウントとログアウト](#ログイン中のアカウントとログアウト)）
 - `/api` のグループ全体に「GET は表示用以上、それ以外はスタッフ」が掛かっているので、ルートを足しても
   書き込みは開かない（`api/cmd/server/main.go`）
@@ -1089,6 +1096,7 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 | `cashier_state_changed` | レジの状態（`PUT /api/cashier-state`。お客さん向けの表示が使う） | `<インスタンス ID>` |
 | `dripper_assignees_changed` | CaOS のドリッパーの担当者（`PUT /api/caos/lanes/{dripper}`・`POST /api/caos/lanes/swap`・`POST /api/caos/lanes/seniors`。表は `dripper_assignees`。配信は `{"type":"caos_lanes"}` で今日の 6 つ全部。`internal/handlers/caos_lanes.go`） | `<インスタンス ID>` |
 | `order_recalled` | 呼び出し催促（`POST /api/orders/{id}/recall`。`internal/handlers/order_recall.go`）。DB には何も書かないので読み直さず、`{"type":"order_recalled"}` をそのまま配る（待ち受けていなかった間のものは配れない） | `<インスタンス ID> <注文 ID>` |
+| `data_reset` | [データのリセット](#データのリセット)（`POST /api/admin/data-reset`）。`{"type":"data_reset"}` をそのまま配り、受けた画面は読み込み直す | `<インスタンス ID>` |
 
 - 書き換えたインスタンスは、自分の画面へ配ったあと上の通知を `pg_notify` で送る。DB のトリガーは使わない
 - ほかのインスタンスはそれを受けて DB から読み直し、自分の画面へ配る（通知は送り返さない）。自分が送った通知は無視する。全部のチャンネルを 1 本の接続でまとめて待ち受ける
@@ -1098,6 +1106,61 @@ Cloud Run のインスタンスは、それぞれ自分につないでいる画�
 - 待ち受けを始めたら自分宛てに確認の通知を送り、10 秒で届かなければ `WARNING: orders_changed の確認の通知が…` をログに出す。届けば `orders_changed: notifications are delivered`
 - 配り終わる前に同じ注文（またはオーダーストップ・レジの状態）の通知が重なれば 1 回の読み直しにまとめる。レジはキー入力のたびに状態を保存するので、ほかのインスタンスにはまとめた最新の状態だけが届くことがある
 - 本番の Cloud Run は CPU をリクエストの処理中だけ割り当てる（`infra` の `cpu_idle = true`。`--no-cpu-throttling` にはしていない）。画面が WebSocket でつないでいる間はリクエストの処理中なので、そのインスタンスは通知を受けて配れる。画面がつないでいないインスタンスは待ち受けが止まったり接続が切れたりしうるが、配る相手がいないので困らない。画面がつなぐと全注文・オーダーストップ・レジの状態を受け取り、待ち受けも 30 秒通知が無ければ接続を確かめ、切れていれば張り直して全部を配り直す。常時割り当てに変えるなら、この前提ごと見直すこと
+
+### 運営・管理とマスタ設定は管理者だけ
+
+本番（`AUTH_MODE` が `iap` か `cloudflare-access`）では、トップの「運営・管理」（ダッシュボード・在庫・商品管理・オペ練）と
+「マスタ設定」（Square 端末・プリンター・データのリセット）の画面は、管理者（`AUTH_ADMIN_EMAILS`）しか開けない。
+商品のキーは商品管理のメニューの「キーをキャプチャ」で登録する（`/menu-keys` は商品管理へ転送するだけ）。
+「呼び出し画面の CM」は除く（呼び出し画面の端末で、その端末の閲覧のみのアカウントのまま選ぶため）。各種データ書き出しもスタッフのまま。
+
+- **API**：その画面だけが使う書き込み（メニュー・アイテム・タイプ・背景色・在庫対象の追加・変更・削除、`PUT /api/printer-settings`、
+  Square 端末の登録・ペアリング・削除）は管理者だけ（`routes.go` の `adminOnly`。`TestRegisterRoutesAdminOnly`）。
+  **読み取り（GET）は閉じない。** レジ・マスター・提供・CaOS がメニュー・背景色・在庫・プリンター設定などを読むため。
+  棚卸し・入荷の記録（`POST /api/inventory/resources/{id}/events`）も、CaOS の「豆残量確認」から記録するのでスタッフのまま
+- **画面**：`GET /api/me` が `enforcement: enforce` で `role` が `admin` でなければ、ページを開かずに「管理者だけが開けます」と出す
+  （`AdminOnly`）。読み取りの API は開いているので、画面で閉じているのは見せないためで、API の守りではない
+- 認証を掛けていない設定（`off`・`*-report-only`。手元）では、今までどおり誰でも開けて書ける。PR のプレビューは管理者としてログインした扱いなので、全部開けて書ける
+- **本番では、管理者を `AUTH_ADMIN_EMAILS`（infra の `api_auth_admin_emails`）に入れないと、メニューやプリンターの設定を誰も変えられない**
+
+### プレビューは管理者としてログインした扱い
+
+PR のプレビューには Access も IAP も無い。そこで CI（`api-build`）がプレビューのリビジョンにだけ `AUTH_PREVIEW_ADMIN=true` を渡し、
+api は全部のリクエストを管理者 `preview` がログインしてきたものとして扱う（実際にはログインさせない。`internal/auth/preview.go`）。
+弾く設定（`GET /api/me` は `enforcement: enforce`・`role: admin`・`email: preview`）のまま管理者として通るので、
+[データのリセット](#データのリセット)も[運営・管理とマスタ設定](#運営管理とマスタ設定は管理者だけ)も本番と同じ確かめ方で使える。
+画面もプレビューでは `/api/me` を聞き、トップページに「プレビュー」と「管理者」を出す。
+
+- **本番には渡さない。** `AUTH_MODE` が `off`（か空）のときだけ使え、`iap`・`cloudflare-access`（`*-report-only` も）と一緒だと
+  api は起動しない。infra の `api_auth_mode` もこの値を受け付けない
+- その PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも `--remove-env-vars` で消す。環境変数は
+  サービスの設定を引き継ぐので、`DATABASE_URL` がほかの PR のブランチのままのことがあり、そこを管理者として消せてしまうため。
+  そのリビジョンは `AUTH_MODE` が `off` で動く（データのリセットは使えない）
+- `AUTH_MODE` の値にしなかったのは、プレビューのサービスはほかの PR と共有で、環境変数を引き継ぐため。知らない `AUTH_MODE` を
+  引き継いだ古い api は起動しなくなるが、知らない環境変数は読まれないだけで済む
+
+### データのリセット
+
+POS のトップの「データのリセット」（`/data-reset`）で、営業で溜まったデータ（注文・CaOS の記録・Square の決済の記録・
+棚卸しと入荷の記録・受付状態の履歴など）を消せる。メニュー・アイテム・在庫対象・背景色・プリンター・Square 端末の
+設定は残す。表の中身を `TRUNCATE` するだけで、DB のユーザーやスキーマには触らない（DB のユーザーを作り直す必要は無い）。
+API は `internal/handlers/data_reset.go`。
+
+- **管理者（`AUTH_ADMIN_EMAILS`）だけ。** `AUTH_MODE` が `off` か `*-report-only` のときは、管理者でも使えない
+  （`auth.RequireStrict`）
+- **PR のプレビューでは使える。** プレビューは管理者としてログインした扱いなので
+  （[プレビューは管理者としてログインした扱い](#プレビューは管理者としてログインした扱い)）。消えるのはその PR のプレビューの DB
+  （向き先の PR の backend を使う PR なら、向き先の PR のもの）。手元で試すときは `AUTH_PREVIEW_ADMIN=true` を入れる
+- 次を全部満たすときだけ消す。どれかが欠ければ何も消さない
+  - 受付を止めている（オーダーストップの最後の記録が `stop`）
+  - 消す表の今の中身を全部ダウンロードしている。画面がダウンロードしたファイルの SHA-256 を送り、api は消す直前に表をロックして
+    同じ形のファイルを作り直して比べる。ダウンロードのあとに 1 行でも変わっていれば断るので、もう一度ダウンロードする
+  - 確認の文字（`リセット`）を打っている
+  - 消す表にも残す表にも入っていない表が DB に無い
+- 消したら WebSocket の `data_reset` を配り、開いている画面は読み込み直す
+- **表を足したら（`models.All` に足したら）、`data_reset.go` の `dataResetTables`（消す）か `dataResetKeptTables`（残す）に足す。**
+  足し忘れると `TestDataResetTablesCoverModels` が落ち、本番でもリセットが断られる
+- 消したデータは戻せない。ダウンロードした JSON（表ごとの全行。DB の列名のまま）から戻す仕組みは無い
 
 ### 在庫の数え方
 

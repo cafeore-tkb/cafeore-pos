@@ -18,6 +18,7 @@ import {
 import { type ReactNode, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -191,7 +192,16 @@ const notifyTestPrint = (
   }
 };
 
-export default function PrinterSettingsPage() {
+// 本番では管理者だけが開ける
+export default function PrinterSettingsRoute() {
+  return (
+    <AdminOnly>
+      <PrinterSettingsPage />
+    </AdminOnly>
+  );
+}
+
+function PrinterSettingsPage() {
   const { printerSettings, error, mutatePrinterSettings } =
     usePrinterSettings();
 

@@ -1,7 +1,17 @@
 import { Link, Outlet } from "react-router";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 
-export default function InventoryLayout() {
+// 本番では管理者だけが開ける。在庫の各ページ（子のルート）もここで弾く
+export default function InventoryLayoutRoute() {
+  return (
+    <AdminOnly>
+      <InventoryLayout />
+    </AdminOnly>
+  );
+}
+
+function InventoryLayout() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6">
       <AdminPageHeader
