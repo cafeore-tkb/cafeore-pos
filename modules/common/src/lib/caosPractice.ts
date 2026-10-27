@@ -25,7 +25,7 @@ import type { PracticeDataItemType } from "./caosPracticeData";
 //   - 抽出が要るかは本番と同じく種類の項目で決める（cupNeedsBrew）。練習には担当者がいないので、上級生のみのカードは（指名の無いカードも）どのドリッパーにも置ける
 //   - 指名は実データの指名（明細の dripper・assignee）を本番と同じ形で持ち、本番と同じく指名の番号のドリッパーにしか置けず、違う番号のカップは 1 枚のカードにしない
 //   - 本番は今日（日本時間）の注文だけを見るが、練習の盤面は練習の時間帯の注文だけを持つので、日では絞らない
-//   - 緊急（入れ直し）もカップの emergencies に持ち、カップと同じ決まりでカードに入る（足す・取り消すは api の cup_emergency.go と同じ決まり）
+//   - 緊急（淹れ直し）もカップの emergencies に持ち、カップと同じ決まりでカードに入る（足す・取り消すは api の cup_emergency.go と同じ決まり）
 // 時刻はサーバーの押した時刻の代わりに、練習の時計の今（now）を使う（本番の盤面に重ねるときは押した時刻。lib/caos-outbox.ts）。
 // 抽出を始める・終える時刻は、サーバーと同じく同じドリッパーで前の抽出を終えた時刻より前にしない（brewAt）。
 
@@ -96,6 +96,7 @@ export const toCaosPracticeOrder = (
           needs_brew: type.needs_brew,
           senior_only: type.senior_only,
           iced_brew: false,
+          serve_with_snack: false,
         },
       },
       readyAt: null,
@@ -174,8 +175,8 @@ const cloneOrders = (orders: readonly CaosPracticeOrder[]) =>
   }));
 
 /**
- * カードに入る 1 杯（サーバーの caosUnit）。row は CaOS の値を書く行（カップか入れ直し）、cup は入れ直したカップ（カップなら自分）、
- * nominated は明細の指名の番号（入れ直しは入れ直したカップのもの。サーバーの caosNominations）
+ * カードに入る 1 杯（サーバーの caosUnit）。row は CaOS の値を書く行（カップか淹れ直し）、cup は淹れ直したカップ（カップなら自分）、
+ * nominated は明細の指名の番号（淹れ直しは淹れ直したカップのもの。サーバーの caosNominations）
  */
 interface PracticeUnit {
   row: Cup | CupEmergency;
@@ -195,8 +196,6 @@ const allUnits = (orders: CaosPracticeOrder[]): PracticeUnit[] =>
       ];
     }),
   );
-
-const isEmergency = (unit: PracticeUnit) => unit.row !== unit.cup;
 
 /** ドリッパーで抽出を始める・終える時刻（サーバーの caosBrewAt）。now が、同じドリッパーでいちばん遅く終えた抽出より前なら、その終えた時刻 */
 const brewAt = (orders: CaosPracticeOrder[], dripper: number, now: Date) =>
@@ -388,17 +387,13 @@ export const applyCaosPracticeWrites = (
     if (write.after.drip_id !== null) touched.add(write.after.drip_id);
   }
 
-  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。入れ直しは入れ直しどうしだけ
+  // 書いたカードの全部のカップ（書かなかったカップも含む）が同じ値・同じ指名で、最大 2 杯か。通常と淹れ直しも同じカードにできる
   for (const dripId of touched) {
     const units = allUnits(next).filter((unit) => unit.row.dripId === dripId);
     if (units.length > CAOS_MAX_CUPS)
       return { error: `1 枚のカードは ${CAOS_MAX_CUPS} 杯までです` };
     if (units.some((unit) => !sameState(unit.row, units[0].row)))
       return { error: "同じカードのカップは全部いっしょに動かしてください" };
-    if (units.some((unit) => isEmergency(unit) !== isEmergency(units[0])))
-      return {
-        error: "緊急（入れ直し）と緊急でないカップは同じカードにできません",
-      };
     // 指名なしのカップは、どの番号のカップとも同じカードにできる（サーバーの checkCaosCardNomination は番号の種類を数える）
     const nominations = units.flatMap((unit) => unit.nominated ?? []);
     if (new Set(nominations).size > 1)
@@ -465,12 +460,12 @@ export const advanceCaosPracticeDripper = (
 
 // ---------------------------------------------------------------- 緊急（POST・DELETE /api/cup-emergencies と同じ）
 
-/** 入れ直す理由の長さ（文字。API と同じ） */
+/** 淹れ直す理由の長さ（文字。API と同じ） */
 const EMERGENCY_REASON_MAX = 100;
 
 /**
- * 緊急（入れ直し）を足す。1 杯につき入れ直しを 1 つ（同じカップに何度でも）、理由は前後の空白を除いて付ける。足した時刻は now（練習の時計の今）。
- * ids は足した入れ直しの id（cupIds と同じ順。newId で作る）
+ * 緊急（淹れ直し）を足す。1 杯につき淹れ直しを 1 つ（同じカップに何度でも）、理由は前後の空白を除いて付ける。足した時刻は now（練習の時計の今）。
+ * ids は足した淹れ直しの id（cupIds と同じ順。newId で作る）
  */
 export const addCaosPracticeEmergencies = (
   orders: readonly CaosPracticeOrder[],
@@ -496,7 +491,7 @@ export const addCaosPracticeEmergencies = (
       };
     if (!cupNeedsBrew(cup))
       return {
-        error: `抽出の要らないカップ（${cup.item.name}）は入れ直せません`,
+        error: `抽出の要らないカップ（${cup.item.name}）は淹れ直せません`,
       };
     const emergency: CupEmergency = {
       id: newId(),
@@ -514,7 +509,7 @@ export const addCaosPracticeEmergencies = (
   return { orders: next, ids };
 };
 
-/** 緊急（入れ直し）を取り消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ */
+/** 緊急（淹れ直し）を取り消す。まだ抽出を始めていない（未割当か待機の）淹れ直しだけ */
 export const cancelCaosPracticeEmergency = (
   orders: readonly CaosPracticeOrder[],
   id: string,
@@ -527,10 +522,10 @@ export const cancelCaosPracticeEmergency = (
   if (!cup || !emergency)
     return {
       error:
-        "入れ直しが見つかりません（ほかの端末で取り消したか、注文が編集・削除されたかもしれません）",
+        "淹れ直しが見つかりません（ほかの端末で取り消したか、注文が編集・削除されたかもしれません）",
     };
   if (emergency.brewStartedAt !== null)
-    return { error: "抽出を始めた入れ直しは取り消せません" };
+    return { error: "抽出を始めた淹れ直しは取り消せません" };
   cup.emergencies = cup.emergencies.filter((e) => e !== emergency);
   return { orders: next };
 };

@@ -276,6 +276,7 @@ const ITEM_TYPE_FLAGS = [
   "needs_brew",
   "senior_only",
   "iced_brew",
+  "serve_with_snack",
 ] as const;
 
 // ポインターはこのファイルの中で組み立てるが、念のためプロトタイプを書き換えるキーは通さない。
@@ -484,7 +485,7 @@ export const planMasterImport = (
     );
     if (name !== null) creating.item_types.add(name);
     // API では省略すると既定値（カップを作る・抽出が要る）になり、種類の扱いが入る前に書き出したファイルだと
-    // ミルクやグッズもカップになるので、取り込みでは必須にする
+    // ミルクやグッズもカップになる。お菓子の有無も明示し、意図せず既定値にしないよう取り込みでは必須にする
     const missingFlags = ITEM_TYPE_FLAGS.filter(
       (flag) => row.values[flag] == null,
     );

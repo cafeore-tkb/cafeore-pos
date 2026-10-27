@@ -39,16 +39,16 @@ export interface ControlViewProps {
   /** 今（エポックのミリ秒。実データテストでは練習の時計） */
   nowMs: number;
   timelineCommand: TimelineCommand | null;
-  /** 注文を選ぶ（null で外す） */
-  onSelectOrder: (orderId: string | null) => void;
+  /** 未割当の操作対象を選ぶ（null で外す）。閲覧画面では省略する。 */
+  onSelectOrder?: (orderId: string | null) => void;
   /** ドリッパーのカードの上に出す操作（hooks/useCardMenu。押すと開く）。閲覧だけの画面では渡さない（押しても何もしない） */
   cardMenu?: CardMenu;
   /**
    * ドリッパーのカードの長押し。待機のカードは詳細のパネル（移す・先頭へ・未割当に戻す・外す・緊急の取り消し）、
-   * 抽出中・終わりのカードは入れ直し（緊急）のパネル（抽出中のカードは 1〜6 に移す・未割当に戻すも）を開き、その注文を選ぶ。無ければ（閲覧だけ）長押ししない
+   * 抽出中・終わりのカードは淹れ直し（緊急）のパネル（抽出中のカードは 1〜6 に移す・未割当に戻すも）を開き、その注文を選ぶ。無ければ（閲覧だけ）長押ししない
    */
   onHoldCard?: (card: CaosCard) => void;
-  /** 入れ直し（緊急）のカードを取り消す（未割当・待機のカードを開いたときに出す）。無ければ（閲覧だけ・実データテスト中）出さない */
+  /** 淹れ直し（緊急）のカードを取り消す（未割当・待機のカードを開いたときに出す）。無ければ（閲覧だけ・実データテスト中）出さない */
   onCancelEmergency?: (card: CaosCard) => void;
   /** 待機・抽出中のカードを別のドリッパーへ。place は列のどこか（@cafeore/common の CaosPlace。"front"・"queueFront"・カードの前後。無ければ最後。同じドリッパーの中の入れ替えにも使う） */
   onMoveTicket: (

@@ -70,7 +70,7 @@ func TestSetItemTypeFlags(t *testing.T) {
 func TestToItemTypeResponseFlags(t *testing.T) {
 	// 読み込んでいない値（nil）は列の既定値と同じに扱う
 	resp := toItemTypeResponse(&models.ItemType{Name: "hot"})
-	if !resp.MakesCup || !resp.NeedsBrew || resp.SeniorOnly || resp.IcedBrew {
+	if !resp.MakesCup || !resp.NeedsBrew || resp.SeniorOnly || resp.IcedBrew || resp.ServeWithSnack {
 		t.Errorf("defaults: %+v", resp)
 	}
 	resp = toItemTypeResponse(&models.ItemType{Name: "ice", MakesCup: boolPtr(true), NeedsBrew: boolPtr(true), IcedBrew: true})
@@ -80,5 +80,16 @@ func TestToItemTypeResponseFlags(t *testing.T) {
 	resp = toItemTypeResponse(&models.ItemType{Name: "others", MakesCup: boolPtr(false), NeedsBrew: boolPtr(true), SeniorOnly: true, IcedBrew: true})
 	if resp.MakesCup || resp.NeedsBrew || resp.SeniorOnly || resp.IcedBrew {
 		t.Errorf("a type that makes no cup must not need brew nor be senior only nor iced: %+v", resp)
+	}
+}
+
+func TestToItemTypeResponseServeWithSnack(t *testing.T) {
+	for _, cup := range []bool{false, true} {
+		for _, snack := range []bool{false, true} {
+			resp := toItemTypeResponse(&models.ItemType{MakesCup: &cup, ServeWithSnack: snack})
+			if resp.ServeWithSnack != snack {
+				t.Errorf("makes_cup=%v: serve_with_snack=%v, want %v", cup, resp.ServeWithSnack, snack)
+			}
+		}
 	}
 }

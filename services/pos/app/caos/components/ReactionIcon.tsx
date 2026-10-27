@@ -1,9 +1,15 @@
-import { Check, Eye, HandHeart, Hourglass } from "lucide-react";
+import { Eye, HandHeart } from "lucide-react";
 import comeHere from "../icons/reactions/come-here.png";
 import done from "../icons/reactions/done.png";
 
-/** 絵文字の立体表現を使わず、添付素材と単色アイコンで共通表示する。 */
+/** OKは🆗、待っては⏳️。その他は添付素材と単色アイコンで共通表示する。 */
 export const ReactionIcon = ({ stamp }: { stamp: string }) => {
+  if (stamp === "OK")
+    return (
+      <span role="img" aria-label="OK" className="text-[30px] leading-none">
+        🆗
+      </span>
+    );
   if (stamp === "済み" || stamp === "来て！")
     return (
       <img
@@ -15,18 +21,14 @@ export const ReactionIcon = ({ stamp }: { stamp: string }) => {
     );
   return (
     <span className="flex flex-col items-center gap-0.5">
-      {stamp === "OK" ? (
-        <Check
-          aria-hidden="true"
-          className="h-5 w-5 text-emerald-600"
-          strokeWidth={3}
-        />
-      ) : stamp === "見た" ? (
+      {stamp === "見た" ? (
         <Eye aria-hidden="true" className="h-5 w-5 text-sky-600" />
       ) : stamp === "ごめん" ? (
         <HandHeart aria-hidden="true" className="h-5 w-5 text-slate-600" />
       ) : (
-        <Hourglass aria-hidden="true" className="h-5 w-5 text-amber-600" />
+        <span aria-hidden="true" className="text-[30px] leading-none">
+          ⏳️
+        </span>
       )}
       <span className="font-black text-[10px] text-slate-700">{stamp}</span>
     </span>

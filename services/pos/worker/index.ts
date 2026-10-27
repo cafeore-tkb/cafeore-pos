@@ -1,6 +1,11 @@
 // POS の Worker。静的ファイル（build/client）は assets がそのまま返し、
 // /api・/status・/health だけをここで Cloud Run の API へ中継する。
 // 呼び出し画面の音声（/call-voice）もここで返す（worker/call-voice.ts）。
+// ログインしている相手（/auth/me）は、Workers にはログインが無いので、いつも「いない」と返す。
+//
+// 本番の画面（pos.cafeore.cafe）は GCP の LB（IAP）の後ろの Cloud Run（server/、Dockerfile）が出す。
+// この Worker の本番は、GCP が止まったときの非常用の予備として pos-cf.cafeore.cafe に出し続ける
+// （README の「本番を GCP に移す（IAP）」）。PR のプレビューも今までどおりこの Worker。
 //
 // ## なぜ中継するのか
 //
@@ -37,6 +42,8 @@ interface Env extends CallVoiceEnv {
 // run_worker_first と揃えること
 const API_PATH = /^\/(?:api\/|status$|health$)/;
 const CALL_VOICE_PREFIX = "/call-voice/";
+// server/app.ts の LOGIN_USER_PATH と揃える
+const LOGIN_USER_PATH = "/auth/me";
 
 // **infra の gcp/api_edge.tf の api_proxy_token_header と揃えること。**
 const PROXY_TOKEN_HEADER = "X-Cafeore-Proxy-Token";
@@ -51,6 +58,15 @@ export default {
     // プレビューでも、画面と同じ Worker が返す（中継先の API_ORIGIN は要らない）
     if (url.pathname.startsWith(CALL_VOICE_PREFIX)) {
       return handleCallVoice(request, env, ctx);
+    }
+    // 非常用の pos-cf.cafeore.cafe も PR のプレビューも、ログインせずに開ける。無いと SPA の
+    // フォールバックで index.html が返り、pos-cf のトップページが「取得できません」になる
+    // （プレビューの画面はここを聞かずに「プレビュー」と出す）
+    if (url.pathname === LOGIN_USER_PATH) {
+      return Response.json(
+        { email: null },
+        { headers: { "cache-control": "no-store" } },
+      );
     }
     if (!API_PATH.test(url.pathname)) {
       return env.ASSETS.fetch(request);

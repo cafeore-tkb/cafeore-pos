@@ -244,3 +244,26 @@ html:has(.caos-root) body {
     animation: none;
   }
 }
+
+/* 注文を探す枠。配置・商品の地色・指名の点線・緊急の赤は変更しない。 */
+.caos-root .caos-highlight-halo {
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  border: 5px solid white;
+  border-radius: inherit;
+}
+.caos-root .caos-highlight-frame {
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+  border: 3px solid transparent;
+  border-radius: inherit;
+  background-origin: border-box;
+  background-clip: border-box;
+  -webkit-mask: linear-gradient(white 0 0) padding-box,
+    linear-gradient(white 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(white 0 0) padding-box, linear-gradient(white 0 0);
+  mask-composite: exclude;
+}

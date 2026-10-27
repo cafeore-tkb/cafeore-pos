@@ -63,9 +63,21 @@ export const StampReplyContext = createContext<{
 } | null>(null);
 
 /** 注文（orderId）にスタンプを返すボタンの並び（キーボードを出さずに返す）。label は何の注文に返すか（いくつかの注文のコメントを並べたとき） */
-export const StampBar: React.FC<{ orderId: string; label?: string }> = ({
+export const StampBar: React.FC<{
+  orderId: string;
+  label?: string;
+  disabled?: boolean;
+  voiceDisabled?: boolean;
+  voiceEditor?: React.ComponentProps<typeof VoiceComment>["inline"];
+  /** パネルで送信の成功を表示するための共通コールバック。 */
+  onSend?: (text: string) => Promise<boolean>;
+}> = ({
   orderId,
   label,
+  disabled = false,
+  voiceDisabled = disabled,
+  voiceEditor,
+  onSend,
 }) => {
   const reply = useContext(StampReplyContext);
   if (!reply) return null;
@@ -87,11 +99,12 @@ export const StampBar: React.FC<{ orderId: string; label?: string }> = ({
                 : `「${stamp}」と返す`
             }
             aria-label={`「${stamp}」と返す`}
-            disabled={reply.sending}
+            disabled={reply.sending || disabled}
             onClick={(event) => {
               // 行・カードを押したときの選ぶ・開くに渡さない
               event.stopPropagation();
-              reply.send(orderId, stamp);
+              if (onSend) void onSend(stamp);
+              else void reply.send(orderId, stamp);
             }}
             className="border-(color:--caos-comment) active:bg-(color:--caos-comment-soft) flex h-12 min-w-10 flex-1 touch-manipulation items-center justify-center rounded-lg border bg-white px-1 leading-none disabled:opacity-40"
           >
@@ -101,8 +114,9 @@ export const StampBar: React.FC<{ orderId: string; label?: string }> = ({
       })}
       <VoiceComment
         orderId={orderId}
-        sending={reply.sending}
+        sending={reply.sending || voiceDisabled}
         send={reply.send}
+        inline={voiceEditor}
       />
     </li>
   );

@@ -131,7 +131,7 @@ func (inv *Inventory) consumption(db *gorm.DB, s *stockSnapshot, since, now time
 //     明細の在庫対象のカップは、アイテムの在庫ならそのアイテムのカップ、カップなら今そのカップを使う種類のアイテムのカップで、
 //     明細の回数まで（並びの順）。あとでカップの使う種類を変えて当てはまらなくなったカップの分は、明細の残りに入る
 //   - 明細の残り（抽出の要らない物：グッズ・ミルク・コースターなど。カップの無い前の注文も）：注文を受けた時刻（orders.created_at）
-//   - 緊急（入れ直し）：入れ直しを足した時刻（cup_emergencies.created_at。取り消すと行ごと消える）
+//   - 緊急（淹れ直し）：淹れ直しを足した時刻（cup_emergencies.created_at。取り消すと行ごと消える）
 //
 // 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。
 const stockUsedQuery = `
@@ -263,7 +263,7 @@ func (inv *Inventory) checkAlerts(ctx context.Context, ids []uuid.UUID) error {
 	return errors.Join(sendErr, loopErr)
 }
 
-// 注文で減る在庫対象（明細と、その注文のカップの緊急（入れ直し）の分）。
+// 注文で減る在庫対象（明細と、その注文のカップの緊急（淹れ直し）の分）。
 func (inv *Inventory) ResourceIDsForOrders(orderIDs ...uuid.UUID) []uuid.UUID {
 	if inv == nil {
 		return nil

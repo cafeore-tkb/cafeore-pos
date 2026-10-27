@@ -46,6 +46,6 @@ type OrderCup struct {
 	BrewFinishedAt *time.Time
 
 	Item Item `gorm:"foreignKey:ItemID;references:ID"`
-	// 緊急（入れ直し）。外部キーは張らない（CupEmergency を参照）
+	// 緊急（淹れ直し）。外部キーは張らない（CupEmergency を参照）
 	Emergencies []CupEmergency `gorm:"foreignKey:OrderCupID;references:ID;constraint:-"`
 }

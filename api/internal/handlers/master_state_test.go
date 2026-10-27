@@ -62,7 +62,7 @@ func TestUpdateMasterStatusRejectsUnknownType(t *testing.T) {
 // POST の応答も GET・WebSocket と同じ snake_case のキーで返し、master_state を配信する
 func TestUpdateMasterStatusRespondsAndBroadcasts(t *testing.T) {
 	hub := NewHub()
-	h := NewMasterStateHandler(newDryRunDB(t), hub, nil)
+	h := NewMasterStateHandler(openCaosTestDB(t), hub, nil)
 	w := serveMasterStatus(h.UpdateMasterStatus, http.MethodPost, `{"type":"stop"}`)
 
 	if w.Code != http.StatusCreated {

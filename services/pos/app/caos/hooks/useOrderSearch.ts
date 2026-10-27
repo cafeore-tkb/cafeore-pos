@@ -59,6 +59,7 @@ export const useOrderSearch = ({
   selectOrder,
   showOnTimeline,
   view,
+  keyboardEnabled = true,
   ...board
 }: {
   digits: string | null;
@@ -67,11 +68,13 @@ export const useOrderSearch = ({
   setDigits: (update: (digits: string) => string) => void;
   close: () => void;
   /** 注文を選ぶ（orderLabel。null で外す） */
-  selectOrder: (label: string | null) => void;
+  selectOrder: (label: string | null, orderId?: string) => void;
   /** 管制盤 A のタイムラインをカード（key）までスクロールする（タイムラインの無い C では渡さない） */
   showOnTimeline?: (cardKey: string) => void;
   /** 今の管制盤（替わったら見せ直す） */
   view: string;
+  /** コメント入力など、別の番号入力を扱うパネルでは全体の検索ショートカットを止める。 */
+  keyboardEnabled?: boolean;
   orders: readonly CaosOrderInput[];
   cards: readonly CaosCard[];
   lanes: readonly Lane[];
@@ -134,7 +137,10 @@ export const useOrderSearch = ({
 
   // 注文を選び、そのカードを見せる（A のタイムラインのカードはタイムラインで、ほかは並べた枠の中で）
   const reveal = (orderNo: number, card: CaosCard) => {
-    selectOrder(`#${orderNoLabel(orderNo)}`);
+    selectOrder(
+      `#${orderNoLabel(orderNo)}`,
+      card.cups.find((cup) => cup.orderNo === orderNo)?.orderId,
+    );
     if (showOnTimeline && card.status !== "unassigned")
       showOnTimeline(card.key);
     else scrollCardIntoView(card.key);
@@ -142,6 +148,7 @@ export const useOrderSearch = ({
 
   // 効果の中で読む今の値（効果は番号・キーで動かし、毎回は張り直さない）
   const current = {
+    keyboardEnabled,
     reveal,
     found,
     target,
@@ -181,7 +188,7 @@ export const useOrderSearch = ({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (ignoreKey(event)) return;
+      if (ignoreKey(event) || !latest.current.keyboardEnabled) return;
       const { digits, press, finish, open, close } = latest.current;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
@@ -222,7 +229,7 @@ export const useOrderSearch = ({
       const found = findOrder({ ...board, orderNo });
       const card = found && focusCard(found);
       if (card) reveal(orderNo, card);
-      else selectOrder(`#${orderNoLabel(orderNo)}`);
+      else selectOrder(`#${orderNoLabel(orderNo)}`, found?.orderId);
     },
     /** 番号の検索を開いてすぐ探す（コメントの通知の「表示」） */
     show: (orderNo: number) => {
