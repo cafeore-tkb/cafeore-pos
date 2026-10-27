@@ -1340,6 +1340,8 @@ export interface components {
     };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
+      /** @description シフト名簿で確認できた学年。空または省略時は不明 */
+      grade?: string;
       dripper: number;
       /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
       name: string;
@@ -1361,6 +1363,8 @@ export interface components {
       lanes: components["schemas"]["CaosLane"][];
     };
     CaosLaneUpdateRequest: {
+      /** @description シフト名簿で確認できた学年。自由入力や未確認時は省略 */
+      grade?: string;
       /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
       name: string;
       /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */

@@ -281,7 +281,8 @@ type CaosHumanLogEntryCategory string
 
 // CaosLane ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false
 type CaosLane struct {
-	Dripper int `json:"dripper"`
+	Grade   *string `json:"grade,omitempty"`
+	Dripper int     `json:"dripper"`
 
 	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
 	Name string `json:"name"`
@@ -318,6 +319,7 @@ type CaosLaneSwapRequest struct {
 
 // CaosLaneUpdateRequest defines model for CaosLaneUpdateRequest.
 type CaosLaneUpdateRequest struct {
+	Grade *string `json:"grade,omitempty"`
 	// Name 担当者の名前（前後の空白は落とす）。空なら担当者なし
 	Name string `json:"name"`
 

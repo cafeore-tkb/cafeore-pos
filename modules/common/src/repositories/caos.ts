@@ -115,11 +115,12 @@ export const putCaosLane = async (
   dripper: number,
   name: string,
   senior: boolean,
+  grade?: string,
 ): Promise<CaosResult> =>
   send(
     apiClient.PUT("/api/caos/lanes/{dripper}", {
       params: { path: { dripper } },
-      body: { name, senior },
+      body: { name, senior, grade },
     }),
   );
 
@@ -166,7 +167,12 @@ export const sendCaosOutboxRequest = (
     case "cancel-emergency":
       return cancelCupEmergency(request.id);
     case "lane":
-      return putCaosLane(request.dripper, request.name, request.senior);
+      return putCaosLane(
+        request.dripper,
+        request.name,
+        request.senior,
+        request.grade,
+      );
     case "swap":
       return swapCaosLanes(request.first, request.second);
     case "seniors":

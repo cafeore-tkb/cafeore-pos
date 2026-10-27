@@ -187,6 +187,33 @@ func TestCaosLanesOnDB(t *testing.T) {
 	}
 }
 
+func TestCaosLaneGradeOnDB(t *testing.T) {
+	db, _ := openListenTestDB(t)
+	f := newCaosFixture(t, db)
+	w := callWithParams(t, f.caos.PutCaosLane, http.MethodPut, `{"name":"山田","senior":false,"grade":"B2"}`, gin.Params{{Key: "dripper", Value: "1"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	lanes := decodeLanes(t, w.Body.Bytes())
+	if lanes.Lanes[0].Grade == nil || *lanes.Lanes[0].Grade != "B2" {
+		t.Fatalf("lane: %+v", lanes.Lanes[0])
+	}
+	if code, body := f.swapLanes(t, 1, 2); code != http.StatusOK {
+		t.Fatalf("swap: %d %s", code, body)
+	}
+	lanes = f.getLanes(t)
+	if lanes.Lanes[1].Grade == nil || *lanes.Lanes[1].Grade != "B2" {
+		t.Fatalf("swapped: %+v", lanes.Lanes[1])
+	}
+	var changes []models.DripperAssigneeChange
+	if err := db.Where("day = ? AND dripper = ?", caosDayString(time.Now()), 2).Find(&changes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].Grade != "B2" {
+		t.Fatalf("changes: %+v", changes)
+	}
+}
+
 // updateSeniors は今の担当者の上級生かだけを直す（POST /api/caos/lanes/seniors）。lanes は {dripper, name, senior} の並び。
 func (f *caosFixture) updateSeniors(t *testing.T, lanes ...map[string]any) (int, string) {
 	t.Helper()

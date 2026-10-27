@@ -279,6 +279,37 @@ describe("unit: caos-outbox 重ねて表示", () => {
     );
   });
 
+  test("担当者の学年は交代と入れ替えで名前と一緒に扱い、自由入力では消える", () => {
+    const lanes = emptyCaosLanes(DAY).lanes;
+    const change = entry({
+      kind: "lane",
+      dripper: 1,
+      name: "山田",
+      senior: false,
+      grade: "B2",
+      before: "",
+    });
+    const swap = entry({
+      kind: "swap",
+      first: 1,
+      second: 2,
+      names: ["山田", ""],
+    });
+    const current = overlayCaosLanes(lanes, [change, swap], DAY);
+    expect(current[1]).toMatchObject({ name: "山田", grade: "B2" });
+    const typed = entry({
+      kind: "lane",
+      dripper: 2,
+      name: "手入力",
+      senior: false,
+      before: "山田",
+    });
+    expect(overlayCaosLanes(current, [typed], DAY)[1]).toMatchObject({
+      name: "手入力",
+      grade: "",
+    });
+  });
+
   test("交代は、届いた担当者が押したときのままのときだけ重ねる（ほかの端末が先に替えていれば、サーバーの今のまま）", () => {
     const lanes = (name: string) =>
       emptyCaosLanes(DAY).lanes.map((lane) =>

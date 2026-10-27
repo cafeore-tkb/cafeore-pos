@@ -116,11 +116,18 @@ export const CaosLanesProvider = ({
   });
   latest.current = { lanes, orders, entries, today, feed: shiftFeed.feed };
   // 交代の操作。押したときの担当者のままのときだけ送る（createCaosOutbox）
-  const laneOp = ({ dripper, name, senior }: LaneAssignment): CaosOutboxOp => ({
+  const laneOp = (
+    { dripper, name, senior }: LaneAssignment,
+    fromFeed = false,
+  ): CaosOutboxOp => ({
     kind: "lane",
     dripper,
     name,
     senior,
+    grade: fromFeed
+      ? latest.current.feed?.members?.find((member) => member.name === name)
+          ?.grade || undefined
+      : undefined,
     before: latest.current.lanes[dripper - 1].name,
   });
   // 今の盤面のカード（この端末の送れていない操作も重ねる。useLiveBoard と同じ）
@@ -179,7 +186,7 @@ export const CaosLanesProvider = ({
     sending.current.add(dripper);
     const after = { dripper, name, senior };
     const label = changeLabel(after);
-    const id = request([after], true, label, laneOp(after));
+    const id = request([after], true, label, laneOp(after, true));
     if (id) rememberAction?.(label, [id]);
     setTimeout(() => sending.current.delete(dripper), DOUBLE_TAP_MS);
   };
@@ -223,9 +230,14 @@ export const CaosLanesProvider = ({
           lanes={lanes}
           shiftFeed={shiftFeed}
           nowMs={changing.nowMs}
-          onPick={(name, senior) => {
+          onPick={(name, senior, fromFeed) => {
             const change = { dripper: changing.dripper, name, senior };
-            request([change], true, changeLabel(change), laneOp(change));
+            request(
+              [change],
+              true,
+              changeLabel(change),
+              laneOp(change, fromFeed),
+            );
           }}
           onSwap={(other) => {
             const mine = laneOf(changing.dripper);
