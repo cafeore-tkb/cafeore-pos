@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/testdb"
 )
 
 // CaOS のドリッパーの担当者の DB のテスト。注文の DB と同じく LISTEN_TEST_DATABASE_URL を渡したときだけ走る（openListenTestDB）。
@@ -188,7 +189,7 @@ func TestCaosLanesOnDB(t *testing.T) {
 }
 
 func TestCaosLaneGradeOnDB(t *testing.T) {
-	db, _ := openListenTestDB(t)
+	db := testdb.New(t)
 	f := newCaosFixture(t, db)
 	w := callWithParams(t, f.caos.PutCaosLane, http.MethodPut, `{"name":"山田","senior":false,"grade":"B2"}`, gin.Params{{Key: "dripper", Value: "1"}})
 	if w.Code != http.StatusOK {

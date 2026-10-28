@@ -254,6 +254,7 @@ export const CaosLanesProvider = ({
                 first: changing.dripper,
                 second: other,
                 names: [mine.name, theirs.name],
+                grades: [mine.grade ?? "", theirs.grade ?? ""],
               },
             );
           }}

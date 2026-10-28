@@ -866,6 +866,34 @@ describe("unit: caos-outbox 送る", () => {
     expect(changed.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
   });
 
+  test("入れ替えの名前だけ一致しても学年が異なれば反映済みにしない", async () => {
+    const lanes: CaosLanes = {
+      day: DAY,
+      lanes: emptyCaosLanes(DAY).lanes.map((lane) =>
+        lane.dripper === 1
+          ? { ...lane, name: "B", grade: "B9" }
+          : lane.dripper === 2
+            ? { ...lane, name: "A", grade: "B1" }
+            : lane,
+      ),
+    };
+    const swap = entry(
+      {
+        kind: "swap",
+        first: 1,
+        second: 2,
+        names: ["A", "B"],
+        grades: ["B1", "B2"],
+      },
+      "入れ替え",
+    );
+    const result = setup([swap], [], [], lanes);
+    await result.outbox.kick();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result.sent).toEqual([]);
+    expect(result.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
+  });
+
   describe("交代", () => {
     const lanes = (name: string): CaosLanes => ({
       day: DAY,

@@ -72,7 +72,13 @@ export type CaosOutboxOp =
       before?: string;
     }
   /** 担当者の入れ替え。names は押したときの first・second の担当者 */
-  | { kind: "swap"; first: number; second: number; names: [string, string] }
+  | {
+      kind: "swap";
+      first: number;
+      second: number;
+      names: [string, string];
+      grades?: [string, string];
+    }
   /** 今の担当者の上級生かだけを直す */
   | { kind: "seniors"; lanes: LaneAssignment[] };
 
@@ -447,7 +453,10 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
     case "swap":
       return (
         laneOf(op.first)?.name === op.names[1] &&
-        laneOf(op.second)?.name === op.names[0]
+        laneOf(op.second)?.name === op.names[0] &&
+        (!op.grades ||
+          ((laneOf(op.first)?.grade ?? "") === op.grades[1] &&
+            (laneOf(op.second)?.grade ?? "") === op.grades[0]))
       );
     case "seniors":
       return op.lanes.every(

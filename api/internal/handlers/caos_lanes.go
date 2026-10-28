@@ -126,6 +126,7 @@ func (h *CaosHandler) PutCaosLane(c *gin.Context) {
 	}
 	name := strings.TrimSpace(req.Name)
 	grade := ""
+	// 学年の省略は旧クライアント・自由入力を含む未確認扱い。前の人の学年を流用しない。
 	if req.Grade != nil && name != "" {
 		grade = strings.TrimSpace(*req.Grade)
 	}
