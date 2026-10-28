@@ -1,10 +1,11 @@
 import { useSyncExternalStore } from "react";
 
-// 呼び出し画面で流す CM の並び。マスタ設定の「呼び出し画面の CM」（/callscreen-cm）で、この端末のファイルを選ぶ。
+// 呼び出し画面で流す CM の並び。呼び出し画面の設定の画面（/callscreen）で、この端末のファイルを選ぶ。
 //
 // ファイルはどこにも上げず、保存もしない。選んだファイルをこのタブのメモリにだけ持ち（blob: の URL）、
-// 同じタブで開いた呼び出し画面が順番に流す。読み込み直す・タブを閉じると消える。
+// 同じタブで外部ディスプレイに全画面で出した呼び出し画面が順番に流す。読み込み直す・タブを閉じると消える。
 // 画面どうしは SPA の中の移動（<Link>）なので、同じタブなら選んだものが残る。
+// 全画面にしたときに手元に開く小窓（lib/callscreen-companion）は別のページなので、並びを持たず、このタブに頼んで変える。
 
 export type CmItemKind = "video" | "image";
 
@@ -120,6 +121,9 @@ export const cmPlaylist = {
 
 /** 今の CM の並び（React の外で読むとき） */
 export const getCmPlaylist = getSnapshot;
+
+/** CM の並びが変わるたびに listener を呼ぶ（React の外で見るとき）。止めるときは返した関数を呼ぶ */
+export const subscribeCmPlaylist = subscribe;
 
 /** CM の並び（変わると描き直す） */
 export const useCmPlaylist = () =>
