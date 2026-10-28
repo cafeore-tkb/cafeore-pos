@@ -36,6 +36,7 @@ export function AdminPageHeader({
   description,
   actions,
   children,
+  tone = "default",
 }: {
   group: AdminPageGroup;
   title: string;
@@ -44,8 +45,11 @@ export function AdminPageHeader({
   actions?: ReactNode;
   /** 説明の下に足すもの */
   children?: ReactNode;
+  /** danger は赤い地（データのリセット）に載せる。見出し・バッジ・説明を白っぽい色にする。戻るボタンは白いまま */
+  tone?: "default" | "danger";
 }) {
   const badge = groupBadge[group];
+  const danger = tone === "danger";
   return (
     <header className="flex flex-col gap-3 font-noto">
       <div className="flex flex-wrap items-center gap-4">
@@ -61,19 +65,38 @@ export function AdminPageHeader({
         </Link>
         {/* スマホの幅では見出しが次の行に回り、線だけが残るので出さない */}
         <div
-          className="hidden h-6 w-px bg-border sm:block"
+          className={cn(
+            "hidden h-6 w-px sm:block",
+            danger ? "bg-red-300" : "bg-border",
+          )}
           aria-hidden="true"
         />
-        <h1 className="font-bold text-2xl tracking-tight">{title}</h1>
+        <h1
+          className={cn(
+            "font-bold text-2xl tracking-tight",
+            danger && "text-white",
+          )}
+        >
+          {title}
+        </h1>
         <span
-          className={cn("rounded-full font-medium text-xs", badge.className)}
+          className={cn(
+            "rounded-full font-medium text-xs",
+            badge.className,
+            danger && "border-red-300 text-white",
+          )}
         >
           {badge.label}
         </span>
         {actions && <div className="ml-auto">{actions}</div>}
       </div>
       {description && (
-        <p className="max-w-[760px] text-pretty text-muted-foreground text-sm">
+        <p
+          className={cn(
+            "max-w-[760px] text-pretty text-sm",
+            danger ? "text-red-50" : "text-muted-foreground",
+          )}
+        >
           {description}
         </p>
       )}

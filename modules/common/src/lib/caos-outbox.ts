@@ -68,10 +68,17 @@ export type CaosOutboxOp =
       dripper: number;
       name: string;
       senior: boolean;
+      grade?: string;
       before?: string;
     }
   /** 担当者の入れ替え。names は押したときの first・second の担当者 */
-  | { kind: "swap"; first: number; second: number; names: [string, string] }
+  | {
+      kind: "swap";
+      first: number;
+      second: number;
+      names: [string, string];
+      grades?: [string, string];
+    }
   /** 今の担当者の上級生かだけを直す */
   | { kind: "seniors"; lanes: LaneAssignment[] };
 
@@ -343,7 +350,12 @@ export const overlayCaosLanes = (
         case "lane":
           return current.map((lane) =>
             lane.dripper === op.dripper
-              ? { ...lane, name: op.name, senior: op.senior }
+              ? {
+                  ...lane,
+                  name: op.name,
+                  senior: op.senior,
+                  grade: op.grade ?? "",
+                }
               : lane,
           );
         case "swap": {
@@ -356,7 +368,12 @@ export const overlayCaosLanes = (
           return current.map((lane) => {
             const other = swapped.get(lane.dripper);
             return other
-              ? { ...lane, name: other.name, senior: other.senior }
+              ? {
+                  ...lane,
+                  name: other.name,
+                  senior: other.senior,
+                  grade: other.grade,
+                }
               : lane;
           });
         }
@@ -427,12 +444,19 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
       return !rowsOf(server.orders).has(op.id);
     case "lane": {
       const lane = laneOf(op.dripper);
-      return lane?.name === op.name && lane.senior === op.senior;
+      return (
+        lane?.name === op.name &&
+        lane.senior === op.senior &&
+        (lane.grade ?? "") === (op.grade ?? "")
+      );
     }
     case "swap":
       return (
         laneOf(op.first)?.name === op.names[1] &&
-        laneOf(op.second)?.name === op.names[0]
+        laneOf(op.second)?.name === op.names[0] &&
+        (!op.grades ||
+          ((laneOf(op.first)?.grade ?? "") === op.grades[1] &&
+            (laneOf(op.second)?.grade ?? "") === op.grades[0]))
       );
     case "seniors":
       return op.lanes.every(

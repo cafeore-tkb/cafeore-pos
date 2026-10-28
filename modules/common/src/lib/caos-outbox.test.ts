@@ -279,6 +279,37 @@ describe("unit: caos-outbox 重ねて表示", () => {
     );
   });
 
+  test("担当者の学年は交代と入れ替えで名前と一緒に扱い、自由入力では消える", () => {
+    const lanes = emptyCaosLanes(DAY).lanes;
+    const change = entry({
+      kind: "lane",
+      dripper: 1,
+      name: "山田",
+      senior: false,
+      grade: "B2",
+      before: "",
+    });
+    const swap = entry({
+      kind: "swap",
+      first: 1,
+      second: 2,
+      names: ["山田", ""],
+    });
+    const current = overlayCaosLanes(lanes, [change, swap], DAY);
+    expect(current[1]).toMatchObject({ name: "山田", grade: "B2" });
+    const typed = entry({
+      kind: "lane",
+      dripper: 2,
+      name: "手入力",
+      senior: false,
+      before: "山田",
+    });
+    expect(overlayCaosLanes(current, [typed], DAY)[1]).toMatchObject({
+      name: "手入力",
+      grade: "",
+    });
+  });
+
   test("交代は、届いた担当者が押したときのままのときだけ重ねる（ほかの端末が先に替えていれば、サーバーの今のまま）", () => {
     const lanes = (name: string) =>
       emptyCaosLanes(DAY).lanes.map((lane) =>
@@ -833,6 +864,34 @@ describe("unit: caos-outbox 送る", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(changed.sent).toEqual([]);
     expect(changed.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
+  });
+
+  test("入れ替えの名前だけ一致しても学年が異なれば反映済みにしない", async () => {
+    const lanes: CaosLanes = {
+      day: DAY,
+      lanes: emptyCaosLanes(DAY).lanes.map((lane) =>
+        lane.dripper === 1
+          ? { ...lane, name: "B", grade: "B9" }
+          : lane.dripper === 2
+            ? { ...lane, name: "A", grade: "B1" }
+            : lane,
+      ),
+    };
+    const swap = entry(
+      {
+        kind: "swap",
+        first: 1,
+        second: 2,
+        names: ["A", "B"],
+        grades: ["B1", "B2"],
+      },
+      "入れ替え",
+    );
+    const result = setup([swap], [], [], lanes);
+    await result.outbox.kick();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result.sent).toEqual([]);
+    expect(result.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
   });
 
   describe("交代", () => {
