@@ -6,6 +6,7 @@ import {
   fetchShiftFeed,
   isSeniorName,
   laneCandidates,
+  matchesShiftMember,
   nextLaneCandidate,
   normalizeFeedKey,
   parseShiftFeed,
@@ -358,5 +359,90 @@ describe("名簿と対応抽出の配信", () => {
       ｻﾄｳ: [],
       別の人: ["1杯ホット", "2杯アイス"],
     });
+  });
+});
+
+describe("[unit] 交代候補の別名検索", () => {
+  const member = {
+    name: "佐藤 花子",
+    grade: "B2",
+    display: "はなちゃん",
+    aliases: [
+      "佐藤",
+      "花子",
+      "さとう",
+      "はなこ",
+      "Satoh",
+      "Hanako",
+      "さとう はなこ",
+      "はなっち",
+    ],
+  };
+  test.each([
+    "佐藤",
+    "花",
+    "さと",
+    "ハナコ",
+    "ｻﾄｳ",
+    "ＳＡＴＯＨ",
+    "hanako",
+    "はなちゃん",
+    "はなっち",
+    "さとうはなこ",
+    "はなこ　さと",
+    "satoh hanako",
+    "  ",
+  ])("かな・ローマ字・空白の違いで検索できる: %s", (query) => {
+    expect(matchesShiftMember(member, query)).toBe(true);
+  });
+  test("複数語は全部一致し、検索で登録元氏名を変更しない", () => {
+    expect(matchesShiftMember(member, "さとう 太郎")).toBe(false);
+    expect(matchesShiftMember(member, "別の人")).toBe(false);
+    expect(member.name).toBe("佐藤 花子");
+    expect(matchesShiftMember({ name: "佐藤 花子" }, "佐藤花子")).toBe(true);
+    expect(matchesShiftMember({ name: "佐藤 花子" }, "さとう")).toBe(false);
+  });
+  test("配信の別名を読み、壊れた値・空欄・重複を除いて古い形にも対応する", () => {
+    const feed = parseShiftFeed({
+      fields: {
+        members: {
+          arrayValue: {
+            values: [
+              {
+                mapValue: {
+                  fields: {
+                    name: str(member.name),
+                    grade: str("B2"),
+                    display: str(member.display),
+                    aliases: {
+                      arrayValue: {
+                        values: [
+                          str(" さとう "),
+                          str("さとう"),
+                          str(""),
+                          { integerValue: "1" },
+                          str("Hanako"),
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(feed.members).toEqual([
+      {
+        name: member.name,
+        grade: "B2",
+        display: "はなちゃん",
+        aliases: ["さとう", "Hanako"],
+      },
+    ]);
+    const parsed = feed.members?.[0];
+    if (!parsed) throw new Error("配信名簿がありません");
+    expect(matchesShiftMember(parsed, "ｻﾄｳ HANAKO")).toBe(true);
   });
 });

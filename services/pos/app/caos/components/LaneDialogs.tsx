@@ -3,6 +3,7 @@ import {
   dripperLabel,
   isSeniorName,
   laneCandidates,
+  matchesShiftMember,
 } from "@cafeore/common";
 import {
   ArrowLeftRight,
@@ -62,6 +63,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
 }) => {
   const { feed } = shiftFeed;
   const [typed, setTyped] = useState("");
+  const [query, setQuery] = useState("");
   const [grade, setGrade] = useState<string | null>(null);
   const members = useMemo(
     () => gradeMembers(feed, lane.name),
@@ -90,16 +92,29 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
     () => laneCandidates(feed, lane.dripper, nowMs, lane.name),
     [feed, lane.dripper, nowMs, lane.name],
   );
-  const shownCandidates =
-    selectedGrade === null
+  const searching = Boolean(query.trim());
+  const shownCandidates = (
+    !searching && selectedGrade === null
       ? candidates
       : members
-          .filter((member) => member.grade === selectedGrade)
+          .filter(
+            (member) =>
+              (selectedGrade === null || member.grade === selectedGrade) &&
+              matchesShiftMember(member, query),
+          )
           .map((member) => ({
             name: member.name,
             senior: isSeniorName(feed, member.name),
-            reasons: [member.grade],
-          }));
+            reasons: [
+              member.grade,
+              ...(candidates.find((c) => c.name === member.name)?.reasons ||
+                []),
+            ],
+          }))
+  ).map((candidate) => ({
+    ...candidate,
+    display: members.find((member) => member.name === candidate.name)?.display,
+  }));
   const typedName = typed.trim();
   const typedSenior = isSeniorName(feed, typedName);
 
@@ -146,9 +161,11 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
           <section>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="font-black text-[13px] text-slate-700">
-                {selectedGrade === null
-                  ? "シフトの予定から"
-                  : `${selectedGrade}の候補`}
+                {searching
+                  ? `検索結果（${shownCandidates.length}人）`
+                  : selectedGrade === null
+                    ? "シフトの予定から"
+                    : `${selectedGrade}の候補`}
               </h3>
               <button
                 type="button"
@@ -159,6 +176,20 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                 合言葉
               </button>
             </div>
+            <label className="mb-3 block font-bold text-slate-700 text-sm">
+              交代する人を検索
+              <input
+                type="search"
+                value={query}
+                maxLength={160}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="氏名・ひらがな・ローマ字・ニックネーム"
+                className="mt-1 min-h-[48px] w-full rounded-lg border-2 border-slate-300 px-3 text-[16px] focus:border-blue-500 focus:outline-none"
+              />
+            </label>
+            <p className="mb-3 text-slate-500 text-xs">
+              名字・名前の一部や、空白で区切った複数の語で検索できます。
+            </p>
             <div
               className="mb-3 flex flex-wrap gap-2"
               aria-label="候補者の学年"
@@ -171,7 +202,7 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                   onClick={() => setGrade(value)}
                   className={`min-h-10 touch-manipulation rounded-lg border-2 px-3 font-bold text-xs ${selectedGrade === value ? "border-blue-700 bg-blue-700 text-white" : "border-slate-300 bg-white text-slate-700"}`}
                 >
-                  {value ?? "予定の候補"}
+                  {value ?? (searching ? "すべての学年" : "予定の候補")}
                 </button>
               ))}
             </div>
@@ -195,6 +226,12 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                       {candidate.name}
                       {candidate.senior && <SeniorMark />}
                     </span>
+                    {candidate.display &&
+                    candidate.display !== candidate.name ? (
+                      <span className="text-slate-600 text-xs">
+                        {candidate.display}
+                      </span>
+                    ) : null}
                     <span className="mt-0.5 font-bold text-[11px] text-slate-500 leading-snug">
                       {candidate.reasons.join("・")}
                     </span>
@@ -203,16 +240,18 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
               </div>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-bold text-[12px] text-slate-500">
-                {selectedGrade === null
-                  ? noCandidateReason(shiftFeed)
-                  : "この学年の候補者はいません。"}
+                {searching && feed
+                  ? "一致する候補者はいません。学年の絞り込みや検索語を確認してください。読み仮名・呼び名をシフト側で更新した場合は、配信し直してから予定を読み直してください。"
+                  : selectedGrade === null
+                    ? noCandidateReason(shiftFeed)
+                    : "この学年の候補者はいません。"}
               </p>
             )}
           </section>
 
           <section>
             <h3 className="mb-2 font-black text-[13px] text-slate-700">
-              名前を入れる
+              名簿にない名前を直接入力
             </h3>
             <form
               className="flex gap-2"
