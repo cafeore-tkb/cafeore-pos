@@ -24,7 +24,8 @@ Registry に成果物を置く、`*-deploy-*` はデプロイする。
 | `pos-deploy-cloudrun` | `services/pos` | 本番だけ。画面のイメージを作って Artifact Registry へ push し、Cloud Run `cafeore-pos-web` へデプロイ（既定で動く。変数 `POS_WEB_DEPLOY` を `false` にすると止まる） |
 | `deploy-staging` | `api`・`services/pos` | main への push と手動実行（main だけ）で、[staging](#staging-と-sandbox) に API と画面を出す（変数 `STAGING_DEPLOY` を `false` にすると止まる） |
 | `deploy-sandbox` | `api`・`services/pos` | 手動実行だけ。選んだブランチを [sandbox](#staging-と-sandbox) に出す |
-| `deploy-environment` | — | `deploy-staging`・`deploy-sandbox` が呼ぶ中身（reusable workflow。これだけでは走らない） |
+| `deploy-playground` | `api`・`services/pos` | 手動実行だけ。選んだブランチを [playground](#staging-と-sandbox)（IAP なし。誰でも使える）に出す |
+| `deploy-environment` | — | `deploy-staging`・`deploy-sandbox`・`deploy-playground` が呼ぶ中身（reusable workflow。これだけでは走らない） |
 | `pr-cleanup` | — | PR を閉じたときと `preview` ラベルを外したときに、プレビュー用の backend（Artifact Registry・Cloud Run のタグ、Neon のブランチ）を片付ける |
 | `preview-adopt` | — | 手動実行のみ。ラベル運用より前から立っているプレビューの PR に `preview` ラベルを付ける |
 
@@ -425,32 +426,40 @@ IAP のセッションがどのくらいの間隔で切れるかは確かめて�
 
 ### staging と sandbox
 
-本番と同じ構成（IAP の LB・Cloud Run の API と画面・Cloud SQL）を、mice の同じプロジェクトに 2 つ並べてある
-（infra の README「staging と sandbox」が正本）。ここからは `deploy-staging` と `deploy-sandbox` が出す。
+本番と同じ構成（IAP の LB・Cloud Run の API と画面・Cloud SQL）を、mice の同じプロジェクトに 3 つ並べてある
+（infra の README「staging と sandbox」「playground（IAP なし）」が正本）。ここからは `deploy-staging`・`deploy-sandbox`・`deploy-playground` が出す。
+playground は sandbox と同じ形で、IAP だけが無い。
 
-| | 本番 | staging | sandbox |
-| --- | --- | --- | --- |
-| POS の URL（IAP） | `pos.cafeore.cafe` | `pos-stg.cafeore.cafe` | `pos-sandbox.cafeore.cafe` |
-| API の Cloud Run / 画面の Cloud Run | `cafeore-pos-prod` / `cafeore-pos-web` | `cafeore-pos-stg` / `cafeore-pos-stg-web` | `cafeore-pos-sandbox` / `cafeore-pos-sandbox-web` |
-| いつ出すか | main への push（`api-build`・`pos-deploy-cloudrun`） | main への push（`deploy-staging`）。手動実行も main だけ | 手動実行だけ（`deploy-sandbox`）。どのブランチでも |
-| DB | 本番の Cloud SQL | staging の Cloud SQL（中身は本番と別） | sandbox の Cloud SQL（**バックアップを取らない**） |
-| Square | 本番 | Sandbox | 使わない |
+| | 本番 | staging | sandbox | playground |
+| --- | --- | --- | --- | --- |
+| POS の URL | `pos.cafeore.cafe`（IAP） | `pos-stg.cafeore.cafe`（IAP） | `pos-sandbox.cafeore.cafe`（IAP。ログインすれば誰でも） | `playground.pos.cafeore.cafe`（**IAP なし。誰でもログインなしで**） |
+| API の Cloud Run / 画面の Cloud Run | `cafeore-pos-prod` / `cafeore-pos-web` | `cafeore-pos-stg` / `cafeore-pos-stg-web` | `cafeore-pos-sandbox` / `cafeore-pos-sandbox-web` | `cafeore-pos-playground` / `cafeore-pos-playground-web` |
+| いつ出すか | main への push（`api-build`・`pos-deploy-cloudrun`） | main への push（`deploy-staging`）。手動実行も main だけ | 手動実行だけ（`deploy-sandbox`）。どのブランチでも | 手動実行だけ（`deploy-playground`）。どのブランチでも |
+| DB | 本番の Cloud SQL | staging の Cloud SQL（中身は本番と別） | sandbox の Cloud SQL（**バックアップを取らない**） | playground の Cloud SQL（**バックアップを取らない**） |
+| Square | 本番 | Sandbox | 使わない | 使わない |
 
 - **staging は本番と並んで出る。** staging を通ってから本番、という順番にはしていない（本番の workflow は変えていない）
 - **1 回で API と画面の両方を出す。** 本番は API と画面が別の workflow で、変わった方だけが出るが、`deploy-staging` はどちらかの
   パスが変わったら両方出す（`paths` は `api-build` と `pos-deploy-cloudrun` の main の `paths` を合わせたもの。揃えること）。
   変わった方だけにすると、待っている実行が後の実行に置き換えられたとき（concurrency）、置き換えられた方の変更が出ないため
 - **画面は環境ごとにビルドする。** API のオリジン（`VITE_API_BASE_URL`）を焼き込むので、本番のイメージは使えない。
-  `VITE_DEPLOY_ENV` は `staging`・`sandbox` で、本番と同じくレジの「常に返金」は出さず、トップページにログイン中のアカウントを出す
-- イメージは本番と同じ Artifact Registry の `api`・`pos-web` に、`stg-<SHA>`・`stg-latest`（sandbox は `sandbox-…`）のタグで置く。
+  `VITE_DEPLOY_ENV` は `staging`・`sandbox`・`playground` で、本番と同じくレジの「常に返金」は出さず、トップページにログイン中のアカウントを出す
+- イメージは本番と同じ Artifact Registry の `api`・`pos-web` に、`stg-<SHA>`・`stg-latest`（sandbox は `sandbox-…`、playground は `playground-…`）のタグで置く。
   本番の `<SHA>`・`latest` を付け替えないよう分けている。BuildKit のキャッシュは本番のものを読むだけで書かない
-- デプロイの後、本番と同じく LB（`pos-be-lb-stg.cafeore.cafe`・`pos-be-lb-sandbox.cafeore.cafe`）を通して `/status` の
+- デプロイの後、本番と同じく LB（`pos-be-lb-stg.cafeore.cafe`・`pos-be-lb-sandbox.cafeore.cafe`・`pos-be-lb-playground.cafeore.cafe`）を通して `/status` の
   `schema_drift` を確かめる（[DB のスキーマ](#db-のスキーマ)）
-- **sandbox の DB は作り直さない。** モデルに列やテーブルを足したブランチを出すと DB に残り、そのあと足していないブランチ（main など）を
-  出すと `schema_drift` に出て `deploy-sandbox` が落ちる（デプロイ自体は済んでいる）。sandbox は 1 つしか無いので、最後に流したものが残る
-- Slack の `VITE_WEBHOOK_URL` には本番の `WEBHOOK_URL` を渡さない（`STAGING_WEBHOOK_URL`・`SANDBOX_WEBHOOK_URL`。無ければ空）
+- **sandbox と playground の DB は作り直さない。** モデルに列やテーブルを足したブランチを出すと DB に残り、そのあと足していないブランチ（main など）を
+  出すと `schema_drift` に出て `deploy-sandbox`・`deploy-playground` が落ちる（デプロイ自体は済んでいる）。どちらも 1 つしか無いので、最後に流したものが残る
+- Slack の `VITE_WEBHOOK_URL` には本番の `WEBHOOK_URL` を渡さない（`STAGING_WEBHOOK_URL`・`SANDBOX_WEBHOOK_URL`。無ければ空）。
+  playground には何も渡さない（画面はログインなしで誰でも取れ、焼き込んだ URL を読まれると誰でもそのチャンネルに送れるため）
 - infra の手順（DB のユーザー、DNS と証明書）が済む前に `deploy-staging` が走ると落ちる。間に合わないときは変数 `STAGING_DEPLOY` を `false` にしておく
-- `deploy-sandbox` は手動実行だけなので、main に入ってからでないと Actions の画面から流せない
+- `deploy-sandbox`・`deploy-playground` は手動実行だけなので、main に入ってからでないと Actions の画面から流せない
+- **playground に出したものはインターネットの誰でも使える。** 画面も `/api/*` もログインが要らず、API の `AUTH_MODE` は `off`
+  （管理者だけの操作も誰でもできる。データのリセットは `off` では誰もできない）。トップページは「ログインなし」と「権限の確認なし」になる。
+  公開してよいブランチだけを出し、本物のデータを入れない。API の Slack の通知（商品の変更など）と呼び出しの音声（ElevenLabs）にも
+  誰でも届く（infra の README「playground（IAP なし）」の「誰でも使えることで広がるもの」）
+- playground では、画面のサーバーの `/auth/me`（`services/pos/server/app.ts`）が読む `X-Goog-Authenticated-User-Email` を IAP が付けない。
+  利用者が自分で付けて送ると、その値がその人のトップページに出る（出すだけで、権限には使わない）
 
 ### 呼び出し画面の CM
 

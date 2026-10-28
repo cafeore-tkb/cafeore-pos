@@ -2,7 +2,7 @@ import { API_BASE_URL, apiClient } from "@cafeore/common";
 import useSWR, { type SWRConfiguration } from "swr";
 
 // PR のプレビュー（Workers）。ログインが無い。
-// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、staging・sandbox はその名前、ローカルは無い
+// 本番（Cloud Run・pos-cf）の VITE_DEPLOY_ENV は production、staging・sandbox・playground はその名前、ローカルは無い
 export const IS_PREVIEW = import.meta.env.VITE_DEPLOY_ENV === "preview";
 
 // ローカルの dev（react-router dev）には画面のサーバーが無く、何を聞いても index.html が返るので聞かない。
