@@ -155,7 +155,10 @@ export const useCaosSession = () => {
   const { cards } = source;
   const nowMs = test.session?.currentMs ?? realTime.getTime();
 
-  const lanes = useMemo(() => boardLanes(cards), [cards]);
+  const lanes = useMemo(
+    () => boardLanes(cards, test.session ? undefined : live.predictBrew),
+    [cards, test.session, live.predictBrew],
+  );
   const unassigned = useMemo(
     () => cards.filter((card) => card.status === "unassigned"),
     [cards],

@@ -25,6 +25,7 @@ import {
 } from "../logic/analytics";
 import type { CardLooks } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
+import { BrewStatsPanel } from "./BrewStatsPanel";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
@@ -93,6 +94,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   return (
     <div className="space-y-3">
+      {liveAnalytics && <BrewStatsPanel />}
       {liveAnalytics && <OperationsDashboard compact />}
       {!liveAnalytics && (
         <p className="text-slate-500 text-xs">
