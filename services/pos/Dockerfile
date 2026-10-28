@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# POS の画面を Cloud Run（cafeore-pos-web）で配るイメージ。本番だけで、PR のプレビューは
-# 今までどおり Workers（wrangler.jsonc）。デプロイは .github/workflows/pos-deploy-cloudrun.yml。
+# POS の画面を Cloud Run（cafeore-pos-web）で配るイメージ。PR のプレビューは今までどおり
+# Workers（wrangler.jsonc）。デプロイは本番が .github/workflows/pos-deploy-cloudrun.yml、
+# staging と sandbox（cafeore-pos-stg-web など）が deploy-environment.yml で、環境ごとにビルドする。
 #
 # 中に入れるのは、画面（build/client）と、それを配るサーバー（server/ を esbuild で 1 つの
 # ファイルにまとめたもの。send・@google-cloud/storage もその中に入る）だけ。node_modules は持たない。
@@ -38,8 +39,8 @@ RUN pnpm install --frozen-lockfile --offline
 #   - VITE_API_BASE_URL … API のオリジン。本番は画面と同じ https://pos.cafeore.cafe
 #     （LB が /api・/status・/health を API に送る）。無いと localhost を向くので、止める
 #   - VITE_BUILD_PR・VITE_BUILD_COMMIT … どの PR・コミットのビルドか（トップページに出す）
-#   - VITE_DEPLOY_ENV … どこに出したビルドか。このイメージは本番だけなので既定は production
-#     （レジの「常に返金」を出さない）
+#   - VITE_DEPLOY_ENV … どこに出したビルドか。既定は production（レジの「常に返金」を出さない）。
+#     staging と sandbox は staging・sandbox を渡す（こちらも出さない）
 #   - VITE_WEBHOOK_URL … Slack の Webhook。secret で渡す（--secret id=VITE_WEBHOOK_URL,env=...）。
 #     ビルド引数にするとイメージのビルドの記録に残るため。無ければ空
 ARG VITE_API_BASE_URL

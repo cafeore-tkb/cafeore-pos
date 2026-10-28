@@ -1,0 +1,310 @@
+name: deploy / environment
+
+# staging と sandbox（infra の gcp/environments.tf。本番と同じ構成を mice の同じプロジェクトに並べたもの）に、
+# API と画面を出す reusable workflow。deploy-staging.yml（main への push）と deploy-sandbox.yml（手動実行だけ）が
+# 呼び、これだけでは走らない。環境ごとの値（サービスの名前・URL）は呼ぶ側が inputs で渡す。
+#
+# 中身は本番の api-build.yml（main のとき）と pos-deploy-cloudrun.yml と同じで、違うのは出し先と画面に焼き込む値だけ。
+#
+#   - api … api/Dockerfile のイメージで API の Cloud Run（cafeore-pos-stg など）を差し替え、LB（pos-be-lb-stg など）を
+#           通して /status の schema_drift を確かめる。イメージに環境の違いは無い（環境の違いは Terraform が入れる
+#           Cloud Run の env で渡る）が、本番の api-build.yml を待たずに出せるよう、ここでも作る
+#   - web … services/pos/Dockerfile のイメージで画面の Cloud Run（cafeore-pos-stg-web など）を差し替える。
+#           **本番のイメージは使えない。** API のオリジン（VITE_API_BASE_URL）などをビルドのときに焼き込むので、
+#           環境ごとに作る（infra の README「staging と sandbox」の手順 2）
+#
+# ## イメージのタグ
+#
+# 本番と同じ Artifact Registry のリポジトリ（cafeore-pos）の api・pos-web に、<短い名前>-<コミットの SHA> と
+# <短い名前>-latest（stg-… / sandbox-…）を付けて置く。本番の <SHA>・latest と同じタグにしないのは、同じコミットでも
+# 本番とは別のイメージ（画面は焼き込んだ値が違う）なので、本番のタグを付け替えてしまうから。外れた本番のイメージは
+# タグ無しになり、7 日でクリーンアップに消される（infra の artifact_registry.tf）。
+# pr- で始めないので、PR のタグの掃除（delete-stale-pr-tags）にも当たらない。
+#
+# ## 本番のキャッシュを読むだけ
+#
+# BuildKit のキャッシュは、本番（api-build.yml の既定の scope と、pos-deploy-cloudrun.yml の pos-web）のものを
+# 読むだけで書かない。同じ Dockerfile なので依存の層は当たるうえ、書くと本番のキャッシュを上書きしてしまう。
+#
+# 認証は本番と同じ Workload Identity Federation と CI の SA。infra の gcp/github_actions.tf で、CI の SA は
+# staging と sandbox の 4 つのサービスにも roles/run.developer と、ランタイム SA の actAs を持つ。
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 環境の名前（infra の local.environments のキー。staging・sandbox）。画面の VITE_DEPLOY_ENV にも焼き込む
+        type: string
+        required: true
+      short_name:
+        description: 環境の短い名前（stg・sandbox）。イメージのタグの頭に付ける
+        type: string
+        required: true
+      api_service:
+        description: API の Cloud Run サービス（infra の output environments の api_service_name）
+        type: string
+        required: true
+      api_lb_url:
+        description: API の LB の URL（output environments の api_lb_url）。デプロイの後の /status をここで見る
+        type: string
+        required: true
+      web_service:
+        description: 画面の Cloud Run サービス（output environments の pos_web_service_name）
+        type: string
+        required: true
+      web_url:
+        description: 画面の URL（output environments の pos_web_url）。画面と API が同じオリジンなので VITE_API_BASE_URL にもする
+        type: string
+        required: true
+    secrets:
+      webhook_url:
+        description: 画面に焼き込む Slack の Webhook（VITE_WEBHOOK_URL）。本番の WEBHOOK_URL は渡さないこと
+        required: false
+
+# WIF の OIDC トークン発行に id-token: write が必須（呼ぶ側にも要る）。
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  api:
+    name: Build and deploy API
+    runs-on: ubuntu-latest
+
+    env:
+      # 本番と同じプロジェクト・リポジトリ。既定値と Variables は api-build.yml と同じ（README の「必要な設定」）。
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: api
+      CLOUD_RUN_SERVICE: ${{ inputs.api_service }}
+      API_LB_URL: ${{ inputs.api_lb_url }}
+      # スクリプトには ${{ }} を直接埋めず、env で渡す
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GCP に認証する
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+          token_format: access_token
+
+      - name: Artifact Registry に docker login する
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: タグを決める
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          # 本番の <SHA>・latest とは分ける（上の「イメージのタグ」）。デプロイはタグではなくダイジェストで指す
+          tags: |
+            type=sha,format=long,prefix=${{ inputs.short_name }}-
+            type=raw,value=${{ inputs.short_name }}-latest
+
+      # どの PR・コミットのビルドかをイメージに焼き、/status から POS のトップページに出す（api-build.yml と同じ）。
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ビルドして push する
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_PR=${{ steps.build_info.outputs.pr }}
+            BUILD_COMMIT=${{ steps.build_info.outputs.commit }}
+          provenance: false
+          # 本番（api-build.yml の既定の scope）のキャッシュを読むだけ（上の「本番のキャッシュを読むだけ」）
+          cache-from: type=gha
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cloud Run にデプロイする
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # 本番と同じく traffic は LATEST に向いているので、image を差し替えれば切り替わる。env（DATABASE_URL など）は
+          # Terraform が入れるので、ここでは image だけ。image は Terraform 側で ignore_changes してある。
+          gcloud run services update "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="$image" \
+            --quiet
+
+          revision=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.latestReadyRevisionName)')
+
+          {
+            echo "### $DEPLOY_ENVIRONMENT の API を Cloud Run にデプロイした"
+            echo '```'
+            echo "service:  $CLOUD_RUN_SERVICE ($GCP_REGION)"
+            echo "revision: $revision"
+            echo "image:    $image"
+            echo "LB:       $API_LB_URL"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # api-build.yml の同じ名前のステップと同じ。run.app は入口が LB だけなので（infra の staging_api_lb_only・
+      # sandbox_api_lb_only。既定で true）、LB を通して見る。/status は Cloud Armor がトークンなしで通す。
+      # 空でなければ落とす。デプロイ自体は済んでいる。
+      #
+      # sandbox の DB は作り直さない。モデルに列を足したブランチを出したあとに足していないブランチを出すと、
+      # その列が DB に残ってここで落ちる（deploy-sandbox.yml の冒頭）。
+      - name: DB のスキーマがモデルとずれていないか確かめる
+        run: |
+          set -uo pipefail
+
+          body=""
+          for _ in $(seq 1 10); do
+            if body=$(curl -sf --max-time 30 "$API_LB_URL/status"); then
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$body" ]; then
+            echo "::error::$API_LB_URL/status に繋がらなかった"
+            exit 1
+          fi
+
+          drift=$(jq -r '(.schema_drift // ["schema_drift が無い（古い API が応答した？）"])[]' <<<"$body") || exit 1
+          if [ -n "$drift" ]; then
+            {
+              echo "### DB のスキーマがモデルとずれている"
+              echo '```'
+              echo "$drift"
+              echo '```'
+              echo "DB を手で触った跡か、前に出したブランチが足したもの。モデルに足すか、DB から消すこと。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do echo "::error::$line"; done <<<"$drift"
+            exit 1
+          fi
+          echo "DB のスキーマはモデルと一致している"
+
+  web:
+    name: Build and deploy POS web
+    runs-on: ubuntu-latest
+
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID || 'project-5d6e656b-4871-46ff-96f' }}
+      GCP_REGION: ${{ vars.GCP_REGION || 'asia-northeast1' }}
+      AR_REPOSITORY: ${{ vars.GCP_AR_CONTAINER_REPOSITORY || 'cafeore-pos' }}
+      IMAGE_NAME: pos-web
+      CLOUD_RUN_SERVICE: ${{ inputs.web_service }}
+      # 画面に焼き込む API のオリジン。本番と同じく LB が /api などを API に送るので、画面と同じ URL にする
+      VITE_API_BASE_URL: ${{ inputs.web_url }}
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GCP に認証する
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER || 'projects/185193732958/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc' }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT || 'github-actions-ci@project-5d6e656b-4871-46ff-96f.iam.gserviceaccount.com' }}
+          token_format: access_token
+
+      - name: Artifact Registry に docker login する
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GCP_REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: タグを決める
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long,prefix=${{ inputs.short_name }}-
+            type=raw,value=${{ inputs.short_name }}-latest
+
+      - name: ビルドの番号を決める
+        id: build_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/build-info.sh >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: ビルドして push する
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/pos/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # pos-deploy-cloudrun.yml と同じものを、この環境の値で焼き込む。VITE_DEPLOY_ENV は staging・sandbox で、
+          # 本番と同じくレジの「常に返金」を出さず、トップページにログイン中のアカウントを出す（preview ではないため）
+          build-args: |
+            VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
+            VITE_BUILD_PR=${{ steps.build_info.outputs.pr }}
+            VITE_BUILD_COMMIT=${{ steps.build_info.outputs.commit }}
+            VITE_DEPLOY_ENV=${{ inputs.environment }}
+          # 無ければ渡さない（空の secret は build-push-action が警告を出して捨てる）。空なら空が焼き込まれる
+          secrets: ${{ secrets.webhook_url && format('VITE_WEBHOOK_URL={0}', secrets.webhook_url) || '' }}
+          provenance: false
+          # 本番（pos-deploy-cloudrun.yml の pos-web）のキャッシュを読むだけ
+          cache-from: type=gha,scope=pos-web
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cloud Run にデプロイする
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          image="$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$AR_REPOSITORY/$IMAGE_NAME@$IMAGE_DIGEST"
+
+          # pos-deploy-cloudrun.yml と同じ。サービスの環境変数（CALL_VOICES_BUCKET など）は Terraform が入れる
+          gcloud run services update "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --image="$image" \
+            --quiet
+
+          revision=$(gcloud run services describe "$CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" \
+            --region="$GCP_REGION" \
+            --format='value(status.latestReadyRevisionName)')
+
+          {
+            echo "### $DEPLOY_ENVIRONMENT の画面を Cloud Run にデプロイした"
+            echo '```'
+            echo "service:  $CLOUD_RUN_SERVICE ($GCP_REGION)"
+            echo "revision: $revision"
+            echo "image:    $image"
+            echo "URL:      $VITE_API_BASE_URL"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
