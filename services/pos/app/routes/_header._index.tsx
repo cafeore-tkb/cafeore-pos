@@ -2,6 +2,7 @@ import { ArrowRight } from "lucide-react";
 import type { MetaFunction } from "react-router";
 import { Link } from "react-router";
 import { BuildInfo } from "~/components/organisms/top/BuildInfo";
+import { LoginUser } from "~/components/organisms/top/LoginUser";
 import {
   type ScreenKind,
   ScreenPreview,
@@ -127,7 +128,7 @@ const sections: Section[] = [
   {
     audience: "admin",
     title: "運営・管理",
-    lead: "売れ行きや在庫の確認、オペ練、メニューの設定",
+    lead: "売れ行きや在庫の確認、オペ練、メニューの設定。本番では管理者だけが開けます",
     screens: [
       {
         kind: "dashboard",
@@ -173,17 +174,20 @@ const settingLinks = [
   { to: "/square-devices", label: "Square 端末" },
   { to: "/printer-settings", label: "プリンター" },
   { to: "/callscreen-cm", label: "呼び出し画面の CM" },
-  { to: "/menu-keys", label: "商品のキー" },
+  { to: "/data-reset", label: "データのリセット" },
 ];
 
 export default function Index() {
   return (
     <div className="mx-auto max-w-6xl space-y-10 px-4 py-6 font-noto">
-      <header>
-        <h1 className="font-bold text-3xl text-ore">珈琲・俺POS</h1>
-        <p className="mt-1 text-muted-foreground text-sm">
-          使う画面を選んでください。各画面は担当の端末で開いたままにしておきます。
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-bold text-3xl text-ore">珈琲・俺POS</h1>
+          <p className="mt-1 text-muted-foreground text-sm">
+            使う画面を選んでください。各画面は担当の端末で開いたままにしておきます。
+          </p>
+        </div>
+        <LoginUser />
       </header>
 
       {sections.map((section) => (
@@ -206,8 +210,9 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            Square 端末・プリンター・呼び出し画面の
-            CM・レジの商品のキーを設定します
+            Square 端末・プリンター・呼び出し画面の CM
+            を設定します。本番では、呼び出し画面の CM
+            のほかは管理者だけが開けます
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (

@@ -7,11 +7,10 @@ import {
   resolveItemColor,
   useColorSettings,
 } from "@cafeore/common";
-import { CircleHelp } from "lucide-react";
-import { useEffect, useRef } from "react";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import { PAYMENT_KEYS } from "../../functional/cashierDraft";
+import { HelpMark } from "../../molecules/HelpMark";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
 
 type props = {
@@ -35,7 +34,7 @@ const COLUMNS = 4;
  * メニューを種別ごとにまとめる。メニューは API の並び（優先度の大きい順）のままで、
  * 種別の並びはメニューに最初に出てきた順（その種別で一番大きい優先度の順）
  */
-export const groupByItemType = (menus: WithId<MenuEntity>[]): MenuGroup[] => {
+const groupByItemType = (menus: WithId<MenuEntity>[]): MenuGroup[] => {
   const groups = new Map<string, MenuGroup>();
   for (const menu of menus) {
     const itemType = menu.item_type;
@@ -167,70 +166,22 @@ export const RegisterKeyHints = ({
   /** 商品キーの例（「^ ¥ [」）。無ければ出さない */
   exampleKeys: string;
   className?: string;
-}) => {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = () => {
-      const details = detailsRef.current;
-      if (!details?.open) return;
-      details.open = false;
-      const focused = document.activeElement;
-      if (focused instanceof HTMLElement && details.contains(focused))
-        focused.blur();
-    };
-    const outside = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !detailsRef.current?.contains(event.target)
-      )
-        close();
-    };
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !detailsRef.current?.open) return;
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-    };
-    document.addEventListener("pointerdown", outside, true);
-    window.addEventListener("keydown", dismissOnEscape, true);
-    return () => {
-      document.removeEventListener("pointerdown", outside, true);
-      window.removeEventListener("keydown", dismissOnEscape, true);
-    };
-  }, []);
-  return (
-    <div className={cn("flex flex-none justify-end", className)}>
-      <details ref={detailsRef} className="group relative">
-        <summary
-          onKeyDown={(event) => {
-            // summary自体の開閉キーだけレジの会計・指名操作と競合させない。
-            if (event.key === " " || event.key === "Enter")
-              event.stopPropagation();
-          }}
-          aria-label="キーボード操作の説明"
-          title="キーボード操作"
-          className="flex h-10 w-10 cursor-pointer touch-manipulation list-none items-center justify-center rounded-full text-stone-500 hover:bg-stone-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-stone-500 group-open:bg-stone-100 [&::-webkit-details-marker]:hidden"
-        >
-          <CircleHelp className="h-5 w-5" aria-hidden="true" />
-        </summary>
-        <div className="absolute right-0 bottom-full z-50 mb-2 flex max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto rounded-xl border border-stone-200 bg-white p-4 text-left text-sm text-stone-600 shadow-lg">
-          <p className="font-bold text-stone-800">キーボード操作</p>
-          {exampleKeys && <p>{exampleKeys} … 商品キー</p>}
-          <p>Enter・→ 一括会計</p>
-          <p>
-            ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
-            で指名／備考・Backspace で削除
-          </p>
-          <p>
-            会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）
-          </p>
-          <p>{paymentKeyHint} ですぐ会計</p>
-          <p>Esc 取消</p>
-        </div>
-      </details>
-    </div>
-  );
-};
+}) => (
+  <div className={cn("flex flex-none justify-end", className)}>
+    <HelpMark title="キーボード操作" side="top" panelClassName="w-80">
+      <p className="font-bold text-stone-800">キーボード操作</p>
+      {exampleKeys && <p>{exampleKeys} … 商品キー</p>}
+      <p>Enter・→ 一括会計</p>
+      <p>
+        ↑ ↓ 商品 → 割引 → 備考・数字で指名（1〜6、0 でなし）・Space
+        で指名／備考・Backspace で削除
+      </p>
+      <p>会計中は ↑ ↓ で決済手段・Enter で確定／決済（金額が空ならちょうど）</p>
+      <p>{paymentKeyHint} ですぐ会計</p>
+      <p>Esc 取消</p>
+    </HelpMark>
+  </div>
+);
 
 /** 商品キーの例（メニューの先頭の 3 つ） */
 export const exampleMenuKeys = (menus: WithId<MenuEntity>[]) =>

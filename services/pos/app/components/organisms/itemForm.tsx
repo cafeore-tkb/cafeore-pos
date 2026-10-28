@@ -1,6 +1,7 @@
 import type { ItemEntity, ItemType } from "@cafeore/common";
-import { useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
+import { MenuKeyCapture } from "~/components/organisms/menuKeyCapture";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { checkMenuKey, normalizeMenuKey } from "~/lib/menuKey";
 import { type StockAmounts, parseStockField, stockFields } from "~/lib/stock";
 import {
   EMPTY_ITEM_TYPE,
@@ -42,8 +44,8 @@ type Props = {
     values: ItemFormValues,
     menu: SameNameMenu | null,
   ) => Promise<void> | void;
-  /** 渡したときだけ「同名のメニューも作る」を出す。他のメニューが使っているキー */
-  menuKeysInUse?: string[];
+  /** 渡したときだけ「同名のメニューも作る」を出す。他のメニュー（同じキーは使えない） */
+  otherMenus?: { name: string; key: string }[];
   /** 作ったタイプを返す。一覧の itemTypes に入ってから返すこと */
   onCreateItemType: (values: ItemTypeFormValues) => Promise<ItemType>;
   submitting?: boolean;
@@ -55,7 +57,7 @@ export function ItemForm({
   initialStock,
   onSubmit,
   onCreateItemType,
-  menuKeysInUse,
+  otherMenus,
   submitting = false,
 }: Props) {
   const id = useId();
@@ -80,8 +82,12 @@ export function ItemForm({
     key: "",
   });
   const [menuError, setMenuError] = useState<string | null>(null);
-  const menuKeyTaken =
-    menu.key !== "" && (menuKeysInUse ?? []).includes(menu.key);
+  // メニューのキーを実際に押して決めている間
+  const [capturingMenuKey, setCapturingMenuKey] = useState(false);
+  const closeMenuKeyCapture = useCallback(() => setCapturingMenuKey(false), []);
+  const normalizedMenuKey = normalizeMenuKey(menu.key);
+  const menuKeyCheck =
+    menu.key === "" ? null : checkMenuKey(normalizedMenuKey, otherMenus ?? []);
 
   const updateField = (key: keyof typeof fields, value: string) => {
     setFields((prev) => ({ ...prev, [key]: value }));
@@ -109,11 +115,11 @@ export function ItemForm({
           setMenuError("価格は0以上の整数で入力してください");
           return;
         }
-        if (menuKeyTaken) {
-          setMenuError(`キー「${menu.key}」は他のメニューで使われています`);
+        if (menuKeyCheck && !menuKeyCheck.ok) {
+          setMenuError(menuKeyCheck.message);
           return;
         }
-        await onSubmit(values, { price, key: menu.key });
+        await onSubmit(values, { price, key: normalizedMenuKey });
       }}
     >
       <div className="grid gap-2">
@@ -192,16 +198,17 @@ export function ItemForm({
         </div>
       </div>
 
-      {menuKeysInUse && (
+      {otherMenus && (
         <div className="grid gap-3 rounded-md border p-3">
           <label className="flex items-center gap-2 font-medium text-sm">
             <input
               type="checkbox"
               className="size-4 accent-primary"
               checked={menu.enabled}
-              onChange={(e) =>
-                setMenu((prev) => ({ ...prev, enabled: e.target.checked }))
-              }
+              onChange={(e) => {
+                setMenu((prev) => ({ ...prev, enabled: e.target.checked }));
+                setCapturingMenuKey(false);
+              }}
             />
             同名のメニューも作る
           </label>
@@ -232,23 +239,50 @@ export function ItemForm({
                 </div>
                 <div className="grid content-start gap-2">
                   <Label htmlFor={`${id}-menu-key`}>キー</Label>
-                  <Input
-                    id={`${id}-menu-key`}
-                    value={menu.key}
-                    onChange={(e) =>
-                      setMenu((prev) => ({ ...prev, key: e.target.value }))
-                    }
-                    placeholder="a"
-                    className="font-mono"
-                    aria-invalid={menuKeyTaken}
-                    required
-                  />
-                  {menuKeyTaken && (
+                  {/* 狭い画面ではボタンを下に回す */}
+                  <div className="flex min-w-0 flex-wrap gap-2">
+                    <Input
+                      id={`${id}-menu-key`}
+                      value={menu.key}
+                      onChange={(e) =>
+                        setMenu((prev) => ({ ...prev, key: e.target.value }))
+                      }
+                      placeholder="a"
+                      className="w-auto min-w-20 flex-1 font-mono"
+                      aria-invalid={menuKeyCheck?.ok === false}
+                      required
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-none"
+                      disabled={capturingMenuKey}
+                      onClick={() => setCapturingMenuKey(true)}
+                    >
+                      キーをキャプチャ
+                    </Button>
+                  </div>
+                  {menuKeyCheck && !menuKeyCheck.ok ? (
                     <p className="text-destructive text-xs">
-                      他のメニューで使われています
+                      {menuKeyCheck.message}
                     </p>
+                  ) : (
+                    menuKeyCheck?.warning && (
+                      <p className="text-amber-700 text-xs">
+                        {menuKeyCheck.warning}
+                      </p>
+                    )
                   )}
                 </div>
+                {capturingMenuKey && (
+                  <div className="col-span-2">
+                    <MenuKeyCapture
+                      otherMenus={otherMenus}
+                      onCapture={(key) => setMenu((prev) => ({ ...prev, key }))}
+                      onClose={closeMenuKeyCapture}
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}

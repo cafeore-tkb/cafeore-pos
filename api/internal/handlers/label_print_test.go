@@ -211,9 +211,9 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 	a.t = t
 	a.noBroadcast()
 
-	// 淹れ直しが無い（取り消した）なら作らない
+	// 淹れ直しが無い（取り消した）なら作らない。頼んだ端末がシールを捨てられるよう、ルートが無い 404 ではなく 410
 	missing := uuid.New()
-	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": missing, "job": testLabelJob}).expect(http.StatusNotFound)
+	a.do(http.MethodPost, "/api/label-print-requests", map[string]any{"id": missing, "job": testLabelJob}).expect(http.StatusGone)
 	var count int64
 	if err := a.db.Model(&models.LabelPrintRequest{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("label print requests = %d, %v", count, err)
@@ -229,7 +229,7 @@ func TestLabelPrintRequestValidation(t *testing.T) {
 }
 
 // 緊急の取り消しと同時に頼まれても、取り消した緊急のシールの頼みは残らない。
-// 取り消し（淹れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 404 になる
+// 取り消し（淹れ直しの行を消してから頼みを消す）がトランザクションの途中なら、頼みはそれを待ってから 410 になる
 func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
 	a := newTestAPI(t)
 	id := a.seedEmergency()
@@ -261,8 +261,8 @@ func TestLabelPrintRequestWaitsForEmergencyCancel(t *testing.T) {
 	}
 	select {
 	case code := <-done:
-		if code != http.StatusNotFound {
-			t.Fatalf("status = %d, want 404", code)
+		if code != http.StatusGone {
+			t.Fatalf("status = %d, want 410", code)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("request did not finish")

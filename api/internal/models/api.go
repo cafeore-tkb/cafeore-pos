@@ -9,6 +9,16 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for DataResetBackupFormat.
+const (
+	DataResetBackupFormatV1 DataResetBackupFormat = "cafeore-pos-data-reset-backup"
+)
+
+// Defines values for DataResetBackupVersion.
+const (
+	DataResetBackupVersion1 DataResetBackupVersion = 1
+)
+
 // Defines values for CaosHumanLogEntryCategory.
 const (
 	CaosHumanLogEntryCategoryHuman  CaosHumanLogEntryCategory = "human"
@@ -45,6 +55,12 @@ const (
 	Printed LabelPrintClaimResponseStatus = "printed"
 )
 
+// Defines values for LabelPrinterTrailingFeed.
+const (
+	LabelPrinterTrailingFeedBlankLabel LabelPrinterTrailingFeed = "blank_label"
+	LabelPrinterTrailingFeedPeeling    LabelPrinterTrailingFeed = "peeling"
+)
+
 // Defines values for MasterStateExpectedType.
 const (
 	ExpectedOperational MasterStateExpectedType = "operational"
@@ -55,6 +71,21 @@ const (
 const (
 	Operational MasterStateUpdateRequestType = "operational"
 	Stop        MasterStateUpdateRequestType = "stop"
+)
+
+// Defines values for MeResponseEnforcement.
+const (
+	MeEnforcementEnforce    MeResponseEnforcement = "enforce"
+	MeEnforcementOff        MeResponseEnforcement = "off"
+	MeEnforcementReportOnly MeResponseEnforcement = "report-only"
+)
+
+// Defines values for MeResponseRole.
+const (
+	MeRoleAdmin  MeResponseRole = "admin"
+	MeRoleNone   MeResponseRole = "none"
+	MeRoleStaff  MeResponseRole = "staff"
+	MeRoleViewer MeResponseRole = "viewer"
 )
 
 // Defines values for PaymentMethod.
@@ -470,6 +501,63 @@ type CupEmergencyResponse struct {
 	Reason string `json:"reason"`
 }
 
+// DataResetBackup defines model for DataResetBackup.
+type DataResetBackup struct {
+	Format DataResetBackupFormat `json:"format"`
+
+	// Tables 表の名前ごとの全行（DB の列名のままの JSON）
+	Tables  map[string][]map[string]interface{} `json:"tables"`
+	Version DataResetBackupVersion              `json:"version"`
+}
+
+// DataResetBackupFormat defines model for DataResetBackup.Format.
+type DataResetBackupFormat string
+
+// DataResetBackupVersion defines model for DataResetBackup.Version.
+type DataResetBackupVersion int
+
+// DataResetRequest defines model for DataResetRequest.
+type DataResetRequest struct {
+	// BackupSha256 ダウンロードしたバックアップ（GET /api/admin/data-reset/backup）の SHA-256（16 進の小文字 64 文字）
+	BackupSha256 string `json:"backupSha256"`
+
+	// Confirmation 確認の文字（DataResetStatus の confirmation）
+	Confirmation string `json:"confirmation"`
+}
+
+// DataResetResult defines model for DataResetResult.
+type DataResetResult struct {
+	// Tables 消した表と、消した行数
+	Tables []DataResetTable `json:"tables"`
+}
+
+// DataResetStatus defines model for DataResetStatus.
+type DataResetStatus struct {
+	// Confirmation 消すときに confirmation に入れる確認の文字
+	Confirmation string `json:"confirmation"`
+
+	// KeptTables 残す表（設定）
+	KeptTables []string `json:"keptTables"`
+
+	// ReceptionStopped 受付を止めているか（オーダーストップの最後の記録が stop）。止めていなければ消せない
+	ReceptionStopped bool `json:"receptionStopped"`
+
+	// Tables 消す表と今の行数
+	Tables []DataResetTable `json:"tables"`
+
+	// UnknownTables 消す表にも残す表にも入っていない表。1 つでもあれば消せない（API が DB より古いなど）
+	UnknownTables []string `json:"unknownTables"`
+}
+
+// DataResetTable defines model for DataResetTable.
+type DataResetTable struct {
+	// Name 表の名前
+	Name string `json:"name"`
+
+	// Rows 行数
+	Rows int64 `json:"rows"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -643,6 +731,11 @@ type LabelPrintRequestResponse struct {
 	Job LabelPrintJob `json:"job"`
 }
 
+// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+type LabelPrinterTrailingFeed string
+
 // MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
 type MasterStateExpected struct {
 	CreatedAt *time.Time              `json:"created_at"`
@@ -667,6 +760,33 @@ type MasterStateUpdateRequest struct {
 
 // MasterStateUpdateRequestType defines model for MasterStateUpdateRequest.Type.
 type MasterStateUpdateRequestType string
+
+// MeResponse API を呼んだ相手と、その権限。
+type MeResponse struct {
+	// Email JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+	// off のときと、report-only で JWT が無い・正しくないときは null
+	Email *string `json:"email"`
+
+	// Enforcement API が相手を確かめて弾くか（AUTH_MODE）。
+	// off は確かめない（誰でも全部の操作ができる。email と role は null）。
+	// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+	Enforcement MeResponseEnforcement `json:"enforcement"`
+
+	// Role admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+	// staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+	// enforce なら 403 になる）。off のときは null
+	Role *MeResponseRole `json:"role"`
+}
+
+// MeResponseEnforcement API が相手を確かめて弾くか（AUTH_MODE）。
+// off は確かめない（誰でも全部の操作ができる。email と role は null）。
+// report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+type MeResponseEnforcement string
+
+// MeResponseRole admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+// staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+// enforce なら 403 になる）。off のときは null
+type MeResponseRole string
 
 // MenuCreateRequest defines model for MenuCreateRequest.
 type MenuCreateRequest struct {
@@ -934,12 +1054,29 @@ type PrinterSettingsResponse struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterLabelLengthMm ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+	LabelPrinterLabelLengthMm float64 `json:"label_printer_label_length_mm"`
+
+	// LabelPrinterMarginMm 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+	LabelPrinterMarginMm float64 `json:"label_printer_margin_mm"`
+
 	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
 	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
 	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
 
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
+	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
+
+	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
+	LabelPrinterRotate180 bool `json:"label_printer_rotate_180"`
+
+	// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+	// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+	LabelPrinterTrailingFeed LabelPrinterTrailingFeed `json:"label_printer_trailing_feed"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
@@ -961,12 +1098,29 @@ type PrinterSettingsUpdateRequest struct {
 	// LabelPrinterIp ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
 	LabelPrinterIp string `json:"label_printer_ip"`
 
+	// LabelPrinterLabelLengthMm ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+	LabelPrinterLabelLengthMm float64 `json:"label_printer_label_length_mm"`
+
+	// LabelPrinterMarginMm 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+	LabelPrinterMarginMm float64 `json:"label_printer_margin_mm"`
+
 	// LabelPrinterPaperType プリンターに入れる紙の種類。印字できる幅が変わる（ダイカットラベルはレシート紙より狭い。TM-L90 の 80mm で 576 → 560 ドット）。
 	// receipt はレシート紙（ロール紙・連続ラベル）、die_cut_label はダイカットラベル（台紙に 1 枚ずつ並んだシール）
 	LabelPrinterPaperType PrinterPaperType `json:"label_printer_paper_type"`
 
 	// LabelPrinterPaperWidth プリンターに入れる紙（ロール紙・ラベル紙）の幅。刷るものをこの紙の印字幅に合わせる
 	LabelPrinterPaperWidth PrinterPaperWidth `json:"label_printer_paper_width"`
+
+	// LabelPrinterPrintWidthDots ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+	LabelPrinterPrintWidthDots int `json:"label_printer_print_width_dots"`
+
+	// LabelPrinterRotate180 ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
+	LabelPrinterRotate180 *bool `json:"label_printer_rotate_180,omitempty"`
+
+	// LabelPrinterTrailingFeed ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+	// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+	LabelPrinterTrailingFeed *LabelPrinterTrailingFeed `json:"label_printer_trailing_feed,omitempty"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
@@ -1392,3 +1546,6 @@ type PairSquareDeviceJSONRequestBody = SquareDevicePairRequest
 
 // ReceiveSquareWebhookJSONRequestBody defines body for ReceiveSquareWebhook for application/json ContentType.
 type ReceiveSquareWebhookJSONRequestBody = ReceiveSquareWebhookJSONBody
+
+// ResetDataJSONRequestBody defines body for ResetData for application/json ContentType.
+type ResetDataJSONRequestBody = DataResetRequest

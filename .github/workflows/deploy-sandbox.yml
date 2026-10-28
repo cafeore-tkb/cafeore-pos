@@ -1,0 +1,49 @@
+name: deploy / sandbox
+
+# sandbox（https://pos-sandbox.cafeore.cafe。infra の README「staging と sandbox」）に API と画面を出す。
+# **手動実行だけ。** Actions の「deploy / sandbox」の Run workflow で、出すブランチを選んで流す。中身は deploy-environment.yml。
+#
+# どのブランチでも出せる。PR のプレビュー（Workers と Neon）と違い、本番と同じ形（IAP・Cloud SQL・Cloud Run の画面）で試せる。
+# 1 つしか無いので、最後に流したものが残る（前に出したものは上書きされる）。
+#
+# DB（Cloud SQL の cafeore-pos-sandbox）は作り直さない。モデルに列やテーブルを足したブランチを出すと、それは DB に残る
+# （AutoMigrate は消さない。README の「DB のスキーマ」）。そのあと足していないブランチ（main など）を出すと、
+# /status の schema_drift に出て、最後の確かめが落ちる（デプロイ自体は済んでいる）。
+# **sandbox はバックアップを取らない**（infra の sandbox_cloud_sql_backup_enabled）。
+#
+# workflow_dispatch だけの workflow は、main に入ってからでないと Actions の画面から流せない。
+
+run-name: deploy / sandbox (${{ github.ref_name }})
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同時に 2 つ出さない。取り消さないので走っている方は最後まで出し、待っている方は後から流したものに置き換わる。
+concurrency:
+  group: deploy-sandbox
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: sandbox
+    # fork では変数が無く、GCP にも入れない
+    if: ${{ !github.event.repository.fork }}
+    uses: ./.github/workflows/deploy-environment.yml
+    # 呼ぶ job に書かないと、呼ばれた側は既定の権限になる。WIF の OIDC トークン発行に id-token: write が要る
+    permissions:
+      contents: read
+      id-token: write
+    # 既定値は infra の sandbox_* の既定値から決まる名前（output environments.sandbox）。変えたら Variables で上書きする
+    with:
+      environment: sandbox
+      short_name: sandbox
+      api_service: ${{ vars.SANDBOX_API_CLOUD_RUN_SERVICE || 'cafeore-pos-sandbox' }}
+      api_lb_url: ${{ vars.SANDBOX_API_LB_URL || 'https://pos-be-lb-sandbox.cafeore.cafe' }}
+      web_service: ${{ vars.SANDBOX_POS_WEB_CLOUD_RUN_SERVICE || 'cafeore-pos-sandbox-web' }}
+      web_url: ${{ vars.SANDBOX_POS_WEB_URL || 'https://pos-sandbox.cafeore.cafe' }}
+    # secrets: inherit にしない（deploy-staging.yml と同じ）
+    secrets:
+      webhook_url: ${{ secrets.SANDBOX_WEBHOOK_URL }}

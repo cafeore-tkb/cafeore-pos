@@ -4,10 +4,16 @@ import type { PrintJob } from "./document";
 import {
   PROXY_RETRY_MS,
   type ProxyDeps,
+  RELAY_RETRY_MAX_MS,
+  RELAY_RETRY_MIN_MS,
   RELAY_STALL_MS,
+  type RelayBackoff,
   addLabelPrintRequest,
+  canRelayNow,
   createProxyState,
   isLabelPrintQueueStalled,
+  recordRelayResult,
+  relayRetryDelay,
   replaceLabelPrintRequests,
   runLabelPrintProxy,
 } from "./print-relay";
@@ -256,5 +262,49 @@ describe("[unit] 代理印刷の滞留判定", () => {
     expect(isLabelPrintQueueStalled([request("a", "invalid")], start)).toBe(
       true,
     );
+  });
+});
+
+describe("[unit] 頼めなかったシールの頼み直しの間", () => {
+  test("頼めないたびに倍にし、最長 5 分で止める", () => {
+    expect(
+      [1, 2, 3, 4, 5, 6, 7, 100].map((failures) => relayRetryDelay(failures)),
+    ).toEqual([
+      10_000,
+      20_000,
+      40_000,
+      80_000,
+      160_000,
+      RELAY_RETRY_MAX_MS,
+      RELAY_RETRY_MAX_MS,
+      RELAY_RETRY_MAX_MS,
+    ]);
+    expect(relayRetryDelay(0)).toBe(RELAY_RETRY_MIN_MS);
+  });
+
+  test("頼めなければ間をあけ、受け取ってもらえた・淹れ直しが消えていた（gone）なら忘れる", () => {
+    const backoff: RelayBackoff = new Map();
+    const start = 1_000;
+    expect(canRelayNow(backoff, "a", start)).toBe(true);
+
+    recordRelayResult(backoff, "a", "retry", start);
+    expect(canRelayNow(backoff, "a", start + RELAY_RETRY_MIN_MS - 1)).toBe(
+      false,
+    );
+    expect(canRelayNow(backoff, "a", start + RELAY_RETRY_MIN_MS)).toBe(true);
+    // ほかのシールは待たせない
+    expect(canRelayNow(backoff, "b", start)).toBe(true);
+
+    const next = start + RELAY_RETRY_MIN_MS;
+    recordRelayResult(backoff, "a", "retry", next);
+    expect(canRelayNow(backoff, "a", next + RELAY_RETRY_MIN_MS)).toBe(false);
+    expect(canRelayNow(backoff, "a", next + 2 * RELAY_RETRY_MIN_MS)).toBe(true);
+
+    for (const result of ["requested", "gone"] as const) {
+      recordRelayResult(backoff, "a", "retry", next);
+      recordRelayResult(backoff, "a", result, next);
+      expect(backoff.has("a")).toBe(false);
+      expect(canRelayNow(backoff, "a", next)).toBe(true);
+    }
   });
 });

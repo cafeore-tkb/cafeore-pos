@@ -1,10 +1,6 @@
 import { DEFAULT_PRINTER_SETTINGS } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
-import {
-  labelPrintableWidth,
-  printableWidths,
-  receiptPrintableWidth,
-} from "./paper";
+import { labelGeometry, printableWidths, receiptPrintableWidth } from "./paper";
 
 describe("[unit] printableWidths", () => {
   test("ダイカットラベルは機種によらずレシート紙より狭い", () => {
@@ -22,21 +18,45 @@ describe("[unit] printableWidths", () => {
     expect(printableWidths("receipt")).toEqual({ "58mm": 416, "80mm": 576 });
   });
 
-  test("既定の設定では、ラベル用は 80mm のダイカットラベル（560）、レシート用は 58mm のレシート紙の TM-L90（416）", () => {
-    expect(labelPrintableWidth(DEFAULT_PRINTER_SETTINGS)).toBe(560);
+  test("既定の設定では、レシート用は 58mm のレシート紙の TM-L90（416）", () => {
     expect(receiptPrintableWidth(DEFAULT_PRINTER_SETTINGS)).toBe(416);
   });
 
   test("用紙の種類・幅・機種を変えると、それに合わせる", () => {
     const settings = {
       ...DEFAULT_PRINTER_SETTINGS,
-      label_printer_paper_type: "receipt",
-      label_printer_paper_width: "58mm",
       receipt_printer_model: "tm_m30",
       receipt_printer_paper_type: "die_cut_label",
       receipt_printer_paper_width: "80mm",
     } as const;
-    expect(labelPrintableWidth(settings)).toBe(416);
     expect(receiptPrintableWidth(settings)).toBe(560);
+  });
+});
+
+describe("[unit] labelGeometry", () => {
+  test("既定の設定では、印字幅 360 ドット・長さ 29mm（232 ドット）・余白なしで、180° 回す", () => {
+    expect(labelGeometry(DEFAULT_PRINTER_SETTINGS)).toEqual({
+      width: 360,
+      height: 232,
+      margin: 0,
+      rotate180: true,
+    });
+  });
+
+  test("長さと余白の mm は、1mm = 8 ドットにして端数を丸める。用紙の種類・幅は見ない", () => {
+    const settings = {
+      ...DEFAULT_PRINTER_SETTINGS,
+      label_printer_paper_width: "58mm",
+      label_printer_label_length_mm: 30.06,
+      label_printer_print_width_dots: 384,
+      label_printer_margin_mm: 1.5,
+      label_printer_rotate_180: false,
+    } as const;
+    expect(labelGeometry(settings)).toEqual({
+      width: 384,
+      height: 240,
+      margin: 12,
+      rotate180: false,
+    });
   });
 });

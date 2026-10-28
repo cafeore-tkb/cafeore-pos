@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Link, type MetaFunction } from "react-router";
 import { toast } from "sonner";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -82,21 +83,19 @@ export default function CallScreenCmPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6">
-      <header className="space-y-1">
-        <h1 className="font-semibold text-2xl tracking-tight">
-          呼び出し画面の CM
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          呼び出し画面が呼び出しの無い間に流す動画・画像を、この端末のファイルから選びます。上から順に繰り返し流します（動画は最後まで、画像は下の秒数だけ）。
-        </p>
-        <p className="text-muted-foreground text-sm">
+      <AdminPageHeader
+        group="settings"
+        title="呼び出し画面の CM"
+        description="呼び出し画面が呼び出しの無い間に流す動画・画像を、この端末のファイルから選びます。上から順に繰り返し流します（動画は最後まで、画像は下の秒数だけ）。"
+      >
+        <p className="max-w-[760px] text-pretty text-muted-foreground text-sm">
           選んだファイルはどこにも上げず、
           <span className="font-semibold text-foreground">
             このタブの中だけで覚えます
           </span>
           。読み込み直したりタブを閉じたりすると消えます。呼び出し画面は、下の「呼び出し画面を開く」からこのタブのまま開いてください（新しいタブで開くと流れません）。
         </p>
-      </header>
+      </AdminPageHeader>
 
       <section className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
