@@ -22,7 +22,9 @@ import {
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
+import { AdminOnly } from "~/components/functional/AdminOnly";
 import { useOrderStat } from "~/components/functional/useOrderStat";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import {
   MenuPlanEditor,
   typeLabelsOf,
@@ -140,7 +142,16 @@ const clock = (sec: number) => {
 // 乱数を生成器と分けて、メニューの割り当てを変えても客の流れ（時刻・杯数）は変わらないようにする
 const MENU_SEED_SALT = 0x5bd1e995;
 
-export default function Rehearsal() {
+// 本番では管理者だけが開ける
+export default function RehearsalRoute() {
+  return (
+    <AdminOnly>
+      <Rehearsal />
+    </AdminOnly>
+  );
+}
+
+function Rehearsal() {
   const [params, setParams] = useState<GeneratorParams | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [level, setLevel] = useState(1.0);
@@ -335,42 +346,45 @@ export default function Rehearsal() {
       : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 font-sans">
+    <div className="mx-auto max-w-5xl space-y-4 px-4 py-6 font-sans">
       {/* 練習中に見るものを上に、設定は下にまとめる（iPad で開く想定） */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-bold font-noto text-2xl">オペ練：次のお客さん</h1>
-        <div className="flex items-center gap-2">
-          {params && (
-            <span className="text-sm text-stone-600">
-              × {level.toFixed(1)}・seed {seed}・{generated.length} 人
-            </span>
-          )}
-          <Button
-            size="lg"
-            // メニューが来ると注文の中身が決まり直すので、読み込むまで開始させない
-            disabled={
-              !params ||
-              !plan ||
-              (!menus && !menusError) ||
-              elapsedSec >= totalSec
-            }
-            onClick={() => {
-              setStarted(true);
-              setRunning((r) => !r);
-            }}
-          >
-            {running ? "一時停止" : started ? "再開" : "開始"}
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            disabled={!started}
-            onClick={reset}
-          >
-            最初から
-          </Button>
-        </div>
-      </div>
+      <AdminPageHeader
+        group="admin"
+        title="オペ練：次のお客さん"
+        actions={
+          <div className="flex items-center gap-2">
+            {params && (
+              <span className="text-sm text-stone-600">
+                × {level.toFixed(1)}・seed {seed}・{generated.length} 人
+              </span>
+            )}
+            <Button
+              size="lg"
+              // メニューが来ると注文の中身が決まり直すので、読み込むまで開始させない
+              disabled={
+                !params ||
+                !plan ||
+                (!menus && !menusError) ||
+                elapsedSec >= totalSec
+              }
+              onClick={() => {
+                setStarted(true);
+                setRunning((r) => !r);
+              }}
+            >
+              {running ? "一時停止" : started ? "再開" : "開始"}
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              disabled={!started}
+              onClick={reset}
+            >
+              最初から
+            </Button>
+          </div>
+        }
+      />
 
       {!params && (
         <p className="rounded-lg bg-amber-50 p-3 text-amber-900">

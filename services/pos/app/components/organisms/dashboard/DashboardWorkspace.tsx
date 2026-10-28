@@ -3,7 +3,6 @@ import {
   Activity,
   Banknote,
   BarChart3,
-  ChevronLeft,
   CircleDollarSign,
   Clock3,
   Coffee,
@@ -24,7 +23,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router";
 import {
   Bar,
   BarChart,
@@ -34,6 +32,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { dashboardFinance } from "~/lib/analytics/dashboardFinance";
 import { dashboardWindow } from "~/lib/analytics/dashboardWindow";
 import { load2025Baseline } from "~/lib/analytics/historical";
@@ -244,28 +243,13 @@ export function DashboardWorkspace() {
   return (
     <div className="min-h-full bg-white px-4 py-6 text-stone-900 [--dashboard-nav-height:4rem] [overflow-anchor:none] sm:px-6 lg:px-10 lg:[--dashboard-nav-height:0px]">
       <div className="mx-auto max-w-[1600px]">
-        <header className="border-stone-200 border-b pb-6">
-          <Link
-            to="/"
-            className="mb-4 inline-flex min-h-10 items-center gap-1 rounded-md px-2 font-bold text-sm text-stone-600 hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-teal-700"
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            ルートに戻る
-          </Link>
-          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="font-bold text-[11px] text-stone-500 uppercase tracking-[0.24em]">
-                Cafe Operations
-              </p>
-              <h1 className="mt-2 font-black text-3xl tracking-tight sm:text-4xl">
-                ダッシュボード
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm text-stone-500">
-                売上、注文、提供状況をひとつの画面から確認できます。
-              </p>
-            </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="py-2.5">
+        <div className="border-stone-200 border-b pb-6">
+          <AdminPageHeader
+            group="admin"
+            title="ダッシュボード"
+            description="売上、注文、提供状況をひとつの画面から確認できます。"
+            actions={
+              <div>
                 <div className="flex items-center gap-2 font-bold text-xs">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${live ? "bg-emerald-400" : "bg-amber-400"}`}
@@ -281,9 +265,9 @@ export function DashboardWorkspace() {
                   現在 {jstClock(now).slice(0, 5)}
                 </p>
               </div>
-            </div>
-          </div>
-        </header>
+            }
+          />
+        </div>
 
         <div
           className="sticky top-[var(--pos-status-height,0px)] z-20 flex items-center gap-3 border-stone-200 border-b bg-white py-2 lg:hidden"

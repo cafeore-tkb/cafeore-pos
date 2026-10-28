@@ -346,6 +346,8 @@ func main() {
 		log.Println("Warning: AUTH_MODE is off. Anyone who knows the URL can call the API")
 	case authz.ReportOnly():
 		log.Println("Warning: AUTH_MODE is report-only. Requests that would be rejected are only logged")
+	case authz.PreviewAdmin():
+		log.Println("Warning: AUTH_PREVIEW_ADMIN is true. Every request is treated as the admin \"preview\" (only for PR previews)")
 	}
 
 	// /status と /health は認証しない。デプロイの CI（api-build.yml）が直接見に来るのと、

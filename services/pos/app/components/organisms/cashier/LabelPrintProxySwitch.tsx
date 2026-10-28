@@ -1,10 +1,13 @@
 import { memo } from "react";
 import { Switch } from "~/components/ui/switch";
 import { cn } from "~/lib/utils";
+import { HelpMark } from "../../molecules/HelpMark";
 import { Label } from "../../ui/label";
 
 type props = {
   checked: boolean;
+  /** ラベル用のプリンターにつながっていない（代理印刷できないので、切り替えさせない） */
+  disabled: boolean;
   onCheckedChange: (checked: boolean) => void;
   /** オンのとき、まだ刷れていない代理印刷の数 */
   waiting: number;
@@ -12,17 +15,23 @@ type props = {
 
 /**
  * レジのヘッダーに出す、代理印刷のスイッチ。オンのレジは、CaOS・マスターが直接刷れなかった緊急のシールを
- * このレジのラベル用のプリンターで刷る（label/print-relay）。この端末に覚える
+ * このレジのラベル用のプリンターで刷る（label/print-relay）。ラベル用のプリンターにつながっていればオンで、
+ * 手でオフにしたら、この端末に覚える（useLabelPrintProxySetting）
  */
 export const LabelPrintProxySwitch = memo(
-  ({ checked, onCheckedChange, waiting }: props) => (
+  ({ checked, disabled, onCheckedChange, waiting }: props) => (
     <div
       className="flex items-center gap-2"
-      title="オンにすると、CaOS・マスターがプリンターに直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで代わりに刷ります"
+      title={
+        disabled
+          ? "ラベル用のプリンターにつながっていないので、代理印刷しません"
+          : undefined
+      }
     >
       <Switch
         id="label-print-proxy"
         checked={checked}
+        disabled={disabled}
         onCheckedChange={onCheckedChange}
       />
       <Label
@@ -39,6 +48,13 @@ export const LabelPrintProxySwitch = memo(
           </span>
         )}
       </Label>
+      <HelpMark title="クラウド代理印刷" size="sm" panelClassName="w-72">
+        <p>
+          <span className="font-bold text-stone-800">クラウド代理印刷：</span>
+          CaOS
+          がプリンターに繋がっていない時、クラウド経由でこのレジからラベルを印刷できます
+        </p>
+      </HelpMark>
     </div>
   ),
 );

@@ -43,7 +43,9 @@ type WSMessage =
   // 代理印刷の頼み。頼まれたときと、刷れなかったレジが引き受けをやめたときに届く（つないだときには届かない。GET /api/label-print-requests で読む）
   | { type: "label_print_requested"; label_print_request: LabelPrintRequest }
   // 刷れた代理印刷の id
-  | { type: "label_print_done"; label_print_request_id: string };
+  | { type: "label_print_done"; label_print_request_id: string }
+  // 営業データを消した（データのリセット）。消したときに 1 回だけ届く（つないだときには届かない）
+  | { type: "data_reset" };
 
 // orders 未受信時に返す固定の空配列
 // 毎回リテラルを返すと参照が変わり、依存配列に orders を持つ側が無駄に再実行されるため定数化している
@@ -54,17 +56,20 @@ const EMPTY_ORDERS: WithId<OrderEntity>[] = [];
  * onCupEmergencyCancelled は緊急（淹れ直し）が取り消されたという知らせを受けたときだけ呼ぶ（注文の一覧から消えたことでは呼ばない）。
  * onOrderRecalled は呼び出し催促の知らせを受けたときに、その注文の id で呼ぶ。
  * onLabelPrintRequested・onLabelPrintDone は代理印刷の頼み・刷れたという知らせを受けたときに呼ぶ
+ * onDataReset は営業データが消されたという知らせを受けたときに呼ぶ
  */
 export const useOrdersWS = ({
   onCupEmergencyCancelled,
   onOrderRecalled,
   onLabelPrintRequested,
   onLabelPrintDone,
+  onDataReset,
 }: {
   onCupEmergencyCancelled?: (id: string) => void;
   onOrderRecalled?: (orderId: string) => void;
   onLabelPrintRequested?: (request: LabelPrintRequest) => void;
   onLabelPrintDone?: (id: string) => void;
+  onDataReset?: () => void;
 } = {}) => {
   // 「未受信」と「受信したが0件」を区別するため、初期値は undefined
   const [orders, setOrders] = useState<WithId<OrderEntity>[]>();
@@ -94,6 +99,8 @@ export const useOrdersWS = ({
   onLabelPrintRequestedRef.current = onLabelPrintRequested;
   const onLabelPrintDoneRef = useRef(onLabelPrintDone);
   onLabelPrintDoneRef.current = onLabelPrintDone;
+  const onDataResetRef = useRef(onDataReset);
+  onDataResetRef.current = onDataReset;
 
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
@@ -172,6 +179,10 @@ export const useOrdersWS = ({
 
           case "label_print_done":
             onLabelPrintDoneRef.current?.(data.label_print_request_id);
+            break;
+
+          case "data_reset":
+            onDataResetRef.current?.();
             break;
 
           default:

@@ -131,6 +131,12 @@ func registerTestRoutes(r *gin.Engine, db *gorm.DB, hub *Hub, inv *Inventory) {
 	api.POST("/label-print-requests/:id/claim", labelPrintHandler.ClaimLabelPrintRequest)
 	api.POST("/label-print-requests/:id/printed", labelPrintHandler.MarkLabelPrintRequestPrinted)
 	api.POST("/label-print-requests/:id/release", labelPrintHandler.ReleaseLabelPrintRequest)
+
+	// 本番は管理者だけ（auth.RequireStrict）。権限は auth のテストで確かめる
+	dataResetHandler := NewDataResetHandler(db, hub)
+	api.GET("/admin/data-reset", dataResetHandler.GetDataResetStatus)
+	api.GET("/admin/data-reset/backup", dataResetHandler.ExportDataResetBackup)
+	api.POST("/admin/data-reset", dataResetHandler.ResetData)
 }
 
 type testResponse struct {

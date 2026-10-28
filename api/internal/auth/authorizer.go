@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"cafeore-pos/api/internal/models"
@@ -22,8 +23,12 @@ const (
 	RoleNone Role = iota
 	// 読むだけ。呼び出し画面（callscreen）など、表示だけする端末
 	RoleViewer
-	// 何でもできる。レジ・マスター・提供など、スタッフが操作する端末
+	// 営業で使うことは何でもできる。レジ・マスター・提供など、スタッフが操作する端末
 	RoleStaff
+	// スタッフにできることに加えて、営業データのリセットと、「運営・管理」「マスタ設定」の画面だけが使う
+	// 設定の書き込み（商品管理・プリンター・Square 端末など。handlers/routes.go の adminOnly）ができる。
+	// 運営の数人だけ。ドメインごとには書けない（validateAdminList）
+	RoleAdmin
 )
 
 // gin.Context に Access か IAP を通ってきた相手（AccessIdentity）を置くキー。
@@ -62,7 +67,8 @@ type Authorizer struct {
 	enforce bool
 }
 
-func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authorizer {
+// admins は管理者（AUTH_ADMIN_EMAILS）。validateAdminList で確かめてから渡すこと。
+func NewAuthorizer(verifier identityVerifier, staff, viewers []string, admins ...string) *Authorizer {
 	authz := &Authorizer{
 		verifier:    verifier,
 		roles:       make(map[string]Role, len(staff)+len(viewers)),
@@ -72,6 +78,7 @@ func NewAuthorizer(verifier identityVerifier, staff, viewers []string) *Authoriz
 	// 両方に書かれていたら強い方を取る
 	authz.allow(viewers, RoleViewer)
 	authz.allow(staff, RoleStaff)
+	authz.allow(admins, RoleAdmin)
 	delete(authz.roles, "")
 	delete(authz.domainRoles, "")
 	return authz
@@ -122,6 +129,20 @@ func validateAllowList(env string, names []string) error {
 	return nil
 }
 
+// 管理者の一覧を確かめる。管理者はドメインごとには書けない。ドメインで書くと、そのドメインで
+// これから作られるアカウントも全部、営業データを消せるようになってしまうため。
+func validateAdminList(env string, names []string) error {
+	if err := validateAllowList(env, names); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if strings.HasPrefix(normalizeName(name), "@") {
+			return fmt.Errorf("%s: %q: write each admin's address (domain entries are not allowed for admins)", env, name)
+		}
+	}
+	return nil
+}
+
 // メールアドレスは大文字・小文字を区別しない扱いにする
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
@@ -136,6 +157,12 @@ func normalizeName(name string) string {
 //	                        （/projects/<プロジェクト番号>/global/backendServices/<バックエンド サービスの ID>）
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
+//	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットと設定の書き込み
+//	                        （商品管理・プリンター・Square 端末など）ができる相手。カンマ区切り。
+//	                        ドメインごとには書けない。空なら誰もそれらをできない
+//	AUTH_PREVIEW_ADMIN    … true なら、全部のリクエストを管理者 PreviewAdminName がログインしてきたものとして
+//	                        扱う（PR のプレビュー用。CI が渡す）。AUTH_MODE が off（か空）のときだけ使え、
+//	                        ほかの AUTH_MODE と一緒なら起動を止める
 //
 // CF_ACCESS_* は cloudflare-access*、IAP_AUDIENCE は iap* のときだけ見る。
 //
@@ -148,8 +175,18 @@ func normalizeName(name string) string {
 // （main が起動を止める）。
 func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	mode := strings.TrimSpace(getenv("AUTH_MODE"))
+	previewAdmin, err := previewAdminFromEnv(getenv)
+	if err != nil {
+		return nil, err
+	}
+	if previewAdmin {
+		// 本番の設定に紛れ込んでも認証が外れないよう、AUTH_MODE を掛けているときは起動を止める
+		if mode != "" && mode != "off" {
+			return nil, fmt.Errorf("AUTH_PREVIEW_ADMIN cannot be used with AUTH_MODE=%q (it is only for PR previews, where AUTH_MODE is off)", mode)
+		}
+		return newPreviewAuthorizer(), nil
+	}
 	var verifier identityVerifier
-	var err error
 	switch mode {
 	case "", "off":
 		return nil, nil
@@ -174,8 +211,12 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 	if err := validateAllowList("AUTH_VIEWER_EMAILS", viewers); err != nil {
 		return nil, err
 	}
+	admins := splitList(getenv("AUTH_ADMIN_EMAILS"))
+	if err := validateAdminList("AUTH_ADMIN_EMAILS", admins); err != nil {
+		return nil, err
+	}
 
-	authz := NewAuthorizer(verifier, staff, viewers)
+	authz := NewAuthorizer(verifier, staff, viewers, admins...)
 	authz.enforce = !strings.HasSuffix(mode, "-report-only")
 	return authz, nil
 }
@@ -183,6 +224,28 @@ func AuthorizerFromEnv(getenv func(string) string) (*Authorizer, error) {
 // 弾かずにログにだけ出す設定か。
 func (a *Authorizer) ReportOnly() bool {
 	return a != nil && !a.enforce
+}
+
+// 全部のリクエストを管理者 PreviewAdminName として扱う、PR のプレビューの設定か（AUTH_PREVIEW_ADMIN）。
+func (a *Authorizer) PreviewAdmin() bool {
+	if a == nil {
+		return false
+	}
+	_, ok := a.verifier.(previewVerifier)
+	return ok
+}
+
+// AUTH_PREVIEW_ADMIN を読む。未設定なら false。読めない値は起動を止める（綴りの誤りで黙って変わらないように）。
+func previewAdminFromEnv(getenv func(string) string) (bool, error) {
+	v := strings.TrimSpace(getenv("AUTH_PREVIEW_ADMIN"))
+	if v == "" {
+		return false, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, fmt.Errorf("AUTH_PREVIEW_ADMIN must be true or false: %q", v)
+	}
+	return b, nil
 }
 
 func splitList(s string) []string {
@@ -242,6 +305,8 @@ func (a *Authorizer) Me(c *gin.Context) {
 		name := v.(AccessIdentity).Name()
 		res.Email = &name
 		switch a.role(name) {
+		case RoleAdmin:
+			role = models.MeRoleAdmin
 		case RoleStaff:
 			role = models.MeRoleStaff
 		case RoleViewer:
@@ -250,6 +315,34 @@ func (a *Authorizer) Me(c *gin.Context) {
 	}
 	res.Role = &role
 	c.JSON(http.StatusOK, res)
+}
+
+// AuthDisabledMessage は、認証を掛けていない（AUTH_MODE が off か *-report-only）ので RequireStrict が断るときの文。
+const AuthDisabledMessage = "この操作は API の認証（AUTH_MODE=iap か cloudflare-access）が有効なときだけ使えます"
+
+// RequireStrict は、取り返しのつかない操作（営業データのリセット）のためのもの。
+// Require と違い、認証を掛けていない設定では通さない。
+//
+//   - a が nil（AUTH_MODE=off）なら誰も通さない（403）
+//   - *-report-only でも誰も通さない（403）。認証を切り替えている途中（ほかの API はまだ誰でも叩ける）の間は、
+//     取り返しのつかない操作を使わせない
+//
+// PR のプレビュー（AUTH_PREVIEW_ADMIN）は弾く設定で、相手は管理者なので通る。
+func (a *Authorizer) RequireStrict(min Role) gin.HandlerFunc {
+	if a == nil {
+		return func(c *gin.Context) {
+			log.Printf("auth: %s %s: rejected because AUTH_MODE is off", c.Request.Method, c.FullPath())
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
+		}
+	}
+	return func(c *gin.Context) {
+		if !a.enforce {
+			log.Printf("auth: %s %s: rejected because AUTH_MODE is report-only", c.Request.Method, c.FullPath())
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": AuthDisabledMessage})
+			return
+		}
+		a.check(c, min)
+	}
 }
 
 func (a *Authorizer) check(c *gin.Context, min Role) {

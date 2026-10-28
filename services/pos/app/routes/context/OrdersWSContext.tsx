@@ -12,6 +12,9 @@ import {
   completePendingPrint,
 } from "~/label/pending-prints";
 
+/** データのリセットの画面（routes/data-reset.tsx） */
+export const DATA_RESET_PATH = "/data-reset";
+
 type RecallListener = (orderId: string) => void;
 
 /** 代理印刷の知らせ。頼まれた（requested）・刷れた（done）・緊急が取り消された（cancelled。その淹れ直しのシールの頼みも消える） */
@@ -64,6 +67,12 @@ export const OrdersWSProvider = ({
     onLabelPrintDone: (id) => {
       completePendingPrint(id);
       emitLabelPrint({ type: "done", id });
+    },
+    // 営業データが消されたら、手元に持っている注文や受付の状態を捨てるために読み込み直す。
+    // 消した画面（データのリセット）だけは、消した結果を見せたいので読み込み直さない
+    onDataReset: () => {
+      if (window.location.pathname !== DATA_RESET_PATH)
+        window.location.reload();
     },
   });
   const subscribeRecall = useCallback(

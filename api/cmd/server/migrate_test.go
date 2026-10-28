@@ -214,6 +214,60 @@ func TestMigrateEmptyDatabase(t *testing.T) {
 	}
 }
 
+// ラベル用のシールの大きさ（長さ・印字幅・余白）を足す前の printer_settings
+type printerSettingBeforeLabelSize struct {
+	ID                       string `gorm:"primary_key;size:64"`
+	LabelPrinterIP           string `gorm:"not null"`
+	ReceiptPrinterIP         string `gorm:"not null"`
+	ReceiptPrinterModel      string `gorm:"not null;default:'tm_l90'"`
+	LabelPrinterPaperWidth   string `gorm:"not null;default:'80mm'"`
+	ReceiptPrinterPaperWidth string `gorm:"not null;default:'58mm'"`
+	LabelPrinterPaperType    string `gorm:"not null;default:'die_cut_label'"`
+	ReceiptPrinterPaperType  string `gorm:"not null;default:'receipt'"`
+	UpdatedAt                time.Time
+}
+
+func (printerSettingBeforeLabelSize) TableName() string { return "printer_settings" }
+
+// 前に保存したプリンター設定は、足した列が既定値（29mm・360 ドット・余白なし・180° 回す・空のシールを 1 枚送る）になり、ほかの値はそのまま
+func TestMigrateAddsLabelSizeToSavedPrinterSettings(t *testing.T) {
+	db := testdb.NewDatabase(t, nil)
+	if err := db.AutoMigrate(&printerSettingBeforeLabelSize{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&printerSettingBeforeLabelSize{
+		ID:                       models.PrinterSettingID,
+		LabelPrinterIP:           "192.168.77.12",
+		ReceiptPrinterIP:         "192.168.77.13",
+		ReceiptPrinterModel:      "tm_m30",
+		LabelPrinterPaperWidth:   "58mm",
+		ReceiptPrinterPaperWidth: "80mm",
+		LabelPrinterPaperType:    "die_cut_label",
+		ReceiptPrinterPaperType:  "receipt",
+		UpdatedAt:                time.Now(),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	var got models.PrinterSetting
+	if err := db.First(&got, "id = ?", models.PrinterSettingID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.LabelPrinterLabelLengthMm != models.DefaultLabelPrinterLabelLengthMm || got.LabelPrinterPrintWidthDots != models.DefaultLabelPrinterPrintWidthDots || got.LabelPrinterMarginMm != models.DefaultLabelPrinterMarginMm {
+		t.Errorf("label size: %+v", got)
+	}
+	if got.LabelPrinterRotate180 == nil || *got.LabelPrinterRotate180 != models.DefaultLabelPrinterRotate180 || got.LabelPrinterTrailingFeed != string(models.DefaultLabelPrinterTrailingFeed) {
+		t.Errorf("label rotation and trailing feed: %+v", got)
+	}
+	if got.LabelPrinterIP != "192.168.77.12" || got.ReceiptPrinterModel != "tm_m30" || got.ReceiptPrinterPaperWidth != "80mm" {
+		t.Errorf("saved values changed: %+v", got)
+	}
+}
+
 // 在庫をアイテムの在庫とカップに分ける前（main）の stock_resources と item_stock_usages。
 type oldStockResource struct {
 	ID                 uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()"`

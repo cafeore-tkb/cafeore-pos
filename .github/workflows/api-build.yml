@@ -499,6 +499,19 @@ jobs:
           if [ -n "${NEON_LISTEN_URL:-}" ]; then
             env_pairs+=("DATABASE_LISTEN_URL=$NEON_LISTEN_URL")
           fi
+          # プレビューは、全部のリクエストを管理者 preview がログインしてきたものとして扱う（AUTH_PREVIEW_ADMIN。
+          # 実際にはログインさせない。README「プレビューは管理者としてログインした扱い」）。本番（タグ無し）には渡さない。
+          # この PR の Neon ブランチを用意できなかったときは渡さず、前のデプロイが入れたものも消す。環境変数は
+          # サービスの設定を引き継ぐので、DATABASE_URL がほかの PR のブランチのままのことがあり、そこを管理者として
+          # 消せてしまうため。
+          # AUTH_MODE の値にしないのは、プレビューのサービスはほかの PR と共有で、それを知らない古い api が
+          # 引き継ぐと起動しなくなるため（知らない環境変数は読まれないだけで済む）。
+          remove_env=()
+          if [ -n "$tag" ] && [ -n "${NEON_DB_URL:-}" ]; then
+            env_pairs+=("AUTH_PREVIEW_ADMIN=true")
+          elif [ -n "$tag" ]; then
+            remove_env+=(--remove-env-vars "AUTH_PREVIEW_ADMIN")
+          fi
           for pair in "${env_pairs[@]}"; do
             case "$pair" in
               *,*)
@@ -514,6 +527,8 @@ jobs:
           if [ "${#env_pairs[@]}" -gt 0 ]; then
             extra+=(--update-env-vars "$(IFS=,; printf '%s' "${env_pairs[*]}")")
           fi
+          # --remove-env-vars は --update-env-vars と一緒に使える（先に消してから足す）。無い変数を消しても何もしない
+          extra+=("${remove_env[@]}")
 
           if [ -n "$tag" ]; then
             # --no-traffic なので本番トラフィックは動かず、タグ URL からだけ
