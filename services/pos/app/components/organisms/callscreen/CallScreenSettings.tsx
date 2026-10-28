@@ -9,8 +9,8 @@ import {
   CM_IMAGE_SECONDS_MAX,
   CM_IMAGE_SECONDS_MIN,
   type CmItem,
-  type CmPlaylist,
-  cmItemKind,
+  cmPlaylist,
+  useCmPlaylist,
 } from "~/lib/callscreen-cm";
 import {
   CALL_SCREEN_SOUND_DEFAULT,
@@ -22,19 +22,6 @@ import {
   useCallScreenSound,
 } from "~/lib/callscreen-sound";
 import { callVoicePath, useAnnouncer } from "~/routes/callscreen.hooks";
-
-/**
- * CM の並びを変えるもの。元のタブではこのタブの並び（lib/callscreen-cm の cmPlaylist）を直に、
- * 小窓では元のタブに頼んで変える（lib/callscreen-companion）
- */
-export interface CmPlaylistControl {
-  /** 動画・画像だけを渡す */
-  add(files: File[]): void;
-  remove(id: string): void;
-  move(id: string, delta: -1 | 1): void;
-  clear(): void;
-  setImageSeconds(seconds: number): void;
-}
 
 const SOUND_FIELDS: {
   key: CallScreenSoundFlag;
@@ -68,21 +55,17 @@ const playableHere = (item: CmItem) =>
   document.createElement("video").canPlayType(item.type) !== "";
 
 /**
- * 呼び出し画面の設定（CM と音）。/callscreen を開いたときと、外部ディスプレイに出している間の小窓の中身。
- * header に見出しを、display に出す先の選び方（小窓では表示中の画面）を渡す
+ * 呼び出し画面の設定の画面（/callscreen）。header に見出しを、display に出す先の選び方を渡す。
+ * CM の並びはこのタブで持つ（lib/callscreen-cm）。呼び出し画面の窓へは lib/callscreen-window が送る
  */
 export function CallScreenSettings({
   header,
   display,
-  playlist,
-  control,
 }: {
   header: ReactNode;
   display: ReactNode;
-  playlist: CmPlaylist;
-  control: CmPlaylistControl;
 }) {
-  const { items, imageSeconds } = playlist;
+  const { items, imageSeconds } = useCmPlaylist();
   const sound = useCallScreenSound();
   const fileRef = useRef<HTMLInputElement>(null);
   // 試しに聞くとき用。呼び出し画面と同じ流し方（useAnnouncer）で鳴らす
@@ -92,11 +75,7 @@ export function CallScreenSettings({
 
   const addFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const accepted = [...files].filter((file) => cmItemKind(file) !== null);
-    const rejected = [...files]
-      .filter((file) => cmItemKind(file) === null)
-      .map((file) => file.name);
-    if (accepted.length > 0) control.add(accepted);
+    const rejected = cmPlaylist.add([...files]);
     if (rejected.length > 0) {
       toast.error(
         `動画・画像でないので足せませんでした：${rejected.join("、")}`,
@@ -141,12 +120,12 @@ export function CallScreenSettings({
               min={CM_IMAGE_SECONDS_MIN}
               max={CM_IMAGE_SECONDS_MAX}
               defaultValue={imageSeconds}
-              onBlur={(e) => control.setImageSeconds(Number(e.target.value))}
+              onBlur={(e) => cmPlaylist.setImageSeconds(Number(e.target.value))}
               className="w-28"
             />
           </div>
           {items.length > 0 && (
-            <Button variant="outline" onClick={() => control.clear()}>
+            <Button variant="outline" onClick={() => cmPlaylist.clear()}>
               すべて外す
             </Button>
           )}
@@ -201,7 +180,7 @@ export function CallScreenSettings({
                     variant="outline"
                     size="sm"
                     disabled={index === 0}
-                    onClick={() => control.move(item.id, -1)}
+                    onClick={() => cmPlaylist.move(item.id, -1)}
                     aria-label="上へ"
                   >
                     ↑
@@ -210,7 +189,7 @@ export function CallScreenSettings({
                     variant="outline"
                     size="sm"
                     disabled={index === items.length - 1}
-                    onClick={() => control.move(item.id, 1)}
+                    onClick={() => cmPlaylist.move(item.id, 1)}
                     aria-label="下へ"
                   >
                     ↓
@@ -218,7 +197,7 @@ export function CallScreenSettings({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => control.remove(item.id)}
+                    onClick={() => cmPlaylist.remove(item.id)}
                   >
                     外す
                   </Button>
@@ -234,7 +213,7 @@ export function CallScreenSettings({
           <h2 className="font-semibold text-lg">音</h2>
           <p className="text-muted-foreground text-sm">
             呼び出し画面で鳴らす音です。CM
-            のファイルと違い、この端末に覚えます（読み込み直しても残り、ほかのタブ・窓で開いている呼び出し画面にもすぐ効きます）。
+            のファイルと違い、この端末に覚えます（読み込み直しても残り、呼び出し画面の窓にもすぐ効きます）。
           </p>
         </div>
         <div className="grid gap-4">

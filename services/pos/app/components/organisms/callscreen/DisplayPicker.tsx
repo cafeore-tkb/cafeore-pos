@@ -4,38 +4,33 @@ import { Button } from "~/components/ui/button";
 import { Label } from "~/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "~/components/ui/radio-group";
 import {
+  type WindowBounds,
+  currentScreenBounds,
+} from "~/lib/callscreen-window";
+import {
   type ScreenDetailed,
-  pickCompanionScreen,
   pickTargetScreen,
   screenName,
   useScreenDetails,
 } from "~/lib/screens";
 
-/** どこに出すか */
-export type PresentChoice = {
-  /** 全画面にする画面。null なら今の画面 */
-  target: ScreenDetailed | null;
-  /** 設定の画面を小窓で開く画面。null なら開かない */
-  companion: ScreenDetailed | null;
-  /** 出す画面の名前（小窓に出す） */
-  name: string;
-};
-
-const THIS_SCREEN: PresentChoice = {
-  target: null,
-  companion: null,
-  name: "この画面",
-};
-
 /**
- * 呼び出し画面を出す先のディスプレイを選び、全画面で出す。
+ * 呼び出し画面を出す先のディスプレイを選び、呼び出し画面の窓をそこいっぱいに開く（lib/callscreen-window）。
  * 画面を選べる（Window Management API の）ブラウザでは、つないでいる画面を並べて選ばせる。
- * 選べないブラウザ・外部ディスプレイが無いときは、今の画面で全画面にする
+ * 選べないブラウザ・外部ディスプレイが無いときは、今の画面に開く（外部ディスプレイへは手で動かす）
  */
 export function DisplayPicker({
-  onPresent,
+  open,
+  soundReady,
+  onShow,
+  onClose,
 }: {
-  onPresent: (choice: PresentChoice) => void;
+  /** 呼び出し画面の窓が開いているか */
+  open: boolean;
+  /** 呼び出し画面の窓で音を鳴らせるか */
+  soundReady: boolean;
+  onShow: (bounds: WindowBounds) => void;
+  onClose: () => void;
 }) {
   const {
     supported,
@@ -47,16 +42,10 @@ export function DisplayPicker({
     request,
   } = useScreenDetails();
   const [selected, setSelected] = useState<ScreenDetailed | null>(null);
+  const verb = open ? "移す" : "出す";
 
   let body: React.ReactNode;
-  if (!document.fullscreenEnabled) {
-    body = (
-      <p className="text-red-700 text-sm">
-        このブラウザでは全画面にできません。PC 版の Chrome・Edge
-        で開いてください。
-      </p>
-    );
-  } else if (screens && currentScreen) {
+  if (screens && currentScreen) {
     // 選んだ画面を外したら、既定に戻す
     const target =
       selected && screens.includes(selected)
@@ -91,18 +80,10 @@ export function DisplayPicker({
           ))}
         </RadioGroup>
         {screens.length < 2 && <NotExtended />}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            onClick={() =>
-              onPresent({
-                target,
-                companion: pickCompanionScreen(screens, target, currentScreen),
-                name: screenName(target, targetIndex),
-              })
-            }
-          >
+        <div>
+          <Button onClick={() => onShow(target)}>
             <MonitorUp className="mr-2 h-4 w-4" aria-hidden="true" />
-            {screenName(target, targetIndex)}に全画面で出す
+            {screenName(target, targetIndex)}に{verb}
           </Button>
         </div>
       </>
@@ -114,7 +95,7 @@ export function DisplayPicker({
           <p className="text-red-700 text-sm">
             ブラウザが「ウィンドウの管理」を許可していないので、出す先を選べません。アドレスバーの左のアイコン（サイトの情報）から許可してください。
           </p>
-          <ThisScreenButton onPresent={onPresent} />
+          <ThisScreenButton verb={verb} onShow={onShow} />
         </>
       ) : (
         <>
@@ -123,7 +104,7 @@ export function DisplayPicker({
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Button onClick={() => void request()}>ディスプレイを調べる</Button>
-            <ThisScreenButton onPresent={onPresent} />
+            <ThisScreenButton verb={verb} onShow={onShow} />
           </div>
         </>
       );
@@ -131,7 +112,7 @@ export function DisplayPicker({
     body = (
       <>
         <NotExtended />
-        <ThisScreenButton onPresent={onPresent} />
+        <ThisScreenButton verb={verb} onShow={onShow} />
       </>
     );
   } else {
@@ -139,9 +120,9 @@ export function DisplayPicker({
       <>
         <p className="text-muted-foreground text-sm">
           このブラウザは出す先のディスプレイを選べません（PC 版の Chrome・Edge
-          なら選べます）。このウィンドウを外部ディスプレイへ動かしてから押してください。
+          なら選べます）。開いた窓を外部ディスプレイへ動かして、広げてください。
         </p>
-        <ThisScreenButton onPresent={onPresent} />
+        <ThisScreenButton verb={verb} onShow={onShow} />
       </>
     );
   }
@@ -151,12 +132,35 @@ export function DisplayPicker({
       <div className="space-y-1">
         <h2 className="font-semibold text-lg">外部ディスプレイに出す</h2>
         <p className="text-muted-foreground text-sm">
-          呼び出し画面を選んだディスプレイに全画面で出します。手元の画面には、この設定の画面を小窓で開きます（PC
-          版の
-          Chrome・Edge）。表示をやめるときは、小窓の「表示をやめる」を押すか、外部ディスプレイの側で
-          Esc を押します。
+          呼び出し画面を新しい窓で開き、選んだディスプレイいっぱいに広げます。この設定の画面はこのタブに残るので、出している間も
+          CM と音を変えられます。窓の枠を消すには、呼び出し画面の窓で F11（Mac
+          は ⌃⌘F）を押してください。
         </p>
       </div>
+      {open && (
+        <div className="space-y-2 rounded-md bg-emerald-50 p-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-emerald-600 px-2 py-0.5 font-medium text-white text-xs">
+              表示中
+            </span>
+            <p className="text-sm">呼び出し画面の窓を開いています</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-auto"
+              onClick={onClose}
+            >
+              窓を閉じる
+            </Button>
+          </div>
+          {!soundReady && (
+            <p className="font-semibold text-amber-800 text-sm">
+              まだ音が鳴りません。外部ディスプレイの呼び出し画面を一度クリックしてください（ブラウザは、その窓をクリックするまで音を鳴らさせません）。続けてその窓で
+              F11（Mac は ⌃⌘F）を押すと、窓の枠が消えます。
+            </p>
+          )}
+        </div>
+      )}
       {body}
     </section>
   );
@@ -181,13 +185,15 @@ function NotExtended() {
 }
 
 function ThisScreenButton({
-  onPresent,
+  verb,
+  onShow,
 }: {
-  onPresent: (choice: PresentChoice) => void;
+  verb: string;
+  onShow: (bounds: WindowBounds) => void;
 }) {
   return (
-    <Button variant="outline" onClick={() => onPresent(THIS_SCREEN)}>
-      この画面で全画面にする
+    <Button variant="outline" onClick={() => onShow(currentScreenBounds())}>
+      この画面に{verb}
     </Button>
   );
 }

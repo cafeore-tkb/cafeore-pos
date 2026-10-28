@@ -4,30 +4,23 @@ import {
   planDripAnnouncement,
   splitCallScreenOrders,
 } from "@cafeore/common";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, type MetaFunction, useSearchParams } from "react-router";
+import { useCallback, useMemo, useRef } from "react";
+import { type MetaFunction, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
 import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
-import {
-  CallScreenSettings,
-  type CmPlaylistControl,
-} from "~/components/organisms/callscreen/CallScreenSettings";
+import { CallScreenSettings } from "~/components/organisms/callscreen/CallScreenSettings";
 import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
-import {
-  DisplayPicker,
-  type PresentChoice,
-} from "~/components/organisms/callscreen/DisplayPicker";
-import { Button, buttonVariants } from "~/components/ui/button";
-import { cmPlaylist, useCmPlaylist } from "~/lib/callscreen-cm";
-import {
-  openCompanion,
-  useCompanionHost,
-  useCompanionLink,
-} from "~/lib/callscreen-companion";
+import { DisplayPicker } from "~/components/organisms/callscreen/DisplayPicker";
+import { CM_IMAGE_SECONDS_DEFAULT, type CmPlaylist } from "~/lib/callscreen-cm";
 import { useCallScreenSound } from "~/lib/callscreen-sound";
-import { enterFullscreen } from "~/lib/screens";
+import {
+  type WindowBounds,
+  useCallScreenWindow,
+  useHostPlaylist,
+  useSoundReady,
+} from "~/lib/callscreen-window";
 import {
   BOARD_W,
   BrewingIndicator,
@@ -63,19 +56,12 @@ import {
   useOrdersWSContext,
 } from "./context/OrdersWSContext";
 
-export const meta: MetaFunction = ({ location }) => {
-  const companion = new URLSearchParams(location.search).has("companion");
-  return [
-    {
-      title: companion
-        ? "呼び出し画面の操作 / 珈琲・俺POS"
-        : "呼び出し画面 / 珈琲・俺POS",
-    },
-  ];
+export const meta: MetaFunction = () => {
+  return [{ title: "呼び出し画面 / 珈琲・俺POS" }];
 };
 
 /**
- * 待機中に流す CM。設定の画面（このページを全画面にする前）でこの端末のファイルを選んでいれば、それを順番に流す（lib/callscreen-cm）。
+ * 待機中に流す CM。設定の画面（/callscreen）でこの端末のファイルを選んでいれば、それを順番に流す（lib/callscreen-cm・lib/callscreen-window）。
  * 選んでいなければ services/pos/public/ にこの名前で置いた動画を流す（16:9。H.264 の mp4 ならどのブラウザでも流せる）。
  * どれも流せない間は、代わりに呼び出し画面と同じ地（ロゴ入り）を出す
  */
@@ -87,15 +73,18 @@ const RETURN_TO_CM_MS = 30_000;
 const CALLING_FONT_CAP = 340;
 const DRIP_FONT_CAP = 220;
 
+/** 設定の画面から CM の並びが届いていないとき */
+const NO_CM: CmPlaylist = { items: [], imageSeconds: CM_IMAGE_SECONDS_DEFAULT };
+
 /**
- * 呼び出し画面そのもの（お客さんに見せる面）。設定の画面から外部ディスプレイに全画面で出したときに描く
+ * 呼び出し画面そのもの（お客さんに見せる面）。設定の画面が開く呼び出し画面の窓（/callscreen?display）に描く。
+ * cm は設定の画面から届いた CM の並び
  */
-function CallBoard() {
+function CallBoard({ cm }: { cm: CmPlaylist }) {
   const { orders, isOrdersLoaded } = useOrdersWSContext();
 
   const soundRef = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
-  const cm = useCmPlaylist();
   const sound = useCallScreenSound();
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
@@ -385,80 +374,36 @@ function CallBoard() {
 }
 
 /**
- * 呼び出し画面（/callscreen）。開くと設定の画面（出す先・CM・音）で、そこから外部ディスプレイに全画面で出す。
- * 全画面にするのはこのタブなので、このタブで選んだ CM のファイルがそのまま流れる。
- * 外部ディスプレイに出すと、手元の画面に設定の画面を小窓（?companion）で開く（lib/callscreen-companion）
+ * 呼び出し画面（/callscreen）。開くと設定の画面（出す先・CM・音）で、そこから呼び出し画面の窓（?display）を
+ * 選んだ外部ディスプレイいっぱいに開く（lib/callscreen-window）。設定の画面はこのタブに残る
  */
 export default function CallScreenPage() {
   const [searchParams] = useSearchParams();
-  return searchParams.has("companion") ? (
-    <CallScreenCompanion />
+  return searchParams.has("display") ? (
+    <CallScreenDisplay />
   ) : (
     <CallScreenHost />
   );
 }
 
-/** 元のタブ。全画面にしていなければ設定の画面を、全画面にしたら呼び出し画面を描く */
+/** 呼び出し画面の窓。設定の画面から届いた CM の並びで描き、音を鳴らせるかを設定の画面に知らせる */
+function CallScreenDisplay() {
+  const soundReady = useSoundReady();
+  const cm = useHostPlaylist(soundReady);
+  return <CallBoard cm={cm ?? NO_CM} />;
+}
+
+/** 設定の画面。CM のファイルはこのタブで持ち、呼び出し画面の窓へ送る */
 function CallScreenHost() {
-  const cm = useCmPlaylist();
-  const [presenting, setPresenting] = useState(false);
-  const [companion, setCompanion] = useState<Window | null>(null);
-  const [screenName, setScreenName] = useState("");
+  const display = useCallScreenWindow();
 
-  // 全画面が解けたら（外部ディスプレイの側で Esc、小窓の「表示をやめる」）設定の画面に戻し、小窓を閉じる
-  // （このタブが元の画面に戻ってくるので、設定の画面が 2 つにならないように）
-  useEffect(() => {
-    const onChange = () => {
-      if (document.fullscreenElement) return;
-      setPresenting(false);
-      setCompanion(null);
-    };
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-
-  // 小窓を外したとき・このページを離れるとき・読み込み直す／タブを閉じるときは小窓を閉じる
-  // （CM の並びはこのタブにしか無いので、小窓だけ残っても変えられない）
-  useEffect(() => {
-    if (!companion) return;
-    const close = () => companion.close();
-    window.addEventListener("pagehide", close);
-    return () => {
-      window.removeEventListener("pagehide", close);
-      close();
-    };
-  }, [companion]);
-
-  const stop = useCallback(() => {
-    if (!document.fullscreenElement) return;
-    void document.exitFullscreen().catch(() => undefined);
-  }, []);
-  // このページを離れるとき（全画面のまま戻るボタンを押したなど）も全画面を解く。外部ディスプレイにほかのページを映さないように
-  useEffect(() => stop, [stop]);
-  useCompanionHost(companion, screenName, stop);
-
-  const present = async ({
-    target,
-    companion: companionScreen,
-    name,
-  }: PresentChoice) => {
-    // 全画面にする前に呼び出し画面を描き始める（外部ディスプレイに設定の画面が映らないように）。
-    // 全画面はクリックの中でしか頼めないので、ここより前で待たない
-    setPresenting(true);
-    setScreenName(name);
-    try {
-      await enterFullscreen(target);
-    } catch {
-      setPresenting(false);
-      toast.error("全画面にできませんでした。もう一度押してください");
-      return;
+  const show = (bounds: WindowBounds) => {
+    if (!display.show(bounds)) {
+      toast.error(
+        "呼び出し画面の窓を開けませんでした。アドレスバーに出るアイコンから、このサイトのポップアップを許可してください",
+      );
     }
-    // 同じクリックのうちに、手元の画面に設定の画面を小窓で開く（Fullscreen Companion Window）。
-    // 開けなければ小窓は無し（表示をやめるには、外部ディスプレイの側で Esc を押す）
-    if (companionScreen) setCompanion(openCompanion(companionScreen));
   };
-
-  if (presenting) return <CallBoard />;
 
   return (
     <CallScreenSettings
@@ -466,98 +411,26 @@ function CallScreenHost() {
         <AdminPageHeader
           group="settings"
           title="呼び出し画面"
-          description="受け取り口の外部ディスプレイに、呼び出しの番号と CM を全画面で出します。流す CM と鳴らす音も、ここで決めます。"
+          description="受け取り口の外部ディスプレイに、呼び出しの番号と CM を出します。流す CM と鳴らす音も、ここで決めます。"
         >
           <p className="max-w-[760px] text-pretty text-muted-foreground text-sm">
             選んだ CM のファイルはどこにも上げず、
             <span className="font-semibold text-foreground">
               このタブの中だけで覚えます
             </span>
-            。読み込み直したりタブを閉じたりすると消えます。外部ディスプレイにはこのタブをそのまま全画面で出すので、選んだファイルが流れます。
+            。読み込み直したりタブを閉じたりすると消えます（呼び出し画面の窓は、置いてある
+            CM に戻ります）。
           </p>
         </AdminPageHeader>
       }
-      display={<DisplayPicker onPresent={(choice) => void present(choice)} />}
-      playlist={cm}
-      control={cmPlaylist}
-    />
-  );
-}
-
-/**
- * 外部ディスプレイに出している間、手元の画面に開く小窓。元のタブと同じ設定の画面で、CM の操作は元のタブに頼む。
- * 音の設定は localStorage にあるので、ここで変えれば元のタブにも効く
- */
-function CallScreenCompanion() {
-  const { link, send } = useCompanionLink();
-  const control = useMemo<CmPlaylistControl>(
-    () => ({
-      add: (files) => send({ type: "add", files }),
-      remove: (id) => send({ type: "remove", id }),
-      move: (id, delta) => send({ type: "move", id, delta }),
-      clear: () => send({ type: "clear" }),
-      setImageSeconds: (seconds) => send({ type: "image-seconds", seconds }),
-    }),
-    [send],
-  );
-
-  if (link.status === "connecting") {
-    return (
-      <p className="px-4 py-10 text-center font-noto text-muted-foreground text-sm">
-        外部ディスプレイの呼び出し画面とつないでいます…
-      </p>
-    );
-  }
-
-  if (link.status === "lost") {
-    return (
-      <div className="mx-auto flex max-w-xl flex-col items-start gap-3 px-4 py-10 font-noto">
-        <h1 className="font-bold text-2xl">呼び出し画面の操作</h1>
-        <p className="text-muted-foreground text-sm">
-          外部ディスプレイに出している呼び出し画面が見つかりません（表示をやめた、元のタブを閉じた・読み込み直した）。この窓を閉じて、元のタブから出し直してください。
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => window.close()}>この窓を閉じる</Button>
-          <Link
-            to="/callscreen"
-            className={buttonVariants({ variant: "outline" })}
-          >
-            この窓で設定の画面を開く
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <CallScreenSettings
-      header={
-        <header className="flex flex-col gap-3 font-noto">
-          <div className="flex flex-wrap items-center gap-4">
-            <h1 className="font-bold text-2xl tracking-tight">
-              呼び出し画面の操作
-            </h1>
-            <span className="rounded-full bg-emerald-600 px-2 py-0.5 font-medium text-white text-xs">
-              {link.screenName}に表示中
-            </span>
-            <Button
-              variant="destructive"
-              className="ml-auto"
-              onClick={() => send({ type: "stop" })}
-            >
-              表示をやめる
-            </Button>
-          </div>
-          <p className="max-w-[760px] text-pretty text-muted-foreground text-sm">
-            外部ディスプレイに出している呼び出し画面を、この窓から操作します。ここで変えた
-            CM と音は、すぐ呼び出し画面に効きます（CM
-            のファイルは出している元のタブに渡し、そのタブの中だけで覚えます）。「表示をやめる」を押すと、元のタブが手元の画面に戻り、この窓は閉じます。
-          </p>
-        </header>
+      display={
+        <DisplayPicker
+          open={display.open}
+          soundReady={display.soundReady}
+          onShow={show}
+          onClose={display.close}
+        />
       }
-      display={null}
-      playlist={link.playlist}
-      control={control}
     />
   );
 }

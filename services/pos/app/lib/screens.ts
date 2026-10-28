@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 
-// つないでいる画面（Window Management API）。呼び出し画面を外部ディスプレイに全画面で出すのに使う。
+// つないでいる画面（Window Management API）。呼び出し画面の窓を外部ディスプレイいっぱいに開くのに使う。
 // PC 版の Chrome・Edge（100 から）だけが持つ。Safari・Firefox・スマホ・iPad には無い。
-// 画面の一覧を読むには「ウィンドウの管理」の許可（window-management）が要り、初めて getScreenDetails() を呼ぶとブラウザが聞く。
+// 画面の一覧を読む・ほかの画面に窓を開くには「ウィンドウの管理」の許可（window-management）が要り、
+// 初めて getScreenDetails() を呼ぶとブラウザが聞く（許可が無いと、窓は今の画面の中に収められる）。
 // TypeScript の DOM の型には無いので、使うところだけここで書く（https://w3c.github.io/window-management/）
 
 /** 画面 1 つ。座標はすべての画面をまとめた座標（メインの画面の左上が 0, 0） */
@@ -36,11 +37,6 @@ type ScreenWithExtended = Screen &
     isExtended?: boolean;
   };
 
-/** 全画面にするときに出す先の画面を渡せる（Window Management API の足したもの） */
-type FullscreenOnScreenOptions = FullscreenOptions & {
-  screen?: ScreenDetailed;
-};
-
 /** 「ウィンドウの管理」の許可。聞けなければ unknown */
 export type ScreenPermission = PermissionState | "unknown";
 
@@ -64,35 +60,11 @@ export const pickTargetScreen = <T extends Pick<ScreenDetailed, "isInternal">>(
   return others.find((screen) => !screen.isInternal) ?? others[0] ?? current;
 };
 
-/**
- * 小窓（設定の画面）を開く画面。出す先と同じ画面に開くと全画面が解けるので、別の画面にする。
- * このウィンドウの画面が出す先でなければそこ、そうでなければほかの画面。ほかに無ければ開かない（null）
- */
-export const pickCompanionScreen = <T>(
-  screens: readonly T[],
-  target: T,
-  current: T,
-): T | null => {
-  if (current !== target) return current;
-  return screens.find((screen) => screen !== target) ?? null;
-};
-
 /** 画面の名前。OS が名前を付けていなければ、並びの番号で呼ぶ */
 export const screenName = (
   screen: Pick<ScreenDetailed, "label">,
   index: number,
 ) => screen.label.trim() || `ディスプレイ ${index + 1}`;
-
-/**
- * このページ（documentElement）を全画面にする。target を渡せばその画面で（Window Management API）、
- * null なら今の画面で。クリックなどの操作の中で呼ぶこと
- */
-export const enterFullscreen = (target: ScreenDetailed | null) => {
-  const options: FullscreenOnScreenOptions = target
-    ? { navigationUI: "hide", screen: target }
-    : { navigationUI: "hide" };
-  return document.documentElement.requestFullscreen(options);
-};
 
 /** 許可の状態を聞く。Chrome 111 より前は window-placement という名前だった */
 const queryPermission = async (): Promise<PermissionStatus | null> => {
