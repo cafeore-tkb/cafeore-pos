@@ -3,6 +3,7 @@ package handlers
 import (
 	"math"
 	"sort"
+	"sync"
 	"time"
 
 	"cafeore-pos/api/internal/models"
@@ -90,4 +91,26 @@ func loadCaosBrewSamples(db *gorm.DB, before time.Time) ([]models.CaosBrewRecord
 	rows := []models.CaosBrewRecord{}
 	err := db.Where("finished_at < ? AND finished_at >= ? AND excluded_reason = '' AND actual_seconds IS NOT NULL", before, before.AddDate(0, 0, -caosBrewHistoryDays)).Order("finished_at DESC, drip_id, started_at").Limit(caosBrewHistoryLimit).Find(&rows).Error
 	return rows, err
+}
+
+// 閲覧端末が同時に読んでも履歴のDB読み込みは3秒に1回にまとめる。
+// 行は読み取り専用。開始時予測の保存はこのキャッシュを使わない。
+type caosBrewSampleCache struct {
+	mu       sync.Mutex
+	loadedAt time.Time
+	rows     []models.CaosBrewRecord
+}
+
+func (cache *caosBrewSampleCache) load(now time.Time, read func() ([]models.CaosBrewRecord, error)) ([]models.CaosBrewRecord, error) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if !cache.loadedAt.IsZero() && !now.Before(cache.loadedAt) && now.Sub(cache.loadedAt) < 3*time.Second {
+		return cache.rows, nil
+	}
+	rows, err := read()
+	if err != nil {
+		return nil, err
+	}
+	cache.rows, cache.loadedAt = rows, now
+	return rows, nil
 }

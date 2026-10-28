@@ -31,7 +31,9 @@ func (h *CaosHandler) GetCaosBrewModel(c *gin.Context) {
 	now := h.now()
 	response := brewModelResponse{Version: caosBrewModelVersion, UpdatedAt: now, Standards: map[string]brewEstimate{}, Lanes: []brewLaneModel{}, Active: []models.CaosBrewRecord{}}
 	err := h.db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		samples, err := loadCaosBrewSamples(tx, now)
+		samples, err := h.brewSamples.load(now, func() ([]models.CaosBrewRecord, error) {
+			return loadCaosBrewSamples(tx, now)
+		})
 		if err != nil {
 			return err
 		}

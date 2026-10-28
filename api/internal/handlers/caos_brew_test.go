@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -309,5 +311,38 @@ func TestCaosBrewRecordsPaginationOnDB(t *testing.T) {
 		if w := get(query); w.Code != 400 {
 			t.Fatalf("invalid %s: %d", query, w.Code)
 		}
+	}
+}
+
+func TestCaosBrewSampleCache(t *testing.T) {
+	var cache caosBrewSampleCache
+	now := time.Now()
+	calls := 0
+	read := func() ([]models.CaosBrewRecord, error) { calls++; return []models.CaosBrewRecord{{Kind: "hot1"}}, nil }
+	// 同時に閲覧を始めても履歴を読むのは一度だけ。
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); _, _ = cache.load(now, read) }()
+	}
+	wg.Wait()
+	if calls != 1 {
+		t.Fatalf("concurrent reads: %d", calls)
+	}
+	rows, err := cache.load(now.Add(2*time.Second), read)
+	if err != nil || len(rows) != 1 || calls != 1 {
+		t.Fatalf("cache hit: %d %v", calls, err)
+	}
+	_, err = cache.load(now.Add(3*time.Second), read)
+	if err != nil || calls != 2 {
+		t.Fatalf("expiry: %d %v", calls, err)
+	}
+	_, err = cache.load(now.Add(6*time.Second), func() ([]models.CaosBrewRecord, error) { return nil, errors.New("unavailable") })
+	if err == nil {
+		t.Fatal("failed read must not become a successful cache entry")
+	}
+	_, err = cache.load(now.Add(6*time.Second), read)
+	if err != nil || calls != 3 {
+		t.Fatalf("retry: %d %v", calls, err)
 	}
 }
