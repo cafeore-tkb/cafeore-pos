@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -262,5 +264,50 @@ func TestCaosBrewInvalidationOnDB(t *testing.T) {
 	}
 	if delayed.ExcludedReason != "delayed_operation" || delayed.Name != "" {
 		t.Fatalf("delayed: %+v", delayed)
+	}
+}
+
+func TestCaosBrewRecordsPaginationOnDB(t *testing.T) {
+	db := testdb.New(t)
+	now := time.Now().Truncate(time.Millisecond)
+	h := NewCaosHandler(db, NewHub(), nil)
+	h.now = func() time.Time { return now }
+	for i := 0; i < 2; i++ {
+		row := models.CaosBrewRecord{DripID: uuid.New(), StartedAt: now.Add(-time.Duration(i+1) * time.Minute), UnitIDs: json.RawMessage("[]"), RecordedAt: now.Add(-time.Second)}
+		if err := db.Create(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	get := func(query string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/caos/brew-records?"+query, nil)
+		h.GetCaosBrewRecords(c)
+		return w
+	}
+	type page struct {
+		Entries  []models.CaosBrewRecord `json:"entries"`
+		HasMore  bool                    `json:"has_more"`
+		Snapshot time.Time               `json:"snapshot_at"`
+	}
+	var first, second page
+	w := get("limit=1&day=" + caosDayString(now))
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &first) != nil || len(first.Entries) != 1 || !first.HasMore {
+		t.Fatalf("first page: %s", w.Body.String())
+	}
+	// 次ページの前に開始が増えても、最初の集合をページ送りする。
+	now = now.Add(time.Second)
+	row := models.CaosBrewRecord{DripID: uuid.New(), StartedAt: now, UnitIDs: json.RawMessage("[]"), RecordedAt: now}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	w = get("limit=1&offset=1&snapshot_at=" + url.QueryEscape(first.Snapshot.Format(time.RFC3339Nano)))
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &second) != nil || len(second.Entries) != 1 || second.HasMore || second.Entries[0].DripID == first.Entries[0].DripID {
+		t.Fatalf("second page: %s", w.Body.String())
+	}
+	for _, query := range []string{"limit=0", "limit=501", "offset=-1", "day=bad", "snapshot_at=bad", "snapshot_at=" + url.QueryEscape(now.Add(time.Hour).Format(time.RFC3339Nano))} {
+		if w := get(query); w.Code != 400 {
+			t.Fatalf("invalid %s: %d", query, w.Code)
+		}
 	}
 }

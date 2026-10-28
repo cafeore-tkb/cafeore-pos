@@ -37,6 +37,7 @@ export function BrewStatsPanel() {
   const [offset, setOffset] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [exportSuccess, setExportSuccess] = useState("");
   const { model } = useCaosBrewModel();
   const { data, error, isLoading } = useCaosBrewRecords(day, offset);
   const rows = data?.entries ?? [];
@@ -63,6 +64,7 @@ export function BrewStatsPanel() {
   const exportDay = async () => {
     setExporting(true);
     setExportError("");
+    setExportSuccess("");
     try {
       const entries = [];
       let snapshot: string | undefined;
@@ -94,6 +96,7 @@ export function BrewStatsPanel() {
       anchor.href = url;
       anchor.download = `caos-brew-${day}.json`;
       anchor.click();
+      setExportSuccess(`${day}の${entries.length}件を書き出しました。`);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "書き出しに失敗しました");
@@ -147,6 +150,9 @@ export function BrewStatsPanel() {
           {exporting ? "書き出し中…" : "この日のJSONを書き出す"}
         </button>
       </div>
+      {exportSuccess && (
+        <output className="block text-sm">{exportSuccess}</output>
+      )}
       {(error || exportError) && (
         <p role="alert" className="text-red-700 text-sm">
           {exportError ||
