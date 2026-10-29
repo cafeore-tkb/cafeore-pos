@@ -19,6 +19,64 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 const COLUMNS = ["ドリップ中", "待ち1", "待ち2", "待ち3"];
 
+type QueueLaneStatus = ReturnType<typeof laneStatus>;
+
+/** C画面の「ドリップ中」枠。通常は経過割合を左から塗り、まもなく・超過を色で分ける。 */
+const brewColumnAppearance = (status: QueueLaneStatus) => {
+  const phase = status.forgotten ? "forgotten" : status.phase;
+  if (status.forgotten)
+    return {
+      phase,
+      progress: 100,
+      className:
+        "border-(color:--caos-overtime-text) bg-red-200 ring-1 ring-(color:--caos-overtime-line)",
+      style: undefined,
+    };
+  if (status.phase === "overtime")
+    return {
+      phase,
+      progress: 100,
+      className:
+        "border-(color:--caos-overtime-line) bg-(color:--caos-overtime)",
+      style: undefined,
+    };
+  if (status.phase === "waiting")
+    return {
+      phase,
+      progress: 0,
+      className: "border-sky-400 bg-sky-100",
+      style: undefined,
+    };
+  if (status.phase === "empty")
+    return {
+      phase,
+      progress: 0,
+      className: "border-emerald-300 bg-emerald-50",
+      style: undefined,
+    };
+
+  const totalMs = status.elapsedMs + status.remainingMs;
+  const progress =
+    totalMs > 0
+      ? Math.max(0, Math.min(100, (status.elapsedMs / totalMs) * 100))
+      : 0;
+  const [filled, remaining] =
+    status.phase === "soon"
+      ? ["rgb(253 230 138 / 0.95)", "rgb(255 251 235 / 0.95)"]
+      : ["rgb(167 243 208 / 0.9)", "rgb(236 253 245 / 0.95)"];
+  return {
+    phase,
+    progress,
+    className:
+      status.phase === "soon"
+        ? "border-amber-500 bg-amber-50"
+        : "border-emerald-400 bg-emerald-50",
+    style: {
+      backgroundImage: `linear-gradient(to right, ${filled} 0%, ${filled} ${progress}%, ${remaining} ${progress}%, ${remaining} 100%)`,
+    },
+  };
+};
+
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
 // 各行は「ドリップ中」「待ち1」「待ち2」「待ち3」の固定4列。待ち4以降は待ち3の列内で縦にスクロールする。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
@@ -96,6 +154,7 @@ const ControlViewCBoard: React.FC<
           <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
             {lanes.map((bay) => {
               const lane = laneStatus(bay, nowMs);
+              const brewColumn = brewColumnAppearance(lane);
               const { current } = lane;
               const isLinked = laneActive(bay).some((card) =>
                 sharesOrder(card, selectedOrderId),
@@ -140,7 +199,16 @@ const ControlViewCBoard: React.FC<
                         <section
                           key={label}
                           aria-label={`${bay.id} ${label}`}
-                          className={`flex min-h-0 min-w-0 flex-col rounded-lg border ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                          data-brew-phase={
+                            index === 0 ? brewColumn.phase : undefined
+                          }
+                          data-brew-progress={
+                            index === 0
+                              ? Math.round(brewColumn.progress)
+                              : undefined
+                          }
+                          style={index === 0 ? brewColumn.style : undefined}
+                          className={`flex min-h-0 min-w-0 flex-col rounded-lg border transition-colors duration-500 ${index === 0 ? brewColumn.className : "border-slate-200 bg-slate-50"}`}
                         >
                           <div
                             className={`flex min-h-0 flex-1 flex-col gap-2 p-0.5 ${index === 3 && cards.length > 1 ? "overflow-y-auto" : ""}`}
