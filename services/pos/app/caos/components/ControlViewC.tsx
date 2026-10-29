@@ -117,9 +117,10 @@ const ControlViewCBoard: React.FC<
                       onOpenLane={readOnly ? undefined : onOpenLane}
                       className="w-10"
                     />
-                    <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
                       <LaneChangeButton
                         dripper={bay.id}
+                        fillHeight
                         className="w-full min-w-0 font-black text-[18px] text-slate-950"
                       />
                       <LaneAbility dripper={bay.id} />
@@ -274,6 +275,7 @@ const LaneCard: React.FC<{
           ? undefined
           : () => (mergeTap ? pick.tap(card) : menu?.toggle(card))
       }
+      style={{ justifyContent: "space-evenly" }}
       className={`${className} ${flash ? "caos-arrival" : ""}`}
     >
       <CardOverlay
