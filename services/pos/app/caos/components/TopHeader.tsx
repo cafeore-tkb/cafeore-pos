@@ -273,7 +273,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         )}
       </output>
 
-      <div className="flex h-full shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={() => onSelectTab("settings")}
@@ -364,7 +364,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
         )}
         {/* シールのプリンターの状態は右端に表示する。 */}
-        <div className="flex h-full flex-col [&>output]:h-full">
+        <div className="flex flex-col [&>output]:h-11">
           <StatusBadge
             icon={Printer}
             label={`ラベルプリンター: ${PRINTER_STATUS[labelPrinter.status].label}`}
