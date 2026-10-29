@@ -179,7 +179,10 @@ func recordCaosOperation(tx *gorm.DB, kind string, pressed, now time.Time, press
 	if len(before) == 0 {
 		return nil
 	}
-	return tx.CreateInBatches(&before, 100).Error
+	if err := tx.CreateInBatches(&before, 100).Error; err != nil {
+		return err
+	}
+	return recordCaosBrews(tx, operation, before)
 }
 
 // 現行画面は merge_into を送る。古い画面では同じdrip_idへ入る別の書き込み/既存の杯を相手とする。

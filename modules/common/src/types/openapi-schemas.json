@@ -1520,6 +1520,158 @@
       }
     }
   },
+  "CaosBrewEstimate": {
+    "type": "object",
+    "required": [
+      "seconds",
+      "standard_seconds",
+      "coefficient",
+      "standard_samples",
+      "person_samples"
+    ],
+    "properties": {
+      "seconds": {
+        "type": "number"
+      },
+      "standard_seconds": {
+        "type": "number"
+      },
+      "coefficient": {
+        "type": "number"
+      },
+      "standard_samples": {
+        "type": "integer"
+      },
+      "person_samples": {
+        "type": "integer"
+      }
+    }
+  },
+  "CaosBrewRecordResponse": {
+    "type": "object",
+    "required": [
+      "drip_id",
+      "started_at",
+      "finished_at",
+      "dripper",
+      "kind",
+      "name",
+      "grade",
+      "predicted_seconds",
+      "standard_seconds",
+      "coefficient",
+      "standard_samples",
+      "person_samples",
+      "actual_seconds",
+      "excluded_reason",
+      "person_excluded_reason",
+      "model_version"
+    ],
+    "properties": {
+      "drip_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "finished_at": {
+        "type": "string",
+        "format": "date-time",
+        "nullable": true
+      },
+      "dripper": {
+        "type": "integer"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "grade": {
+        "type": "string"
+      },
+      "predicted_seconds": {
+        "type": "number"
+      },
+      "standard_seconds": {
+        "type": "number"
+      },
+      "coefficient": {
+        "type": "number"
+      },
+      "standard_samples": {
+        "type": "integer"
+      },
+      "person_samples": {
+        "type": "integer"
+      },
+      "actual_seconds": {
+        "type": "number",
+        "nullable": true
+      },
+      "excluded_reason": {
+        "type": "string"
+      },
+      "person_excluded_reason": {
+        "type": "string"
+      },
+      "model_version": {
+        "type": "string"
+      }
+    }
+  },
+  "CaosBrewModelResponse": {
+    "type": "object",
+    "required": ["version", "updated_at", "standards", "lanes", "active"],
+    "properties": {
+      "version": {
+        "type": "string"
+      },
+      "updated_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "standards": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/CaosBrewEstimate"
+        }
+      },
+      "lanes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["dripper", "name", "grade", "estimates"],
+          "properties": {
+            "dripper": {
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "grade": {
+              "type": "string"
+            },
+            "estimates": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/components/schemas/CaosBrewEstimate"
+              }
+            }
+          }
+        }
+      },
+      "active": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/CaosBrewRecordResponse"
+        }
+      }
+    }
+  },
   "CaosLane": {
     "type": "object",
     "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",

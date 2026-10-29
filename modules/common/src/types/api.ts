@@ -216,6 +216,14 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/brew-model": {
+    /** 共通の抽出予測と開始時の予測を取得 */
+    get: operations["getCaosBrewModel"];
+  };
+  "/api/caos/brew-records": {
+    /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+    get: operations["getCaosBrewRecords"];
+  };
   "/api/caos/logs/export": {
     /**
      * CaOSログを人間のみ・システムのみ・混合で書き出す
@@ -1337,6 +1345,51 @@ export interface components {
        */
       start_drip_id?: string;
       press?: components["schemas"]["CaosPress"];
+    };
+    CaosBrewEstimate: {
+      seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+    };
+    CaosBrewRecordResponse: {
+      /** Format: uuid */
+      drip_id: string;
+      /** Format: date-time */
+      started_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      dripper: number;
+      kind: string;
+      name: string;
+      grade: string;
+      predicted_seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+      actual_seconds: number | null;
+      excluded_reason: string;
+      person_excluded_reason: string;
+      model_version: string;
+    };
+    CaosBrewModelResponse: {
+      version: string;
+      /** Format: date-time */
+      updated_at: string;
+      standards: {
+        [key: string]: components["schemas"]["CaosBrewEstimate"];
+      };
+      lanes: {
+        dripper: number;
+        name: string;
+        grade: string;
+        estimates: {
+          [key: string]: components["schemas"]["CaosBrewEstimate"];
+        };
+      }[];
+      active: components["schemas"]["CaosBrewRecordResponse"][];
     };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
@@ -2706,6 +2759,62 @@ export interface operations {
       };
       /** @description オーダーが見つかりません */
       404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** 共通の抽出予測と開始時の予測を取得 */
+  getCaosBrewModel: {
+    responses: {
+      /** @description 店舗基準、現在の担当者の予測、抽出中の開始時予測 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewModelResponse"];
+        };
+      };
+      /** @description 取得失敗。画面は最後のモデルまたは固定値を使う */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+  getCaosBrewRecords: {
+    parameters: {
+      query?: {
+        day?: string;
+        limit?: number;
+        offset?: number;
+        /** @description 初回レスポンスの日時を次ページにも渡すと、その後の新規開始を混ぜない */
+        snapshot_at?: string;
+      };
+    };
+    responses: {
+      /** @description 開始時予測と完了実績 */
+      200: {
+        content: {
+          "application/json": {
+            entries: components["schemas"]["CaosBrewRecordResponse"][];
+            limit: number;
+            offset: number;
+            has_more: boolean;
+            /** Format: date-time */
+            snapshot_at: string;
+          };
+        };
+      };
+      /** @description パラメーター不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 取得失敗 */
+      500: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

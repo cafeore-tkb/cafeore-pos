@@ -146,6 +146,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	api.POST("/label-print-requests/:id/printed", labelPrint.MarkLabelPrintRequestPrinted)
 	api.POST("/label-print-requests/:id/release", labelPrint.ReleaseLabelPrintRequest)
 	api.GET("/caos/logs/export", caos.ExportCaosLogs)
+	api.GET("/caos/brew-model", caos.GetCaosBrewModel)
+	api.GET("/caos/brew-records", authz.Require(auth.RoleStaff), caos.GetCaosBrewRecords)
 	api.GET("/caos/logs", caos.GetCaosLogs)
 	api.POST("/caos/logs", caos.CreateCaosLogs)
 	api.POST("/cup-emergencies", caos.CreateCupEmergencies)

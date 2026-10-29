@@ -616,7 +616,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     });
   });
 
-  test("予定の時刻は 1 杯 5 分・2 杯 6 分の抽出と、15 秒の入れ替え", () => {
+  test("実績がないときは1杯5分・2杯6分を使い、待機カード間の入れ替え時間を足さない", () => {
     // 1st：#1（1 杯）を抽出中、#6（2 杯）と #5（1 杯）が待機
     const [lane] = boardLanes(
       buildCaosCards([
@@ -639,8 +639,8 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     ).toEqual([
       ["d1", 0, 300],
-      ["d6", 315, 675],
-      ["d5", 690, 990],
+      ["d6", 300, 660],
+      ["d5", 660, 960],
     ]);
     expect(laneStatus(lane, T0.getTime()).remainingSec).toBe(300);
   });

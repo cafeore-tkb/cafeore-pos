@@ -61,8 +61,9 @@ const (
 var jst = time.FixedZone("JST", 9*60*60)
 
 type CaosHandler struct {
-	db  *gorm.DB
-	hub *Hub
+	brewSamples caosBrewSampleCache
+	db          *gorm.DB
+	hub         *Hub
 	// 緊急（淹れ直し）で増減した在庫の通知
 	inventory *Inventory
 	// 今の時刻（テストで差し替える）。今日の範囲と、押した時刻の無い書き込みの抽出の開始・終了の時刻に使う
