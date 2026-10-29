@@ -20,8 +20,8 @@ import (
 
 // CaOS（ドリップ管制）の書き込み。盤面は注文のカップ（order_cups）の列で持つ（models.OrderCup の Dripper・DripperPosition・
 // DripID・BrewStartedAt・BrewFinishedAt）。画面は注文の一覧からカードを組み立てる。
-// 緊急（入れ直し。cup_emergencies）の行も同じ列を持ち、カップと同じ決まりでカードに入る（caosUnits。足すのは cup_emergency.go）。
-// 以下の「カップ」は入れ直しの行も含む。
+// 緊急（淹れ直し。cup_emergencies）の行も同じ列を持ち、カップと同じ決まりでカードに入る（caosUnits。足すのは cup_emergency.go）。
+// 以下の「カップ」は淹れ直しの行も含む。
 //
 //   - PUT /api/caos/cups：カップの組を before から after にする（割当・移動・順番・未割当に戻す・統合）。before が今と違えば 409。
 //     順番の数（dripper_position）と抽出の時刻は画面から受け取らない。画面は「どのカードの前に入れるか」（after の insert_before）だけを送り、
@@ -33,7 +33,7 @@ import (
 //     （二度押し・続けて押すのを防ぐ。始めた時刻と「次へ」を押した時刻の差で見る）
 //
 // 盤面（抽出の開始・終わり・待機）を書くのは CaOS の操作だけ。提供の画面の準備完了・提供（order_status.go）は盤面を書かず、
-// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。終えるのは「次へ」だけ）。
+// 盤面の決まりも準備完了・提供を見ない（カップが全部準備完了・提供済みになっても、抽出中・待機のカードのまま。通常終了は「次へ」、破棄は discardCups）。
 //
 // どちらも注文の行をロックしてからカップを読む（注文の編集・カップの準備完了と同じ順番）。カップを置くドリッパーの advisory lock は
 // 注文の行より先に取り、列の番号を決めて書き終えるまで・抽出を始めるドリッパーが空いているかを確かめるまで、同じドリッパーへの書き込みを待たせる。
@@ -61,9 +61,10 @@ const (
 var jst = time.FixedZone("JST", 9*60*60)
 
 type CaosHandler struct {
-	db  *gorm.DB
-	hub *Hub
-	// 緊急（入れ直し）で増減した在庫の通知
+	brewSamples caosBrewSampleCache
+	db          *gorm.DB
+	hub         *Hub
+	// 緊急（淹れ直し）で増減した在庫の通知
 	inventory *Inventory
 	// 今の時刻（テストで差し替える）。今日の範囲と、押した時刻の無い書き込みの抽出の開始・終了の時刻に使う
 	now func() time.Time
@@ -119,8 +120,8 @@ func caosBrewAt(tx *gorm.DB, dripper int, pressed, start, end time.Time) (time.T
 
 // ---------------------------------------------------------------- カップの値
 
-// caosUnits は CaOS のカードに入る行：注文のカップ（最初の抽出）と、緊急（入れ直し）。列は order_cups と同じ名前で、
-// cup_id は入れ直したカップ（カップなら自分）。注文・明細・商品は入れ直したカップのもの。
+// caosUnits は CaOS のカードに入る行：注文のカップ（最初の抽出）と、緊急（淹れ直し）。列は order_cups と同じ名前で、
+// cup_id は淹れ直したカップ（カップなら自分）。注文・明細・商品は淹れ直したカップのもの。
 // 提供の時刻は全杯提供済みの完了忘れを待ち時間なしで修正するときだけ使う。
 // キャンセルした注文のカップは入れない（注文を消したときと同じく盤面から消える。order_cancel.go）。
 const caosUnits = `(SELECT c.id, c.id AS cup_id, c.order_id, c.order_menu_id, c.item_id,
@@ -131,24 +132,24 @@ const caosUnits = `(SELECT c.id, c.id AS cup_id, c.order_id, c.order_menu_id, c.
 	FROM cup_emergencies e JOIN order_cups c ON c.id = e.order_cup_id
 	JOIN orders o ON o.id = c.order_id AND o.cancelled_at IS NULL)`
 
-// caosUnit はカップか入れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（入れ直しなら入れ直しの ID）。
-// 準備完了（ReadyAt）は読まない。入れ直しは元カップの提供時刻を引き継がない。
+// caosUnit はカップか淹れ直しの行（caosUnits の 1 行）。OrderCup の ID は行の ID（淹れ直しなら淹れ直しの ID）。
+// 準備完了（ReadyAt）は読まない。淹れ直しは元カップの提供時刻を引き継がない。
 type caosUnit struct {
 	models.OrderCup
-	// 入れ直したカップ（カップなら自分）
+	// 淹れ直したカップ（カップなら自分）
 	CupID uuid.UUID
 	// 注文番号（readCaosLane だけが読む）
 	OrderNo int
 }
 
-// readCaosUnits は where（c は caosUnits）に合うカップと入れ直しを読む。
+// readCaosUnits は where（c は caosUnits）に合うカップと淹れ直しを読む。
 func readCaosUnits(tx *gorm.DB, where string, args ...any) ([]caosUnit, error) {
 	var rows []caosUnit
 	err := tx.Raw("SELECT c.* FROM "+caosUnits+" c WHERE "+where, args...).Scan(&rows).Error
 	return rows, err
 }
 
-// updateCaosUnits はカップと入れ直しの両方の表で、where に合う行の CaOS の列を書く（列の名前は同じ）。
+// updateCaosUnits はカップと淹れ直しの両方の表で、where に合う行の CaOS の列を書く（列の名前は同じ）。
 func updateCaosUnits(tx *gorm.DB, values map[string]any, where string, args ...any) error {
 	for _, table := range []any{&models.OrderCup{}, &models.CupEmergency{}} {
 		if err := tx.Model(table).Where(where, args...).Updates(values).Error; err != nil {
@@ -197,7 +198,7 @@ func validateCaosAfter(a models.CaosCupAfter) error {
 }
 
 // caosUpdates は after を書く列。position はサーバーが決めた番号（未割当なら nil）。
-// startedAt は抽出を始めるときのサーバーの今か、統合で入る抽出中のカードの開始（どちらでもなければ nil）。終了の時刻は「次へ」だけが付ける。
+// startedAt は抽出を始めるときのサーバーの今か、統合で入る抽出中のカードの開始（どちらでもなければ nil）。終了の時刻は「次へ」と破棄操作が付ける。
 func caosUpdates(a models.CaosCupAfter, position *int, startedAt *time.Time) map[string]any {
 	return map[string]any{
 		"dripper":          a.Dripper,
@@ -281,8 +282,8 @@ func checkCaosCardNomination(tx *gorm.DB, dripID uuid.UUID) error {
 	return nil
 }
 
-// readCaosUnitItems は書くカップ（入れ直しも）の注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
-// 商品（行の ID ごと。入れ直しは入れ直したカップの商品）を読む。カップのどれかが消えていれば 409。
+// readCaosUnitItems は書くカップ（淹れ直しも）の注文（ロックする注文を決めるだけ。CaOS の値はロックしてから読む）と、
+// 商品（行の ID ごと。淹れ直しは淹れ直したカップの商品）を読む。カップのどれかが消えていれば 409。
 // 後から削除した商品・種類のカップも、注文の応答と同じく読む
 func readCaosUnitItems(tx *gorm.DB, cupIDs []uuid.UUID) ([]uuid.UUID, map[uuid.UUID]models.Item, error) {
 	found, err := readCaosUnits(tx, "c.id IN ?", cupIDs)
@@ -341,10 +342,6 @@ func checkCaosCards(tx *gorm.DB, dripIDs []uuid.UUID) error {
 		for i := range cups {
 			if !sameCaosState(&cups[i].OrderCup, caosCupState(&cups[0].OrderCup)) {
 				return ruleErrorf("同じカードのカップは全部いっしょに動かしてください")
-			}
-			// 入れ直しは行の ID と入れ直したカップの ID が違う。入れ直しと緊急でないカップは同じカードにしない（緊急の取り消しと食い違う）
-			if (cups[i].ID == cups[i].CupID) != (cups[0].ID == cups[0].CupID) {
-				return ruleErrorf("緊急（入れ直し）と緊急でないカップは同じカードにできません")
 			}
 		}
 		if err := checkCaosCardNomination(tx, id); err != nil {

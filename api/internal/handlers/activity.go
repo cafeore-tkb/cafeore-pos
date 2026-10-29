@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"cafeore-pos/api/internal/models"
+
 	"github.com/google/uuid"
 )
 
@@ -83,6 +84,7 @@ func itemTypeUpdatedMessage(before, after *models.ItemType) string {
 		change{"抽出が要る", formatOnOff(before.BrewRequired()), formatOnOff(after.BrewRequired())},
 		change{"上級生のみ", formatOnOff(before.SeniorOnly), formatOnOff(after.SeniorOnly)},
 		change{"アイスで淹れる", formatOnOff(before.IcedBrew), formatOnOff(after.IcedBrew)},
+		change{"お菓子をつける", formatOnOff(before.ServeWithSnack), formatOnOff(after.ServeWithSnack)},
 	))
 }
 

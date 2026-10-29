@@ -66,7 +66,7 @@ const isPrintCompleted = (id: string) => {
 /** 残っているシール（古い順） */
 export const readPendingPrints = store.read;
 
-/** id は後で消すときの目印（緊急のシールは入れ直しの id。取り消したら消す）。無ければ新しく作る */
+/** id は後で消すときの目印（緊急のシールは淹れ直しの id。取り消したら消す）。無ければ新しく作る */
 export const addPendingPrint = (
   job: PrintJob,
   id: string = crypto.randomUUID(),
@@ -77,7 +77,7 @@ export const addPendingPrint = (
 
 export const removePendingPrint = store.remove;
 
-/** このタブで取り消しを知った緊急（入れ直し）の id か。そのシールはレジにも頼まない */
+/** このタブで取り消しを知った緊急（淹れ直し）の id か。そのシールはレジにも頼まない */
 export const isPrintCancelled = (id: string) => cancelled.has(id);
 
 /** 直接印刷の結果を待つ間に、代理印刷で完了・取り消しになったシールか。 */
@@ -99,7 +99,7 @@ export const completePendingPrint = (id: string) => {
 };
 
 /**
- * 緊急（入れ直し）が取り消された（サーバーから取り消したと知らせが来た・この端末で取り消せた）。そのシールを消し、このあと残そうとしても残さない。
+ * 緊急（淹れ直し）が取り消された（サーバーから取り消したと知らせが来た・この端末で取り消せた）。そのシールを消し、このあと残そうとしても残さない。
  * 刷るべきシールを消さないよう、取り消しの知らせのほかでは呼ばない（注文の一覧から消えたことでは呼ばない）
  */
 export const cancelPendingPrint = (id: string) => {

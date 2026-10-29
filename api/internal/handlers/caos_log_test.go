@@ -56,6 +56,9 @@ func TestCaosOperationLogOnDB(t *testing.T) {
 	assignment := latestOperation(t, db)
 	rows := readOperationCups(t, db, assignment.ID)
 	row := rows[b]
+	if row.IcedBrew == nil || *row.IcedBrew {
+		t.Fatalf("operation should preserve hot/ice at operation time: %+v", row.IcedBrew)
+	}
 	if row.AssignedAt == nil || !row.AssignedAt.Equal(pressed) || row.MergedAt != nil || row.OrderID != target.ID || !row.Changed {
 		t.Fatalf("assignment = %+v", row)
 	}
@@ -384,7 +387,7 @@ func TestCaosEmergencyOperationLogOnDB(t *testing.T) {
 	if count != 2 {
 		t.Fatalf("history = %d", count)
 	}
-	// ログの保存に失敗した追加は、入れ直しも履歴もrollbackする。
+	// ログの保存に失敗した追加は、淹れ直しも履歴もrollbackする。
 	if err := db.Exec("ALTER TABLE caos_operation_cups ADD CONSTRAINT test_reject_log CHECK (false) NOT VALID").Error; err != nil {
 		t.Fatal(err)
 	}

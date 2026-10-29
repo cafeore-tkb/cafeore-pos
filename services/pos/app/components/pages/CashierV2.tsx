@@ -18,8 +18,9 @@ import {
   RECEIPT_EPOS_PRINTER_CONFIG,
   eposCertificateUrl,
   eposPrinterAt,
+  labelPrinterAt,
 } from "~/label/infra/epos";
-import { labelPrintableWidth, receiptPrintableWidth } from "~/label/paper";
+import { labelGeometry, receiptPrintableWidth } from "~/label/paper";
 import {
   useLabelPrintProxy,
   useLabelPrintProxySetting,
@@ -46,6 +47,7 @@ import {
   cashierKeyIntent,
   cashierPaymentKeyIntent,
   clearDigits,
+  couponDigitsForOrders,
   couponStatus,
   deleteDigit,
   emptyCashierDraft,
@@ -86,7 +88,10 @@ import {
   subtotalRemaining,
   unpaidLines,
 } from "../functional/cashierSplit";
-import { cashierAutoSquareRefundAtom } from "../functional/cashierUiAtoms";
+import {
+  autoSquareRefundAvailable,
+  cashierAutoSquareRefundAtom,
+} from "../functional/cashierUiAtoms";
 import type { ConnectionIssue } from "../functional/connectionIssues";
 import {
   type HeldKeys,
@@ -341,14 +346,22 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレスが変わったら、つなぎ直す。用紙が変わっても、つなぎ直さずに刷るものの幅だけ変える
+  // プリンターの IP アドレス・最後の送り方が変わったら、つなぎ直す。シールの大きさ・向きが変わっても、つなぎ直さずに刷るものの大きさ・向きだけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
+  const labelTrailingFeed = printerAddresses.label_printer_trailing_feed;
   const printer = usePrinter(
-    useMemo(() => eposPrinterAt(labelPrinterIp), [labelPrinterIp]),
-    labelPrintableWidth(printerAddresses),
+    useMemo(
+      () => labelPrinterAt(labelPrinterIp, labelTrailingFeed),
+      [labelPrinterIp, labelTrailingFeed],
+    ),
+    labelGeometry(printerAddresses),
   );
-  // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る
-  const [labelPrintProxy, setLabelPrintProxy] = useLabelPrintProxySetting();
+  // 代理印刷をオンにしたレジは、CaOS・マスターが直接刷れなかった緊急のシールを、このレジのラベル用のプリンターで刷る。
+  // 手でオフにしていなければ、ラベル用のプリンターにつながっている間はオン
+  const [labelPrintProxySetting, setLabelPrintProxy] =
+    useLabelPrintProxySetting();
+  const labelPrintProxy =
+    labelPrintProxySetting && printer.status === "connected";
   const labelPrintRelay = useLabelPrintProxy(labelPrintProxy, printer);
   // レシートは会計のたびに刷る。領収書は過去の注文から求められたときだけ刷る。
   // 機種・用紙が変わっても、つなぎ直さずに画像の幅だけ変える
@@ -381,6 +394,7 @@ const CashierV2 = ({
   }, [fixedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
+  const couponDigits = couponDigitsForOrders(orders ?? []);
   const coupon = useMemo(
     () => couponStatus(draft.coupon, orders ?? []),
     [draft.coupon, orders],
@@ -1106,6 +1120,7 @@ const CashierV2 = ({
             heldLineKeys: heldLineKeys(held),
             repeat: event.repeat,
             checkCoupon,
+            couponDigits,
           });
       if (intent.type === "ignore") {
         return;
@@ -1171,6 +1186,7 @@ const CashierV2 = ({
     items,
     payments,
     checkCoupon,
+    couponDigits,
     due,
     updatePayment,
     openAssign,
@@ -1246,8 +1262,8 @@ const CashierV2 = ({
     <OrderPanel
       draft={viewDraft}
       couponStatus={coupon}
+      couponDigits={couponDigits}
       discount={newOrder.discount}
-      coffeeCups={newOrder.getCoffeeCups().length}
       canCancelPayment={canLeavePayment(draft)}
       onSelect={(index) => updateDraft((current) => selectLine(current, index))}
       onRemove={(index) => updateDraft((current) => removeLine(current, index))}
@@ -1311,6 +1327,7 @@ const CashierV2 = ({
               />
               <LabelPrintProxySwitch
                 checked={labelPrintProxy}
+                disabled={printer.status !== "connected"}
                 onCheckedChange={setLabelPrintProxy}
                 waiting={labelPrintRelay.waiting}
               />
@@ -1336,7 +1353,8 @@ const CashierV2 = ({
                   disabled={squarePaymentActive}
                 />
               )}
-              {squareEnabled && (
+              {/* 本番では出さない（autoSquareRefundAvailable） */}
+              {squareEnabled && autoSquareRefundAvailable && (
                 <div className="flex items-center gap-2">
                   <Switch
                     id="auto-square-refund"
@@ -1432,7 +1450,7 @@ const CashierV2 = ({
               onSquare={startSquarePayment}
               onDigits={(digits) =>
                 updatePayment((current) =>
-                  inputPadDigits(current, digits, checkCoupon),
+                  inputPadDigits(current, digits, checkCoupon, couponDigits),
                 )
               }
               onDeleteDigit={() => updatePayment(deleteDigit)}

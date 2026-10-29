@@ -1,5 +1,6 @@
 import { jstDate } from "@cafeore/common";
 import { useState } from "react";
+import { useDeviceOnlineStatus } from "~/components/functional/useDeviceOnlineStatus";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { CornerToasts, TestBoardBanner } from "./components/BoardParts";
 import {
@@ -13,6 +14,7 @@ import {
 } from "./components/FloatingWindows";
 import { OperationNotices } from "./components/OperationNotices";
 import { OrderChatPanel } from "./components/OrderChatPanel";
+import { OrderCommentPanel } from "./components/OrderCommentPanel";
 import {
   CommentDock,
   FreshCommentsContext,
@@ -38,6 +40,11 @@ import { useCardMenu } from "./hooks/useCardMenu";
 import { useCommentNotices } from "./hooks/useCommentNotices";
 import { useForgottenBrewAlert } from "./hooks/useForgottenBrewAlert";
 import { useItemTypeNames } from "./hooks/useItemTypeNames";
+import { useOrderCommentComposer } from "./hooks/useOrderCommentComposer";
+import {
+  OrderHighlightsContext,
+  useOrderHighlightState,
+} from "./hooks/useOrderHighlights";
 import { useOrderSearch } from "./hooks/useOrderSearch";
 import { useSeniorRefresh } from "./hooks/useSeniorRefresh";
 import { useServedCardAlert } from "./hooks/useServedCardAlert";
@@ -52,7 +59,18 @@ import { orderNoLabel } from "./logic/cards";
 export default function App() {
   const restoreWindow = useRestoreFloatingWindow();
   const session = useCaosSession();
-  const { orders, lastDeletedOrder } = useOrdersWSContext();
+  const { isDeviceOnline } = useDeviceOnlineStatus();
+  const {
+    orders,
+    lastDeletedOrder,
+    status: ordersStatus,
+    isOrdersLoaded,
+  } = useOrdersWSContext();
+  const commentComposer = useOrderCommentComposer(
+    orders,
+    session.nowMs,
+    !session.simulating,
+  );
   const cancelledOrderNo =
     !session.simulating &&
     lastDeletedOrder &&
@@ -68,6 +86,17 @@ export default function App() {
   const [controlViewMode, setControlViewMode] = useState<ControlViewMode>("a");
   const [timelineCommand, setTimelineCommand] =
     useState<TimelineCommand | null>(null);
+  const highlight = useOrderHighlightState(
+    session.cards,
+    `${session.simulating ? "practice" : "live"}:${jstDate(session.nowMs)}`,
+    (cardKey) =>
+      setTimelineCommand({ direction: "card", cardKey, id: performance.now() }),
+  );
+  const selectOrder = (label: string | null, orderId?: string) => {
+    selection.selectOrder(label);
+    if (label !== null) highlight.selectLabel(label, orderId);
+    else highlight.clear();
+  };
   // 管制盤 A のタイムラインが NOW を追っているか（ヘッダーの「現在」の見た目）
   const [followingNow, setFollowingNow] = useState(true);
   const [testSetupOpen, setTestSetupOpen] = useState(false);
@@ -78,13 +107,14 @@ export default function App() {
     open: selection.openSearch,
     setDigits: selection.setSearchDigits,
     close: selection.closeSearch,
-    selectOrder: selection.selectOrder,
+    selectOrder,
     showOnTimeline: view.timelineControls
       ? (cardKey) =>
           setTimelineCommand({ direction: "card", cardKey, id: Date.now() })
       : undefined,
     view: controlViewMode,
-    // 番号から入れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
+    keyboardEnabled: panel?.kind !== "comment",
+    // 番号から淹れ直すのと同じ注文（本番は POS の注文、実データテスト中は届いた練習の注文）
     orders: session.emergency.orders,
     cards: session.cards,
     lanes,
@@ -102,15 +132,28 @@ export default function App() {
   // 開いたカードのパネル・番号の検索がコメントを出しているあいだは、見ている注文のコメントは右下に出さない
   const viewed = useViewedComments({
     selectedOrderId: selection.selectedOrderId,
-    selectOrder: selection.selectOrder,
+    selectOrder,
     cards: session.cards,
     looks,
     hidden:
       selection.searchDigits !== null ||
+      panel?.kind === "comment" ||
       Boolean(selection.rebrew?.card) ||
       Boolean(selection.scheduled),
   });
-  const commentNotices = useCommentNotices(session.comments, viewed.label);
+  const viewedCommentLabel =
+    panel?.kind === "comment"
+      ? !commentComposer.state.choosing && commentComposer.target
+        ? `#${orderNoLabel(commentComposer.target.orderId)}`
+        : null
+      : viewed.label;
+  const commentNotices = useCommentNotices(
+    session.comments,
+    viewedCommentLabel,
+  );
+  const commentPanelNotices = commentNotices.notices.filter((comment) =>
+    commentComposer.today.some((order) => order.id === comment.orderId),
+  );
   // 未割当の欄の「未提供」のタブ（まだ提供していない注文。15 分超・新しいコメントはタブに件数の印）と、コメントにスタンプで返す
   const unfinished = useUnfinishedTab({
     orders: session.emergency.orders,
@@ -119,7 +162,7 @@ export default function App() {
     comments: session.comments,
     nowMs: session.nowMs,
     practice: session.simulating,
-    viewedLabel: viewed.label,
+    viewedLabel: viewedCommentLabel,
   });
   useCaosStateLog("ui.workspace.changed", {
     controlViewMode,
@@ -130,11 +173,12 @@ export default function App() {
     viewedOrder: viewed.label,
   });
   // 返した注文の新しいコメントの知らせは閉じる
-  const stampReply = useStampReply((orderId) =>
+  const stampReply = useStampReply((orderId, comment) => {
+    commentComposer.recordSent(orderId, comment);
     commentNotices.dismiss(
       commentNotices.notices.filter((comment) => comment.orderId === orderId),
-    ),
-  );
+    );
+  });
   // ドリッパーのカードの上に出す操作（押すと開き、アイコンを押して決める）
   const cardMenu = useCardMenu({
     onRun: session.runCardAction,
@@ -145,6 +189,7 @@ export default function App() {
   const backToLive = () => {
     session.reset();
     selection.clear();
+    highlight.clear();
   };
   // 補助のパネルを閉じる。テストを終えたあとなら本番の盤面に戻す（テストの盤面のまま戻し忘れないように）
   const closeAuxiliary = () => {
@@ -185,6 +230,16 @@ export default function App() {
           unsent={session.unsent}
           onOpenSearch={() => selection.openSearch("")}
           searchOpen={selection.searchDigits !== null}
+          onOpenComment={() => {
+            if (panel?.kind === "comment" && commentPanelNotices.length === 0)
+              selection.suspendPanel(panel);
+            else {
+              restoreWindow("注文にコメント");
+              selection.openComment();
+            }
+          }}
+          commentOpen={panel?.kind === "comment"}
+          commentUnreadCount={commentPanelNotices.length}
           onOpenEmergency={selection.openRebrew}
           onOpenPastOrders={selection.openPastOrders}
         />
@@ -264,6 +319,19 @@ export default function App() {
           >
             {saved.kind === "pastOrders" && !session.simulating && (
               <PastOrdersPanel orders={orders} onClose={closeSaved} />
+            )}
+            {saved.kind === "comment" && !session.simulating && (
+              <OrderCommentPanel
+                composer={commentComposer}
+                loaded={isOrdersLoaded}
+                connected={ordersStatus === "open" && isDeviceOnline}
+                sending={stampReply.sending}
+                send={(orderId, text) =>
+                  stampReply.send(orderId, text, { notifyFailure: false })
+                }
+                notices={commentPanelNotices}
+                onClose={closeSaved}
+              />
             )}
             {saved.kind === "auxiliary" && (
               <AuxiliarySheet
@@ -367,7 +435,7 @@ export default function App() {
         viewing={controlViewMode === "a" ? viewed.viewing : undefined}
         onCloseViewing={viewed.close}
         onRestoreViewing={viewed.open}
-        notices={commentNotices.notices}
+        notices={panel?.kind === "comment" ? [] : commentNotices.notices}
         onOpen={(comment) => {
           commentNotices.dismiss([comment], "open");
           if (controlViewMode === "a") search.show(comment.orderNo);
@@ -395,8 +463,12 @@ export default function App() {
   );
   // コメントの中身（右下・未提供の行・パネル）の下に、スタンプで返すボタンを出す
   return (
-    <StampReplyContext.Provider value={stampReply}>
-      {page}
-    </StampReplyContext.Provider>
+    <OrderHighlightsContext.Provider
+      value={view.timelineControls ? highlight : null}
+    >
+      <StampReplyContext.Provider value={stampReply}>
+        {page}
+      </StampReplyContext.Provider>
+    </OrderHighlightsContext.Provider>
   );
 }

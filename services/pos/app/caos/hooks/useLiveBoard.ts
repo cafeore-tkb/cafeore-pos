@@ -1,14 +1,19 @@
 import {
   type CaosCupsWrite,
+  type CaosDiscardRequest,
   type CaosOutboxOp,
   applyCaosOutboxOps,
   buildCaosCards,
   jstDate,
   overlayCaosOrders,
+  useCaosBrewModel,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { predictedBrewSeconds } from "../logic/brewPrediction";
 import { caosLog, createCaosStateLog } from "../utils/log";
+import { useCaosLanes } from "./useCaosLanes";
 import { enqueueCaosOps, useCaosOutboxEntries } from "./useCaosOutbox";
 import { usePosOrders } from "./usePosOrders";
 
@@ -39,6 +44,25 @@ export const useLiveBoard = ({
     [orders, today, entries],
   );
   const cards = useMemo(() => buildCaosCards(board), [board]);
+  const { model, refresh } = useCaosBrewModel(enabled);
+  const { lanes: people } = useCaosLanes();
+  const assignmentKey = JSON.stringify(
+    people.map(({ dripper, name, grade }) => [dripper, name, grade]),
+  );
+  const predictBrew = useCallback(
+    (card: import("@cafeore/common").CaosCard, dripper: number) =>
+      predictedBrewSeconds(
+        model,
+        card,
+        dripper,
+        people.find((person) => person.dripper === dripper),
+      ),
+    [model, people],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 担当者の交代時にもサーバーの予測を取り直す
+  useEffect(() => {
+    if (enabled && orders) void refresh().catch(() => {});
+  }, [enabled, orders, assignmentKey, refresh]);
   const [logState] = useState(() => createCaosStateLog());
   const previousCards = useRef(new Map<string, string>());
   useEffect(() => {
@@ -85,9 +109,12 @@ export const useLiveBoard = ({
     /** 注文（緊急のシールの中身を作る） */
     orders,
     cards,
+    predictBrew,
     /** 最後に通った操作で端末に残した操作の id */
     lastEnqueued: () => enqueued.current,
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */
+    discardCups: (request: CaosDiscardRequest, label: string) =>
+      run(label, { kind: "discard", request }),
     runWrites: (writes: CaosCupsWrite[], label: string) =>
       run(label, { kind: "cups", writes }),
     /** 「次へ」を送る。before は先に当てる書き込み（押した待機のカードを待機の先頭へ）。決まりに合えば true */
@@ -99,7 +126,7 @@ export const useLiveBoard = ({
           : []),
         { kind: "next", ...next },
       ),
-    /** 緊急（入れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
+    /** 緊急（淹れ直し）を取り消す（まだ抽出を始めていないものだけ）。全部取り消せたら true */
     cancelEmergencies: (ids: string[], label: string) =>
       run(
         label,

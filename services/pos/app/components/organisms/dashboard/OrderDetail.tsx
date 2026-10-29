@@ -158,7 +158,7 @@ export function OrderDetail({ order }: { order: OrderEntity }) {
                     key={emergency.id}
                     className="mt-2 break-words text-red-700"
                   >
-                    入れ直し · {recordTime(emergency.createdAt)} ·{" "}
+                    淹れ直し · {recordTime(emergency.createdAt)} ·{" "}
                     {emergency.reason || "理由なし"}
                   </p>
                 ))}

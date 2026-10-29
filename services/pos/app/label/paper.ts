@@ -1,8 +1,9 @@
-import type {
-  PrinterPaperType,
-  PrinterPaperWidth,
-  PrinterSettings,
-  ReceiptPrinterModel,
+import {
+  PRINTER_DOTS_PER_MM,
+  type PrinterPaperType,
+  type PrinterPaperWidth,
+  type PrinterSettings,
+  type ReceiptPrinterModel,
 } from "@cafeore/common";
 
 /** 紙の幅ごとの、印字できる幅（ドット。1 ドットは 1/8mm） */
@@ -22,11 +23,12 @@ export const RECEIPT_PAPER_WIDTHS = {
 } satisfies Record<ReceiptPrinterModel, PrintableWidths>;
 
 /**
- * ダイカットラベル（台紙に 1 枚ずつ並んだシール）の印字幅。レシート紙より狭い
+ * ダイカットラベル（台紙に 1 枚ずつ並んだシール）の印字幅。レシート紙より狭い（レシート用のプリンターに入れたとき）
  *
  * TM-L90 の値。80mm は 560 ドット（70mm。ePOS-Print の TM-L90 の仕様の、ダイカットラベルのページモードの幅）。
  * 58mm は資料で 48mm（台紙の幅 − 10mm）と 50mm（− 8mm）に分かれるので、狭い方の 384 ドットにする。
  * ほかの機種のダイカットラベルの値は確かめていないので、どの機種でもこれを使う。
+ * ラベル用のプリンターは用紙から決めず、管理画面で印字幅をドットで入れる（labelGeometry）。
  */
 export const DIE_CUT_LABEL_WIDTHS = {
   "58mm": 384,
@@ -34,9 +36,9 @@ export const DIE_CUT_LABEL_WIDTHS = {
 } satisfies PrintableWidths;
 
 /**
- * 紙の種類と機種で決まる、紙の幅ごとの印字幅
+ * 紙の種類と機種で決まる、紙の幅ごとの印字幅（レシート用のプリンター）
  *
- * 機種を選ばないラベル用は model を省く。58mm のレシート紙がどちらの機種でも切れない、狭い方（TM-L90）の値になる。
+ * model を省くと、58mm のレシート紙がどちらの機種でも切れない、狭い方（TM-L90）の値になる。
  */
 export const printableWidths = (
   paperType: PrinterPaperType,
@@ -46,11 +48,42 @@ export const printableWidths = (
     ? DIE_CUT_LABEL_WIDTHS
     : RECEIPT_PAPER_WIDTHS[model];
 
-/** ラベル用のプリンターの印字幅（ドット） */
-export const labelPrintableWidth = (settings: PrinterSettings) =>
-  printableWidths(settings.label_printer_paper_type)[
-    settings.label_printer_paper_width
-  ];
+/**
+ * ラベル用のプリンターのシールの大きさ（ドット。1 ドットは 1/8mm）と向き
+ *
+ * - width: 印字幅（8 の倍数）。どのシールもこの幅に収める
+ * - height: シール 1 枚の長さ。緊急・キャンセル・テスト印刷のシール（sticker）は width × height の画像に描く
+ * - margin: sticker の四辺の余白。中身は余白の内側に描く
+ * - rotate180: カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。
+ *   シール（width × height）の真ん中を中心に回す。テスト印刷の確認用のページは回さない
+ *
+ * カップのシール（ページモードの文字）は、範囲の幅を width に縮めるだけで、余白は使わない。
+ * 長さは、180° 回すときに範囲を置く所を決めるのにだけ使う（order-label.ts）。
+ */
+export type LabelGeometry = {
+  width: number;
+  height: number;
+  margin: number;
+  rotate180: boolean;
+};
+
+/** プリンター設定のラベルの長さ・印字幅・余白（withPrinterSettingDefaults で確かめたもの）をドットにし、向きを添える */
+export const labelGeometry = (
+  settings: Pick<
+    PrinterSettings,
+    | "label_printer_label_length_mm"
+    | "label_printer_print_width_dots"
+    | "label_printer_margin_mm"
+    | "label_printer_rotate_180"
+  >,
+): LabelGeometry => ({
+  width: settings.label_printer_print_width_dots,
+  height: Math.round(
+    settings.label_printer_label_length_mm * PRINTER_DOTS_PER_MM,
+  ),
+  margin: Math.round(settings.label_printer_margin_mm * PRINTER_DOTS_PER_MM),
+  rotate180: settings.label_printer_rotate_180,
+});
 
 /** レシート用のプリンターの印字幅（ドット） */
 export const receiptPrintableWidth = (settings: PrinterSettings) =>

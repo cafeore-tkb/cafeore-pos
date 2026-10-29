@@ -24,7 +24,7 @@ const (
 	WSMessageTypeCashierState WSMessageType = "cashier_state"
 	// CaOS の今日のドリッパーの担当者（6 つ全部。caos_lanes.go）
 	WSMessageTypeCaosLanes WSMessageType = "caos_lanes"
-	// 取り消された緊急（入れ直し）の ID（cup_emergency.go）。画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す
+	// 取り消された緊急（淹れ直し）の ID（cup_emergency.go）。画面は、この知らせを受けたときだけ、その淹れ直しの未印刷のシールを消す
 	WSMessageTypeCupEmergencyCancelled WSMessageType = "cup_emergency_cancelled"
 	// 呼び出し催促した注文の ID（order_recall.go）。注文は変わらない。呼び出し画面は、この知らせを受けたらその番号をもう一度読み上げ、しばらく目立たせる
 	WSMessageTypeOrderRecalled WSMessageType = "order_recalled"
@@ -32,6 +32,8 @@ const (
 	WSMessageTypeLabelPrintRequested WSMessageType = "label_print_requested"
 	// 刷れた代理印刷の ID（label_print.go）。頼んだ端末はレジで印刷待ちの数から外す
 	WSMessageTypeLabelPrintDone WSMessageType = "label_print_done"
+	// 営業データを消した（data_reset.go）。画面は読み込み直す
+	WSMessageTypeDataReset WSMessageType = "data_reset"
 )
 
 type WSMessage struct {

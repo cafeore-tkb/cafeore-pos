@@ -275,7 +275,7 @@ func TestListenChangesPublishesOtherInstancesStates(t *testing.T) {
 	noBroadcast(t, hub)
 }
 
-// 緊急（入れ直し）の取り消しは、このインスタンスで取り消したらその場で配ってほかのインスタンスへ知らせ、
+// 緊急（淹れ直し）の取り消しは、このインスタンスで取り消したらその場で配ってほかのインスタンスへ知らせ、
 // ほかのインスタンスから知らせが来たらそのまま配る（DB から読み直すものは無い）
 func TestListenChangesPublishesCupEmergencyCancellations(t *testing.T) {
 	db, dsn := openListenTestDB(t)
@@ -311,7 +311,7 @@ func TestListenChangesPublishesCupEmergencyCancellations(t *testing.T) {
 	sendNotify(t, db, cupEmergencyCancelledChannel, uuid.NewString()+" "+theirs.String())
 	cancelled(theirs)
 
-	// 形の分からない知らせは、どの入れ直しか分からないので配らない
+	// 形の分からない知らせは、どの淹れ直しか分からないので配らない
 	sendNotify(t, db, cupEmergencyCancelledChannel, uuid.NewString()+" x")
 	noBroadcast(t, hub)
 }

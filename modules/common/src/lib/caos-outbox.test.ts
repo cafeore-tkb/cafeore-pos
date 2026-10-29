@@ -5,6 +5,7 @@ import {
   assignWrites,
   buildCaosCards,
   caosLane,
+  caosStateJSON,
   mergeWrites,
 } from "./caos-board";
 import {
@@ -36,6 +37,7 @@ const blend: Cup["item"] = {
     needs_brew: true,
     senior_only: false,
     iced_brew: false,
+    serve_with_snack: false,
   },
 };
 
@@ -277,6 +279,37 @@ describe("unit: caos-outbox 重ねて表示", () => {
     );
   });
 
+  test("担当者の学年は交代と入れ替えで名前と一緒に扱い、自由入力では消える", () => {
+    const lanes = emptyCaosLanes(DAY).lanes;
+    const change = entry({
+      kind: "lane",
+      dripper: 1,
+      name: "山田",
+      senior: false,
+      grade: "B2",
+      before: "",
+    });
+    const swap = entry({
+      kind: "swap",
+      first: 1,
+      second: 2,
+      names: ["山田", ""],
+    });
+    const current = overlayCaosLanes(lanes, [change, swap], DAY);
+    expect(current[1]).toMatchObject({ name: "山田", grade: "B2" });
+    const typed = entry({
+      kind: "lane",
+      dripper: 2,
+      name: "手入力",
+      senior: false,
+      before: "山田",
+    });
+    expect(overlayCaosLanes(current, [typed], DAY)[1]).toMatchObject({
+      name: "手入力",
+      grade: "",
+    });
+  });
+
   test("交代は、届いた担当者が押したときのままのときだけ重ねる（ほかの端末が先に替えていれば、サーバーの今のまま）", () => {
     const lanes = (name: string) =>
       emptyCaosLanes(DAY).lanes.map((lane) =>
@@ -363,6 +396,61 @@ describe("unit: caos-outbox 送る", () => {
   });
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("破棄を送信し、同じ終了カードの反映後は再送せず、通常終了との競合は断る", async () => {
+    const original = cup("a", {
+      dripper: 1,
+      dripperPosition: 1,
+      dripId: "original",
+      brewStartedAt: NOW,
+      emergencies: [
+        {
+          id: "redo",
+          createdAt: NOW,
+          reason: "抽出ミス",
+          dripper: null,
+          dripperPosition: null,
+          dripId: null,
+          brewStartedAt: null,
+          brewFinishedAt: null,
+        },
+      ],
+    });
+    const op = entry({
+      kind: "discard",
+      request: {
+        cup_ids: ["a"],
+        before: caosStateJSON(original),
+        drip_id: "discarded",
+      },
+    });
+    const initial = orders(original);
+    const live = setup([op], initial);
+    await live.outbox.kick();
+    expect(live.sent).toHaveLength(1);
+    expect(live.sent[0]).toMatchObject({
+      kind: "discard",
+      request: { drip_id: "discarded", cup_ids: ["a"] },
+    });
+    live.outbox.stop();
+    const reflected = setup(
+      [op],
+      orders({ ...original, dripId: "discarded", brewFinishedAt: SERVER_T }),
+    );
+    await reflected.outbox.kick();
+    expect(reflected.sent).toHaveLength(0);
+    expect(reflected.items()).toHaveLength(0);
+    reflected.outbox.stop();
+    const conflict = setup(
+      [op],
+      orders({ ...original, brewFinishedAt: SERVER_T }),
+    );
+    await conflict.outbox.kick();
+    expect(conflict.sent).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(conflict.rejected).toHaveLength(1);
+    conflict.outbox.stop();
   });
 
   test("送信中だけロックし、反映待ち中は別タブに解放する。再送タイマーもロックを取る", async () => {
@@ -776,6 +864,34 @@ describe("unit: caos-outbox 送る", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     expect(changed.sent).toEqual([]);
     expect(changed.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
+  });
+
+  test("入れ替えの名前だけ一致しても学年が異なれば反映済みにしない", async () => {
+    const lanes: CaosLanes = {
+      day: DAY,
+      lanes: emptyCaosLanes(DAY).lanes.map((lane) =>
+        lane.dripper === 1
+          ? { ...lane, name: "B", grade: "B9" }
+          : lane.dripper === 2
+            ? { ...lane, name: "A", grade: "B1" }
+            : lane,
+      ),
+    };
+    const swap = entry(
+      {
+        kind: "swap",
+        first: 1,
+        second: 2,
+        names: ["A", "B"],
+        grades: ["B1", "B2"],
+      },
+      "入れ替え",
+    );
+    const result = setup([swap], [], [], lanes);
+    await result.outbox.kick();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(result.sent).toEqual([]);
+    expect(result.rejected.map(([label]) => label)).toEqual(["入れ替え"]);
   });
 
   describe("交代", () => {

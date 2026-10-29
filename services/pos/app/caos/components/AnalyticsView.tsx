@@ -25,6 +25,7 @@ import {
 } from "../logic/analytics";
 import type { CardLooks } from "../logic/cards";
 import type { Lane } from "../logic/lanes";
+import { BrewStatsPanel } from "./BrewStatsPanel";
 
 // 実績（補助のタブ）。集計は logic/analytics.ts
 
@@ -91,9 +92,16 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
   const typeLabel = (type: string) => typeNames.get(type) ?? type;
   const formatBucket = (timestamp: number) => jstClock(timestamp).slice(0, 5);
 
+  if (liveAnalytics)
+    return (
+      <div className="space-y-3">
+        <BrewStatsPanel />
+        <OperationsDashboard compact />
+      </div>
+    );
+
   return (
     <div className="space-y-3">
-      {liveAnalytics && <OperationsDashboard compact />}
       {!liveAnalytics && (
         <p className="text-slate-500 text-xs">
           練習の実績です。本番の注文・操作ログとは分離しています。

@@ -43,7 +43,7 @@ export type CashierDraft = {
   selected: number | null;
   zone: CashierZone;
   step: CashierStep;
-  /** 引換券番号（0〜3 桁） */
+  /** 引換券番号（過去の最大注文番号に合わせた桁数） */
   coupon: string;
   /** 特殊な割引（今年以外の引換券で 1 杯分） */
   special: boolean;
@@ -62,6 +62,15 @@ export type CashierDraft = {
 };
 
 export const COUPON_DIGITS = 3;
+
+export const couponDigitsForOrders = (
+  orders: readonly WithId<OrderEntity>[],
+): number =>
+  Math.max(
+    COUPON_DIGITS,
+    String(orders.reduce((max, order) => Math.max(max, order.orderId), 0))
+      .length,
+  );
 /** 受取金額の桁数（¥999,999 まで） */
 const RECEIVED_MAX_DIGITS = 6;
 const RECEIVED_MAX = 999_999;
@@ -175,18 +184,20 @@ export const addChordLine = (
   return addLine({ ...draft, lines }, menu);
 };
 
-/** 行を削除する（一覧から消す。戻すときはもう一度足す）。選んでいた行は外す */
+/**
+ * 行を削除する（一覧から消す。戻すときはもう一度足す）。
+ * 次の行を選ぶ（続けて Backspace で削除、Space で指名できるように）。
+ * 一番下の行を消したら、残っている一番下の行を選ぶ。行が無くなったら引換券番号の欄に移る
+ */
 export const removeLine = (
   draft: CashierDraft,
   index: number,
 ): CashierDraft => {
   if (!canEditLines(draft) || !draft.lines[index]) return draft;
-  return {
-    ...draft,
-    lines: draft.lines.filter((_, i) => i !== index),
-    selected: null,
-    zone: "coupon",
-  };
+  const lines = draft.lines.filter((_, i) => i !== index);
+  return lines.length > 0
+    ? { ...draft, lines, selected: Math.min(index, lines.length - 1) }
+    : { ...draft, lines, selected: null, zone: "coupon" };
 };
 
 /** 全部の行を削除する */
@@ -316,8 +327,9 @@ export const couponStatus = (
   orders: readonly WithId<OrderEntity>[],
 ): CouponStatus => {
   if (coupon.length === 0) return { kind: "empty" };
-  if (coupon.length < COUPON_DIGITS) {
-    return { kind: "partial", remaining: COUPON_DIGITS - coupon.length };
+  const couponDigits = couponDigitsForOrders(orders);
+  if (coupon.length < couponDigits) {
+    return { kind: "partial", remaining: couponDigits - coupon.length };
   }
   const orderId = Number(coupon);
   const status = getDiscountOrderStatus(orderId, [...orders]);
@@ -326,7 +338,7 @@ export const couponStatus = (
   return { kind: status === "available" ? "unserved" : status };
 };
 
-/** 3 桁を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない・返金した番号） */
+/** 引換券番号を照らし合わせて、割引できなかったか（使用済み・まだ提供されていない・返金した番号） */
 export const isCouponRejected = (status: CouponStatus): boolean =>
   status.kind === "already_used" ||
   status.kind === "unserved" ||
@@ -376,7 +388,7 @@ export const setMemo = (draft: CashierDraft, memo: string): CashierDraft => ({
 
 /**
  * 数字を打つ。入れる段階は引換券番号に（行・備考を選んでいれば引換券番号の欄に移る）、
- * 3 桁そろって割引できれば備考に移る。割引できない 3 桁なら引換券番号の欄に残り、
+ * 必要な桁がそろって割引できれば備考に移る。必要な桁がそろっても割引できないなら引換券番号の欄に残り、
  * 次に打った数字で消して 1 桁目から打ち直す。会計の段階は受取金額に足す（現金にする）
  *
  * checkCoupon は引換券番号を過去の注文と照らし合わせる（couponStatus）。渡さなければ照らし合わせない
@@ -385,6 +397,7 @@ export const inputDigits = (
   draft: CashierDraft,
   digits: string,
   checkCoupon?: (coupon: string) => CouponStatus,
+  couponDigits = COUPON_DIGITS,
 ): CashierDraft => {
   if (draft.step === "entry") {
     if (!canInputCoupon(draft)) return draft;
@@ -392,9 +405,9 @@ export const inputDigits = (
       checkCoupon !== undefined && isCouponRejected(checkCoupon(coupon));
     const current = toCouponZone(draft);
     const typed = rejected(current.coupon) ? "" : current.coupon;
-    const coupon = (typed + digits).slice(0, COUPON_DIGITS);
+    const coupon = (typed + digits).slice(0, couponDigits);
     const completed =
-      typed.length < COUPON_DIGITS && coupon.length === COUPON_DIGITS;
+      typed.length < couponDigits && coupon.length === couponDigits;
     return {
       ...current,
       coupon,
@@ -416,10 +429,11 @@ export const inputPadDigits = (
   draft: CashierDraft,
   digits: string,
   checkCoupon?: (coupon: string) => CouponStatus,
+  couponDigits = COUPON_DIGITS,
 ): CashierDraft =>
   isAssigningByDigits(draft)
     ? assignByDigit(draft, digits)
-    : inputDigits(draft, digits, checkCoupon);
+    : inputDigits(draft, digits, checkCoupon, couponDigits);
 
 /** 1 桁消す（入れる段階は引換券番号の欄に移る） */
 export const deleteDigit = (draft: CashierDraft): CashierDraft => {
@@ -463,6 +477,10 @@ export const setExactReceived = (
     payment: "cash",
   };
 };
+
+/** Enter で受取金額をちょうどにするか（会計の段階・現金・受取金額が空）。もう一度 Enter で確定 */
+export const isExactOnEnter = (draft: CashierDraft): boolean =>
+  draft.step === "pay" && draft.payment === "cash" && draft.received === "";
 
 // --------------------------------------------------
 // 段階・決済手段
@@ -528,10 +546,11 @@ type KeyContext = {
   held?: readonly string[];
   /** 押しているキーで足した行。同時押しがそろったら同時押しの商品に置き換える */
   heldLineKeys?: readonly number[];
-  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さない */
+  /** キーを押したままの繰り返し（keydown の repeat）。同時押しの商品は足し直さず、行も消さない */
   repeat?: boolean;
   /** 引換券番号を過去の注文と照らし合わせる（inputDigits） */
   checkCoupon?: (coupon: string) => CouponStatus;
+  couponDigits?: number;
 };
 
 const NONE: CashierKeyIntent = { type: "none" };
@@ -546,8 +565,10 @@ const update = (draft: CashierDraft): CashierKeyIntent => ({
  * - 商品キー: 商品を足す（入れる段階だけ）。同時押し（「a+s」）は、押しているキーがそろったときに足し、
  *   先に押したキーで足した行を置き換える
  * - 数字: 行を選んでいれば指名（1〜6 は 1st〜6th、0 は指名なし）。
- *   選んでいなければ、入れる段階は引換券番号（3 桁で割引できれば備考に移る）、会計の段階は受取金額
- * - Backspace: 行を選んでいれば削除（一覧から消す）、でなければ数字を 1 桁消す
+ *   選んでいなければ、入れる段階は引換券番号（必要な桁で割引できれば備考に移る）、会計の段階は受取金額
+ * - Backspace: 行を選んでいれば削除（一覧から消し、次の行を選ぶ。一番下なら残っている一番下の行）、
+ *   でなければ数字を 1 桁消す。
+ *   押したままの繰り返しでは行を消さない（次の行まで続けて消さないよう、1 行ずつ押し直す）
  * - ↑↓: 入れる段階は 商品 → 割引 → 備考、会計の段階は決済手段
  * - →: 入れる段階は一括会計（右の会計の列に移る）。会計の段階では何もしない
  * - Space: 選んでいる行の指名・備考を開く
@@ -565,6 +586,7 @@ export const cashierKeyIntent = (
     heldLineKeys = [],
     repeat = false,
     checkCoupon,
+    couponDigits = COUPON_DIGITS,
   }: KeyContext,
 ): CashierKeyIntent => {
   // 同時押しは、そのキーのどれかを押したときだけ（Shift などを押し足したときは足さない）
@@ -590,15 +612,14 @@ export const cashierKeyIntent = (
         ? update(assignByDigit(draft, key))
         : NONE;
     }
-    return update(inputDigits(draft, key, checkCoupon));
+    return update(inputDigits(draft, key, checkCoupon, couponDigits));
   }
   switch (key) {
     case "Backspace":
-      return update(
-        draft.selected !== null
-          ? removeLine(draft, draft.selected)
-          : deleteDigit(draft),
-      );
+      if (draft.selected !== null) {
+        return repeat ? NONE : update(removeLine(draft, draft.selected));
+      }
+      return update(deleteDigit(draft));
     case "ArrowRight":
       return canGoPay(draft) ? { type: "goPay" } : NONE;
     case "ArrowLeft":
@@ -629,7 +650,7 @@ export const cashierKeyIntent = (
         if (draft.payment !== "cash") {
           return { type: "startSquare", paymentType: draft.payment };
         }
-        return draft.received === ""
+        return isExactOnEnter(draft)
           ? { type: "exactReceived" }
           : { type: "submitCash" };
       }

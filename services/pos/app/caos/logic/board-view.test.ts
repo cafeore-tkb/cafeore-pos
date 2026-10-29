@@ -53,6 +53,7 @@ const item = {
     needs_brew: true,
     senior_only: false,
     iced_brew: false,
+    serve_with_snack: false,
   },
 } as Cup["item"];
 
@@ -122,6 +123,47 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       { orderNo: 2, cards: ["cups:cup-2-0"] },
       { orderNo: 3, cards: ["m"] },
     ]);
+  });
+
+  test("淹れ直した元の杯だけを破棄候補にし、取消・ラベル再発行・完了は除外する", () => {
+    const emergency = {
+      id: "redo",
+      createdAt: new Date(T0.getTime() + 60_000),
+      reason: "抽出ミス",
+      dripper: null,
+      dripperPosition: null,
+      dripId: null,
+      brewStartedAt: null,
+      brewFinishedAt: null,
+    };
+    const source = order(1000, [
+      {
+        dripper: 1,
+        dripId: "original",
+        dripperPosition: 1,
+        brewStartedAt: T0,
+        emergencies: [emergency],
+      },
+    ]);
+    const other = order(1001, [
+      { dripper: 1, dripId: "original", dripperPosition: 1, brewStartedAt: T0 },
+    ]);
+    const candidates = () => {
+      const board = buildCaosCards([source, other]);
+      return cardLooks(board, [], new Map())
+        .get("original")
+        ?.discardCandidates?.map((cup) => cup.id);
+    };
+    expect(candidates()).toEqual(["cup-1000-0"]);
+    source.cups[0].emergencies[0].reason = "ラベル再発行";
+    expect(candidates()).toEqual([]);
+    source.cups[0].emergencies = [];
+    expect(candidates()).toEqual([]);
+    emergency.reason = "抽出ミス";
+    source.cups[0].emergencies = [emergency];
+    source.cups[0].brewFinishedAt = new Date(T0.getTime() + 120_000);
+    other.cups[0].brewFinishedAt = source.cups[0].brewFinishedAt;
+    expect(candidates()).toEqual([]);
   });
 
   test("ヘッダーの数は注文の数（統合したカードは中の注文をみな、分けた注文は 1 つ）と杯数", () => {
@@ -276,7 +318,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(staysInLane([alone], alone, 4)).toBe(true);
   });
 
-  test("未割当の入れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
+  test("未割当の淹れ直し（緊急）は、注文の別の行にして先頭に置く", () => {
     const emergency = {
       id: "e1",
       createdAt: T0,
@@ -315,6 +357,68 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     });
     // 統合したカードそのものには付けない
     expect(looks.get("m8")?.split).toBeUndefined();
+  });
+
+  test("同一注文の通常と緊急の混在カードも、通常の分割に1枚として数える", () => {
+    const mixed = buildCaosCards([
+      order(8, [
+        {
+          dripId: "mixed-8",
+          dripper: 2,
+          dripperPosition: 1,
+          emergencies: [
+            {
+              id: "emergency-8",
+              createdAt: T0,
+              reason: "抽出ミス",
+              dripId: "mixed-8",
+              dripper: 2,
+              dripperPosition: 1,
+              brewStartedAt: null,
+              brewFinishedAt: null,
+            },
+          ],
+        },
+        {},
+      ]),
+    ]);
+    const looks = cardLooks(mixed, [], new Map());
+    // 元の2杯に淹れ直しを加えた3杯ではなく、通常2杯を2枚に分けている。
+    expect(looks.get("mixed-8")?.split).toEqual({ total: 2, cups: 2 });
+    expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
+  });
+
+  test("他注文の緊急を混ぜても通常の分割数に入れず、通常の杯だけを数える", () => {
+    const mixed = buildCaosCards([
+      order(8, [{ dripId: "mixed-8-9", dripper: 2, dripperPosition: 1 }, {}]),
+      order(9, [
+        {
+          dripId: "original-9",
+          dripper: 3,
+          dripperPosition: 1,
+          brewStartedAt: T0,
+          brewFinishedAt: T0,
+          emergencies: [
+            {
+              id: "emergency-9",
+              createdAt: T0,
+              reason: "抽出ミス",
+              dripId: "mixed-8-9",
+              dripper: 2,
+              dripperPosition: 1,
+              brewStartedAt: null,
+              brewFinishedAt: null,
+            },
+          ],
+        },
+      ]),
+    ]);
+    const looks = cardLooks(mixed, [], new Map());
+    expect(looks.get("cups:cup-8-1")?.split).toEqual({ total: 2, cups: 2 });
+    // #9の通常抽出は1枚だけ。緊急が別カードにあっても分割扱いにしない。
+    expect(looks.get("original-9")?.split).toBeUndefined();
+    // 複数注文を含むカードそのものへは、従来どおり分割の札を付けない。
+    expect(looks.get("mixed-8-9")?.split).toBeUndefined();
   });
 
   test("注文を選ぶと、その注文の入った統合したカードも当たる（統合したカードを選ぶと中の注文のカードも）", () => {
@@ -438,7 +542,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     expect(actions(first.queued[0], idle)).toBe(
       "assign:2 assign:3 assign:4 assign:5 assign:6 start unassign",
     );
-    // 待機の有無で完了の操作は変わらない。終わったカードは入れ直しだけ
+    // 待機の有無で完了の操作は変わらない。終わったカードは淹れ直しだけ
     const alone = { ...first, queued: [] };
     expect(actions(first.brewing, alone)).toBe("emergency finish");
     const done = { ...first.brewing, status: "done" as const };
@@ -512,7 +616,7 @@ describe("[unit] CaOS の盤面の見せ方", () => {
     });
   });
 
-  test("予定の時刻は 1 杯 5 分・2 杯 6 分の抽出と、15 秒の入れ替え", () => {
+  test("実績がないときは1杯5分・2杯6分を使い、待機カード間の入れ替え時間を足さない", () => {
     // 1st：#1（1 杯）を抽出中、#6（2 杯）と #5（1 杯）が待機
     const [lane] = boardLanes(
       buildCaosCards([
@@ -535,8 +639,8 @@ describe("[unit] CaOS の盤面の見せ方", () => {
       ]),
     ).toEqual([
       ["d1", 0, 300],
-      ["d6", 315, 675],
-      ["d5", 690, 990],
+      ["d6", 300, 660],
+      ["d5", 660, 960],
     ]);
     expect(laneStatus(lane, T0.getTime()).remainingSec).toBe(300);
   });
@@ -737,7 +841,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     createdAt: new Date(T0.getTime() - minutesAgo * 60_000),
   });
   // #1：20 分前・1st で抽出中、#2：10 分前・未割当、#3：提供済み、#4：抽出を終えたが提供していない、#5：1 杯だけ準備完了、
-  // #6：提供済みのカップを入れ直した（入れ直しが未割当）。#7 は下に
+  // #6：提供済みのカップを淹れ直した（淹れ直しが未割当）。#7 は下に
   const rebrew = {
     id: "e6",
     createdAt: T0,
@@ -755,7 +859,7 @@ describe("[unit] CaOS の未完了の注文とタブの印", () => {
     at(2, 10, [{}]),
     at(3, 30, [{ readyAt: T0, servedAt: T0 }]),
     at(6, 0, [{ readyAt: T0, servedAt: T0, emergencies: [rebrew] }]),
-    // #7：「次へ」を押し忘れたまま提供済みにした（入れ直しではないので出さない）
+    // #7：「次へ」を押し忘れたまま提供済みにした（淹れ直しではないので出さない）
     at(7, 40, [
       {
         dripper: 3,

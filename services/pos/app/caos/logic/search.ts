@@ -30,7 +30,7 @@ export interface FoundOrder {
   /** 準備完了（提供済みも）のカップの数と、全部の数 */
   readyCups: number;
   cups: number;
-  /** 緊急（入れ直し）を足したカップがある */
+  /** 緊急（淹れ直し）を足したカップがある */
   emergency: boolean;
   /** その注文のカップの入ったカード（盤面の並び。未割当のうちに準備完了にして盤面に出なくなったカップは入らない） */
   cards: FoundCard[];

@@ -1,5 +1,5 @@
 import { Mic, Square } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFloatingWindow } from "./FloatingWindows";
 
 // Web Speech API の標準名と Safari/Chrome の接頭辞付き実装の両方を扱う。
@@ -29,10 +29,17 @@ export const VoiceComment = ({
   orderId,
   sending,
   send,
+  inline,
 }: {
   orderId: string;
   sending: boolean;
   send: (orderId: string, text: string) => Promise<boolean>;
+  /** コメントパネルでは同じ下書きへ入力し、別の音声用入力欄を出さない。 */
+  inline?: {
+    text: string;
+    onChange: (text: string) => void;
+    onBusyChange: (busy: boolean) => void;
+  };
 }) => {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<
@@ -40,17 +47,19 @@ export const VoiceComment = ({
   >("idle");
   const listening = phase === "listening";
   const voiceBusy = phase !== "idle";
-  const [text, setText] = useState("");
+  const [ownText, setOwnText] = useState("");
+  const text = inline?.text ?? ownText;
+  const setText = inline?.onChange ?? setOwnText;
   const [message, setMessage] = useState("");
   const floating = useFloatingWindow(
     `音声コメント ${orderId.slice(0, 6)}`,
-    open,
+    open && !inline,
   );
   const panelRef = useRef<HTMLDivElement | null>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognition = useRef<Recognition | null>(null);
-  const stop = () => {
+  const stop = useCallback(() => {
     const active = recognition.current;
     recognition.current = null;
     if (active) {
@@ -61,7 +70,19 @@ export const VoiceComment = ({
       active.abort();
     }
     setPhase("idle");
-  };
+  }, []);
+  const inlineBusyChange = inline?.onBusyChange;
+  useEffect(() => {
+    inlineBusyChange?.(voiceBusy);
+    return () => inlineBusyChange?.(false);
+  }, [inlineBusyChange, voiceBusy]);
+  const inlineMode = Boolean(inline);
+  useEffect(() => {
+    if (inlineMode && floating.hidden) {
+      stop();
+      setOpen(false);
+    }
+  }, [inlineMode, floating.hidden, stop]);
   useEffect(
     () => () => {
       const active = recognition.current;
@@ -77,7 +98,7 @@ export const VoiceComment = ({
   );
 
   useEffect(() => {
-    if (!open || floating.hidden) return;
+    if (!open || floating.hidden || inline) return;
     let typingAtPress = false;
     const rememberTyping = () => {
       typingAtPress = document.activeElement === inputRef.current;
@@ -107,7 +128,7 @@ export const VoiceComment = ({
       document.removeEventListener("pointerdown", rememberTyping, true);
       document.removeEventListener("click", closeOutside, true);
     };
-  }, [open, voiceBusy, sending, floating.hidden, floating.hide]);
+  }, [open, voiceBusy, sending, floating.hidden, floating.hide, inline]);
 
   const start = () => {
     if (recognition.current || sending) return;
@@ -214,7 +235,7 @@ export const VoiceComment = ({
         }
         aria-pressed={voiceBusy}
         title={phase === "starting" ? "音声入力の開始を中止" : buttonLabel}
-        disabled={sending}
+        disabled={sending && !voiceBusy}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
@@ -238,7 +259,21 @@ export const VoiceComment = ({
           {buttonLabel}
         </span>
       </button>
-      {open && (
+      {inline && open && (voiceBusy || message) && (
+        <output
+          className="w-full text-[12px] text-slate-600"
+          aria-live="polite"
+        >
+          {phase === "starting"
+            ? "音声入力を準備中… マイクの許可を確認してください"
+            : phase === "stopping"
+              ? "音声を文字にしています…"
+              : listening
+                ? "聞き取り中… 停止後、入力欄で編集して送信できます"
+                : message}
+        </output>
+      )}
+      {open && !inline && (
         <div
           ref={(element) => {
             panelRef.current = element;

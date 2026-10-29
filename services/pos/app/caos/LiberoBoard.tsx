@@ -11,8 +11,14 @@ import { brewStarts } from "./logic/timeline";
 // リベロ用の閲覧画面。実際のドリッパーの並びに合わせ、右端から1〜6で固定する。
 export default function LiberoBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, sound, flashKeys } = useViewBoard(nowMs, brewStarts);
-  const lanes = useMemo(() => boardLanes(cards), [cards]);
+  const { cards, sound, flashKeys, predictBrew } = useViewBoard(
+    nowMs,
+    brewStarts,
+  );
+  const lanes = useMemo(
+    () => boardLanes(cards, predictBrew),
+    [cards, predictBrew],
+  );
   const rows = liberoLanes(lanes, nowMs);
   const priorities = nextIntensities(rows);
 

@@ -9,7 +9,6 @@ import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
-  COUPON_DIGITS,
   type CashierDraft,
   type CashierLine,
   type CouponStatus,
@@ -24,9 +23,9 @@ import { menuColor } from "./MenuPanel";
 type props = {
   draft: CashierDraft;
   couponStatus: CouponStatus;
-  /** 入力中の注文の割引額と、割引の対象の杯数 */
+  couponDigits: number;
+  /** 入力中の注文の割引額 */
   discount: number;
-  coffeeCups: number;
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
   canCancelPayment: boolean;
   onSelect: (index: number) => void;
@@ -252,8 +251,8 @@ const LinesSection = ({
 const discountMessage = ({
   draft,
   couponStatus,
+  couponDigits,
   discount,
-  coffeeCups,
 }: props): { text: string; tone: "ok" | "bad" | "neutral" } => {
   if (draft.special) {
     return {
@@ -267,20 +266,32 @@ const discountMessage = ({
   switch (couponStatus.kind) {
     case "empty":
       return {
-        text: "3桁を入れると前回の注文を照合します（1杯 −¥100）",
+        text: `${couponDigits}桁を入れると前回の注文を照合します（1会計 −¥100）`,
         tone: "neutral",
       };
     case "partial":
       return { text: `あと ${couponStatus.remaining} 桁`, tone: "neutral" };
     case "available": {
-      const cups = couponStatus.order.getCoffeeCups();
-      const names = cups.map((cup) => cup.name).join("・");
-      const limit =
-        cups.length > coffeeCups ? ` 今回は${coffeeCups}杯まで` : "";
-      return {
-        text: `${cups.length}杯分 −${formatYen(discount)}（${names}）${limit}`,
-        tone: "ok",
-      };
+      // 前回の注文に何杯あっても、割り引くのは 1 会計につき 1 杯分
+      const names = couponStatus.order
+        .getCoffeeCups()
+        .map((cup) => cup.name)
+        .join("・");
+      if (names === "") {
+        return {
+          text: "前回の注文にコーヒーが無いので割引できません",
+          tone: "bad",
+        };
+      }
+      return discount > 0
+        ? {
+            text: `1会計 −${formatYen(discount)}（前回：${names}）`,
+            tone: "ok",
+          }
+        : {
+            text: `コーヒーを入れると割引します（前回：${names}）`,
+            tone: "neutral",
+          };
     }
     case "already_used":
       return {
@@ -308,7 +319,8 @@ const DiscountSection = (props: props) => {
   const locked = isDiscountLocked(draft);
   const specialBlocked = (!draft.special && couponApplied) || locked;
   const message = discountMessage(props);
-  const complete = draft.coupon.length === COUPON_DIGITS;
+  const couponDigits = props.couponDigits;
+  const complete = draft.coupon.length === couponDigits;
 
   return (
     <div className="flex flex-none flex-col gap-2 border-stone-200 border-t px-3.5 py-2.5">
@@ -349,10 +361,9 @@ const DiscountSection = (props: props) => {
             (draft.special || locked) && "opacity-40",
           )}
         >
-          {Array.from({ length: COUPON_DIGITS }, (_, i) => {
+          {Array.from({ length: couponDigits }, (_, i) => {
             const current =
-              editable &&
-              i === Math.min(draft.coupon.length, COUPON_DIGITS - 1);
+              editable && i === Math.min(draft.coupon.length, couponDigits - 1);
             const ring = !editable
               ? "1px var(--color-stone-300)"
               : `${current && !complete ? "3px" : "1.5px"} var(--color-orange-600)`;

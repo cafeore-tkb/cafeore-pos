@@ -15,10 +15,14 @@
 //
 // ElevenLabs の鍵は Worker の secret の ELEVENLABS_API_KEY。デプロイの workflow が GitHub の secret の
 // ELEVENLABS_API_KEY から --secrets-file で入れる（本番もプレビューも同じ）。
+//
+// Cloud Run の画面のサーバー（server/app.ts）もこのファイルをそのまま使う。溜めるところは R2 ではなく
+// GCS（server/gcs-bucket.ts）、鍵は Cloud Run の環境変数の ELEVENLABS_API_KEY（Secret Manager から）。
+// Workers と GCP で違うものは CallVoiceBucket・CallVoiceContext の形で受け取るので、ここには書かない。
 
 import { concatMp3 } from "./mp3";
 
-/** R2 のバケットのうち、ここで使うところだけ */
+/** R2 のバケットのうち、ここで使うところだけ（Cloud Run では GCS で同じ形を作る。server/gcs-bucket.ts） */
 export interface CallVoiceBucket {
   get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
   put(
@@ -214,7 +218,7 @@ const segmentAudio = async (
 
   const cached = await env.CALL_VOICES?.get(key).catch((error) => {
     // 読めなくても ElevenLabs で作れば流せるので、ログに残して進める
-    console.error("call-voice: R2 から読めなかった", error);
+    console.error("call-voice: 溜めたところ（R2・GCS）から読めなかった", error);
     return null;
   });
   if (cached) return { audio: await cached.arrayBuffer(), cache: "hit" };
@@ -259,6 +263,7 @@ const segmentAudio = async (
 
   if (env.CALL_VOICES) {
     // 溜めるのを待たずに返す。溜められなければ次の呼び出しでまた作る。
+    // （Cloud Run では返す前に待つ。返した後は CPU を絞られるため。server/app.ts）
     // 返す方と取り合わないよう、溜める方には写しを渡す
     ctx.waitUntil(
       env.CALL_VOICES.put(key, audio.slice(0), {
@@ -266,7 +271,10 @@ const segmentAudio = async (
         // R2 の中を見たときに何の音声か分かるように（ヘッダーに載るので URL エンコードする）
         customMetadata: { text: encodeURIComponent(segment) },
       }).catch((error) => {
-        console.error("call-voice: R2 に溜められなかった", error);
+        console.error(
+          "call-voice: 溜めるところ（R2・GCS）に溜められなかった",
+          error,
+        );
       }),
     );
   }

@@ -8,6 +8,15 @@ export interface paths {
     /** サーバーステータス取得 */
     get: operations["getStatus"];
   };
+  "/api/me": {
+    /**
+     * API を呼んだ相手と権限
+     * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_ADMIN_EMAILS・AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+     * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+     * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+     */
+    get: operations["getMe"];
+  };
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
@@ -75,12 +84,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -93,12 +102,13 @@ export interface paths {
     get: operations["getLabelPrintRequests"];
     /**
      * シールをレジに代わりに刷ってもらう（代理印刷）
-     * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（入れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
+     * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（淹れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
      * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
      * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
      * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-     * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-     * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+     * id は淹れ直しの id。淹れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+     * 消えた淹れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+     * 緊急を取り消す・注文の編集や削除で淹れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
      * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
      */
     post: operations["createLabelPrintRequest"];
@@ -206,6 +216,14 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/brew-model": {
+    /** 共通の抽出予測と開始時の予測を取得 */
+    get: operations["getCaosBrewModel"];
+  };
+  "/api/caos/brew-records": {
+    /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+    get: operations["getCaosBrewRecords"];
+  };
   "/api/caos/logs/export": {
     /**
      * CaOSログを人間のみ・システムのみ・混合で書き出す
@@ -225,12 +243,16 @@ export interface paths {
      */
     post: operations["createCaosLogs"];
   };
+  "/api/caos/discard": {
+    /** 淹れ直し元の抽出を破棄して終了する */
+    post: operations["DiscardCaosCups"];
+  };
   "/api/caos/cups": {
     /**
      * CaOS が決めたことを注文のカップに書く
-     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+     * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と淹れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
      * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
-     * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
+     * cup_ids にはカップの id か淹れ直しの id を入れる（淹れ直しは、その行の列を書く。指名・商品・注文は淹れ直したカップのもの）。以下の「カップ」は淹れ直しも含む。
      * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
      * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
      *
@@ -243,7 +265,7 @@ export interface paths {
      * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
      * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
      * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
-     * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
+     * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。通常終了は「次へ」、淹れ直し元の破棄は POST /api/caos/discard。
      *
      * 確かめること：
      * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
@@ -265,7 +287,7 @@ export interface paths {
      * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
      * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
      * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-     * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+     * カードの通常終了はこの「次へ」（淹れ直し元の破棄は POST /api/caos/discard）（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
      * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
      * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
      * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -274,32 +296,33 @@ export interface paths {
   };
   "/api/cup-emergencies": {
     /**
-     * カップを緊急（入れ直し）にする
-     * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
-     * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
-     * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+     * カップを緊急（淹れ直し）にする
+     * @description カップ 1 杯につき淹れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも淹れ直せる。カップの列（最初の抽出の記録）は変えない。
+     * 淹れ直しは CaOS で未割当の淹れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+     * （cup_ids に淹れ直しの id を入れる。列は淹れ直しの行のもの）。
      * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
      * 今日（日本時間）の注文の、抽出が要るカップだけ。
-     * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+     * 淹れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
      * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
      */
     post: operations["createCupEmergencies"];
   };
   "/api/cup-emergencies/reasons": {
     /**
-     * よく使う緊急（入れ直し）の理由
-     * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+     * よく使う緊急（淹れ直し）の理由
+     * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の淹れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い淹れ直しは数えない。
      */
     get: operations["getCupEmergencyReasons"];
   };
   "/api/cup-emergencies/{id}": {
     /**
-     * 緊急（入れ直し）を取り消す
-     * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
-     * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+     * 緊急（淹れ直し）を取り消す
+     * @description 押し間違えた淹れ直しを消す。まだ抽出を始めていない（未割当か待機の）淹れ直しだけ。淹れ直しで減らした在庫も戻す（減る在庫の行も消す）。
+     * 淹れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
      * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
-     * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
-     * レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+     * 画面は、この知らせを受けたときだけ、その淹れ直しの未印刷のシールを消す。
+     * レジに頼んだ代理印刷（POST /api/label-print-requests の id が淹れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+     * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の淹れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
      */
     delete: operations["deleteCupEmergency"];
   };
@@ -342,7 +365,9 @@ export interface paths {
     get: operations["getMasterState"];
     /**
      * オーダーストップ・再開
-     * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+     * @description 状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+     * expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+     * 履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
      * オーダーストップの状態を書くのはここだけ。
      */
     post: operations["updateMasterState"];
@@ -351,12 +376,12 @@ export interface paths {
     /**
      * 在庫の残量一覧
      * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
-     * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+     * 使った量は、注文を受けたとき・淹れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
      * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
      *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
      *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
      *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
-     *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+     *   - 緊急（淹れ直し）：淹れ直しを足した時刻（取り消せば数えない）
      * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
      */
     get: operations["getInventory"];
@@ -583,6 +608,31 @@ export interface paths {
      */
     post: operations["receiveSquareWebhook"];
   };
+  "/api/admin/data-reset": {
+    /**
+     * 営業データのリセットの前の状態
+     * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+     * （PR のプレビューは AUTH_PREVIEW_ADMIN で管理者としてログインした扱いなので使える）。
+     * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
+     */
+    get: operations["getDataResetStatus"];
+    /**
+     * 営業データを消す
+     * @description 管理者だけ。注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録・受付状態の履歴などを消し、
+     * メニュー・アイテム・在庫対象・色・プリンター・Square 端末の設定は残す。DB のユーザーやスキーマには触らない。
+     * 受付を止めていて、消す直前の中身が backupSha256 のバックアップ（GET /api/admin/data-reset/backup）と同じで、
+     * confirmation が確認の文字と同じときだけ消す。消したら WebSocket で data_reset を配る。
+     */
+    post: operations["resetData"];
+  };
+  "/api/admin/data-reset/backup": {
+    /**
+     * 営業データのリセットで消す表の中身を全部書き出す
+     * @description 管理者だけ。消す表の全行を、表ごとに決まった順で JSON にする（同じ中身なら同じバイト列になる）。
+     * リセットのときは、このファイルの SHA-256 を backupSha256 に入れる。
+     */
+    get: operations["exportDataResetBackup"];
+  };
 }
 
 export type webhooks = Record<string, never>;
@@ -684,6 +734,8 @@ export interface components {
       senior_only: boolean;
       /** @description この種類のアイテムはアイスで淹れる（CaOS でアイスに対応していないドリッパーに割り振らない）。needs_brew が false なら必ず false */
       iced_brew: boolean;
+      /** @description この種類のアイテムにお菓子をつける */
+      serve_with_snack: boolean;
     };
     ItemTypeCreateRequest: {
       name: string;
@@ -705,6 +757,11 @@ export interface components {
        * @default false
        */
       iced_brew?: boolean;
+      /**
+       * @description お菓子をつける。省略したら false
+       * @default false
+       */
+      serve_with_snack?: boolean;
     };
     ItemTypeUpdateRequest: {
       /** Format: uuid */
@@ -719,6 +776,8 @@ export interface components {
       senior_only?: boolean;
       /** @description 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400 */
       iced_brew?: boolean;
+      /** @description お菓子をつける。省略したら今の値のまま */
+      serve_with_snack?: boolean;
     };
     MenuInfo: {
       /**
@@ -774,16 +833,16 @@ export interface components {
        * @description CaOS で抽出を終えた時刻（CaOS の「次へ」だけが付ける。提供の画面の準備完了・提供では付かない）。準備完了（ready_at）とは別に持つ
        */
       brew_finished_at: string | null;
-      /** @description このカップの緊急（入れ直し）。足した順。CaOS 以外の画面は読まない */
+      /** @description このカップの緊急（淹れ直し）。足した順。CaOS 以外の画面は読まない */
       emergencies: components["schemas"]["CupEmergencyResponse"][];
     };
-    /** @description 緊急（入れ直し）1 回。CaOS の入れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ） */
+    /** @description 緊急（淹れ直し）1 回。CaOS の淹れ直しのカードの列（意味は OrderCupResponse の同じ名前の列と同じ） */
     CupEmergencyResponse: {
       /** Format: uuid */
       id: string;
       /** Format: date-time */
       created_at: string;
-      /** @description 入れ直す理由（足したときに書いたもの。無ければ空） */
+      /** @description 淹れ直す理由（足したときに書いたもの。無ければ空） */
       reason: string;
       dripper: number | null;
       dripper_position: number | null;
@@ -923,9 +982,17 @@ export interface components {
       created_at: string;
       type: string;
     };
+    /** @description 確認した受付状態。履歴なしは type=operational、created_at=null。 */
+    MasterStateExpected: {
+      /** @enum {string} */
+      type: "stop" | "operational";
+      /** Format: date-time */
+      created_at: string | null;
+    };
     MasterStateUpdateRequest: {
       /** @enum {string} */
       type: "stop" | "operational";
+      expected?: components["schemas"]["MasterStateExpected"];
     };
     /**
      * @description 背景色を設定する対象の種類
@@ -984,6 +1051,14 @@ export interface components {
      * @enum {string}
      */
     PrinterPaperType: "receipt" | "die_cut_label";
+    /**
+     * @description ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+     * blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+     * peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+     *
+     * @enum {string}
+     */
+    LabelPrinterTrailingFeed: "blank_label" | "peeling";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -996,10 +1071,35 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
+       * @example true
+       */
+      label_printer_rotate_180: boolean;
+      label_printer_trailing_feed: components["schemas"]["LabelPrinterTrailingFeed"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -1013,10 +1113,36 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
+       * @example true
+       */
+      label_printer_rotate_180?: boolean;
+      /** @description 省略したら今の値のまま（設定できるようにする前のレジのため） */
+      label_printer_trailing_feed?: components["schemas"]["LabelPrinterTrailingFeed"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1113,7 +1239,7 @@ export interface components {
     CaosCupsWrite: {
       /**
        * Format: uuid
-       * @description 統合元の書き込みに付ける統合先の cup または入れ直しの ID。統合の向きを履歴に残す。
+       * @description 統合元の書き込みに付ける統合先の cup または淹れ直しの ID。統合の向きを履歴に残す。
        */
       merge_into?: string;
       cup_ids: string[];
@@ -1141,14 +1267,22 @@ export interface components {
        */
       sent_at: number;
     };
+    /** @description 元カードの対象だけを破棄する。drip_idは再送時も固定する破棄後のカードID。提供・在庫は変更しない。 */
+    CaosDiscardRequest: {
+      cup_ids: string[];
+      before: components["schemas"]["CaosCupState"];
+      /** Format: uuid */
+      drip_id: string;
+      press?: components["schemas"]["CaosPress"];
+    };
     CaosCupsWriteRequest: {
       writes: components["schemas"]["CaosCupsWrite"][];
       press?: components["schemas"]["CaosPress"];
     };
     CupEmergencyCreateRequest: {
-      /** @description 入れ直すカップ（1 杯につき入れ直しを 1 つ足す） */
+      /** @description 淹れ直すカップ（1 杯につき淹れ直しを 1 つ足す） */
       order_cup_ids: string[];
-      /** @description 入れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の入れ直しに付ける */
+      /** @description 淹れ直す理由（自由に書く。前後の空白は除く。省略・空なら理由なし）。足す全部の淹れ直しに付ける */
       reason?: string;
     };
     /**
@@ -1163,7 +1297,7 @@ export interface components {
     LabelPrintRequestCreateRequest: {
       /**
        * Format: uuid
-       * @description 頼みの id（入れ直しの id）
+       * @description 頼みの id（淹れ直しの id）
        */
       id: string;
       job: components["schemas"]["LabelPrintJob"];
@@ -1191,7 +1325,7 @@ export interface components {
       job?: components["schemas"]["LabelPrintJob"];
     };
     CupEmergencyCreateResponse: {
-      /** @description 足した入れ直しの id（order_cup_ids と同じ順） */
+      /** @description 足した淹れ直しの id（order_cup_ids と同じ順） */
       ids: string[];
     };
     CaosNextRequest: {
@@ -1212,8 +1346,55 @@ export interface components {
       start_drip_id?: string;
       press?: components["schemas"]["CaosPress"];
     };
+    CaosBrewEstimate: {
+      seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+    };
+    CaosBrewRecordResponse: {
+      /** Format: uuid */
+      drip_id: string;
+      /** Format: date-time */
+      started_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      dripper: number;
+      kind: string;
+      name: string;
+      grade: string;
+      predicted_seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+      actual_seconds: number | null;
+      excluded_reason: string;
+      person_excluded_reason: string;
+      model_version: string;
+    };
+    CaosBrewModelResponse: {
+      version: string;
+      /** Format: date-time */
+      updated_at: string;
+      standards: {
+        [key: string]: components["schemas"]["CaosBrewEstimate"];
+      };
+      lanes: {
+        dripper: number;
+        name: string;
+        grade: string;
+        estimates: {
+          [key: string]: components["schemas"]["CaosBrewEstimate"];
+        };
+      }[];
+      active: components["schemas"]["CaosBrewRecordResponse"][];
+    };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
+      /** @description シフト名簿で確認できた学年。空または省略時は不明 */
+      grade?: string;
       dripper: number;
       /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
       name: string;
@@ -1235,6 +1416,8 @@ export interface components {
       lanes: components["schemas"]["CaosLane"][];
     };
     CaosLaneUpdateRequest: {
+      /** @description シフト名簿で確認できた学年。自由入力や未確認時は省略 */
+      grade?: string;
       /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
       name: string;
       /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */
@@ -1255,9 +1438,78 @@ export interface components {
       first: number;
       second: number;
     };
+    /** @description API を呼んだ相手と、その権限。 */
+    MeResponse: {
+      /**
+       * @description API が相手を確かめて弾くか（AUTH_MODE）。
+       * off は確かめない（誰でも全部の操作ができる。email と role は null）。
+       * report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+       *
+       * @enum {string}
+       */
+      enforcement: "off" | "report-only" | "enforce";
+      /**
+       * @description JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+       * off のときと、report-only で JWT が無い・正しくないときは null
+       *
+       * @example register@id.cafeore.cafe
+       */
+      email: string | null;
+      /**
+       * @description admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+       * staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+       * enforce なら 403 になる）。off のときは null
+       *
+       * @enum {string|null}
+       */
+      role: "admin" | "staff" | "viewer" | "none" | null;
+    };
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
+    };
+    DataResetTable: {
+      /** @description 表の名前 */
+      name: string;
+      /**
+       * Format: int64
+       * @description 行数
+       */
+      rows: number;
+    };
+    DataResetStatus: {
+      /** @description 受付を止めているか（オーダーストップの最後の記録が stop）。止めていなければ消せない */
+      receptionStopped: boolean;
+      /** @description 消す表と今の行数 */
+      tables: components["schemas"]["DataResetTable"][];
+      /** @description 残す表（設定） */
+      keptTables: string[];
+      /** @description 消す表にも残す表にも入っていない表。1 つでもあれば消せない（API が DB より古いなど） */
+      unknownTables: string[];
+      /** @description 消すときに confirmation に入れる確認の文字 */
+      confirmation: string;
+    };
+    DataResetRequest: {
+      /** @description 確認の文字（DataResetStatus の confirmation） */
+      confirmation: string;
+      /** @description ダウンロードしたバックアップ（GET /api/admin/data-reset/backup）の SHA-256（16 進の小文字 64 文字） */
+      backupSha256: string;
+    };
+    DataResetResult: {
+      /** @description 消した表と、消した行数 */
+      tables: components["schemas"]["DataResetTable"][];
+    };
+    DataResetBackup: {
+      /** @enum {string} */
+      format: "cafeore-pos-data-reset-backup";
+      /** @enum {integer} */
+      version: 1;
+      /** @description 表の名前ごとの全行（DB の列名のままの JSON） */
+      tables: {
+        [key: string]: {
+          [key: string]: unknown;
+        }[];
+      };
     };
     /**
      * @description item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
@@ -1342,7 +1594,7 @@ export interface components {
       received: number;
       /**
        * Format: double
-       * @description counted_at より後に使った量（注文と入れ直し。使った時刻の決まりは GET /api/inventory）
+       * @description counted_at より後に使った量（注文と淹れ直し。使った時刻の決まりは GET /api/inventory）
        */
       consumed: number;
       /** @description counted_at より後に使った回数 */
@@ -1622,6 +1874,34 @@ export interface operations {
       200: {
         content: {
           "application/json": components["schemas"]["StatusResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * API を呼んだ相手と権限
+   * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_ADMIN_EMAILS・AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+   * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+   * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+   */
+  getMe: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MeResponse"];
+        };
+      };
+      /** @description JWT が無い・正しくない */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 権限が無い */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
     };
@@ -1927,7 +2207,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1941,7 +2221,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {
@@ -1981,12 +2261,13 @@ export interface operations {
   };
   /**
    * シールをレジに代わりに刷ってもらう（代理印刷）
-   * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（入れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
+   * @description 端末（CaOS・マスターの緊急）がラベル用のプリンターに直接刷れなかった緊急（淹れ直し）のシールを、代理印刷をオンにしたレジに刷ってもらう。
    * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
    * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
    * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-   * id は入れ直しの id。入れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-   * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+   * id は淹れ直しの id。淹れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+   * 消えた淹れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+   * 緊急を取り消す・注文の編集や削除で淹れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
    * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
    */
   createLabelPrintRequest: {
@@ -2006,8 +2287,8 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 入れ直しが無い（取り消した）。頼みは作らない */
-      404: {
+      /** @description 淹れ直しが無い（取り消した・注文の編集や削除で消えた）。頼みは作らない。頼んだ端末はそのシールを捨てる */
+      410: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2484,6 +2765,62 @@ export interface operations {
       };
     };
   };
+  /** 共通の抽出予測と開始時の予測を取得 */
+  getCaosBrewModel: {
+    responses: {
+      /** @description 店舗基準、現在の担当者の予測、抽出中の開始時予測 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewModelResponse"];
+        };
+      };
+      /** @description 取得失敗。画面は最後のモデルまたは固定値を使う */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+  getCaosBrewRecords: {
+    parameters: {
+      query?: {
+        day?: string;
+        limit?: number;
+        offset?: number;
+        /** @description 初回レスポンスの日時を次ページにも渡すと、その後の新規開始を混ぜない */
+        snapshot_at?: string;
+      };
+    };
+    responses: {
+      /** @description 開始時予測と完了実績 */
+      200: {
+        content: {
+          "application/json": {
+            entries: components["schemas"]["CaosBrewRecordResponse"][];
+            limit: number;
+            offset: number;
+            has_more: boolean;
+            /** Format: date-time */
+            snapshot_at: string;
+          };
+        };
+      };
+      /** @description パラメーター不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 取得失敗 */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /**
    * CaOSログを人間のみ・システムのみ・混合で書き出す
    * @description format=human（既定）は人間のみ、systemはシステムのみ、mixedは混合。entriesは日本時間・元のイベント名・category付きの時系列。systemとmixedはサーバーの成功履歴operationsとcup履歴cupsも含む。format=rawは従来の監査用全件出力。
@@ -2579,11 +2916,37 @@ export interface operations {
       };
     };
   };
+  /** 淹れ直し元の抽出を破棄して終了する */
+  DiscardCaosCups: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CaosDiscardRequest"];
+      };
+    };
+    responses: {
+      /** @description 破棄を記録しました */
+      204: {
+        content: never;
+      };
+      /** @description 対象または状態が不正です */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 対象が変更されました */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /**
    * CaOS が決めたことを注文のカップに書く
-   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と入れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
+   * @description CaOS（ドリップ管制）の盤面は、注文のカップ（OrderResponse の cups）と淹れ直し（cups の emergencies）の列（dripper・dripper_position・drip_id・brew_started_at・brew_finished_at）で持つ。
    * 割当・ドリッパーの移動・順番の入れ替え・未割当に戻す・統合は、どれもこの PUT でカップの列を書く。
-   * cup_ids にはカップの id か入れ直しの id を入れる（入れ直しは、その行の列を書く。指名・商品・注文は入れ直したカップのもの）。以下の「カップ」は入れ直しも含む。
+   * cup_ids にはカップの id か淹れ直しの id を入れる（淹れ直しは、その行の列を書く。指名・商品・注文は淹れ直したカップのもの）。以下の「カップ」は淹れ直しも含む。
    * writes の全部を 1 つのトランザクションで書く（どれか 1 つでも通らなければ何も書かない）。
    * 書いたカップの注文（順番をずらしたカップの注文も）は /api/ws/orders の {"type":"order"} で、このインスタンスにつないでいる画面に配る。
    *
@@ -2596,7 +2959,7 @@ export interface operations {
    * 抽出の時刻そのものは画面から送らない。列の先頭は抽出中で、カードを列の先頭に入れて始めるときは after の start_brew を true にし、サーバーが brew_started_at を付ける。
    * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。start_brew が false なら brew_started_at を消す。
    * 抽出中のカードも動かせる：先頭でない所（待機）・未割当に動かすと始めた時刻が消え、先頭に入れ直すと今から始め直す。
-   * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。終えるのは「次へ」だけ。
+   * 抽出中のある列の先頭に入れるときは、同じ writes で抽出中だったカードを待機（insert_before で待機の先頭）に下げる。通常終了は「次へ」、淹れ直し元の破棄は POST /api/caos/discard。
    *
    * 確かめること：
    * - before が今の値と違う（ほかの端末が先に書いた・注文の編集で消えた・「次へ」で始まった・順番がずれた）なら 409（楽観ロック）。画面は届いた注文で盤面を組み立て直す
@@ -2640,7 +3003,7 @@ export interface operations {
    * @description そのドリッパーの抽出中のカードを終え（brew_finished_at）、同じドリッパーの待機の先頭（dripper_position・注文番号・drip_id の順）を抽出中にする（brew_started_at）。
    * 時刻は press（押した時刻。CaosPress）から決め、press が無ければサーバーの今。始めてから 10 秒（始めた時刻と、この「次へ」の時刻の差）は断る（400）。
    * カップ・注文の準備完了（ready_at）は付けない（付けるのは提供の画面の PATCH /api/orders/{id}/ready・/api/orders/{id}/cups/{cupId}/ready など）。
-   * カードを終えるのはこの「次へ」だけ（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
+   * カードの通常終了はこの「次へ」（淹れ直し元の破棄は POST /api/caos/discard）（提供の画面でカップを全部準備完了・提供にしても、抽出中・待機のカードのまま）。抽出中が無ければ待機の先頭を始めるだけ。
    * start_next が false なら抽出中のカードを終えるだけで、待機の先頭は始めない（抽出中が無ければ 409）。
    * start_drip_id を送ると、待機の先頭がそのカードのときだけ始める（違えば何も変えずに 409。押した待機のカードを始めるとき、ほかの端末が先頭を入れ替えていたら別のカードを始めない）。
    * drip_id には画面が抽出中と見ているカードを送る。今の抽出中と違えば 409（二度押しや、ほかの端末と同時に押したときに次のカードまで終わらせない）。
@@ -2677,13 +3040,13 @@ export interface operations {
     };
   };
   /**
-   * カップを緊急（入れ直し）にする
-   * @description カップ 1 杯につき入れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも入れ直せる。カップの列（最初の抽出の記録）は変えない。
-   * 入れ直しは CaOS で未割当の入れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
-   * （cup_ids に入れ直しの id を入れる。列は入れ直しの行のもの）。
+   * カップを緊急（淹れ直し）にする
+   * @description カップ 1 杯につき淹れ直しを 1 つ（cup_emergencies の行）足す。同じカップは何度でも淹れ直せる。カップの列（最初の抽出の記録）は変えない。
+   * 淹れ直しは CaOS で未割当の淹れ直しのカードになり、割当・移動・統合は PUT /api/caos/cups、終えるのは「次へ」で、ふつうのカップと同じ決まりで扱う
+   * （cup_ids に淹れ直しの id を入れる。列は淹れ直しの行のもの）。
    * 足したカップの注文は /api/ws/orders の {"type":"order"} で配る（OrderCupResponse の emergencies）。
    * 今日（日本時間）の注文の、抽出が要るカップだけ。
-   * 入れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
+   * 淹れ直しで減る在庫（そのカップのアイテムの在庫と、カップを作る種類ならそのカップ 1 つ）の量は、足したときの在庫の設定で決めて残す（注文と同じ）。
    * 在庫は足したときに使ったことにする（CaOS の抽出の時刻には依らない。GET /api/inventory）。
    */
   createCupEmergencies: {
@@ -2714,8 +3077,8 @@ export interface operations {
     };
   };
   /**
-   * よく使う緊急（入れ直し）の理由
-   * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の入れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い入れ直しは数えない。
+   * よく使う緊急（淹れ直し）の理由
+   * @description 緊急の入力に出す理由の候補。前の日までも含めた全部の淹れ直しの理由を、使った回数の多い順（同じなら理由の文字の順）に 5 つまで。理由の無い淹れ直しは数えない。
    */
   getCupEmergencyReasons: {
     responses: {
@@ -2728,12 +3091,13 @@ export interface operations {
     };
   };
   /**
-   * 緊急（入れ直し）を取り消す
-   * @description 押し間違えた入れ直しを消す。まだ抽出を始めていない（未割当か待機の）入れ直しだけ。入れ直しで減らした在庫も戻す（減る在庫の行も消す）。
-   * 入れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
+   * 緊急（淹れ直し）を取り消す
+   * @description 押し間違えた淹れ直しを消す。まだ抽出を始めていない（未割当か待機の）淹れ直しだけ。淹れ直しで減らした在庫も戻す（減る在庫の行も消す）。
+   * 淹れ直したカップの注文は /api/ws/orders の {"type":"order"} で配る。
    * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
-   * 画面は、この知らせを受けたときだけ、その入れ直しの未印刷のシールを消す。
-   * レジに頼んだ代理印刷（POST /api/label-print-requests の id が入れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+   * 画面は、この知らせを受けたときだけ、その淹れ直しの未印刷のシールを消す。
+   * レジに頼んだ代理印刷（POST /api/label-print-requests の id が淹れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+   * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の淹れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
    */
   deleteCupEmergency: {
     parameters: {
@@ -2746,13 +3110,13 @@ export interface operations {
       204: {
         content: never;
       };
-      /** @description 抽出を始めた入れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
+      /** @description 抽出を始めた淹れ直し・前の日の注文（何も消さない）。error を画面にそのまま出す */
       400: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 入れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
+      /** @description 淹れ直しが無い（取り消した・注文が編集・削除された）か、ほかの端末で先に動いた（何も消さない） */
       409: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -2867,7 +3231,9 @@ export interface operations {
   };
   /**
    * オーダーストップ・再開
-   * @description 記録を1件足し、WebSocket の master_state で全端末に配信する。
+   * @description 状態変更を記録し、WebSocket の master_state で全端末に配信する。同じ状態の再送では履歴を増やさず、現在の状態を返す。
+   * expected を渡すと、確認時点の type と created_at が最新の状態と一致する場合だけ更新する。不一致は409で何も書かない。
+   * 履歴がない場合の expected は type=operational、created_at=null。省略する従来の画面も利用できる。
    * オーダーストップの状態を書くのはここだけ。
    */
   updateMasterState: {
@@ -2889,17 +3255,23 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      /** @description 確認後に受付状態が変わりました */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
     };
   };
   /**
    * 在庫の残量一覧
    * @description 推定残量。人が入れるのは棚卸しの実数（と入荷）だけで、残りは「最後の棚卸しの実数 ＋ その後の入荷・調整 − その後に使った分」。
-   * 使った量は、注文を受けたとき・入れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
+   * 使った量は、注文を受けたとき・淹れ直しを足したときに残した量（その時点の per_serving とカップの種類で決めたもの）で数える。
    * 棚卸しの前か後か（と直近 1 時間か）は、その物を実際に使った時刻で決める。
    *   - 抽出が要るカップ（豆などのアイテムの在庫と、カップ）：提供の画面でそのカップを提供可能にした時刻（order_cups.ready_at）。
    *     無ければ提供済みにした時刻（served_at）。どちらも無ければ、まだ使っていない
    *   - 抽出の要らない物（グッズ・ミルク・コースターなど）：注文を受けた時刻
-   *   - 緊急（入れ直し）：入れ直しを足した時刻（取り消せば数えない）
+   *   - 緊急（淹れ直し）：淹れ直しを足した時刻（取り消せば数えない）
    * 在庫は提供の画面の側で数え、CaOS の抽出の時刻（brew_started_at）は使わない。まだ提供可能にしていない注文を先に引くこともしない。
    */
   getInventory: {
@@ -3736,6 +4108,95 @@ export interface operations {
       };
       /** @description Webhook の署名鍵が設定されていない */
       503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データのリセットの前の状態
+   * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+   * （PR のプレビューは AUTH_PREVIEW_ADMIN で管理者としてログインした扱いなので使える）。
+   * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
+   */
+  getDataResetStatus: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetStatus"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない。error を画面にそのまま出す */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データを消す
+   * @description 管理者だけ。注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録・受付状態の履歴などを消し、
+   * メニュー・アイテム・在庫対象・色・プリンター・Square 端末の設定は残す。DB のユーザーやスキーマには触らない。
+   * 受付を止めていて、消す直前の中身が backupSha256 のバックアップ（GET /api/admin/data-reset/backup）と同じで、
+   * confirmation が確認の文字と同じときだけ消す。消したら WebSocket で data_reset を配る。
+   */
+  resetData: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DataResetRequest"];
+      };
+    };
+    responses: {
+      /** @description 消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetResult"];
+        };
+      };
+      /** @description リクエストが不正（確認の文字が違うなど）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない。error を画面にそのまま出す */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 受付を止めていない・ダウンロードしたあとにデータが変わった・知らない表がある。何も消していない。error を画面にそのまま出す */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 消す表をロックしてから決まった時間（60 秒）以内に確かめきれなかった。ロールバックしたので何も消していない。error を画面にそのまま出す */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データのリセットで消す表の中身を全部書き出す
+   * @description 管理者だけ。消す表の全行を、表ごとに決まった順で JSON にする（同じ中身なら同じバイト列になる）。
+   * リセットのときは、このファイルの SHA-256 を backupSha256 に入れる。
+   */
+  exportDataResetBackup: {
+    responses: {
+      /** @description バックアップの JSON ファイル */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetBackup"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない */
+      403: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

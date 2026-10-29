@@ -32,11 +32,13 @@ type CaosOperation struct {
 	ClientSentAt    *int64          `json:"client_sent_at"`
 }
 
-// CaosOperationCup は操作時点の1杯（入れ直しは UnitID で区別、CupID は元のカップ）。
+// CaosOperationCup は操作時点の1杯（淹れ直しは UnitID で区別、CupID は元のカップ）。
 // InWindow は受付済み・ready前・CaOS対象の杯。親と相手の注文は UUID で JOIN できる。
 // 注文編集でカップを削除・再作成する既存の仕様に合わせ、現行表への FK は張らない。
 // 削除後も操作履歴と当時の注文番号・状態を残す。
 type CaosOperationCup struct {
+	// IcedBrew は操作時の種類。過去の記録は null（不明）として扱う。
+	IcedBrew              *bool      `json:"iced_brew"`
 	Added                 bool       `gorm:"not null;default:false" json:"added"`
 	Removed               bool       `gorm:"not null;default:false" json:"removed"`
 	EmergencyReason       string     `gorm:"not null;default:''" json:"emergency_reason"`

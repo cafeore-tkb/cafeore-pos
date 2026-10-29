@@ -316,3 +316,28 @@ func TestColorSettings(t *testing.T) {
 		t.Fatalf("%d settings", n)
 	}
 }
+
+// お菓子フラグは true / false の更新を保存し、省略時は現在の値を保つ。
+func TestItemTypeServeWithSnackPersistence(t *testing.T) {
+	api := newTestAPI(t)
+	var created models.ItemTypeResponse
+	api.do(http.MethodPost, "/api/item-types", models.ItemTypeCreateRequest{Name: "snack", DisplayName: "お菓子", ServeWithSnack: boolPtr(true)}).expect(http.StatusCreated).decode(&created)
+	if !created.ServeWithSnack {
+		t.Fatal("create must preserve true")
+	}
+	for _, requested := range []*bool{nil, boolPtr(false), boolPtr(true)} {
+		want := created.ServeWithSnack
+		if requested != nil {
+			want = *requested
+		}
+		api.do(http.MethodPut, "/api/item-types/"+created.Id.String(), models.ItemTypeUpdateRequest{Id: created.Id, Name: created.Name, DisplayName: created.DisplayName, ServeWithSnack: requested}).expect(http.StatusOK).decode(&created)
+		if created.ServeWithSnack != want {
+			t.Fatalf("update: got %v, want %v", created.ServeWithSnack, want)
+		}
+		var got models.ItemTypeResponse
+		api.do(http.MethodGet, "/api/item-types/"+created.Id.String(), nil).expect(http.StatusOK).decode(&got)
+		if got.ServeWithSnack != want {
+			t.Fatalf("reload: got %v, want %v", got.ServeWithSnack, want)
+		}
+	}
+}

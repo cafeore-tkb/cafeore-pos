@@ -11,6 +11,10 @@ import {
   caosLane,
   caosStateJSON,
 } from "./caos-board";
+import {
+  type CaosDiscardRequest,
+  discardCaosPracticeCups,
+} from "./caos-discard";
 import type { CaosLane, CaosLanes, LaneAssignment } from "./caosLanes";
 import {
   type CaosPracticeOrder,
@@ -40,6 +44,7 @@ import { jstDate } from "./jst";
 
 /** 盤面を書き換える操作 1 つ（端末に残す。JSON にできる形） */
 export type CaosOutboxOp =
+  | { kind: "discard"; request: CaosDiscardRequest }
   /** PUT /api/caos/cups（割当・移動・先頭へ・未割当に戻す・統合・外す・まとめて移す） */
   | { kind: "cups"; writes: CaosCupsWrite[] }
   /**
@@ -55,7 +60,7 @@ export type CaosOutboxOp =
       startNext?: boolean;
       startPressed?: boolean;
     }
-  /** 緊急（入れ直し）の取り消し */
+  /** 緊急（淹れ直し）の取り消し */
   | { kind: "cancel-emergency"; id: string }
   /** 担当者の交代。before は押したときの担当者（前の版で残したものには無いので、確かめずに送る） */
   | {
@@ -63,10 +68,17 @@ export type CaosOutboxOp =
       dripper: number;
       name: string;
       senior: boolean;
+      grade?: string;
       before?: string;
     }
   /** 担当者の入れ替え。names は押したときの first・second の担当者 */
-  | { kind: "swap"; first: number; second: number; names: [string, string] }
+  | {
+      kind: "swap";
+      first: number;
+      second: number;
+      names: [string, string];
+      grades?: [string, string];
+    }
   /** 今の担当者の上級生かだけを直す */
   | { kind: "seniors"; lanes: LaneAssignment[] };
 
@@ -101,6 +113,16 @@ const SHAPES: Record<
   CaosOutboxOp["kind"],
   (op: Record<string, unknown>) => boolean
 > = {
+  discard: (op) => {
+    const r = op.request as Partial<CaosDiscardRequest> | undefined;
+    return (
+      !!r &&
+      Array.isArray(r.cup_ids) &&
+      r.before !== null &&
+      typeof r.before === "object" &&
+      typeof r.drip_id === "string"
+    );
+  },
   cups: (op) => Array.isArray(op.writes),
   next: (op) =>
     typeof op.dripper === "number" && "dripId" in op && "startId" in op,
@@ -156,7 +178,7 @@ const laneTaken = (dripper: number) =>
 
 type Row = Pick<CupEmergency, "id"> & CaosCupState;
 
-// カップと入れ直しの行（CaOS の値を書く行）を ID で引く
+// カップと淹れ直しの行（CaOS の値を書く行）を ID で引く
 const rowsOf = (orders: readonly CaosOrderInput[]) =>
   new Map<string, Row>(
     orders.flatMap((order) =>
@@ -222,6 +244,8 @@ export const applyCaosOutboxOp = (
   { cooldown = true }: { cooldown?: boolean } = {},
 ): CaosPracticeResult => {
   switch (op.kind) {
+    case "discard":
+      return discardCaosPracticeCups(orders, op.request, at);
     case "cups": {
       const rebased = rebaseWrites(orders, op.writes);
       if ("error" in rebased) return rebased;
@@ -326,7 +350,12 @@ export const overlayCaosLanes = (
         case "lane":
           return current.map((lane) =>
             lane.dripper === op.dripper
-              ? { ...lane, name: op.name, senior: op.senior }
+              ? {
+                  ...lane,
+                  name: op.name,
+                  senior: op.senior,
+                  grade: op.grade ?? "",
+                }
               : lane,
           );
         case "swap": {
@@ -339,7 +368,12 @@ export const overlayCaosLanes = (
           return current.map((lane) => {
             const other = swapped.get(lane.dripper);
             return other
-              ? { ...lane, name: other.name, senior: other.senior }
+              ? {
+                  ...lane,
+                  name: other.name,
+                  senior: other.senior,
+                  grade: other.grade,
+                }
               : lane;
           });
         }
@@ -371,6 +405,15 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
   const laneOf = (dripper: number) =>
     server.lanes?.lanes.find((lane) => lane.dripper === dripper);
   switch (op.kind) {
+    case "discard": {
+      const rows = rowsOf(server.orders);
+      return op.request.cup_ids.every((id) => {
+        const row = rows.get(id);
+        return (
+          row?.dripId === op.request.drip_id && row.brewFinishedAt !== null
+        );
+      });
+    }
     case "cups": {
       const rows = rowsOf(server.orders);
       return op.writes.every(({ cup_ids, after }) =>
@@ -401,12 +444,19 @@ const reflected = (op: CaosOutboxOp, server: CaosServerState): boolean => {
       return !rowsOf(server.orders).has(op.id);
     case "lane": {
       const lane = laneOf(op.dripper);
-      return lane?.name === op.name && lane.senior === op.senior;
+      return (
+        lane?.name === op.name &&
+        lane.senior === op.senior &&
+        (lane.grade ?? "") === (op.grade ?? "")
+      );
     }
     case "swap":
       return (
         laneOf(op.first)?.name === op.names[1] &&
-        laneOf(op.second)?.name === op.names[0]
+        laneOf(op.second)?.name === op.names[0] &&
+        (!op.grades ||
+          ((laneOf(op.first)?.grade ?? "") === op.grades[1] &&
+            (laneOf(op.second)?.grade ?? "") === op.grades[0]))
       );
     case "seniors":
       return op.lanes.every(
@@ -427,6 +477,28 @@ const prepareCaosOutboxOp = (
   nowMs: number,
 ): Prepared => {
   switch (op.kind) {
+    case "discard": {
+      if (reflected(op, server)) return { done: true };
+      const rows = rowsOf(server.orders);
+      if (
+        op.request.cup_ids.some((id) => {
+          const row = rows.get(id);
+          return !row || !samePlace(row, op.request.before);
+        })
+      )
+        return { conflict: CHANGED };
+      const row = rows.get(op.request.cup_ids[0]);
+      if (!row) return { conflict: CUP_GONE };
+      const request = { ...op.request, before: caosStateJSON(row) };
+      const result = discardCaosPracticeCups(
+        plainCaosOrders(server.orders),
+        request,
+        new Date(at),
+      );
+      return result.error !== undefined
+        ? { conflict: result.error }
+        : { request: { kind: "discard", request } };
+    }
     case "cups": {
       const rebased = rebaseWrites(server.orders, op.writes);
       if ("writes" in rebased)
@@ -493,9 +565,11 @@ const orderVersion = (order: CaosOrderInput) =>
     ]),
   );
 
-// 書くカップ（入れ直しも）の ID
+// 書くカップ（淹れ直しも）の ID
 const cupIdsOf = (request: CaosOutboxOp, server: CaosServerState) => {
   switch (request.kind) {
+    case "discard":
+      return request.request.cup_ids;
     case "cups":
       return request.writes.flatMap((write) => write.cup_ids);
     case "cancel-emergency":

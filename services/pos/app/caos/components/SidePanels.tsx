@@ -62,8 +62,11 @@ export const SidePanel: React.FC<{
   title: React.ReactNode;
   onClose: () => void;
   footer?: React.ReactNode;
+  icon?: React.ReactNode;
+  contentClassName?: string;
+  style?: React.CSSProperties;
   children: React.ReactNode;
-}> = ({ title, footer, children }) => {
+}> = ({ title, footer, icon, contentClassName = "p-4", style, children }) => {
   const panelRef = useRef<HTMLElement | null>(null);
   const floating = useFloatingWindow(
     typeof title === "string" ? title : "操作パネル",
@@ -76,11 +79,23 @@ export const SidePanel: React.FC<{
         floating.ref.current = element;
       }}
       data-popup-hidden={floating.hidden}
-      style={floating.style}
+      style={{
+        ...style,
+        ...floating.style,
+        // コメント入力中のキーボード表示では、移動済みのパネルも表示範囲へ戻す。
+        ...(typeof style?.bottom === "number" && style.bottom > 0
+          ? {
+              top: 56,
+              bottom: style.bottom,
+              maxHeight: `calc(100dvh - ${style.bottom + 56}px)`,
+            }
+          : {}),
+      }}
       className="fade-in-75 slide-in-from-right caos-side-panel fixed top-[56px] right-0 bottom-0 z-[150] flex w-(--caos-side-panel-width) animate-in select-none flex-col border-slate-300 border-l bg-white text-slate-950 shadow-2xl duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
       <header className="flex min-h-[52px] shrink-0 items-center gap-1 border-slate-200 border-b bg-slate-50 px-4">
         {floating.handle}
+        {icon}
         <div className="mr-auto min-w-0 font-black text-[16px]">{title}</div>
         <button
           type="button"
@@ -91,7 +106,7 @@ export const SidePanel: React.FC<{
           <X className="h-5 w-5" />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className={`min-h-0 flex-1 overflow-y-auto ${contentClassName}`}>
         <FloatingWindowScope
           value={{ active: !floating.hidden, activate: floating.restore }}
         >
@@ -179,7 +194,7 @@ export const AssignPanel: React.FC<{
               look={looks.get(order.key)}
               size="sm"
               selected={selectedOrderUid === order.key}
-              note={`標準予測: ${clockLabel(caosBrewSec(order.cups.length))}`}
+              note={`予測: ${clockLabel(lanes.find((lane) => lane.id === selectedBayId)?.predictBrew?.(order, selectedBayId) ?? caosBrewSec(order.cups.length))}`}
               onClick={() => setSelectedOrderUid(order.key)}
               className="cursor-pointer"
             />
@@ -307,7 +322,7 @@ const MoveCardButtons: React.FC<
 };
 
 // 待機のカードの詳細（管制盤 C）。別のドリッパーへ・先頭へ・待機の先頭へ・未割当に戻す・統合の解除（統合したカードの 1 杯を外す）・
-// 入れ直し（緊急）の取り消し。
+// 淹れ直し（緊急）の取り消し。
 // パネルの外を押すと閉じる
 export const TicketDetailPanel: React.FC<
   MoveActions & {
@@ -317,7 +332,7 @@ export const TicketDetailPanel: React.FC<
     lane?: Lane;
     onClose: () => void;
     onSplitCup: (card: CaosCard, cupId: string) => void;
-    /** 入れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
+    /** 淹れ直しのカードなら「緊急を取り消す」を出す（渡したときだけ） */
     onCancelEmergency?: (card: CaosCard) => void;
   }
 > = ({
@@ -373,9 +388,9 @@ export const TicketDetailPanel: React.FC<
   </SidePanel>
 );
 
-// 緊急（入れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードのカップを全部選んでおく
+// 緊急（淹れ直し）の入力（マスターと同じ EmergencyForm）。抽出中・終わりのカードから開けば、そのカードのカップを全部選んでおく
 // （注文をまたいで統合したカードは、番号は先頭のカップの注文で、ほかの注文のカップも選べる。外せば一部だけ）。ヘッダーから開けば番号から入れる。
-// 確定すると、未割当のいちばん上に入れ直しのカードが出て（統合したカードの全部の杯なら、元のカードと同じ組み合わせの 1 枚）、緊急のシールとそのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
+// 確定すると、未割当のいちばん上に淹れ直しのカードが出て（統合したカードの全部の杯なら、元のカードと同じ組み合わせの 1 枚）、緊急のシールとそのカップのシール（レジで刷るのと同じもの）をこの端末から刷る（実データテスト中は刷らない）。
 // 抽出中のカードから開いたときは、そのカードを 1〜6 に移す・未割当に戻すも出す。パネルの外を押すと閉じる
 export const RebrewPanel: React.FC<
   Omit<EmergencyFormProps<CaosOrderInput>, "initial" | "onDone"> & {
@@ -389,7 +404,7 @@ export const RebrewPanel: React.FC<
 > = ({ card, look, lane, onClose, move, ...form }) => {
   const first = card?.cups[0];
   return (
-    <SidePanel title="緊急（入れ直し）" onClose={onClose}>
+    <SidePanel title="緊急（淹れ直し）" onClose={onClose}>
       {card && (
         <div className="mb-4">
           <OrderCard card={card} look={look} size="xl" />
@@ -448,7 +463,7 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助の画面。普段使う入口は設定にまとめ、実績はテスト終了時だけ開く。
+// 補助の画面。普段使う入口は設定にまとめ、実績は通常運用とテスト終了時に開く。
 export type AuxiliaryTab = "settings" | "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
@@ -459,7 +474,7 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 };
 
 const SettingsHome: React.FC<{
-  onSelectTab: (tab: "bays" | "beans") => void;
+  onSelectTab: (tab: "bays" | "beans" | "analytics") => void;
   testPlay: {
     active: boolean;
     simulating: boolean;
@@ -508,6 +523,22 @@ const SettingsHome: React.FC<{
           </span>
           <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
         </button>
+        {!testPlay.simulating && (
+          <button
+            type="button"
+            onClick={() => onSelectTab("analytics")}
+            className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+          >
+            <BarChart3 className="h-5 w-5 text-blue-700" />
+            <span className="flex flex-col gap-0.5">
+              <span>実績</span>
+              <span className="font-bold text-[11px] text-slate-500">
+                抽出の予測・実測と店舗の状況を確認
+              </span>
+            </span>
+            <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+          </button>
+        )}
         <button
           type="button"
           onClick={testPlay.active ? testPlay.onEnd : testPlay.onOpen}
@@ -546,7 +577,7 @@ const SettingsHome: React.FC<{
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
-    onSelectTab: (tab: "bays" | "beans") => void;
+    onSelectTab: (tab: "bays" | "beans" | "analytics") => void;
     testPlay: React.ComponentProps<typeof SettingsHome>["testPlay"];
     /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;

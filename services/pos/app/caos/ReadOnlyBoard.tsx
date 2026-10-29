@@ -25,7 +25,10 @@ const noop = () => {};
 
 export default function ReadOnlyBoard() {
   const nowMs = useCurrentTime(1000).getTime();
-  const { cards, sound, flashKeys } = useViewBoard(nowMs, timelineArrivals);
+  const { cards, sound, flashKeys, predictBrew } = useViewBoard(
+    nowMs,
+    timelineArrivals,
+  );
   const [folded, setFolded] = useDeviceSetting(
     "caos-view-unassigned-folded",
     false,
@@ -38,8 +41,12 @@ export default function ReadOnlyBoard() {
   const { colorSettings } = useColorSettings();
   const { beanIndex } = useBeanInventory();
   const lanes = useMemo(
-    () => boardLanes(cards.filter((card) => card.status !== "done")),
-    [cards],
+    () =>
+      boardLanes(
+        cards.filter((card) => card.status !== "done"),
+        predictBrew,
+      ),
+    [cards, predictBrew],
   );
   const unassigned = useMemo(
     () => cards.filter((card) => card.status === "unassigned"),
@@ -84,7 +91,6 @@ export default function ReadOnlyBoard() {
           selectedOrderId={null}
           nowMs={nowMs}
           timelineCommand={null}
-          onSelectOrder={noop}
           onMoveTicket={noop}
           onReturnToUnassigned={noop}
           onOpenEmptySlot={noop}

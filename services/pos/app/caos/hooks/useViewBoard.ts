@@ -18,10 +18,13 @@ type Arrivals = (
 ) => string[];
 
 export const useViewBoard = (nowMs: number, arrivals: Arrivals) => {
-  const { cards, orders, status } = useLiveBoard({ enabled: true, nowMs });
+  const { cards, orders, status, predictBrew } = useLiveBoard({
+    enabled: true,
+    nowMs,
+  });
   const sound = useViewSound();
   const flashKeys = useArrivals(cards, orders !== null, nowMs, arrivals);
-  return { cards, status, sound, flashKeys };
+  return { cards, status, sound, flashKeys, predictBrew };
 };
 
 // 通知音。鳴らすかはヘッダーで切り替え、この端末に覚える。iPad は画面に触れた中でないと音を出せるようにならない（後ろに回すと止まることもある）ので、

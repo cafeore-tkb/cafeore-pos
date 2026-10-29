@@ -1202,7 +1202,7 @@ func TestCaosConcurrentInserts(t *testing.T) {
 	}
 
 	// n 台が同時に、待機の先頭（head）の前に入れ、同じ時に head の注文を編集する：
-	// 全部通り、番号はぶつからず、head は n だけずれる（注文の編集で入れ直したカップも、ずらした番号を失わない）
+	// 全部通り、番号はぶつからず、head は n だけずれる（注文の編集で淹れ直したカップも、ずらした番号を失わない）
 	edit := models.OrderUpdateRequest{OrderId: 1, BillingAmount: 1000, Received: 1000, MenuIds: []models.MenuInfoCreate{
 		{MenuId: f.menu.ID, OrderMenuId: &head.OrderMenus[0].ID}, {MenuId: f.menu.ID, OrderMenuId: &head.OrderMenus[1].ID},
 	}}
