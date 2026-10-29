@@ -1525,6 +1525,10 @@
     "description": "ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false",
     "required": ["dripper", "name", "senior", "updated_at"],
     "properties": {
+      "grade": {
+        "type": "string",
+        "description": "シフト名簿で確認できた学年。空または省略時は不明"
+      },
       "dripper": {
         "type": "integer",
         "minimum": 1,
@@ -1568,6 +1572,11 @@
     "type": "object",
     "required": ["name", "senior"],
     "properties": {
+      "grade": {
+        "type": "string",
+        "maxLength": 20,
+        "description": "シフト名簿で確認できた学年。自由入力や未確認時は省略"
+      },
       "name": {
         "type": "string",
         "maxLength": 40,

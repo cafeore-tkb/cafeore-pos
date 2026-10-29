@@ -56,6 +56,9 @@ func TestCaosOperationLogOnDB(t *testing.T) {
 	assignment := latestOperation(t, db)
 	rows := readOperationCups(t, db, assignment.ID)
 	row := rows[b]
+	if row.IcedBrew == nil || *row.IcedBrew {
+		t.Fatalf("operation should preserve hot/ice at operation time: %+v", row.IcedBrew)
+	}
 	if row.AssignedAt == nil || !row.AssignedAt.Equal(pressed) || row.MergedAt != nil || row.OrderID != target.ID || !row.Changed {
 		t.Fatalf("assignment = %+v", row)
 	}

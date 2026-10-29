@@ -49,7 +49,7 @@ func caosDayString(now time.Time) string { return now.In(jst).Format(time.DateOn
 // loadCaosLanes は day の 6 つの担当者と、その日の行があったかを返す。
 func loadCaosLanes(db *gorm.DB, day string) (models.CaosLanes, bool, error) {
 	var rows []models.DripperAssignee
-	if err := db.Select("dripper", "name", "senior", "updated_at").
+	if err := db.Select("dripper", "name", "grade", "senior", "updated_at").
 		Where("day = ?", day).Find(&rows).Error; err != nil {
 		return models.CaosLanes{}, false, err
 	}
@@ -60,7 +60,8 @@ func loadCaosLanes(db *gorm.DB, day string) (models.CaosLanes, bool, error) {
 	// dripper は 1〜6（表の CHECK）。名前が空なら senior も false で書いてある（PutCaosLane）
 	for _, r := range rows {
 		at := r.UpdatedAt
-		lanes.Lanes[r.Dripper-1] = models.CaosLane{Dripper: r.Dripper, Name: r.Name, Senior: r.Senior, UpdatedAt: &at}
+		grade := r.Grade
+		lanes.Lanes[r.Dripper-1] = models.CaosLane{Dripper: r.Dripper, Name: r.Name, Grade: &grade, Senior: r.Senior, UpdatedAt: &at}
 	}
 	return lanes, len(rows) > 0, nil
 }
@@ -102,13 +103,13 @@ func lockCaosLanes(tx *gorm.DB) error {
 func saveCaosLane(tx *gorm.DB, row models.DripperAssignee, prevName string) error {
 	if err := tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "day"}, {Name: "dripper"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "senior", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"name", "grade", "senior", "updated_at"}),
 	}).Create(&row).Error; err != nil {
 		return err
 	}
 	return tx.Create(&models.DripperAssigneeChange{
 		ChangedAt: row.UpdatedAt, Day: row.Day, Dripper: row.Dripper,
-		PrevName: prevName, Name: row.Name, Senior: row.Senior,
+		PrevName: prevName, Name: row.Name, Grade: row.Grade, Senior: row.Senior,
 	}).Error
 }
 
@@ -124,12 +125,21 @@ func (h *CaosHandler) PutCaosLane(c *gin.Context) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
+	grade := ""
+	// 学年の省略は旧クライアント・自由入力を含む未確認扱い。前の人の学年を流用しない。
+	if req.Grade != nil && name != "" {
+		grade = strings.TrimSpace(*req.Grade)
+	}
+	if utf8.RuneCountInString(grade) > 20 {
+		respondError(c, ruleErrorf("学年は 20 文字までです"))
+		return
+	}
 	if utf8.RuneCountInString(name) > caosMaxLaneName {
 		respondError(c, ruleErrorf("名前は %d 文字までです", caosMaxLaneName))
 		return
 	}
 	h.writeLanes(c, func(models.CaosLanes) []models.CaosLane {
-		return []models.CaosLane{{Dripper: dripper, Name: name, Senior: req.Senior && name != ""}}
+		return []models.CaosLane{{Dripper: dripper, Name: name, Grade: &grade, Senior: req.Senior && name != ""}}
 	})
 }
 
@@ -150,8 +160,8 @@ func (h *CaosHandler) SwapCaosLanes(c *gin.Context) {
 	h.writeLanes(c, func(cur models.CaosLanes) []models.CaosLane {
 		a, b := cur.Lanes[req.First-1], cur.Lanes[req.Second-1]
 		return []models.CaosLane{
-			{Dripper: req.First, Name: b.Name, Senior: b.Senior},
-			{Dripper: req.Second, Name: a.Name, Senior: a.Senior},
+			{Dripper: req.First, Name: b.Name, Grade: b.Grade, Senior: b.Senior},
+			{Dripper: req.Second, Name: a.Name, Grade: a.Grade, Senior: a.Senior},
 		}
 	})
 }
@@ -193,7 +203,11 @@ func (h *CaosHandler) UpdateCaosLaneSeniors(c *gin.Context) {
 func (h *CaosHandler) writeLanes(c *gin.Context, change func(cur models.CaosLanes) []models.CaosLane) {
 	h.updateLanes(c, func(tx *gorm.DB, cur models.CaosLanes, now time.Time) (bool, error) {
 		for _, l := range change(cur) {
-			row := models.DripperAssignee{Day: cur.Day, Dripper: l.Dripper, Name: l.Name, Senior: l.Senior, UpdatedAt: now}
+			grade := ""
+			if l.Grade != nil {
+				grade = *l.Grade
+			}
+			row := models.DripperAssignee{Day: cur.Day, Dripper: l.Dripper, Name: l.Name, Grade: grade, Senior: l.Senior, UpdatedAt: now}
 			if err := saveCaosLane(tx, row, cur.Lanes[l.Dripper-1].Name); err != nil {
 				return false, err
 			}

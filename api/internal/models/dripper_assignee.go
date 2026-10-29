@@ -11,6 +11,8 @@ type DripperAssignee struct {
 	Dripper int    `gorm:"type:smallint;primaryKey;autoIncrement:false;check:dripper_assignees_dripper_check,dripper BETWEEN 1 AND 6"`
 	// 担当者の名前。空なら担当者なし
 	Name string `gorm:"not null"`
+	// Grade はシフト名簿から選んだ場合のみ記録する。空は未確認。
+	Grade string `gorm:"not null;default:''"`
 	// 上級生か。交代した時点（と、名簿を読み直したとき）に画面が sohosai-shift の名簿（seniors）で判定した値。
 	// 名簿を読めない端末でも同じに出て、PUT /api/caos/cups でも確かめられるよう、サーバーに持つ
 	Senior    bool      `gorm:"not null;default:false"`
@@ -32,7 +34,8 @@ type DripperAssigneeChange struct {
 	// 替える前の名前。空なら担当者なし（その日に初めて替えたときも空）
 	PrevName string `gorm:"not null"`
 	// 替えたあとの名前。空なら担当者なし
-	Name string `gorm:"not null"`
+	Name  string `gorm:"not null"`
+	Grade string `gorm:"not null;default:''"`
 	// 替えたあとの人が上級生か（dripper_assignees の senior と同じ値）
 	Senior bool `gorm:"not null;default:false"`
 }
