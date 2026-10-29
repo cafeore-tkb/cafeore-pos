@@ -476,6 +476,111 @@ await page
   .screenshot({ path: path.join(output, "10-color-scale.png") });
 await page.locator("#qa-color-scale").evaluate((element) => element.remove());
 await page.setViewportSize({ width: 390, height: 844 });
+// Invalid saved data must survive both initial loading and cross-tab reloads verbatim.
+const validSettingsText = await page.evaluate(
+  (key) => localStorage.getItem(key),
+  storageKey,
+);
+const invalidSettingsTexts = [
+  "{broken-json",
+  JSON.stringify({ ...JSON.parse(validSettingsText), version: 999 }),
+  "",
+];
+const readFailure = page
+  .getByRole("alert")
+  .filter({ hasText: "比較設定の編集・自動保存を停止" });
+const currentGroupInput = page.getByLabel(
+  "今年の珈琲・俺ブレンド2026の比較グループ",
+  { exact: true },
+);
+for (const invalid of invalidSettingsTexts) {
+  await page.evaluate(({ key, value }) => localStorage.setItem(key, value), {
+    key: storageKey,
+    value: invalid,
+  });
+  await page.reload();
+  await readFailure.waitFor();
+  await page.getByText("商品の対応付けを編集", { exact: true }).click();
+  assert.equal(await currentGroupInput.isDisabled(), true);
+  assert.equal(await currentGroupInput.inputValue(), "");
+  await page.clock.runFor(10000);
+  assert.equal(
+    await page.evaluate((key) => localStorage.getItem(key), storageKey),
+    invalid,
+  );
+}
+const peer = await context.newPage();
+await peer.goto(`${new URL(url).origin}/status`);
+const writeFromPeer = (value) =>
+  peer.evaluate(
+    ({ key, value }) => {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    },
+    { key: storageKey, value },
+  );
+await writeFromPeer(validSettingsText);
+await page.waitForFunction(
+  () =>
+    document.querySelector(
+      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
+    )?.value === "定番の珈琲",
+);
+assert.equal(await currentGroupInput.isDisabled(), false);
+// A later failure must clear the previously loaded mapping and synchronously block writes.
+const corruptFromPeer = JSON.stringify({
+  version: 999,
+  untouched: "must survive",
+});
+await writeFromPeer(corruptFromPeer);
+await readFailure.waitFor();
+assert.equal(await currentGroupInput.inputValue(), "");
+assert.equal(await currentGroupInput.isDisabled(), true);
+assert.equal(
+  await page
+    .getByRole("combobox", { name: "前年の比較日", exact: true })
+    .isDisabled(),
+  true,
+);
+// Exercise the hook's guard as well as the disabled UI, even if a DOM edit bypasses disabled.
+await currentGroupInput.evaluate((element) => {
+  element.disabled = false;
+  element.closest("fieldset").disabled = false;
+});
+await currentGroupInput.fill("上書きさせない");
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  corruptFromPeer,
+);
+await writeFromPeer(validSettingsText);
+await page.waitForFunction(
+  () =>
+    document.querySelector(
+      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
+    )?.value === "定番の珈琲",
+);
+assert.equal(await currentGroupInput.isDisabled(), false);
+await writeFromPeer(null);
+await page.waitForFunction(
+  () =>
+    document.querySelector(
+      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
+    )?.value === "",
+);
+assert.equal(await currentGroupInput.isDisabled(), false);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  null,
+);
+await writeFromPeer(validSettingsText);
+await page.waitForFunction(
+  () =>
+    document.querySelector(
+      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
+    )?.value === "定番の珈琲",
+);
+await peer.close();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
 // Storage quota/private-mode failure keeps the edit in memory and reports that it was not saved.
 await page.getByText("商品の対応付けを編集", { exact: true }).click();
 await page.evaluate(() => {
@@ -517,6 +622,9 @@ await writeFile(
         "axis aligned gradient uses fixed year-over-year percentage anchors",
         "iPad and mobile have no horizontal page overflow",
         "storage write failure shown and edit retained",
+        "invalid JSON, version and empty saved values remain byte-for-byte unchanged",
+        "cross-tab read failure clears stale settings and blocks writes even if disabled is bypassed",
+        "valid cross-tab replacement or removal recovers editing",
         "no runtime errors or backend mutations",
       ],
       runtimeErrors: errors,

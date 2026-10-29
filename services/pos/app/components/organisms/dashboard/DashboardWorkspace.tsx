@@ -320,7 +320,7 @@ export function DashboardWorkspace() {
       loading={referenceLoading}
       failure={referenceFailure}
       storageMessage={comparisonSettings.storageMessage}
-      disabled={!comparisonSettings.loaded}
+      disabled={!comparisonSettings.loaded || comparisonSettings.saveBlocked}
     />
   );
 
