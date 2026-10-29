@@ -9,8 +9,8 @@ import {
 } from "@cafeore/common";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { eposCertificateUrl, eposPrinterAt } from "~/label/infra/epos";
-import { labelPrintableWidth } from "~/label/paper";
+import { eposCertificateUrl, labelPrinterAt } from "~/label/infra/epos";
+import { labelGeometry } from "~/label/paper";
 import { cancelPendingPrint } from "~/label/pending-prints";
 import { useLabelPrintQueue } from "~/label/print-relay";
 import { usePrinter } from "~/label/print-util";
@@ -30,8 +30,8 @@ export const toastEmergenciesCancelled = (count: number) =>
 
 /**
  * 緊急（淹れ直し）。マスターの緊急ボタンと CaOS の淹れ直しのパネルで使う。
- * カップに淹れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を、前に緊急のシールを付けて 1 枚ずつ
- * この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。直接刷れなければ、すぐ代理印刷をオンにしたレジに頼む
+ * カップに淹れ直しを足し（POST /api/cup-emergencies）、足せたら、そのカップのシール（レジで刷るのと同じもの）を 1 枚ずつ、
+ * 一度に足した分まとめて緊急のシール（ここから・ここまで）で挟んで、この端末から印刷の設定のシールのプリンター（label_printer_ip）に刷る。直接刷れなければ、すぐ代理印刷をオンにしたレジに頼む
  * （POST /api/label-print-requests。label/print-relay）。頼めなければ端末に残し、送り直すたびにもう一度試す（usePrinter）。
  * 取り消す（DELETE /api/cup-emergencies/{id}）と、この端末に残っているそのシールも消す（ほかの端末のものは、取り消しの知らせで消える。OrdersWSProvider）。
  * レジに頼んだものはサーバーが消す（代理印刷のレジは、取り消しの知らせで刷るのをやめる）。
@@ -40,18 +40,21 @@ export const useCupEmergency = (
   onActivity?: (event: string, details: Record<string, unknown>) => void,
 ) => {
   const printerSettings = usePrinterAddresses();
-  const { label_printer_ip } = printerSettings;
+  const { label_printer_ip, label_printer_trailing_feed } = printerSettings;
   const printer = usePrinter(
-    useMemo(() => eposPrinterAt(label_printer_ip), [label_printer_ip]),
-    labelPrintableWidth(printerSettings),
+    useMemo(
+      () => labelPrinterAt(label_printer_ip, label_printer_trailing_feed),
+      [label_printer_ip, label_printer_trailing_feed],
+    ),
+    labelGeometry(printerSettings),
     onActivity,
     requestLabelPrint,
   );
-  const { printCupLabel } = printer;
+  const { printEmergencyLabels } = printer;
   // レジに頼んで、まだ刷れていないシール（ほかの端末が頼んだものも）
   const { requests: relayed, relayAvailable } = useLabelPrintQueue();
 
-  /** 淹れ直しを足し、足せたらカップのシールを 1 枚ずつ刷る。足した淹れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
+  /** 淹れ直しを足し、足せたらカップのシールを緊急のシールで挟んで刷る。足した淹れ直しの id を返す（cups と同じ順）。断られたら理由を通知で出して null */
   const addEmergency = useCallback(
     async (cups: EmergencyCup[], reason: string) => {
       onActivity?.("emergency.api.requested", {
@@ -68,13 +71,17 @@ export const useCupEmergency = (
         return null;
       }
       onActivity?.("emergency.api.succeeded", { unitIds: result.data.ids });
-      cups.forEach(({ order, cupId }, i) => {
-        void printCupLabel(order, cupId, result.data.ids[i]);
-      });
+      void printEmergencyLabels(
+        cups.map(({ order, cupId }, i) => ({
+          order,
+          cupId,
+          emergencyId: result.data.ids[i],
+        })),
+      );
       toastEmergenciesAdded(cups.length);
       return result.data.ids;
     },
-    [printCupLabel, onActivity],
+    [printEmergencyLabels, onActivity],
   );
 
   /** 淹れ直しを取り消す（まだ抽出を始めていないものだけ。断られたら理由を通知で出す）。全部取り消せたら true */

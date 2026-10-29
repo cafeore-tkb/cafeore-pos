@@ -8,6 +8,15 @@ export interface paths {
     /** サーバーステータス取得 */
     get: operations["getStatus"];
   };
+  "/api/me": {
+    /**
+     * API を呼んだ相手と権限
+     * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_ADMIN_EMAILS・AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+     * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+     * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+     */
+    get: operations["getMe"];
+  };
   "/api/items": {
     /** アイテム一覧取得 */
     get: operations["getItems"];
@@ -75,12 +84,12 @@ export interface paths {
   "/api/printer-settings": {
     /**
      * プリンター設定取得
-     * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+     * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
      */
     get: operations["getPrinterSettings"];
     /**
      * プリンター設定の更新
-     * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+     * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
      */
     put: operations["updatePrinterSettings"];
   };
@@ -97,8 +106,9 @@ export interface paths {
      * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
      * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
      * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-     * id は淹れ直しの id。淹れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-     * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+     * id は淹れ直しの id。淹れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+     * 消えた淹れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+     * 緊急を取り消す・注文の編集や削除で淹れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
      * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
      */
     post: operations["createLabelPrintRequest"];
@@ -206,6 +216,14 @@ export interface paths {
     /** オーダーにコメント追加 */
     post: operations["createOrderComment"];
   };
+  "/api/caos/brew-model": {
+    /** 共通の抽出予測と開始時の予測を取得 */
+    get: operations["getCaosBrewModel"];
+  };
+  "/api/caos/brew-records": {
+    /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+    get: operations["getCaosBrewRecords"];
+  };
   "/api/caos/logs/export": {
     /**
      * CaOSログを人間のみ・システムのみ・混合で書き出す
@@ -304,6 +322,7 @@ export interface paths {
      * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
      * 画面は、この知らせを受けたときだけ、その淹れ直しの未印刷のシールを消す。
      * レジに頼んだ代理印刷（POST /api/label-print-requests の id が淹れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+     * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の淹れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
      */
     delete: operations["deleteCupEmergency"];
   };
@@ -588,6 +607,31 @@ export interface paths {
      * （ヘッダーをパラメータとして書くと、生成される api_gin.go が models の型を参照できずビルドが通らないので説明だけに留める）
      */
     post: operations["receiveSquareWebhook"];
+  };
+  "/api/admin/data-reset": {
+    /**
+     * 営業データのリセットの前の状態
+     * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+     * （PR のプレビューは AUTH_PREVIEW_ADMIN で管理者としてログインした扱いなので使える）。
+     * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
+     */
+    get: operations["getDataResetStatus"];
+    /**
+     * 営業データを消す
+     * @description 管理者だけ。注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録・受付状態の履歴などを消し、
+     * メニュー・アイテム・在庫対象・色・プリンター・Square 端末の設定は残す。DB のユーザーやスキーマには触らない。
+     * 受付を止めていて、消す直前の中身が backupSha256 のバックアップ（GET /api/admin/data-reset/backup）と同じで、
+     * confirmation が確認の文字と同じときだけ消す。消したら WebSocket で data_reset を配る。
+     */
+    post: operations["resetData"];
+  };
+  "/api/admin/data-reset/backup": {
+    /**
+     * 営業データのリセットで消す表の中身を全部書き出す
+     * @description 管理者だけ。消す表の全行を、表ごとに決まった順で JSON にする（同じ中身なら同じバイト列になる）。
+     * リセットのときは、このファイルの SHA-256 を backupSha256 に入れる。
+     */
+    get: operations["exportDataResetBackup"];
   };
 }
 
@@ -1007,6 +1051,14 @@ export interface components {
      * @enum {string}
      */
     PrinterPaperType: "receipt" | "die_cut_label";
+    /**
+     * @description ラベル用のプリンターで、一連の印刷（1 回に送るシール）の最後にどう送るか。
+     * blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
+     * peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
+     *
+     * @enum {string}
+     */
+    LabelPrinterTrailingFeed: "blank_label" | "peeling";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -1019,10 +1071,35 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない
+       * @example true
+       */
+      label_printer_rotate_180: boolean;
+      label_printer_trailing_feed: components["schemas"]["LabelPrinterTrailingFeed"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -1036,10 +1113,36 @@ export interface components {
        */
       receipt_printer_ip: string;
       receipt_printer_model: components["schemas"]["ReceiptPrinterModel"];
+      /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
+      /** @description 使わない（label_printer_paper_width と同じく残している） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
+      /**
+       * Format: double
+       * @description ラベル用のシール 1 枚の長さ（mm。紙が送られる向き。シールの間のすき間は含めない）。緊急・キャンセル・テスト印刷のシールは、この長さ（× 8 ドット）の画像に描く
+       * @example 29
+       */
+      label_printer_label_length_mm: number;
+      /**
+       * @description ラベル用のプリンターの印字幅（ドット。1 ドットは 1/8mm）。シールはこの幅に収めて、左端から刷る
+       * @example 360
+       */
+      label_printer_print_width_dots: number;
+      /**
+       * Format: double
+       * @description 緊急・キャンセル・テスト印刷のシールの四辺の余白（mm）。余白の内側に描く。長さ・印字幅の半分から 1mm 引いたものまで
+       * @example 0
+       */
+      label_printer_margin_mm: number;
+      /**
+       * @description ラベル用のプリンターで、カップ・緊急・キャンセルのシールを 180° 回して（上下逆さまに）刷るか。テスト印刷の確認用のページは回さない。省略したら今の値のまま（設定できるようにする前のレジのため）
+       * @example true
+       */
+      label_printer_rotate_180?: boolean;
+      /** @description 省略したら今の値のまま（設定できるようにする前のレジのため） */
+      label_printer_trailing_feed?: components["schemas"]["LabelPrinterTrailingFeed"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */
@@ -1243,8 +1346,55 @@ export interface components {
       start_drip_id?: string;
       press?: components["schemas"]["CaosPress"];
     };
+    CaosBrewEstimate: {
+      seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+    };
+    CaosBrewRecordResponse: {
+      /** Format: uuid */
+      drip_id: string;
+      /** Format: date-time */
+      started_at: string;
+      /** Format: date-time */
+      finished_at: string | null;
+      dripper: number;
+      kind: string;
+      name: string;
+      grade: string;
+      predicted_seconds: number;
+      standard_seconds: number;
+      coefficient: number;
+      standard_samples: number;
+      person_samples: number;
+      actual_seconds: number | null;
+      excluded_reason: string;
+      person_excluded_reason: string;
+      model_version: string;
+    };
+    CaosBrewModelResponse: {
+      version: string;
+      /** Format: date-time */
+      updated_at: string;
+      standards: {
+        [key: string]: components["schemas"]["CaosBrewEstimate"];
+      };
+      lanes: {
+        dripper: number;
+        name: string;
+        grade: string;
+        estimates: {
+          [key: string]: components["schemas"]["CaosBrewEstimate"];
+        };
+      }[];
+      active: components["schemas"]["CaosBrewRecordResponse"][];
+    };
     /** @description ドリッパーの今日の担当者。担当者がいなければ name が空で senior は false */
     CaosLane: {
+      /** @description シフト名簿で確認できた学年。空または省略時は不明 */
+      grade?: string;
       dripper: number;
       /** @description 担当者の名前（前後の空白を落としたもの）。空なら担当者なし */
       name: string;
@@ -1266,6 +1416,8 @@ export interface components {
       lanes: components["schemas"]["CaosLane"][];
     };
     CaosLaneUpdateRequest: {
+      /** @description シフト名簿で確認できた学年。自由入力や未確認時は省略 */
+      grade?: string;
       /** @description 担当者の名前（前後の空白は落とす）。空なら担当者なし */
       name: string;
       /** @description 上級生か。画面が sohosai-shift の名簿（seniors）で判定して送る。name が空なら無視して false */
@@ -1286,9 +1438,78 @@ export interface components {
       first: number;
       second: number;
     };
+    /** @description API を呼んだ相手と、その権限。 */
+    MeResponse: {
+      /**
+       * @description API が相手を確かめて弾くか（AUTH_MODE）。
+       * off は確かめない（誰でも全部の操作ができる。email と role は null）。
+       * report-only は確かめるが弾かない（*-report-only）。enforce は許可リストの相手だけを通す。
+       *
+       * @enum {string}
+       */
+      enforcement: "off" | "report-only" | "enforce";
+      /**
+       * @description JWT で確かめた相手のメール（Access のサービストークンならクライアント ID）。
+       * off のときと、report-only で JWT が無い・正しくないときは null
+       *
+       * @example register@id.cafeore.cafe
+       */
+      email: string | null;
+      /**
+       * @description admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+       * staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
+       * enforce なら 403 になる）。off のときは null
+       *
+       * @enum {string|null}
+       */
+      role: "admin" | "staff" | "viewer" | "none" | null;
+    };
     ErrorResponse: {
       /** @example Invalid order ID format */
       error: string;
+    };
+    DataResetTable: {
+      /** @description 表の名前 */
+      name: string;
+      /**
+       * Format: int64
+       * @description 行数
+       */
+      rows: number;
+    };
+    DataResetStatus: {
+      /** @description 受付を止めているか（オーダーストップの最後の記録が stop）。止めていなければ消せない */
+      receptionStopped: boolean;
+      /** @description 消す表と今の行数 */
+      tables: components["schemas"]["DataResetTable"][];
+      /** @description 残す表（設定） */
+      keptTables: string[];
+      /** @description 消す表にも残す表にも入っていない表。1 つでもあれば消せない（API が DB より古いなど） */
+      unknownTables: string[];
+      /** @description 消すときに confirmation に入れる確認の文字 */
+      confirmation: string;
+    };
+    DataResetRequest: {
+      /** @description 確認の文字（DataResetStatus の confirmation） */
+      confirmation: string;
+      /** @description ダウンロードしたバックアップ（GET /api/admin/data-reset/backup）の SHA-256（16 進の小文字 64 文字） */
+      backupSha256: string;
+    };
+    DataResetResult: {
+      /** @description 消した表と、消した行数 */
+      tables: components["schemas"]["DataResetTable"][];
+    };
+    DataResetBackup: {
+      /** @enum {string} */
+      format: "cafeore-pos-data-reset-backup";
+      /** @enum {integer} */
+      version: 1;
+      /** @description 表の名前ごとの全行（DB の列名のままの JSON） */
+      tables: {
+        [key: string]: {
+          [key: string]: unknown;
+        }[];
+      };
     };
     /**
      * @description item はアイテムごとに 1 つある、そのアイテムの在庫。cup はカップで、アイテムには結ばず使うアイテムの種類を持つ
@@ -1657,6 +1878,34 @@ export interface operations {
       };
     };
   };
+  /**
+   * API を呼んだ相手と権限
+   * @description Access か IAP の JWT で確かめた相手と、その権限（AUTH_ADMIN_EMAILS・AUTH_STAFF_EMAILS・AUTH_VIEWER_EMAILS で決まる）を返す。
+   * POS のトップページに出す。ほかの GET と同じく、閲覧のみ以上の権限が要る
+   * （AUTH_MODE が iap か cloudflare-access のとき、権限の無い相手には 403、JWT が無い・正しくなければ 401）。
+   */
+  getMe: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["MeResponse"];
+        };
+      };
+      /** @description JWT が無い・正しくない */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 権限が無い */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /** アイテム一覧取得 */
   getItems: {
     responses: {
@@ -1958,7 +2207,7 @@ export interface operations {
   };
   /**
    * プリンター設定取得
-   * @description ラベル用とレシート用のプリンターの IP アドレスと用紙（種類と幅）、レシート用のプリンターの機種。まだ一度も保存していなければ既定値を返す
+   * @description ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）、レシート用のプリンターの用紙（種類と幅）と機種。まだ一度も保存していなければ既定値を返す
    */
   getPrinterSettings: {
     responses: {
@@ -1972,7 +2221,7 @@ export interface operations {
   };
   /**
    * プリンター設定の更新
-   * @description 全レジで共通。両方の IP アドレスと用紙（種類と幅）、機種をまとめて置き換える
+   * @description 全レジで共通。両方の IP アドレスとラベル用のシールの大きさ、レシート用の用紙（種類と幅）と機種をまとめて置き換える
    */
   updatePrinterSettings: {
     requestBody: {
@@ -2016,8 +2265,9 @@ export interface operations {
    * 受け取ったら /api/ws/orders の {"type":"label_print_requested","label_print_request":{...}} で全部の画面に配り
    * （ほかのインスタンスへは DB の通知 label_print_requested で）、代理印刷をオンにしたレジが claim してから刷る。
    * 刷れたら {"type":"label_print_done","label_print_request_id":"<id>"} で知らせる（ほかのインスタンスへは DB の通知 label_print_done で）。
-   * id は淹れ直しの id。淹れ直しが無い（取り消した）なら 404 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
-   * 緊急を取り消すと、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
+   * id は淹れ直しの id。淹れ直しが無い（取り消した・注文の編集や削除で消えた）なら 410 で、頼みは作らない（取り消しと同時に頼まれても、取り消した緊急のシールは刷らない）。
+   * 消えた淹れ直しは戻らないので、頼んだ端末は 410 ならそのシールを捨てる（ルートが無い 404 と見分けるため 404 にはしない）。
+   * 緊急を取り消す・注文の編集や削除で淹れ直しが消えると、この頼みも消える。同じ id は 1 つだけで、2 回目からは中身を変えず、まだ刷れていなければ配り直すだけ（送り直しても 2 枚刷らない）。
    * job の中身（シールの印刷データ）はサーバーでは解釈せず、そのまま配る。
    */
   createLabelPrintRequest: {
@@ -2037,8 +2287,8 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      /** @description 淹れ直しが無い（取り消した）。頼みは作らない */
-      404: {
+      /** @description 淹れ直しが無い（取り消した・注文の編集や削除で消えた）。頼みは作らない。頼んだ端末はそのシールを捨てる */
+      410: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2515,6 +2765,62 @@ export interface operations {
       };
     };
   };
+  /** 共通の抽出予測と開始時の予測を取得 */
+  getCaosBrewModel: {
+    responses: {
+      /** @description 店舗基準、現在の担当者の予測、抽出中の開始時予測 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CaosBrewModelResponse"];
+        };
+      };
+      /** @description 取得失敗。画面は最後のモデルまたは固定値を使う */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /** 抽出予測と実測・除外理由を取得（スタッフのみ） */
+  getCaosBrewRecords: {
+    parameters: {
+      query?: {
+        day?: string;
+        limit?: number;
+        offset?: number;
+        /** @description 初回レスポンスの日時を次ページにも渡すと、その後の新規開始を混ぜない */
+        snapshot_at?: string;
+      };
+    };
+    responses: {
+      /** @description 開始時予測と完了実績 */
+      200: {
+        content: {
+          "application/json": {
+            entries: components["schemas"]["CaosBrewRecordResponse"][];
+            limit: number;
+            offset: number;
+            has_more: boolean;
+            /** Format: date-time */
+            snapshot_at: string;
+          };
+        };
+      };
+      /** @description パラメーター不正 */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 取得失敗 */
+      500: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   /**
    * CaOSログを人間のみ・システムのみ・混合で書き出す
    * @description format=human（既定）は人間のみ、systemはシステムのみ、mixedは混合。entriesは日本時間・元のイベント名・category付きの時系列。systemとmixedはサーバーの成功履歴operationsとcup履歴cupsも含む。format=rawは従来の監査用全件出力。
@@ -2791,6 +3097,7 @@ export interface operations {
    * 取り消したことは /api/ws/orders の {"type":"cup_emergency_cancelled","cup_emergency_id":"<id>"} で全部の画面に知らせる（ほかのインスタンスへは DB の通知 cup_emergency_cancelled で）。
    * 画面は、この知らせを受けたときだけ、その淹れ直しの未印刷のシールを消す。
    * レジに頼んだ代理印刷（POST /api/label-print-requests の id が淹れ直しの id のもの）も消す（代理印刷のレジは、この知らせで刷るのをやめる）。
+   * 注文の編集（PUT /api/orders/{id}）で外したカップ・消した注文（DELETE /api/orders/{id}）の淹れ直しも、同じく代理印刷ごと消し、同じ知らせを出す。
    */
   deleteCupEmergency: {
     parameters: {
@@ -3801,6 +4108,95 @@ export interface operations {
       };
       /** @description Webhook の署名鍵が設定されていない */
       503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データのリセットの前の状態
+   * @description 管理者（AUTH_ADMIN_EMAILS）だけ。API の認証が有効でない（AUTH_MODE が off か *-report-only）ときは誰も使えない
+   * （PR のプレビューは AUTH_PREVIEW_ADMIN で管理者としてログインした扱いなので使える）。
+   * 消す表と行数・残す表・受付を止めているか・確認の文字を返す。
+   */
+  getDataResetStatus: {
+    responses: {
+      /** @description 成功 */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetStatus"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない。error を画面にそのまま出す */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データを消す
+   * @description 管理者だけ。注文・CaOS の記録・Square の決済の記録・棚卸しと入荷の記録・受付状態の履歴などを消し、
+   * メニュー・アイテム・在庫対象・色・プリンター・Square 端末の設定は残す。DB のユーザーやスキーマには触らない。
+   * 受付を止めていて、消す直前の中身が backupSha256 のバックアップ（GET /api/admin/data-reset/backup）と同じで、
+   * confirmation が確認の文字と同じときだけ消す。消したら WebSocket で data_reset を配る。
+   */
+  resetData: {
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DataResetRequest"];
+      };
+    };
+    responses: {
+      /** @description 消した */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetResult"];
+        };
+      };
+      /** @description リクエストが不正（確認の文字が違うなど）。error を画面にそのまま出す */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない。error を画面にそのまま出す */
+      403: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 受付を止めていない・ダウンロードしたあとにデータが変わった・知らない表がある。何も消していない。error を画面にそのまま出す */
+      409: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description 消す表をロックしてから決まった時間（60 秒）以内に確かめきれなかった。ロールバックしたので何も消していない。error を画面にそのまま出す */
+      503: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * 営業データのリセットで消す表の中身を全部書き出す
+   * @description 管理者だけ。消す表の全行を、表ごとに決まった順で JSON にする（同じ中身なら同じバイト列になる）。
+   * リセットのときは、このファイルの SHA-256 を backupSha256 に入れる。
+   */
+  exportDataResetBackup: {
+    responses: {
+      /** @description バックアップの JSON ファイル */
+      200: {
+        content: {
+          "application/json": components["schemas"]["DataResetBackup"];
+        };
+      };
+      /** @description 管理者でない、または API の認証が有効でない */
+      403: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

@@ -1,0 +1,87 @@
+name: deploy / staging
+
+# staging（https://pos-stg.cafeore.cafe。infra の README「staging と sandbox」）に API と画面を出す。
+# 本番（api-build.yml・pos-deploy-cloudrun.yml）と同じく、main への push と手動実行で走る。中身は deploy-environment.yml。
+#
+# 本番と並んで走る。staging を通ってから本番に出す、という順番にはしていない（本番の workflow は今までどおり）。
+#
+# ## 1 回で API と画面の両方を出す
+#
+# 本番は API（api-build.yml）と画面（pos-deploy-cloudrun.yml）が別の workflow で、それぞれのパスが変わったときだけ出る。
+# こちらは 1 つの workflow なので、下の paths は 2 つの paths を合わせたもので、どちらかが変わったら両方出す。
+# 変わった方だけを出すと、待っている実行が後の実行に置き換えられたとき（下の concurrency）、置き換えられた方の
+# 変更が、次にそちらのパスが変わるまで出ないため。変わっていない方も同じ main から作り直すだけ。
+#
+# ## 手動実行は main だけ
+#
+# staging はいつも main と同じものにしておく。ブランチを試すときは deploy-sandbox.yml。
+#
+# ## 止めるとき
+#
+# 変数 STAGING_DEPLOY を false にする（infra で staging_enabled を false にしたときなど）。infra の手順
+# （README「staging と sandbox」の 2 の DB のユーザー、3 の DNS と証明書）が済む前に走ると、サービスの更新
+# （新しいリビジョンが DB につなげず起動しない）か /status の確かめで落ちる。
+
+on:
+  push:
+    branches:
+      - main
+    # api-build.yml と pos-deploy-cloudrun.yml の main の paths を合わせたもの。向こうを変えたら揃えること
+    paths:
+      - 'api/**'
+      - 'services/pos/**'
+      - 'modules/common/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.dockerignore'
+      - '.github/scripts/build-info.sh'
+      - '.github/workflows/deploy-staging.yml'
+      - '.github/workflows/deploy-environment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 取り消さない（本番と同じ理由。api-build.yml の concurrency）。待っている実行は後の実行に置き換えられるが、
+# 後の実行も API と画面の両方を出すので、置き換えられた方の変更も出る（上の「1 回で API と画面の両方を出す」）。
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  # 手動実行で main 以外を選んだときは落とす（スキップだと気づきにくい）。
+  main-only:
+    name: Refuse non-main ref
+    if: ${{ github.ref != 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: main 以外は出さない
+        run: |
+          echo "::error::staging には main しか出さない（$GITHUB_REF_NAME が選ばれた）。ブランチを試すなら「deploy / sandbox」"
+          exit 1
+
+  deploy:
+    name: staging
+    # 本番と同じく、Dependabot が起点の実行（secrets も id-token も渡らない）と fork は除く（pos-deploy-cloudrun.yml の if）。
+    if: >-
+      ${{ vars.STAGING_DEPLOY != 'false'
+          && github.ref == 'refs/heads/main'
+          && github.actor != 'dependabot[bot]'
+          && !github.event.repository.fork }}
+    uses: ./.github/workflows/deploy-environment.yml
+    # 呼ぶ job に書かないと、呼ばれた側は既定の権限になる。WIF の OIDC トークン発行に id-token: write が要る
+    permissions:
+      contents: read
+      id-token: write
+    # 既定値は infra の staging_* の既定値から決まる名前（output environments.staging）。変えたら Variables で上書きする
+    with:
+      environment: staging
+      short_name: stg
+      api_service: ${{ vars.STAGING_API_CLOUD_RUN_SERVICE || 'cafeore-pos-stg' }}
+      api_lb_url: ${{ vars.STAGING_API_LB_URL || 'https://pos-be-lb-stg.cafeore.cafe' }}
+      web_service: ${{ vars.STAGING_POS_WEB_CLOUD_RUN_SERVICE || 'cafeore-pos-stg-web' }}
+      web_url: ${{ vars.STAGING_POS_WEB_URL || 'https://pos-stg.cafeore.cafe' }}
+    # secrets: inherit にしない。本番の WEBHOOK_URL が渡ると、staging の画面から本番の Slack に送られる
+    secrets:
+      webhook_url: ${{ secrets.STAGING_WEBHOOK_URL }}

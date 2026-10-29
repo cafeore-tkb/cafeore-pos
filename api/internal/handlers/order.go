@@ -728,6 +728,8 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 	// 明細が減ったときも閾値の記録を戻せるよう、変更前の分も見る。
 	resourcesBefore := h.inventory.ResourceIDsForOrders(orderID)
 
+	// 外した明細のカップの淹れ直し（消したら、取り消したときと同じく知らせる）
+	var removedEmergencies []uuid.UUID
 	err = h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態変更と重なっても、どちらかの変更が消えないようにロックしてから読む
 		order, err := lockOrder(tx, orderID)
@@ -792,7 +794,8 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		if len(removed) == 0 {
 			return nil
 		}
-		return deleteCupEmergencies(tx, "order_cup_id IN ?", removed)
+		removedEmergencies, err = deleteCupEmergencies(tx, "order_cup_id IN ?", removed)
+		return err
 	})
 	if err != nil {
 		status, message := http.StatusInternalServerError, err.Error()
@@ -806,6 +809,10 @@ func (h *OrderHandler) UpdateOrder(c *gin.Context) {
 		}
 		c.JSON(status, gin.H{"error": message})
 		return
+	}
+	// 画面は、端末に残っているその淹れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
+	for _, id := range removedEmergencies {
+		publishCupEmergencyCancelled(h.db, h.hub, id)
 	}
 
 	resp, err := publishOrder(h.db, h.hub, orderID)
@@ -854,6 +861,7 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 
 	// 注文明細・カップ・減った在庫・オーダーをまとめて削除し、途中で失敗したら全部戻す
 	var rowsAffected int64
+	var emergencies []uuid.UUID
 	if err := h.db.Transaction(func(tx *gorm.DB) error {
 		// カップの状態の変更や CaOS の操作と同じく、先に注文の行をロックする（カップの行を先に消すと、ロックの順番が逆になる）
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").First(&models.Order{}, "id = ?", order.ID).Error
@@ -866,8 +874,9 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderMenu{}).Error; err != nil {
 			return err
 		}
-		// カップの淹れ直しも消す
-		if err := deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID)); err != nil {
+		// カップの淹れ直しも消す（消したら、取り消したときと同じく知らせる）
+		emergencies, err = deleteCupEmergencies(tx, "order_cup_id IN (?)", tx.Model(&models.OrderCup{}).Select("id").Where("order_id = ?", order.ID))
+		if err != nil {
 			return err
 		}
 		if err := tx.Where("order_id = ?", order.ID).Delete(&models.OrderCup{}).Error; err != nil {
@@ -895,6 +904,10 @@ func (h *OrderHandler) deleteOrder(orderID uuid.UUID) error {
 		return gorm.ErrRecordNotFound
 	}
 
+	// 画面は、端末に残っているその淹れ直しのシールを消す（頼む端末は送り直さず、代理印刷のレジは刷らない）
+	for _, id := range emergencies {
+		publishCupEmergencyCancelled(h.db, h.hub, id)
+	}
 	publishOrderDeleted(h.db, h.hub, orderID)
 	go h.inventory.CheckAlerts(resources)
 	return nil

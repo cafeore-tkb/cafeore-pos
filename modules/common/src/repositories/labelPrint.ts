@@ -24,19 +24,37 @@ const ok = async (request: Promise<{ response: Response }>) => {
 };
 
 /**
- * 緊急（淹れ直し）のシールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は淹れ直しの id。
- * 同じ id を送り直しても 1 つだけ（2 枚刷らない）。受け取ってもらえたら true（刷れたかではない）。
- * 淹れ直しが無い（取り消した）・つながらないときは false（頼む端末は未印刷に残す。取り消しの知らせで消える）
+ * 代理印刷を頼んだ結果。requested は受け取ってもらえた（刷れたかではない）。
+ * gone は淹れ直しが無い（取り消した・注文の編集や削除で消えた。410）ので、もう頼めない（頼む端末はシールを捨てる）。
+ * retry はつながらない・断られた（間をあけて頼み直す。404 もルートが無い（API が古い）ことがあるので、こちら）
  */
-export const requestLabelPrint = (
+export type LabelPrintRequestResult = "requested" | "gone" | "retry";
+
+/** POST /api/label-print-requests の HTTP のステータス（つながらなければ undefined）を、頼んだ結果にする */
+export const labelPrintRequestResult = (
+  status: number | undefined,
+): LabelPrintRequestResult => {
+  if (status !== undefined && status >= 200 && status < 300) return "requested";
+  return status === 410 ? "gone" : "retry";
+};
+
+/**
+ * 緊急（淹れ直し）のシールをレジに代わりに刷ってもらう（POST /api/label-print-requests）。id は淹れ直しの id。
+ * 同じ id を送り直しても 1 つだけ（2 枚刷らない）。例外は投げず、結果（labelPrintRequestResult）を返す
+ */
+export const requestLabelPrint = async (
   id: string,
   job: { labels: readonly Record<string, unknown>[] },
-) =>
-  ok(
-    apiClient.POST("/api/label-print-requests", {
+): Promise<LabelPrintRequestResult> => {
+  try {
+    const { response } = await apiClient.POST("/api/label-print-requests", {
       body: { id, job: { labels: [...job.labels] } },
-    }),
-  );
+    });
+    return labelPrintRequestResult(response.status);
+  } catch {
+    return labelPrintRequestResult(undefined);
+  }
+};
 
 /** 今日のまだ刷れていない代理印刷（GET /api/label-print-requests。古い順）。読めなければ null */
 export const getLabelPrintRequests = async (): Promise<

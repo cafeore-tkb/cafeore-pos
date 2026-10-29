@@ -466,6 +466,10 @@ export const setExactReceived = (
   };
 };
 
+/** Enter で受取金額をちょうどにするか（会計の段階・現金・受取金額が空）。もう一度 Enter で確定 */
+export const isExactOnEnter = (draft: CashierDraft): boolean =>
+  draft.step === "pay" && draft.payment === "cash" && draft.received === "";
+
 // --------------------------------------------------
 // 段階・決済手段
 // --------------------------------------------------
@@ -632,7 +636,7 @@ export const cashierKeyIntent = (
         if (draft.payment !== "cash") {
           return { type: "startSquare", paymentType: draft.payment };
         }
-        return draft.received === ""
+        return isExactOnEnter(draft)
           ? { type: "exactReceived" }
           : { type: "submitCash" };
       }

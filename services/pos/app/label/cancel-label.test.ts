@@ -1,7 +1,6 @@
 import { type ItemType, MenuEntity, OrderEntity } from "@cafeore/common";
 import { describe, expect, test } from "vitest";
 import { cancelLabelJob, hasCancelLabel } from "./cancel-label";
-import { DIE_CUT_LABEL_WIDTHS } from "./paper";
 
 const hotType: ItemType = {
   id: "1",
@@ -56,10 +55,12 @@ describe("[unit] hasCancelLabel", () => {
 describe("[unit] cancelLabelJob", () => {
   test("刷らない注文は、画像を描かずに null", async () => {
     await expect(
-      cancelLabelJob(
-        orderOf([menu("クッキー", goodsType)]),
-        DIE_CUT_LABEL_WIDTHS["80mm"],
-      ),
+      cancelLabelJob(orderOf([menu("クッキー", goodsType)]), {
+        width: 360,
+        height: 232,
+        margin: 0,
+        rotate180: false,
+      }),
     ).resolves.toBeNull();
   });
 });

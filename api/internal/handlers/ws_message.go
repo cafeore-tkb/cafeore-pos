@@ -32,6 +32,8 @@ const (
 	WSMessageTypeLabelPrintRequested WSMessageType = "label_print_requested"
 	// 刷れた代理印刷の ID（label_print.go）。頼んだ端末はレジで印刷待ちの数から外す
 	WSMessageTypeLabelPrintDone WSMessageType = "label_print_done"
+	// 営業データを消した（data_reset.go）。画面は読み込み直す
+	WSMessageTypeDataReset WSMessageType = "data_reset"
 )
 
 type WSMessage struct {

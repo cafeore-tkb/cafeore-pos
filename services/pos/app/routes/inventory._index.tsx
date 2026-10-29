@@ -9,12 +9,12 @@ export const meta: MetaFunction = () => {
 export default function InventoryPage() {
   const { statuses, error, isLoading, mutateInventory } = useInventory();
 
-  if (isLoading) return <div className="p-4">読み込み中...</div>;
-  if (error) return <div className="p-4">エラー: {String(error)}</div>;
+  if (isLoading) return <div>読み込み中...</div>;
+  if (error) return <div>エラー: {String(error)}</div>;
 
   if (statuses.length === 0) {
     return (
-      <div className="p-4">
+      <div>
         在庫対象がまだありません。
         <Link className="underline" to="/products">
           商品管理
@@ -25,7 +25,7 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       {statuses.map((status) => (
         <StockCard
           key={status.resource.id}

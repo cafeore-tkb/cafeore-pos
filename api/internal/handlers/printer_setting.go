@@ -27,13 +27,18 @@ func NewPrinterSettingHandler(db *gorm.DB) *PrinterSettingHandler {
 
 func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSettingsResponse {
 	return models.PrinterSettingsResponse{
-		LabelPrinterIp:           setting.LabelPrinterIP,
-		ReceiptPrinterIp:         setting.ReceiptPrinterIP,
-		ReceiptPrinterModel:      models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
-		LabelPrinterPaperWidth:   models.PrinterPaperWidth(setting.LabelPrinterPaperWidth),
-		ReceiptPrinterPaperWidth: models.PrinterPaperWidth(setting.ReceiptPrinterPaperWidth),
-		LabelPrinterPaperType:    models.PrinterPaperType(setting.LabelPrinterPaperType),
-		ReceiptPrinterPaperType:  models.PrinterPaperType(setting.ReceiptPrinterPaperType),
+		LabelPrinterIp:             setting.LabelPrinterIP,
+		ReceiptPrinterIp:           setting.ReceiptPrinterIP,
+		ReceiptPrinterModel:        models.ReceiptPrinterModel(setting.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:     models.PrinterPaperWidth(setting.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth:   models.PrinterPaperWidth(setting.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:      models.PrinterPaperType(setting.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:    models.PrinterPaperType(setting.ReceiptPrinterPaperType),
+		LabelPrinterLabelLengthMm:  setting.LabelPrinterLabelLengthMm,
+		LabelPrinterPrintWidthDots: setting.LabelPrinterPrintWidthDots,
+		LabelPrinterMarginMm:       setting.LabelPrinterMarginMm,
+		LabelPrinterRotate180:      setting.Rotate180(),
+		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeed(setting.LabelPrinterTrailingFeed),
 	}
 }
 
@@ -65,7 +70,39 @@ func validatePaperType(field string, value models.PrinterPaperType) error {
 	return fmt.Errorf("%s must be receipt or die_cut_label", field)
 }
 
+// ラベル用のシールの大きさの範囲（openapi.yaml と同じ）。1mm は 8 ドット。
+const (
+	labelLengthMinMm       = 5
+	labelLengthMaxMm       = 100
+	labelPrintWidthMinDots = 64
+	labelPrintWidthMaxDots = 576
+	labelMarginMaxMm       = 10
+	// 余白の内側に、縦にも横にもこれだけは残す（レジの paper.ts の labelGeometry も同じだけ残す）
+	labelPrintableMinMm = 2
+	dotsPerMm           = 8
+)
+
+// ラベル用のシールの大きさが受け付けられる範囲か確かめる。
+// 範囲の比べ方は、NaN も弾けるよう「範囲の中にない」で書く。
+func validateLabelSize(lengthMm float64, widthDots int, marginMm float64) error {
+	if !(lengthMm >= labelLengthMinMm && lengthMm <= labelLengthMaxMm) {
+		return fmt.Errorf("label_printer_label_length_mm must be between %d and %d", labelLengthMinMm, labelLengthMaxMm)
+	}
+	if widthDots < labelPrintWidthMinDots || widthDots > labelPrintWidthMaxDots || widthDots%dotsPerMm != 0 {
+		return fmt.Errorf("label_printer_print_width_dots must be a multiple of %d between %d and %d", dotsPerMm, labelPrintWidthMinDots, labelPrintWidthMaxDots)
+	}
+	if !(marginMm >= 0 && marginMm <= labelMarginMaxMm) {
+		return fmt.Errorf("label_printer_margin_mm must be between 0 and %d", labelMarginMaxMm)
+	}
+	shorter := min(lengthMm, float64(widthDots)/dotsPerMm)
+	if marginMm*2 > shorter-labelPrintableMinMm {
+		return errors.New("label_printer_margin_mm leaves no room to print")
+	}
+	return nil
+}
+
 // リクエストを検証して DB モデルに変換する。
+// label_printer_rotate_180・label_printer_trailing_feed が無ければ既定にする（保存してある値のままにするのは UpdatePrinterSettings）。
 func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.PrinterSetting, error) {
 	label, err := parsePrinterIP("label_printer_ip", request.LabelPrinterIp)
 	if err != nil {
@@ -92,16 +129,37 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	if err := validatePaperType("receipt_printer_paper_type", request.ReceiptPrinterPaperType); err != nil {
 		return models.PrinterSetting{}, err
 	}
+	if err := validateLabelSize(request.LabelPrinterLabelLengthMm, request.LabelPrinterPrintWidthDots, request.LabelPrinterMarginMm); err != nil {
+		return models.PrinterSetting{}, err
+	}
+	rotate180 := models.DefaultLabelPrinterRotate180
+	if request.LabelPrinterRotate180 != nil {
+		rotate180 = *request.LabelPrinterRotate180
+	}
+	trailingFeed := models.DefaultLabelPrinterTrailingFeed
+	if request.LabelPrinterTrailingFeed != nil {
+		trailingFeed = *request.LabelPrinterTrailingFeed
+	}
+	switch trailingFeed {
+	case models.LabelPrinterTrailingFeedBlankLabel, models.LabelPrinterTrailingFeedPeeling:
+	default:
+		return models.PrinterSetting{}, errors.New("label_printer_trailing_feed must be blank_label or peeling")
+	}
 	return models.PrinterSetting{
-		ID:                       models.PrinterSettingID,
-		LabelPrinterIP:           label,
-		ReceiptPrinterIP:         receipt,
-		ReceiptPrinterModel:      string(request.ReceiptPrinterModel),
-		LabelPrinterPaperWidth:   string(request.LabelPrinterPaperWidth),
-		ReceiptPrinterPaperWidth: string(request.ReceiptPrinterPaperWidth),
-		LabelPrinterPaperType:    string(request.LabelPrinterPaperType),
-		ReceiptPrinterPaperType:  string(request.ReceiptPrinterPaperType),
-		UpdatedAt:                time.Now(),
+		ID:                         models.PrinterSettingID,
+		LabelPrinterIP:             label,
+		ReceiptPrinterIP:           receipt,
+		ReceiptPrinterModel:        string(request.ReceiptPrinterModel),
+		LabelPrinterPaperWidth:     string(request.LabelPrinterPaperWidth),
+		ReceiptPrinterPaperWidth:   string(request.ReceiptPrinterPaperWidth),
+		LabelPrinterPaperType:      string(request.LabelPrinterPaperType),
+		ReceiptPrinterPaperType:    string(request.ReceiptPrinterPaperType),
+		LabelPrinterLabelLengthMm:  request.LabelPrinterLabelLengthMm,
+		LabelPrinterPrintWidthDots: request.LabelPrinterPrintWidthDots,
+		LabelPrinterMarginMm:       request.LabelPrinterMarginMm,
+		LabelPrinterRotate180:      &rotate180,
+		LabelPrinterTrailingFeed:   string(trailingFeed),
+		UpdatedAt:                  time.Now(),
 	}, nil
 }
 
@@ -126,7 +184,8 @@ func (h *PrinterSettingHandler) GetPrinterSettings(c *gin.Context) {
 
 // PUT /api/printer-settings - プリンター設定の更新
 //
-// 単一行を丸ごと置き換える。
+// 単一行を丸ごと置き換える。label_printer_rotate_180・label_printer_trailing_feed が無ければ（選べるようにする前のレジ）、
+// 保存してある値のままにする。
 func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 	var request models.UpdatePrinterSettingsJSONRequestBody
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -140,7 +199,26 @@ func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Clauses(clause.OnConflict{UpdateAll: true}).Create(&setting).Error; err != nil {
+	err = h.db.Transaction(func(tx *gorm.DB) error {
+		if request.LabelPrinterRotate180 == nil || request.LabelPrinterTrailingFeed == nil {
+			// 読んでから書くまでに、ほかの保存で変わらないよう行を押さえる（まだ行が無ければ既定のまま）
+			var saved models.PrinterSetting
+			result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Limit(1).Find(&saved, "id = ?", models.PrinterSettingID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected > 0 {
+				if request.LabelPrinterRotate180 == nil {
+					setting.LabelPrinterRotate180 = saved.LabelPrinterRotate180
+				}
+				if request.LabelPrinterTrailingFeed == nil {
+					setting.LabelPrinterTrailingFeed = saved.LabelPrinterTrailingFeed
+				}
+			}
+		}
+		return tx.Clauses(clause.OnConflict{UpdateAll: true}).Create(&setting).Error
+	})
+	if err != nil {
 		log.Printf("failed to save printer settings: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 		return

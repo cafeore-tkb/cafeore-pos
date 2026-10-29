@@ -1,0 +1,22 @@
+# リポジトリのルートをコンテキストにするビルド（services/pos/Dockerfile）が送るもの。
+# api/Dockerfile のコンテキストは api/ なので、こちらではなく api/.dockerignore を見る。
+#
+# まず全部除き、要るもの（pnpm のワークスペースと、その中のパッケージ）だけを戻す。
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!modules/
+!services/
+
+# 戻したものの中でも要らないもの
+**/node_modules
+**/build
+**/.react-router
+**/.wrangler
+**/.env
+**/.env.*
+**/*.test.ts
+**/*.test.tsx
+**/README.md
+services/pos/Dockerfile

@@ -37,7 +37,7 @@ interface LaneChangeDialogProps {
   shiftFeed: ShiftFeedState;
   /** 開いたときの時刻（候補の枠を決める） */
   nowMs: number;
-  onPick: (name: string, senior: boolean) => void;
+  onPick: (name: string, senior: boolean, fromFeed?: boolean) => void;
   onSwap: (other: number) => void;
   onOpenSettings: () => void;
   onClose: () => void;
@@ -187,7 +187,9 @@ export const LaneChangeDialog: React.FC<LaneChangeDialogProps> = ({
                     key={candidate.name}
                     type="button"
                     data-lane-candidate={candidate.name}
-                    onClick={() => onPick(candidate.name, candidate.senior)}
+                    onClick={() =>
+                      onPick(candidate.name, candidate.senior, true)
+                    }
                     className="flex min-h-[56px] touch-manipulation flex-col items-start justify-center rounded-xl border-2 border-blue-500 bg-blue-50 px-3 py-2 text-left active:scale-[0.98]"
                   >
                     <span className="flex items-center gap-1.5 font-black text-[16px] text-slate-950">

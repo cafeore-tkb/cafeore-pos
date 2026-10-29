@@ -6,10 +6,14 @@ import {
   buildCaosCards,
   jstDate,
   overlayCaosOrders,
+  useCaosBrewModel,
 } from "@cafeore/common";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { predictedBrewSeconds } from "../logic/brewPrediction";
 import { caosLog, createCaosStateLog } from "../utils/log";
+import { useCaosLanes } from "./useCaosLanes";
 import { enqueueCaosOps, useCaosOutboxEntries } from "./useCaosOutbox";
 import { usePosOrders } from "./usePosOrders";
 
@@ -40,6 +44,25 @@ export const useLiveBoard = ({
     [orders, today, entries],
   );
   const cards = useMemo(() => buildCaosCards(board), [board]);
+  const { model, refresh } = useCaosBrewModel(enabled);
+  const { lanes: people } = useCaosLanes();
+  const assignmentKey = JSON.stringify(
+    people.map(({ dripper, name, grade }) => [dripper, name, grade]),
+  );
+  const predictBrew = useCallback(
+    (card: import("@cafeore/common").CaosCard, dripper: number) =>
+      predictedBrewSeconds(
+        model,
+        card,
+        dripper,
+        people.find((person) => person.dripper === dripper),
+      ),
+    [model, people],
+  );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 担当者の交代時にもサーバーの予測を取り直す
+  useEffect(() => {
+    if (enabled && orders) void refresh().catch(() => {});
+  }, [enabled, orders, assignmentKey, refresh]);
   const [logState] = useState(() => createCaosStateLog());
   const previousCards = useRef(new Map<string, string>());
   useEffect(() => {
@@ -86,6 +109,7 @@ export const useLiveBoard = ({
     /** 注文（緊急のシールの中身を作る） */
     orders,
     cards,
+    predictBrew,
     /** 最後に通った操作で端末に残した操作の id */
     lastEnqueued: () => enqueued.current,
     /** 書き込みを送る。決まりに合えば true（画面はすぐ変わり、送るのは後ろで） */

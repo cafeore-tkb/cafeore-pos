@@ -13,6 +13,11 @@
   // versions delete が無く、バージョンを個別に消す手段が今のところ無い
   // （wrangler preview delete は private beta）。古いプレビューを
   // 公開したままにしたくない場合は、ここを false にして配信自体を止めること。
+  //
+  // workers_dev（本番の workers.dev の URL）は書かない。wrangler が決める: 本番の deploy に
+  // --domain（デプロイの workflow の WORKERS_CUSTOM_DOMAIN）を渡すと false、渡さないと true。
+  // 独自ドメインに移す前のアカウントでは workers.dev が本番の URL なので、ここに false と
+  // 書くと本番が止まる。プレビュー URL はこの preview_urls で別に決まるので、どちらでも残る。
   "preview_urls": true,
 
   // Workers Logs。console.log などの出力と、リクエストごとの呼び出しログ
@@ -38,13 +43,21 @@
     // SPA なので、アセットに無いパスは 404 ではなく index.html を返す。
     "not_found_handling": "single-page-application",
     // これらだけはアセットより先にスクリプトへ回す。無いと上のフォールバックで
-    // index.html が返り、API に届かない。**worker/index.ts の API_PATH・CALL_VOICE_PREFIX と揃えること。**
-    "run_worker_first": ["/api/*", "/status", "/health", "/call-voice/*"]
+    // index.html が返り、API に届かない。**worker/index.ts の API_PATH・CALL_VOICE_PREFIX・LOGIN_USER_PATH と揃えること。**
+    "run_worker_first": [
+      "/api/*",
+      "/status",
+      "/health",
+      "/call-voice/*",
+      "/auth/me"
+    ]
   },
 
   // 呼び出し画面の音声（ElevenLabs で作ったもの）を溜めておくところ（worker/call-voice.ts）。
-  // 本番もプレビューも同じバケットを使う（鍵は送った中身のハッシュなので、同じ文面なら同じ音声）。
+  // 鍵は送った中身のハッシュなので、同じ文面なら同じ音声になる。本番とプレビューを別のアカウントに
+  // 出しているときは、同じ名前の別のバケットになる（README の「POS の Worker を cafeore のアカウントに移す」）。
   // **バケットが無いとデプロイが失敗する。** 先に wrangler r2 bucket create で作っておくこと。
+  // バケットはアカウントごとにあるので、Worker を別のアカウントに移すときは移す先にも作る。
   // ElevenLabs の鍵は secret の ELEVENLABS_API_KEY（デプロイの workflow が入れる）。
   "r2_buckets": [
     {

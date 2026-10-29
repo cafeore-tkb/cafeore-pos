@@ -14,11 +14,17 @@ import { totalCups } from "./cards";
 // 担当者（名前・上級生のみのカードを淹れられる上級生か）は CaOS では作らない（あとでサーバーの盤面と sohosai-shift の予定から出す）。
 
 /** ドリッパーの列。番号（id）と、@cafeore/common の caosLane（終わり・抽出中・待機） */
-export type Lane = { id: number } & ReturnType<typeof caosLane>;
+export type BrewPredictor = (card: CaosCard, dripper: number) => number;
+export type Lane = { id: number; predictBrew?: BrewPredictor } & ReturnType<
+  typeof caosLane
+>;
 
 /** 6 列のドリッパー */
-export const boardLanes = (cards: readonly CaosCard[]): Lane[] =>
-  DRIPPER_NUMBERS.map((id) => ({ id, ...caosLane(cards, id) }));
+export const boardLanes = (
+  cards: readonly CaosCard[],
+  predictBrew?: BrewPredictor,
+): Lane[] =>
+  DRIPPER_NUMBERS.map((id) => ({ id, ...caosLane(cards, id), predictBrew }));
 
 // 列の終わっていないカード（抽出中・待機の順）は @cafeore/common の laneActive（画面の部品はここから使う）
 export { laneActive };

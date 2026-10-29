@@ -99,7 +99,7 @@ func (h *CaosHandler) GetCaosLogs(c *gin.Context) {
 func readCaosLogWindow(tx *gorm.DB, affected, dripIDs []uuid.UUID, start, end time.Time) ([]models.CaosOperationCup, error) {
 	var rows []models.CaosOperationCup
 	err := tx.Raw(`SELECT c.id AS unit_id, c.cup_id, c.order_id, o.order_id AS order_no,
-   o.created_at AS order_created_at, oc.ready_at, COALESCE(e.reason, '') AS emergency_reason,
+   o.created_at AS order_created_at, oc.ready_at, it.iced_brew AS iced_brew, COALESCE(e.reason, '') AS emergency_reason,
    (oc.ready_at IS NULL AND it.makes_cup AND it.needs_brew) AS in_window,
    c.dripper AS before_dripper, c.dripper_position AS before_dripper_position, c.drip_id AS before_drip_id,
    c.brew_started_at AS before_brew_started_at, c.brew_finished_at AS before_brew_finished_at
@@ -179,7 +179,10 @@ func recordCaosOperation(tx *gorm.DB, kind string, pressed, now time.Time, press
 	if len(before) == 0 {
 		return nil
 	}
-	return tx.CreateInBatches(&before, 100).Error
+	if err := tx.CreateInBatches(&before, 100).Error; err != nil {
+		return err
+	}
+	return recordCaosBrews(tx, operation, before)
 }
 
 // 現行画面は merge_into を送る。古い画面では同じdrip_idへ入る別の書き込み/既存の杯を相手とする。
