@@ -147,7 +147,7 @@ const ControlViewCBoard: React.FC<
                             {cards.map((ticket, position) => (
                               <div
                                 key={ticket.key}
-                                className="flex min-h-[48px] shrink-0 flex-col"
+                                className={`flex min-h-[48px] flex-col ${cards.length === 1 ? "flex-1" : "shrink-0"}`}
                               >
                                 {position > 0 && (
                                   <span className="text-center font-bold text-[11px] text-slate-600">
