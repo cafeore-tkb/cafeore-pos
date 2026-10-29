@@ -1,4 +1,9 @@
-import { type OrderEntity, jstClock, jstDate } from "@cafeore/common";
+import {
+  type OrderEntity,
+  jstClock,
+  jstDate,
+  useItemMaster,
+} from "@cafeore/common";
 import {
   Activity,
   Banknote,
@@ -16,6 +21,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import {
+  type ReactNode,
   useEffect,
   useId,
   useLayoutEffect,
@@ -43,10 +49,21 @@ import {
   liveAnalysisOrders,
   operationsReport,
 } from "~/lib/analytics/operations";
+import {
+  compareProductCups,
+  comparisonChange,
+  comparisonWindow,
+  currentProductKey,
+  historicalHourly,
+} from "~/lib/analytics/yearComparison";
 import { useOrdersWSContext } from "~/routes/context/OrdersWSContext";
 import { DashboardControls } from "./DashboardControls";
 import { OrderStatusList } from "./MasterState";
 import { OrderList } from "./OrderList";
+import {
+  YearComparisonSettings,
+  YearProductComparison,
+} from "./YearComparison";
 import { AvailabilityReview } from "./operations/AvailabilityReview";
 import { ChartValues } from "./operations/ChartValues";
 import { DurationCharts, minutes } from "./operations/DurationCharts";
@@ -59,6 +76,14 @@ import {
   ProductTimeChart,
 } from "./operations/OverviewVisuals";
 import { SnapshotComparison } from "./operations/SnapshotComparison";
+import {
+  CURRENT_YEAR_COLOR,
+  CurrentYearBar,
+  PREVIOUS_YEAR_COLOR,
+  YearChartLegend,
+  YearChartTooltip,
+} from "./operations/YearChartStyle";
+import { useYearComparisonSettings } from "./useYearComparisonSettings";
 
 const SECTIONS = [
   {
@@ -115,7 +140,8 @@ export function DashboardWorkspace() {
   const [section, setSection] = useState<DashboardSection>("sales");
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [referenceOrders, setReferenceOrders] = useState<AnalysisOrder[]>([]);
-  const [referenceDate, setReferenceDate] = useState("");
+  const comparisonSettings = useYearComparisonSettings();
+  const { items, error: itemsError } = useItemMaster();
   const [referenceInfo, setReferenceInfo] = useState("");
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceFailure, setReferenceFailure] = useState("");
@@ -151,13 +177,7 @@ export function DashboardWorkspace() {
     load2025Baseline()
       .then((data) => {
         if (!active) return;
-        const days = [
-          ...new Set(data.orders.map((order) => jstDate(order.created))),
-        ].sort();
         setReferenceOrders(data.orders);
-        setReferenceDate((current) =>
-          days.includes(current) ? current : (days[0] ?? ""),
-        );
         setReferenceInfo(
           `2025/data/day12.json / sohosai-analysis ${data.commit.slice(0, 8)}`,
         );
@@ -176,6 +196,8 @@ export function DashboardWorkspace() {
   }, []);
 
   const sourceOrders = allOrders ?? activeOrders ?? EMPTY_ORDERS;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 注文受信を契機に集計の締切を進め、直近の注文も即座に含める。
+  useEffect(() => setNow(Date.now()), [sourceOrders]);
   const selectedWindow = useMemo(
     () => dashboardWindow(selectedDate, startTime, endTime, now),
     [selectedDate, startTime, endTime, now],
@@ -207,30 +229,78 @@ export function DashboardWorkspace() {
       ].sort(),
     [referenceOrders],
   );
-  const comparisonReport = useMemo(() => {
-    if (!referenceDate) return null;
-    const start =
-      dayWindow(referenceDate, now).start +
-      window.start -
-      dayWindow(selectedDate, now).start;
-    return operationsReport(
+  const referenceDate = referenceDays.includes(
+    comparisonSettings.settings.referenceDate,
+  )
+    ? comparisonSettings.settings.referenceDate
+    : (referenceDays[0] ?? "");
+  const referenceWindow = useMemo(
+    () => (referenceDate ? comparisonWindow(window, referenceDate) : null),
+    [window, referenceDate],
+  );
+  const comparisonReport = useMemo(
+    () =>
+      referenceWindow
+        ? operationsReport(referenceOrders, referenceWindow, intervalMinutes)
+        : null,
+    [referenceOrders, referenceWindow, intervalMinutes],
+  );
+  const referenceHourly = useMemo(
+    () =>
+      referenceWindow
+        ? historicalHourly(referenceOrders, referenceWindow)
+        : null,
+    [referenceOrders, referenceWindow],
+  );
+  const currentProducts = useMemo(() => {
+    const products = new Map<string, string>();
+    for (const order of sourceOrders) {
+      for (const cup of order.cups)
+        products.set(currentProductKey(cup.item), cup.item.name);
+    }
+    // マスターに登録した直後の商品も、売れる前に設定できる。
+    for (const item of items) {
+      if (item.item_type.makes_cup)
+        products.set(currentProductKey(item), item.name);
+    }
+    return [...products]
+      .map(([key, name]) => ({ key, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  }, [sourceOrders, items]);
+  const historicalProducts = useMemo(
+    () =>
+      [
+        ...new Set(
+          referenceOrders.flatMap((order) =>
+            order.cups.map((cup) => cup.product),
+          ),
+        ),
+      ].sort((a, b) => a.localeCompare(b, "ja")),
+    [referenceOrders],
+  );
+  const productComparison = useMemo(
+    () =>
+      referenceWindow
+        ? compareProductCups(
+            sourceOrders,
+            referenceOrders,
+            window,
+            referenceWindow,
+            comparisonSettings.settings,
+            currentProducts.map((p) => p.key),
+            historicalProducts,
+          )
+        : null,
+    [
+      sourceOrders,
       referenceOrders,
-      {
-        start,
-        end: start + Math.max(0, cutoff - window.start),
-        now: Number.POSITIVE_INFINITY,
-      },
-      intervalMinutes,
-    );
-  }, [
-    referenceOrders,
-    referenceDate,
-    now,
-    cutoff,
-    window.start,
-    intervalMinutes,
-    selectedDate,
-  ]);
+      window,
+      referenceWindow,
+      comparisonSettings.settings,
+      currentProducts,
+      historicalProducts,
+    ],
+  );
   const finance = useMemo(
     () => dashboardFinance(selectedOrders, cutoff, now, selectedDate, window),
     [selectedOrders, cutoff, now, selectedDate, window],
@@ -239,6 +309,20 @@ export function DashboardWorkspace() {
   const selectedSection =
     SECTIONS.find((item) => item.id === section) ?? SECTIONS[0];
   const live = isOrdersLoaded && status === "open";
+  const yearSettings = (
+    <YearComparisonSettings
+      settings={comparisonSettings.settings}
+      onChange={comparisonSettings.update}
+      currentProducts={currentProducts}
+      historicalProducts={historicalProducts}
+      referenceDays={referenceDays}
+      referenceDate={referenceDate}
+      loading={referenceLoading}
+      failure={referenceFailure}
+      storageMessage={comparisonSettings.storageMessage}
+      disabled={!comparisonSettings.loaded}
+    />
+  );
 
   return (
     <div className="min-h-full bg-white px-4 py-6 text-stone-900 [--dashboard-nav-height:4rem] [overflow-anchor:none] sm:px-6 lg:px-10 lg:[--dashboard-nav-height:0px]">
@@ -411,6 +495,16 @@ export function DashboardWorkspace() {
               onInterval={setIntervalMinutes}
             />
             <div className="pt-6">
+              {(section === "sales" || section === "comparison") && (
+                <div className="mb-5">
+                  {yearSettings}
+                  {itemsError && (
+                    <output className="mt-2 block text-stone-600 text-xs">
+                      商品マスターを取得できません。受信済みの注文に含まれる商品を表示しています。
+                    </output>
+                  )}
+                </div>
+              )}
               {!selectedWindow ? (
                 <p
                   role="alert"
@@ -450,7 +544,13 @@ export function DashboardWorkspace() {
                   </details>
                 </div>
               ) : section === "sales" ? (
-                <SalesSection report={report} finance={finance} />
+                <SalesSection
+                  report={report}
+                  finance={finance}
+                  reference={comparisonReport}
+                  referenceHourly={referenceHourly}
+                  productComparison={productComparison}
+                />
               ) : section === "details" ? (
                 <section className="border-stone-200 border-t pt-6">
                   <SectionHeading
@@ -474,14 +574,15 @@ export function DashboardWorkspace() {
                     currentDate={selectedDate}
                     current={report}
                     referenceDate={referenceDate}
-                    referenceDays={referenceDays}
                     reference={comparisonReport}
                     referenceInfo={referenceInfo}
                     loading={referenceLoading}
                     failure={referenceFailure}
                     intervalMinutes={intervalMinutes}
-                    onReferenceDateChange={setReferenceDate}
                   />
+                  {productComparison && (
+                    <YearProductComparison data={productComparison} />
+                  )}
                 </div>
               )}
             </div>
@@ -498,34 +599,88 @@ type Finance = ReturnType<typeof dashboardFinance>;
 function SalesSection({
   report,
   finance,
+  reference,
+  referenceHourly,
+  productComparison,
 }: {
   report: Report;
   finance: Finance;
+  reference: Report | null;
+  referenceHourly: Map<number, number> | null;
+  productComparison: ReturnType<typeof compareProductCups> | null;
 }) {
   const paymentTotal = finance.cash + finance.square;
   const cashRatio = paymentTotal > 0 ? (finance.cash / paymentTotal) * 100 : 0;
   const squareRatio =
     paymentTotal > 0 ? (finance.square / paymentTotal) * 100 : 0;
+  const cups = report.products.reduce(
+    (sum, product) => sum + product.received,
+    0,
+  );
+  const referenceCups =
+    reference?.products.reduce((sum, product) => sum + product.received, 0) ??
+    0;
+  const gradientId = `sales-excess-${useId().replace(/:/g, "")}`;
+  const hourly = finance.hourly.map((hour) => ({
+    ...hour,
+    name: hour.label,
+    current: hour.revenue,
+    previous: referenceHourly ? (referenceHourly.get(hour.hour) ?? 0) : null,
+    previousRevenue: referenceHourly
+      ? (referenceHourly.get(hour.hour) ?? 0)
+      : undefined,
+  }));
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-x-8 gap-y-5 xl:grid-cols-5">
         <MetricCard
           icon={Coffee}
           label="注文杯数"
-          value={`${report.products.reduce((sum, product) => sum + product.received, 0)}杯`}
+          value={`${cups}杯`}
           note="取消を除く・ドリンクのみ"
+          comparison={
+            reference ? (
+              <ComparisonNote
+                reference={`${referenceCups}杯`}
+                difference={comparisonChange(cups, referenceCups, "杯")}
+              />
+            ) : undefined
+          }
         />
         <MetricCard
           icon={CircleDollarSign}
           label="売上"
           value={yen(report.revenue)}
           note={`${report.orderCount}件の注文`}
+          comparison={
+            reference ? (
+              <ComparisonNote
+                reference={yen(reference.revenue)}
+                difference={comparisonChange(
+                  report.revenue,
+                  reference.revenue,
+                  "円",
+                )}
+              />
+            ) : undefined
+          }
         />
         <MetricCard
           icon={ReceiptText}
           label="客単価"
           value={yen(finance.average)}
           note="注文1件あたり"
+          comparison={
+            reference ? (
+              <ComparisonNote
+                reference={
+                  reference.orderCount
+                    ? yen(Math.round(reference.revenue / reference.orderCount))
+                    : "—（注文なし）"
+                }
+              />
+            ) : undefined
+          }
         />
         <MetricCard
           icon={Banknote}
@@ -547,7 +702,13 @@ function SalesSection({
           title="商品別の注文杯数"
           description="選択日に受けた注文から取消を除外。金額とは別の軸で杯数を比較します。"
         />
-        <ProductCupChart products={report.products} />
+        <ProductCupChart
+          products={report.products}
+          comparisonRows={productComparison?.chartRows}
+        />
+        {productComparison && (
+          <YearProductComparison data={productComparison} />
+        )}
       </section>
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(18rem,0.7fr)]">
         <section className="min-w-0 border-stone-200 border-t pt-6">
@@ -559,7 +720,7 @@ function SalesSection({
           <div className="mt-5 h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={finance.hourly}
+                data={hourly}
                 accessibilityLayer
                 margin={{ top: 24, right: 8, left: 20, bottom: 24 }}
               >
@@ -591,30 +752,59 @@ function SalesSection({
                   width={42}
                 />
                 <Tooltip
-                  formatter={(value: number, name: string) =>
-                    name === "売上" ? [yen(value), name] : [value, name]
-                  }
+                  content={({ active, payload }) => (
+                    <YearChartTooltip
+                      active={active}
+                      row={payload?.[0]?.payload}
+                      unit="円"
+                    />
+                  )}
                   cursor={{ fill: "#f5f5f4" }}
                 />
                 <Bar
-                  dataKey="revenue"
+                  dataKey="current"
                   name="売上"
-                  fill="#0f766e"
+                  fill={CURRENT_YEAR_COLOR}
+                  shape={<CurrentYearBar gradientId={gradientId} vertical />}
                   radius={[7, 7, 0, 0]}
                   maxBarSize={46}
                   isAnimationActive={false}
                 />
+                {reference && (
+                  <Bar
+                    dataKey="previousRevenue"
+                    name="前年・同時刻までの売上"
+                    fill={PREVIOUS_YEAR_COLOR}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={24}
+                    isAnimationActive={false}
+                  />
+                )}
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <YearChartLegend comparison={reference !== null} />
           <p className="mt-2 text-stone-500 text-xs">
             {finance.peak
               ? `売上が最も多い時間帯: ${finance.peak.label}〜・${yen(finance.peak.revenue)}`
               : "売上が0円のため、最多の時間帯は表示しません。"}
           </p>
           <ChartValues
-            columns={["受付時間（JST）", "売上（円）", "注文（件）"]}
-            rows={finance.hourly.map((h) => [h.label, h.revenue, h.orders])}
+            columns={
+              reference
+                ? [
+                    "受付時間（JST）",
+                    "売上（円）",
+                    "注文（件）",
+                    "前年売上（円）",
+                  ]
+                : ["受付時間（JST）", "売上（円）", "注文（件）"]
+            }
+            rows={hourly.map((h) =>
+              reference
+                ? [h.label, h.revenue, h.orders, h.previousRevenue ?? 0]
+                : [h.label, h.revenue, h.orders],
+            )}
           />
         </section>
 
@@ -816,24 +1006,20 @@ function ComparisonSection({
   currentDate,
   current,
   referenceDate,
-  referenceDays,
   reference,
   referenceInfo,
   loading,
   failure,
   intervalMinutes,
-  onReferenceDateChange,
 }: {
   currentDate: string;
   current: Report;
   referenceDate: string;
-  referenceDays: string[];
   reference: Report | null;
   referenceInfo: string;
   loading: boolean;
   failure: string;
   intervalMinutes: BucketMinutes;
-  onReferenceDateChange: (date: string) => void;
 }) {
   const maximumCups = Math.max(
     1,
@@ -867,23 +1053,6 @@ function ComparisonSection({
           title="2025年度の実績と比較"
           description="選択中の日付と同じ長さの時間帯を、2025年度の記録と比較します。"
         />
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="space-y-1 text-sm">
-            <span className="block font-bold text-xs">2025年度の比較日</span>
-            <select
-              value={referenceDate}
-              disabled={loading || referenceDays.length === 0}
-              onChange={(event) => onReferenceDateChange(event.target.value)}
-              className="min-h-10 rounded-md border border-stone-300 bg-white px-3 font-bold disabled:opacity-50"
-            >
-              {referenceDays.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
       </section>
 
       {failure && (
@@ -927,8 +1096,16 @@ function ComparisonSection({
 
           <div className="grid min-w-0 gap-5 xl:grid-cols-2">
             {[
-              { label: `${currentDate}の記録`, report: current },
-              { label: `${referenceDate}の記録`, report: reference },
+              {
+                label: `${currentDate}の記録`,
+                report: current,
+                year: "current" as const,
+              },
+              {
+                label: `${referenceDate}の記録`,
+                report: reference,
+                year: "previous" as const,
+              },
             ].map((item) => (
               <section
                 key={item.label}
@@ -945,6 +1122,7 @@ function ComparisonSection({
                   chart="flow"
                   intervalMinutes={intervalMinutes}
                   flowStyle="line"
+                  year={item.year}
                 />
               </section>
             ))}
@@ -952,8 +1130,16 @@ function ComparisonSection({
 
           <div className="grid min-w-0 gap-5 xl:grid-cols-2">
             {[
-              { label: `${currentDate}の提供時間`, report: current },
-              { label: `${referenceDate}の提供時間`, report: reference },
+              {
+                label: `${currentDate}の提供時間`,
+                report: current,
+                year: "current" as const,
+              },
+              {
+                label: `${referenceDate}の提供時間`,
+                report: reference,
+                year: "previous" as const,
+              },
             ].map((item) => (
               <section
                 key={item.label}
@@ -970,6 +1156,7 @@ function ComparisonSection({
                     hideBoxPlot
                     maximumCount={maximumCount}
                     maximumMinutes={maximumMinutes}
+                    year={item.year}
                   />
                 </div>
               </section>
@@ -1007,17 +1194,40 @@ function ComparisonMetric({
       <dl className="mt-4 space-y-3 text-sm">
         <div className="flex items-end justify-between gap-3">
           <dt className="text-stone-500">{currentLabel}</dt>
-          <dd className="font-black text-2xl tabular-nums">{currentValue}</dd>
+          <dd className="font-black text-2xl text-blue-950 tabular-nums">
+            {currentValue}
+          </dd>
         </div>
         <div className="flex items-end justify-between gap-3 border-stone-100 border-t pt-3">
           <dt className="text-stone-500">{referenceLabel}</dt>
-          <dd className="font-bold text-lg tabular-nums">{referenceValue}</dd>
+          <dd className="font-bold text-green-950 text-lg tabular-nums">
+            {referenceValue}
+          </dd>
         </div>
       </dl>
-      <p className="mt-4 font-bold text-stone-700 text-xs">
-        2025年度との差 {difference}
+      <p className="mt-4 text-stone-500 text-xs">
+        2025年度との差{" "}
+        <strong className="font-extrabold text-blue-950">{difference}</strong>
       </p>
     </article>
+  );
+}
+
+function ComparisonNote({
+  reference,
+  difference,
+}: { reference: string; difference?: string }) {
+  return (
+    <>
+      前年 <strong className="font-bold text-green-950">{reference}</strong>
+      {difference && (
+        <>
+          {" "}
+          /{" "}
+          <strong className="font-extrabold text-blue-950">{difference}</strong>
+        </>
+      )}
+    </>
   );
 }
 
@@ -1026,17 +1236,29 @@ function MetricCard({
   label,
   value,
   note,
-}: { icon: typeof Coffee; label: string; value: string; note: string }) {
+  comparison,
+}: {
+  icon: typeof Coffee;
+  label: string;
+  value: string;
+  note: string;
+  comparison?: ReactNode;
+}) {
   return (
     <article className="py-2">
       <div className="flex items-center gap-2 text-stone-600">
         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="font-bold text-xs sm:text-sm">{label}</p>
       </div>
-      <p className="mt-3 font-black text-2xl tabular-nums tracking-tight sm:text-3xl">
+      <p className="mt-3 font-black text-2xl text-blue-950 tabular-nums tracking-tight sm:text-3xl">
         {value}
       </p>
       <p className="mt-2 text-stone-500 text-xs">{note}</p>
+      {comparison && (
+        <p className="mt-1 text-[11px] text-stone-500 tabular-nums leading-relaxed">
+          {comparison}
+        </p>
+      )}
     </article>
   );
 }

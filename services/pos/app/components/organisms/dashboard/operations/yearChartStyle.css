@@ -1,0 +1,59 @@
+:root {
+  --year-excess-blue: #1e40af;
+  --year-excess-indigo: #6f83c9;
+  --year-excess-purple: #b498f2;
+  --year-excess-pink: #d9a7db;
+  --year-excess-yellow: #f0c24d;
+  --year-excess-coral: #e77a68;
+  --year-excess-red: #ef4444;
+  --year-excess-orange: #ff952d;
+  --year-excess-warm-white: #fff0b2;
+  --year-excess-white: #fff9ed;
+}
+
+.year-excess-stop-blue {
+  stop-color: var(--year-excess-blue);
+}
+.year-excess-stop-indigo {
+  stop-color: var(--year-excess-indigo);
+}
+.year-excess-stop-purple {
+  stop-color: var(--year-excess-purple);
+}
+.year-excess-stop-pink {
+  stop-color: var(--year-excess-pink);
+}
+.year-excess-stop-yellow {
+  stop-color: var(--year-excess-yellow);
+}
+.year-excess-stop-coral {
+  stop-color: var(--year-excess-coral);
+}
+
+.year-excess-stop-red {
+  stop-color: var(--year-excess-red);
+}
+.year-excess-stop-orange {
+  stop-color: var(--year-excess-orange);
+}
+.year-excess-stop-warm-white {
+  stop-color: var(--year-excess-warm-white);
+}
+.year-excess-stop-white {
+  stop-color: var(--year-excess-white);
+}
+
+.year-excess-legend {
+  background: linear-gradient(
+    to right,
+    var(--year-excess-blue) 0%,
+    var(--year-excess-purple) 5%,
+    var(--year-excess-pink) 10%,
+    var(--year-excess-yellow) 17.5%,
+    var(--year-excess-coral) 25%,
+    var(--year-excess-red) 40%,
+    var(--year-excess-orange) 60%,
+    var(--year-excess-warm-white) 80%,
+    var(--year-excess-white) 100%
+  );
+}
