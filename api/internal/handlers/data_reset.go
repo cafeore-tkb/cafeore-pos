@@ -47,7 +47,7 @@ const dataResetConfirmation = "リセット"
 var dataResetTables = []string{
 	"orders", "order_menus", "order_cups", "order_payments", "comments",
 	"cup_emergencies", "order_stock_usages", "cup_emergency_stock_usages",
-	"caos_client_logs", "caos_operations", "caos_operation_cups",
+	"caos_client_logs", "caos_operations", "caos_operation_cups", "caos_brew_records",
 	"square_checkouts", "square_actions", "label_print_requests",
 	"cashier_states", "master_states", "stock_events",
 	"dripper_assignees", "dripper_assignee_changes",

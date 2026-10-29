@@ -18,6 +18,7 @@ func All() []any {
 		&CaosClientLog{},
 		&CaosOperation{},
 		&CaosOperationCup{},
+		&CaosBrewRecord{},
 		&OrderPayment{},
 		&CupEmergency{},
 		&MasterState{},

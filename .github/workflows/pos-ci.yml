@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: './.github/actions/setup-deps'
-      - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts app/caos/logic/orderCommentComposer.test.ts
+      - run: pnpm exec vitest run --config vitest.caos.config.ts app/caos/hooks/useMasterSheetTab.test.ts app/caos/logic/orderCommentComposer.test.ts app/caos/logic/board-view.test.ts app/caos/logic/brewModel.test.ts app/caos/logic/brewPrediction.test.ts
 
   # 本番の画面を配る Cloud Run のサーバー（server/）と、PR のプレビューの Worker（worker/）。
   # どちらも呼び出しの音声（worker/call-voice.ts）を使う。

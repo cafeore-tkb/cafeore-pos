@@ -1,4 +1,5 @@
 import type { SquarePaymentType } from "@cafeore/common";
+import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
@@ -7,6 +8,7 @@ import {
   canAssignByDigit,
   canInputCoupon,
   isAssigningByDigits,
+  isExactOnEnter,
 } from "../../functional/cashierDraft";
 import type { SquarePaymentSelectStatus } from "../../functional/useSquarePaymentSelect";
 import { squarePaymentTypeLabel } from "../SquarePaymentDialog";
@@ -92,6 +94,7 @@ const methodColor = (payment: CashierPayment) =>
  * テンキーは、入れる段階では引換券番号（行を選んでいればキーボードの数字と同じく指名）、
  * 会計の段階では受取金額に打つ。受取金額に足すボタン（+1千 など）はテンキーの上に、1 行の半分の高さで並べる。
  * Square の決済手段は押すとすぐ小計の額で端末に送る（↑↓ で選んで Enter でも送る）。
+ * 現金で受取金額が空の間は Enter で ちょうど になるので、ちょうど に Enter の札を出す。
  * Square 端末でお客さんが決済手段を選べる間は、受取金額の欄の右にそう出す。
  */
 export const PayPanel = ({
@@ -123,6 +126,7 @@ export const PayPanel = ({
   const squareReady = paying && !cash && canStartSquare;
   // 行を選んでいる間の数字は指名（1〜6・0）。⌫・C はこれまでどおり引換券番号に使う
   const assigning = isAssigningByDigits(draft);
+  const exactOnEnter = isExactOnEnter(draft);
   const keyEnabled = (key: PadKey) => {
     if (paying) return cash;
     // ちょうど は受取金額にだけ使う
@@ -323,7 +327,7 @@ export const PayPanel = ({
                 key.kind === "clear" &&
                   "bg-stone-100 font-extrabold text-[22px] text-red-700 active:bg-stone-200",
                 key.kind === "exact" &&
-                  "bg-white font-extrabold text-base text-stone-900 active:bg-stone-100",
+                  "flex-col gap-1.5 bg-white font-extrabold text-base text-stone-900 active:bg-stone-100",
               )}
               style={{
                 gridColumn: key.column,
@@ -331,6 +335,7 @@ export const PayPanel = ({
               }}
             >
               {key.kind === "back" ? <BackspaceIcon /> : key.label}
+              {key.kind === "exact" && exactOnEnter && <KeyHint>Enter</KeyHint>}
             </button>
           );
         })}

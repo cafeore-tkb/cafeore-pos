@@ -1,6 +1,6 @@
-import { type CaosCard, caosBrewSec } from "@cafeore/common";
+import type { CaosCard } from "@cafeore/common";
 import type { Lane } from "./lanes";
-import { laneStatus } from "./queue";
+import { cardBrewSec, laneStatus } from "./queue";
 
 // リベロの固定6列に表示する抽出経過。予定時間は他の盤面と共通にする。
 
@@ -30,7 +30,7 @@ export const liberoLanes = (
     if (!lane.brewing) return { lane };
     const { elapsedMs } = laneStatus(lane, nowMs);
     const elapsedSec = Math.max(0, Math.floor(elapsedMs / 1000));
-    const plannedSec = caosBrewSec(lane.brewing.cups.length);
+    const plannedSec = cardBrewSec(lane.brewing, lane);
     const progress = Math.min(1, elapsedSec / plannedSec);
     return {
       lane,

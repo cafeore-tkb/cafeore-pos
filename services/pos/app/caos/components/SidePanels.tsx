@@ -194,7 +194,7 @@ export const AssignPanel: React.FC<{
               look={looks.get(order.key)}
               size="sm"
               selected={selectedOrderUid === order.key}
-              note={`標準予測: ${clockLabel(caosBrewSec(order.cups.length))}`}
+              note={`予測: ${clockLabel(lanes.find((lane) => lane.id === selectedBayId)?.predictBrew?.(order, selectedBayId) ?? caosBrewSec(order.cups.length))}`}
               onClick={() => setSelectedOrderUid(order.key)}
               className="cursor-pointer"
             />
@@ -463,7 +463,7 @@ export const LanePanel: React.FC<{
   </SidePanel>
 );
 
-// 補助の画面。普段使う入口は設定にまとめ、実績はテスト終了時だけ開く。
+// 補助の画面。普段使う入口は設定にまとめ、実績は通常運用とテスト終了時に開く。
 export type AuxiliaryTab = "settings" | "bays" | "beans" | "analytics";
 
 export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
@@ -474,7 +474,7 @@ export const AUXILIARY_TITLES: Record<AuxiliaryTab, string> = {
 };
 
 const SettingsHome: React.FC<{
-  onSelectTab: (tab: "bays" | "beans") => void;
+  onSelectTab: (tab: "bays" | "beans" | "analytics") => void;
   testPlay: {
     active: boolean;
     simulating: boolean;
@@ -523,6 +523,22 @@ const SettingsHome: React.FC<{
           </span>
           <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
         </button>
+        {!testPlay.simulating && (
+          <button
+            type="button"
+            onClick={() => onSelectTab("analytics")}
+            className="flex min-h-[64px] touch-manipulation items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 text-left font-black text-[15px] text-slate-900 shadow-xs hover:bg-slate-50"
+          >
+            <BarChart3 className="h-5 w-5 text-blue-700" />
+            <span className="flex flex-col gap-0.5">
+              <span>実績</span>
+              <span className="font-bold text-[11px] text-slate-500">
+                抽出の予測・実測と店舗の状況を確認
+              </span>
+            </span>
+            <ArrowRight className="ml-auto h-5 w-5 text-slate-400" />
+          </button>
+        )}
         <button
           type="button"
           onClick={testPlay.active ? testPlay.onEnd : testPlay.onOpen}
@@ -561,7 +577,7 @@ const SettingsHome: React.FC<{
 export const AuxiliaryContent: React.FC<
   {
     tab: AuxiliaryTab;
-    onSelectTab: (tab: "bays" | "beans") => void;
+    onSelectTab: (tab: "bays" | "beans" | "analytics") => void;
     testPlay: React.ComponentProps<typeof SettingsHome>["testPlay"];
     /** 豆残量確認に出す POS の在庫（豆だけ）と、盤面で待っている杯数 */
     beans: React.ComponentProps<typeof BeanQueueView>;

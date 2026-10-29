@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"cafeore-pos/api/internal/models"
+	"cafeore-pos/api/internal/testdb"
 )
 
 // CaOS のドリッパーの担当者の DB のテスト。注文の DB と同じく LISTEN_TEST_DATABASE_URL を渡したときだけ走る（openListenTestDB）。
@@ -184,6 +185,33 @@ func TestCaosLanesOnDB(t *testing.T) {
 	// 断ったリクエストは記録しない
 	if got, want := f.laneChanges(t), changes+" 1:鈴木→"+strings.Repeat("あ", caosMaxLaneName); got != want {
 		t.Fatalf("lane changes after bad requests = %s, want %s", got, want)
+	}
+}
+
+func TestCaosLaneGradeOnDB(t *testing.T) {
+	db := testdb.New(t)
+	f := newCaosFixture(t, db)
+	w := callWithParams(t, f.caos.PutCaosLane, http.MethodPut, `{"name":"山田","senior":false,"grade":"B2"}`, gin.Params{{Key: "dripper", Value: "1"}})
+	if w.Code != http.StatusOK {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	lanes := decodeLanes(t, w.Body.Bytes())
+	if lanes.Lanes[0].Grade == nil || *lanes.Lanes[0].Grade != "B2" {
+		t.Fatalf("lane: %+v", lanes.Lanes[0])
+	}
+	if code, body := f.swapLanes(t, 1, 2); code != http.StatusOK {
+		t.Fatalf("swap: %d %s", code, body)
+	}
+	lanes = f.getLanes(t)
+	if lanes.Lanes[1].Grade == nil || *lanes.Lanes[1].Grade != "B2" {
+		t.Fatalf("swapped: %+v", lanes.Lanes[1])
+	}
+	var changes []models.DripperAssigneeChange
+	if err := db.Where("day = ? AND dripper = ?", caosDayString(time.Now()), 2).Find(&changes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].Grade != "B2" {
+		t.Fatalf("changes: %+v", changes)
 	}
 }
 

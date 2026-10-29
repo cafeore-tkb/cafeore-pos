@@ -20,6 +20,7 @@ import {
   inputDigits,
   inputPadDigits,
   isAssigningByDigits,
+  isExactOnEnter,
   moveCursor,
   removeAllLines,
   removeLine,
@@ -462,6 +463,15 @@ describe("[unit] cashierKeyIntent", () => {
     expect(cashierKeyIntent(draft, "Enter", { menus, payments })).toEqual({
       type: "exactReceived",
     });
+  });
+
+  test("Enter でちょうどにするのは、会計の段階・現金・受取金額が空のときだけ", () => {
+    const draft = goPay(withLines(blend));
+    expect(isExactOnEnter(draft)).toBe(true);
+    expect(isExactOnEnter(inputDigits(draft, "5"))).toBe(false);
+    expect(isExactOnEnter(setExactReceived(draft, 600))).toBe(false);
+    expect(isExactOnEnter(keys(draft, "ArrowDown"))).toBe(false);
+    expect(isExactOnEnter(withLines(blend))).toBe(false);
   });
 
   test("会計の段階では商品キーで足さない", () => {

@@ -9,16 +9,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for DataResetBackupFormat.
-const (
-	DataResetBackupFormatV1 DataResetBackupFormat = "cafeore-pos-data-reset-backup"
-)
-
-// Defines values for DataResetBackupVersion.
-const (
-	DataResetBackupVersion1 DataResetBackupVersion = 1
-)
-
 // Defines values for CaosHumanLogEntryCategory.
 const (
 	CaosHumanLogEntryCategoryHuman  CaosHumanLogEntryCategory = "human"
@@ -38,6 +28,16 @@ const (
 const (
 	ColorTargetTypeItem     ColorTargetType = "Item"
 	ColorTargetTypeItemType ColorTargetType = "ItemType"
+)
+
+// Defines values for DataResetBackupFormat.
+const (
+	DataResetBackupFormatV1 DataResetBackupFormat = "cafeore-pos-data-reset-backup"
+)
+
+// Defines values for DataResetBackupVersion.
+const (
+	DataResetBackupVersion1 DataResetBackupVersion = 1
 )
 
 // Defines values for InventoryLevel.
@@ -191,6 +191,49 @@ type BuildInfo struct {
 	Pr *int `json:"pr,omitempty"`
 }
 
+// CaosBrewEstimate defines model for CaosBrewEstimate.
+type CaosBrewEstimate struct {
+	Coefficient     float32 `json:"coefficient"`
+	PersonSamples   int     `json:"person_samples"`
+	Seconds         float32 `json:"seconds"`
+	StandardSamples int     `json:"standard_samples"`
+	StandardSeconds float32 `json:"standard_seconds"`
+}
+
+// CaosBrewModelResponse defines model for CaosBrewModelResponse.
+type CaosBrewModelResponse struct {
+	Active []CaosBrewRecordResponse `json:"active"`
+	Lanes  []struct {
+		Dripper   int                         `json:"dripper"`
+		Estimates map[string]CaosBrewEstimate `json:"estimates"`
+		Grade     string                      `json:"grade"`
+		Name      string                      `json:"name"`
+	} `json:"lanes"`
+	Standards map[string]CaosBrewEstimate `json:"standards"`
+	UpdatedAt time.Time                   `json:"updated_at"`
+	Version   string                      `json:"version"`
+}
+
+// CaosBrewRecordResponse defines model for CaosBrewRecordResponse.
+type CaosBrewRecordResponse struct {
+	ActualSeconds        *float32           `json:"actual_seconds"`
+	Coefficient          float32            `json:"coefficient"`
+	DripId               openapi_types.UUID `json:"drip_id"`
+	Dripper              int                `json:"dripper"`
+	ExcludedReason       string             `json:"excluded_reason"`
+	FinishedAt           *time.Time         `json:"finished_at"`
+	Grade                string             `json:"grade"`
+	Kind                 string             `json:"kind"`
+	ModelVersion         string             `json:"model_version"`
+	Name                 string             `json:"name"`
+	PersonExcludedReason string             `json:"person_excluded_reason"`
+	PersonSamples        int                `json:"person_samples"`
+	PredictedSeconds     float32            `json:"predicted_seconds"`
+	StandardSamples      int                `json:"standard_samples"`
+	StandardSeconds      float32            `json:"standard_seconds"`
+	StartedAt            time.Time          `json:"started_at"`
+}
+
 // CaosCupAfter CaOS がカップに書く値。順番の数と抽出の時刻は送らない（順番はサーバーが insert_before から決め、開始・終了の時刻はサーバーが押した時刻から付ける。CaosPress）。
 // start_brew が true なら列の先頭に入れて抽出を始める（brew_started_at を付ける。抽出中のカードなら始め直す）。false なら待機・未割当（brew_started_at・brew_finished_at は null。抽出中のカードは始めた時刻が消える）。
 // dripper・drip_id・insert_before が全部 null で start_brew が false なら未割当。dripper が null で drip_id があれば、統合した未割当（同じ drip_id のカップと 1 枚のカード）
@@ -283,6 +326,9 @@ type CaosHumanLogEntryCategory string
 type CaosLane struct {
 	Dripper int `json:"dripper"`
 
+	// Grade シフト名簿で確認できた学年。空または省略時は不明
+	Grade *string `json:"grade,omitempty"`
+
 	// Name 担当者の名前（前後の空白を落としたもの）。空なら担当者なし
 	Name string `json:"name"`
 
@@ -318,6 +364,9 @@ type CaosLaneSwapRequest struct {
 
 // CaosLaneUpdateRequest defines model for CaosLaneUpdateRequest.
 type CaosLaneUpdateRequest struct {
+	// Grade シフト名簿で確認できた学年。自由入力や未確認時は省略
+	Grade *string `json:"grade,omitempty"`
+
 	// Name 担当者の名前（前後の空白は落とす）。空なら担当者なし
 	Name string `json:"name"`
 
@@ -619,9 +668,6 @@ type ItemTypeCreateRequest struct {
 	// IcedBrew 省略したら false。needs_brew が false のときに true は 400
 	IcedBrew *bool `json:"iced_brew,omitempty"`
 
-	// ServeWithSnack お菓子をつける。省略したら false
-	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
-
 	// MakesCup 省略したら true
 	MakesCup *bool  `json:"makes_cup,omitempty"`
 	Name     string `json:"name"`
@@ -631,6 +677,9 @@ type ItemTypeCreateRequest struct {
 
 	// SeniorOnly 省略したら false。needs_brew が false のときに true は 400
 	SeniorOnly *bool `json:"senior_only,omitempty"`
+
+	// ServeWithSnack お菓子をつける。省略したら false
+	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
 }
 
 // ItemTypeResponse defines model for ItemTypeResponse.
@@ -641,9 +690,6 @@ type ItemTypeResponse struct {
 	IcedBrew bool               `json:"iced_brew"`
 	Id       openapi_types.UUID `json:"id"`
 
-	// ServeWithSnack この種類のアイテムにお菓子をつける。
-	ServeWithSnack bool `json:"serve_with_snack"`
-
 	// MakesCup この種類のアイテムは1杯ずつカップを作る（注文のカップ・マスター・提供画面に出る）。グッズは false
 	MakesCup bool   `json:"makes_cup"`
 	Name     string `json:"name"`
@@ -653,6 +699,9 @@ type ItemTypeResponse struct {
 
 	// SeniorOnly この種類のアイテムは上級生だけが淹れる。needs_brew が false なら必ず false
 	SeniorOnly bool `json:"senior_only"`
+
+	// ServeWithSnack この種類のアイテムにお菓子をつける
+	ServeWithSnack bool `json:"serve_with_snack"`
 }
 
 // ItemTypeUpdateRequest defines model for ItemTypeUpdateRequest.
@@ -663,9 +712,6 @@ type ItemTypeUpdateRequest struct {
 	IcedBrew *bool              `json:"iced_brew,omitempty"`
 	Id       openapi_types.UUID `json:"id"`
 
-	// ServeWithSnack お菓子をつける。省略したら今の値のまま
-	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
-
 	// MakesCup 省略したら今の値のまま
 	MakesCup *bool  `json:"makes_cup,omitempty"`
 	Name     string `json:"name"`
@@ -675,6 +721,9 @@ type ItemTypeUpdateRequest struct {
 
 	// SeniorOnly 省略したら今の値のまま（needs_brew が false になるときは false）。needs_brew が false のときに true は 400
 	SeniorOnly *bool `json:"senior_only,omitempty"`
+
+	// ServeWithSnack お菓子をつける。省略したら今の値のまま
+	ServeWithSnack *bool `json:"serve_with_snack,omitempty"`
 }
 
 // ItemUpdateRequest defines model for ItemUpdateRequest.
@@ -1429,6 +1478,16 @@ type StockResourceResponse struct {
 	Unit       string  `json:"unit"`
 }
 
+// GetCaosBrewRecordsParams defines parameters for GetCaosBrewRecords.
+type GetCaosBrewRecordsParams struct {
+	Day    *openapi_types.Date `form:"day,omitempty" json:"day,omitempty"`
+	Limit  *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// SnapshotAt 初回レスポンスの日時を次ページにも渡すと、その後の新規開始を混ぜない
+	SnapshotAt *time.Time `form:"snapshot_at,omitempty" json:"snapshot_at,omitempty"`
+}
+
 // GetCaosLogsParams defines parameters for GetCaosLogs.
 type GetCaosLogsParams struct {
 	Limit  *int                `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1447,6 +1506,9 @@ type ExportCaosLogsParamsFormat string
 
 // ReceiveSquareWebhookJSONBody defines parameters for ReceiveSquareWebhook.
 type ReceiveSquareWebhookJSONBody = map[string]interface{}
+
+// ResetDataJSONRequestBody defines body for ResetData for application/json ContentType.
+type ResetDataJSONRequestBody = DataResetRequest
 
 // WriteCaosCupsJSONRequestBody defines body for WriteCaosCups for application/json ContentType.
 type WriteCaosCupsJSONRequestBody = CaosCupsWriteRequest
@@ -1546,6 +1608,3 @@ type PairSquareDeviceJSONRequestBody = SquareDevicePairRequest
 
 // ReceiveSquareWebhookJSONRequestBody defines body for ReceiveSquareWebhook for application/json ContentType.
 type ReceiveSquareWebhookJSONRequestBody = ReceiveSquareWebhookJSONBody
-
-// ResetDataJSONRequestBody defines body for ResetData for application/json ContentType.
-type ResetDataJSONRequestBody = DataResetRequest

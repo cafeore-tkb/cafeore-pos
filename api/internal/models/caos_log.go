@@ -37,6 +37,8 @@ type CaosOperation struct {
 // 注文編集でカップを削除・再作成する既存の仕様に合わせ、現行表への FK は張らない。
 // 削除後も操作履歴と当時の注文番号・状態を残す。
 type CaosOperationCup struct {
+	// IcedBrew は操作時の種類。過去の記録は null（不明）として扱う。
+	IcedBrew              *bool      `json:"iced_brew"`
 	Added                 bool       `gorm:"not null;default:false" json:"added"`
 	Removed               bool       `gorm:"not null;default:false" json:"removed"`
 	EmergencyReason       string     `gorm:"not null;default:''" json:"emergency_reason"`
