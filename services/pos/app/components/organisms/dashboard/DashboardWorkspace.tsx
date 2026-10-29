@@ -323,6 +323,10 @@ export function DashboardWorkspace() {
       disabled={
         !comparisonSettings.loaded ||
         comparisonSettings.saveBlocked ||
+        referenceLoading ||
+        !!referenceFailure ||
+        !referenceDays.length ||
+        !historicalProducts.length ||
         itemsLoading ||
         !!itemsError
       }

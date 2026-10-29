@@ -28,6 +28,9 @@ export function YearComparisonSettings({
   storageMessage: string;
   disabled: boolean;
 }) {
+  const referenceUnavailable =
+    loading || !!failure || !referenceDays.length || !historicalProducts.length;
+  const editingDisabled = disabled || referenceUnavailable;
   return (
     <div className="space-y-2 text-stone-600 text-xs">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -36,7 +39,7 @@ export function YearComparisonSettings({
           <select
             aria-label="前年の比較日"
             value={referenceDate}
-            disabled={disabled || loading || !referenceDays.length}
+            disabled={editingDisabled}
             onChange={(e) =>
               onChange({ ...settings, referenceDate: e.target.value })
             }
@@ -62,11 +65,13 @@ export function YearComparisonSettings({
           onChange={onChange}
           currentProducts={currentProducts}
           historicalProducts={historicalProducts}
-          disabled={disabled || loading}
+          disabled={editingDisabled}
         />
         <output className="mt-4 block">
           {storageMessage ||
-            "変更はこのブラウザに自動保存します。次回も同じ設定を使います。"}
+            (referenceUnavailable
+              ? "前年データを読み込めるまで、比較設定の編集・自動保存を停止しています。保存済みの対応付けは変更しません。"
+              : "変更はこのブラウザに自動保存します。次回も同じ設定を使います。")}
         </output>
         <p className="mt-1">
           商品別はドリンクの杯数を比較します。前年の請求額は注文単位のため、商品別の売上には割り振りません。

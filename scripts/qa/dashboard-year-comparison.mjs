@@ -596,6 +596,96 @@ await page
   .screenshot({ path: path.join(output, "10-color-scale.png") });
 await page.locator("#qa-color-scale").evaluate((element) => element.remove());
 await page.setViewportSize({ width: 390, height: 844 });
+// Missing or failed historical catalogs must never erase saved mapping rows.
+const beforeCatalogFailure = await page.evaluate(
+  (key) => localStorage.getItem(key),
+  storageKey,
+);
+const referenceChunk = "**/assets/baseline-2025-*.js";
+let releaseReference;
+const heldReference = new Promise((resolve) => {
+  releaseReference = resolve;
+});
+await page.route(
+  referenceChunk,
+  async (route) => {
+    await heldReference;
+    await route.continue();
+  },
+  { times: 1 },
+);
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.getByText("前年データを読み込み中…", { exact: true }).waitFor();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+assert.equal(await cardButton("current", names[0]).isDisabled(), true);
+assert.equal(
+  await page
+    .getByRole("combobox", { name: "前年の比較日", exact: true })
+    .isDisabled(),
+  true,
+);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+releaseReference();
+await rowFor("current", items[0].id).waitFor();
+await page.waitForFunction(() => {
+  const card = document.querySelector(
+    'button[aria-label="今年の珈琲・俺ブレンド2026を選ぶ"]',
+  );
+  return card && !card.matches(":disabled");
+});
+assert.equal(await cardButton("current", names[0]).isDisabled(), false);
+await page.route(referenceChunk, (route) => route.abort());
+await page.reload();
+await page
+  .getByRole("alert")
+  .filter({ hasText: "2025年度の記録を読み込めませんでした" })
+  .waitFor();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+const catalogBlockedCard = cardButton("current", names[0]);
+assert.equal(await catalogBlockedCard.isDisabled(), true);
+assert.equal(
+  await page
+    .getByRole("combobox", { name: "前年の比較日", exact: true })
+    .isDisabled(),
+  true,
+);
+// Even DOM overrides cannot invoke a destructive move while the catalog is unavailable.
+for (const name of [names[0], names[1]]) {
+  await cardButton("current", name).evaluate((element) => {
+    element.disabled = false;
+    element.closest("fieldset").disabled = false;
+  });
+  await cardButton("current", name).click();
+}
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+assert.equal(
+  JSON.parse(
+    await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  ).board.groups.length,
+  6,
+);
+await page.unroute(referenceChunk);
+await page.reload();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+await rowFor("current", items[0].id).waitFor();
+await page.waitForFunction(() => {
+  const card = document.querySelector(
+    'button[aria-label="今年の珈琲・俺ブレンド2026を選ぶ"]',
+  );
+  return card && !card.matches(":disabled");
+});
+assert.equal(await cardButton("current", names[0]).isDisabled(), false);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
 // Invalid saved data must survive both initial loading and cross-tab reloads verbatim.
 const validSettingsText = await page.evaluate(
   (key) => localStorage.getItem(key),
@@ -733,6 +823,7 @@ await writeFile(
         "iPad and mobile have no horizontal page overflow",
         "storage write failure shown and edit retained",
         "invalid JSON, version and empty saved values remain byte-for-byte unchanged",
+        "pending and failed historical catalog requests disable editing and preserve all saved mapping rows",
         "cross-tab read failure clears stale settings and blocks writes even if disabled is bypassed",
         "valid cross-tab replacement or removal recovers editing",
         "no runtime errors or backend mutations",
