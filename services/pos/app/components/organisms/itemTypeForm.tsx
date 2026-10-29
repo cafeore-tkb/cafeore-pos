@@ -34,11 +34,6 @@ export const FLAG_FIELDS: {
   description: string;
 }[] = [
   {
-    key: "serve_with_snack",
-    label: "お菓子をつける",
-    description: "この種類の商品を注文するとお菓子がつきます",
-  },
-  {
     key: "makes_cup",
     label: "カップを作る",
     description:
@@ -63,6 +58,11 @@ export const FLAG_FIELDS: {
     label: "アイスで淹れる",
     description:
       "アイスコーヒーなど。アイスに対応していないドリッパーには割り振りません",
+  },
+  {
+    key: "serve_with_snack",
+    label: "お菓子をつける",
+    description: "この種類の商品を注文するとお菓子がつきます",
   },
 ];
 
