@@ -1,0 +1,346 @@
+.mapping-board {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #57534e;
+  font-size: 12px;
+}
+.mapping-instructions {
+  margin: 0 0 16px;
+  line-height: 1.8;
+}
+.mapping-column-headings,
+.mapping-pending-columns,
+.mapping-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.mapping-column-headings {
+  padding: 0 12px 10px;
+  color: #172554;
+  font-weight: 700;
+}
+.mapping-column-headings > span:last-child {
+  color: #14532d;
+}
+.mapping-column-headings small {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #78716c;
+}
+.mapping-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mapping-group {
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  border-radius: 12px;
+  padding: 8px 12px 12px;
+}
+.mapping-group.is-target {
+  border: 2px dashed #2563eb;
+  padding: 7px 11px 11px;
+  background: #eff6ff;
+}
+.mapping-group-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #78716c;
+  font-size: 10px;
+  margin-bottom: 5px;
+}
+.mapping-group-heading > div {
+  display: flex;
+  gap: 4px;
+}
+.mapping-group-heading button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 4px;
+}
+.mapping-pair {
+  position: relative;
+  align-items: stretch;
+}
+.mapping-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 60px;
+}
+.mapping-cell.is-adding {
+  border-radius: 8px;
+}
+.mapping-card {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 54px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px #0f172a08;
+  transition: box-shadow .15s, border-color .15s, opacity .15s;
+}
+.mapping-card--current {
+  color: #172554;
+  border-color: #bfcee9;
+  background: #f8faff;
+}
+.mapping-card--historical {
+  color: #14532d;
+  border-color: #c7dfce;
+  background: #f6fbf7;
+}
+.mapping-card.is-selected {
+  box-shadow: 0 0 0 2px #2563eb;
+}
+.mapping-card.is-target {
+  border: 2px dashed #2563eb;
+  background: #eff6ff;
+}
+.mapping-card.is-dragging {
+  opacity: 0.35;
+}
+.mapping-card-name {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 14px 3px;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+  user-select: none;
+}
+.mapping-grip {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  align-self: stretch;
+  padding: 0 4px;
+  color: #94a3b8;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.mapping-grip:active {
+  cursor: grabbing;
+}
+.mapping-card-action {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  align-self: stretch;
+  min-height: 44px;
+  color: #78716c;
+}
+.mapping-card-action:hover {
+  color: #1e40af;
+  background: #dbeafe66;
+  border-radius: 7px;
+}
+.mapping-between-plus {
+  display: block;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 20px;
+}
+.mapping-link {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #d6ddd8;
+  background: white;
+  color: #7e9485;
+}
+.mapping-link.can-add {
+  color: #1e40af;
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+.mapping-link:disabled {
+  opacity: 1;
+}
+.mapping-add-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 9px;
+  border: 1px dashed #60a5fa;
+  border-radius: 8px;
+  background: #dbeafe;
+  color: #1e40af;
+  font-weight: 700;
+}
+.mapping-plus-preview {
+  display: grid;
+  place-items: center;
+  color: #1e40af;
+  padding-right: 6px;
+}
+.mapping-pending,
+.mapping-excluded {
+  margin-top: 24px;
+}
+.mapping-pending h4,
+.mapping-excluded h4 {
+  margin: 0 0 10px;
+  color: #57534e;
+  font-size: 12px;
+  font-weight: 600;
+}
+.mapping-pending h4 span,
+.mapping-excluded h4 span {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #78716c;
+}
+.mapping-pending-column {
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: 8px;
+  min-width: 0;
+  min-height: 70px;
+  padding: 8px;
+  border: 1px dashed #d6d3d1;
+  border-radius: 10px;
+}
+.mapping-pending-column.is-target {
+  background: #eff6ff;
+  border-color: #2563eb;
+}
+.mapping-unlink {
+  min-height: 30px;
+  padding: 4px;
+  color: #64748b;
+  font-size: 10px;
+  text-align: center;
+}
+.mapping-unlink:disabled {
+  opacity: 0.5;
+}
+.mapping-excluded {
+  padding-top: 16px;
+  border-top: 1px solid #e7e5e4;
+}
+.mapping-excluded-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.mapping-card--excluded {
+  opacity: 0.5;
+  background: #f5f5f4;
+  box-shadow: none;
+}
+.mapping-card--excluded .mapping-card-name {
+  padding-left: 12px;
+}
+.mapping-card--excluded:focus-within {
+  opacity: 0.85;
+}
+.mapping-side-label {
+  margin: 0;
+  color: #a8a29e;
+  font-size: 10px;
+}
+.mapping-empty {
+  padding: 12px 4px;
+  text-align: center;
+  color: #a8a29e;
+  font-size: 11px;
+}
+.mapping-selection {
+  position: sticky;
+  bottom: 12px;
+  z-index: 21;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e3a8a;
+  background: #eff6ff;
+  box-shadow: 0 2px 8px #17255412;
+}
+.mapping-selection button {
+  margin-left: 10px;
+  text-decoration: underline;
+}
+.mapping-drag-ghost {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 240px;
+  padding: 14px 18px;
+  border: 1px solid #93c5fd;
+  border-radius: 9px;
+  box-shadow: 0 8px 28px #17255433;
+  pointer-events: none;
+  font-size: 13px;
+}
+.mapping-board button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+.mapping-board:disabled .mapping-grip {
+  cursor: default;
+}
+@media (max-width: 600px) {
+  .mapping-column-headings,
+  .mapping-pending-columns,
+  .mapping-pair {
+    gap: 18px;
+  }
+  .mapping-group {
+    padding: 6px 6px 9px;
+  }
+  .mapping-group.is-target {
+    padding: 5px 5px 8px;
+  }
+  .mapping-card-name {
+    font-size: 11px;
+  }
+  .mapping-grip {
+    flex-basis: 21px;
+  }
+  .mapping-card-action {
+    flex-basis: 28px;
+  }
+  .mapping-pending-column {
+    padding: 5px;
+  }
+  .mapping-link {
+    width: 22px;
+    height: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mapping-card {
+    transition: none;
+  }
+}

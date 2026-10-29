@@ -141,7 +141,7 @@ export function DashboardWorkspace() {
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [referenceOrders, setReferenceOrders] = useState<AnalysisOrder[]>([]);
   const comparisonSettings = useYearComparisonSettings();
-  const { items, error: itemsError } = useItemMaster();
+  const { items, error: itemsError, isLoading: itemsLoading } = useItemMaster();
   const [referenceInfo, setReferenceInfo] = useState("");
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceFailure, setReferenceFailure] = useState("");
@@ -320,7 +320,12 @@ export function DashboardWorkspace() {
       loading={referenceLoading}
       failure={referenceFailure}
       storageMessage={comparisonSettings.storageMessage}
-      disabled={!comparisonSettings.loaded || comparisonSettings.saveBlocked}
+      disabled={
+        !comparisonSettings.loaded ||
+        comparisonSettings.saveBlocked ||
+        itemsLoading ||
+        !!itemsError
+      }
     />
   );
 
@@ -500,7 +505,7 @@ export function DashboardWorkspace() {
                   {yearSettings}
                   {itemsError && (
                     <output className="mt-2 block text-stone-600 text-xs">
-                      商品マスターを取得できません。受信済みの注文に含まれる商品を表示しています。
+                      商品マスターを取得できません。受信済みの商品を表示しています。対応付けの編集は取得後に再開します。
                     </output>
                   )}
                 </div>

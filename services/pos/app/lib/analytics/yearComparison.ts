@@ -3,12 +3,59 @@ import { z } from "zod";
 import type { AnalysisOrder, TimeWindow } from "./operations";
 
 export const COMPARISON_STORAGE_KEY = "dashboard:2025-comparison:v1";
-export const comparisonSettingsSchema = z.object({
-  version: z.literal(1),
-  referenceDate: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/),
-  current: z.record(z.string().max(80)),
-  historical: z.record(z.string().max(80)),
-});
+export const comparisonBoardSchema = z
+  .object({
+    groups: z.array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().max(80).optional(),
+        current: z.array(z.string()).min(1),
+        historical: z.array(z.string()).min(1),
+      }),
+    ),
+    pendingCurrent: z.array(z.string()),
+    pendingHistorical: z.array(z.string()),
+    excludedCurrent: z.array(z.string()),
+    excludedHistorical: z.array(z.string()),
+  })
+  .superRefine((board, context) => {
+    for (const side of ["current", "historical"] as const) {
+      const keys = [
+        ...board.groups.flatMap((group) => group[side]),
+        ...(side === "current"
+          ? [...board.pendingCurrent, ...board.excludedCurrent]
+          : [...board.pendingHistorical, ...board.excludedHistorical]),
+      ];
+      if (new Set(keys).size !== keys.length)
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "同じカードが複数の場所にあります。",
+        });
+    }
+    if (
+      new Set(board.groups.map((group) => group.id)).size !==
+      board.groups.length
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "対応行のIDが重複しています。",
+      });
+  });
+export type ComparisonBoard = z.infer<typeof comparisonBoardSchema>;
+export const comparisonSettingsSchema = z
+  .object({
+    version: z.union([z.literal(1), z.literal(2)]),
+    referenceDate: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/),
+    current: z.record(z.string().max(80)),
+    historical: z.record(z.string().max(80)),
+    board: comparisonBoardSchema.optional(),
+  })
+  .refine(
+    (settings) => settings.version === 1 || settings.board !== undefined,
+    {
+      message: "版2の比較設定にはカード配置が必要です。",
+    },
+  );
 export type ComparisonSettings = z.infer<typeof comparisonSettingsSchema>;
 export const emptyComparisonSettings = (): ComparisonSettings => ({
   version: 1,
