@@ -9,7 +9,6 @@ import { KeyHint } from "~/components/atoms/KeyHint";
 import { cn } from "~/lib/utils";
 import { formatYen } from "~/lib/yen";
 import {
-  COUPON_DIGITS,
   type CashierDraft,
   type CashierLine,
   type CouponStatus,
@@ -24,6 +23,7 @@ import { menuColor } from "./MenuPanel";
 type props = {
   draft: CashierDraft;
   couponStatus: CouponStatus;
+  couponDigits: number;
   /** 入力中の注文の割引額 */
   discount: number;
   /** 会計取消を押せるか（小計の途中まで払ったら押せない） */
@@ -251,6 +251,7 @@ const LinesSection = ({
 const discountMessage = ({
   draft,
   couponStatus,
+  couponDigits,
   discount,
 }: props): { text: string; tone: "ok" | "bad" | "neutral" } => {
   if (draft.special) {
@@ -265,7 +266,7 @@ const discountMessage = ({
   switch (couponStatus.kind) {
     case "empty":
       return {
-        text: "3桁を入れると前回の注文を照合します（1会計 −¥100）",
+        text: `${couponDigits}桁を入れると前回の注文を照合します（1会計 −¥100）`,
         tone: "neutral",
       };
     case "partial":
@@ -318,7 +319,8 @@ const DiscountSection = (props: props) => {
   const locked = isDiscountLocked(draft);
   const specialBlocked = (!draft.special && couponApplied) || locked;
   const message = discountMessage(props);
-  const complete = draft.coupon.length === COUPON_DIGITS;
+  const couponDigits = props.couponDigits;
+  const complete = draft.coupon.length === couponDigits;
 
   return (
     <div className="flex flex-none flex-col gap-2 border-stone-200 border-t px-3.5 py-2.5">
@@ -359,10 +361,9 @@ const DiscountSection = (props: props) => {
             (draft.special || locked) && "opacity-40",
           )}
         >
-          {Array.from({ length: COUPON_DIGITS }, (_, i) => {
+          {Array.from({ length: couponDigits }, (_, i) => {
             const current =
-              editable &&
-              i === Math.min(draft.coupon.length, COUPON_DIGITS - 1);
+              editable && i === Math.min(draft.coupon.length, couponDigits - 1);
             const ring = !editable
               ? "1px var(--color-stone-300)"
               : `${current && !complete ? "3px" : "1.5px"} var(--color-orange-600)`;

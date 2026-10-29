@@ -47,6 +47,7 @@ import {
   cashierKeyIntent,
   cashierPaymentKeyIntent,
   clearDigits,
+  couponDigitsForOrders,
   couponStatus,
   deleteDigit,
   emptyCashierDraft,
@@ -393,6 +394,7 @@ const CashierV2 = ({
   }, [fixedOrderId, nextOrderId, dispatchOrder]);
 
   // 引換券番号を過去の注文と照らし合わせる。過去の注文が変わったら（提供された・別のレジで使われた）照らし直す
+  const couponDigits = couponDigitsForOrders(orders ?? []);
   const coupon = useMemo(
     () => couponStatus(draft.coupon, orders ?? []),
     [draft.coupon, orders],
@@ -1118,6 +1120,7 @@ const CashierV2 = ({
             heldLineKeys: heldLineKeys(held),
             repeat: event.repeat,
             checkCoupon,
+            couponDigits,
           });
       if (intent.type === "ignore") {
         return;
@@ -1183,6 +1186,7 @@ const CashierV2 = ({
     items,
     payments,
     checkCoupon,
+    couponDigits,
     due,
     updatePayment,
     openAssign,
@@ -1258,6 +1262,7 @@ const CashierV2 = ({
     <OrderPanel
       draft={viewDraft}
       couponStatus={coupon}
+      couponDigits={couponDigits}
       discount={newOrder.discount}
       canCancelPayment={canLeavePayment(draft)}
       onSelect={(index) => updateDraft((current) => selectLine(current, index))}
@@ -1445,7 +1450,7 @@ const CashierV2 = ({
               onSquare={startSquarePayment}
               onDigits={(digits) =>
                 updatePayment((current) =>
-                  inputPadDigits(current, digits, checkCoupon),
+                  inputPadDigits(current, digits, checkCoupon, couponDigits),
                 )
               }
               onDeleteDigit={() => updatePayment(deleteDigit)}

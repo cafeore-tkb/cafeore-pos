@@ -10,6 +10,7 @@ import {
   cashierKeyIntent,
   cashierPaymentKeyIntent,
   clearDigits,
+  couponDigitsForOrders,
   couponStatus,
   cyclePayment,
   deleteDigit,
@@ -546,5 +547,58 @@ describe("[unit] cashierPaymentKeyIntent", () => {
     }
     // 決済手段のキーでなければ、今までどおり扱わない
     expect(cashierPaymentKeyIntent(pay, "KeyX", repeat).type).toBe("ignore");
+  });
+});
+
+describe("unit: coupon digits follow past order numbers", () => {
+  test.each([
+    [999, 3],
+    [1000, 4],
+    [1001, 4],
+    [9999, 4],
+    [10000, 5],
+  ])("maximum %i requires %i digits", (orderId, expected) => {
+    const history = [
+      ...orders,
+      OrderEntity.fromOrder({ ...orders[0].toOrder(), id: "max", orderId }),
+    ];
+    expect(couponDigitsForOrders(history)).toBe(expected);
+  });
+
+  test("four digits support leading zeroes and both input methods", () => {
+    const history = [
+      ...orders,
+      OrderEntity.fromOrder({
+        ...orders[0].toOrder(),
+        id: "max",
+        orderId: 1000,
+      }),
+    ];
+    const check = (value: string) => couponStatus(value, history);
+    expect(couponDigitsForOrders([])).toBe(3);
+    expect(check("042")).toEqual({ kind: "partial", remaining: 1 });
+    expect(check("0042").kind).toBe("available");
+    const partial = inputPadDigits(
+      focusCoupon(withLines(blend)),
+      "004",
+      check,
+      4,
+    );
+    expect(partial.coupon).toBe("004");
+    expect(partial.zone).toBe("coupon");
+    const intent = cashierKeyIntent(partial, "2", {
+      menus,
+      payments,
+      checkCoupon: check,
+      couponDigits: 4,
+    });
+    expect(intent.type).toBe("update");
+    if (intent.type === "update") {
+      expect(intent.draft.coupon).toBe("0042");
+      expect(intent.draft.zone).toBe("memo");
+    }
+    expect(
+      inputPadDigits(focusCoupon(withLines(blend)), "1000", check, 4).coupon,
+    ).toBe("1000");
   });
 });

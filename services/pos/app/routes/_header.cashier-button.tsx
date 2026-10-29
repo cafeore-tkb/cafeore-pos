@@ -60,6 +60,7 @@ export default function Casher() {
   const curOrderId =
     orders?.reduce((acc, cur) => Math.max(acc, cur.orderId), 0) ?? 0;
   const nextOrderId = curOrderId + 1;
+  const discountDigits = Math.max(3, String(curOrderId).length);
   const submit = useSubmit();
   const order = OrderEntity.createNew({ orderId: nextOrderId });
   const [recieved, setReceived] = useState(0);
@@ -280,7 +281,7 @@ export default function Casher() {
           />
           <div>割引No.</div>
           <InputOTP
-            maxLength={3}
+            maxLength={discountDigits}
             pattern={REGEXP_ONLY_DIGITS}
             value={discountNo}
             onChange={(value: string) => {
@@ -288,9 +289,15 @@ export default function Casher() {
             }}
           >
             <InputOTPGroup>
-              <InputOTPSlot index={0} className="font-mono text-3xl" />
-              <InputOTPSlot index={1} className="font-mono text-3xl" />
-              <InputOTPSlot index={2} className="font-mono text-3xl" />
+              {Array.from({ length: discountDigits }, (_, index) => index).map(
+                (slot) => (
+                  <InputOTPSlot
+                    key={slot}
+                    index={slot}
+                    className="font-mono text-3xl"
+                  />
+                ),
+              )}
             </InputOTPGroup>
           </InputOTP>
           <div className="relative pt-5 pl-5 font-medium text-3xl">
