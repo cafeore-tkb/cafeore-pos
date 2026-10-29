@@ -2,7 +2,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Line,
   LineChart,
   ReferenceLine,
@@ -13,6 +12,11 @@ import {
 } from "recharts";
 import type { distribution } from "~/lib/analytics/operations";
 import { ChartValues } from "./ChartValues";
+import {
+  CURRENT_YEAR_COLOR,
+  PREVIOUS_YEAR_COLOR,
+  PREVIOUS_YEAR_LINE,
+} from "./YearChartStyle";
 
 export const minutes = (value: number | null) =>
   value === null ? "未計測" : `${value.toFixed(1)}分`;
@@ -23,6 +27,7 @@ export function DurationCharts({
   hideBoxPlot = false,
   maximumCount,
   maximumMinutes,
+  year = "current",
 }: {
   stats: ReturnType<typeof distribution>;
   compact?: boolean;
@@ -30,7 +35,10 @@ export function DurationCharts({
   hideBoxPlot?: boolean;
   maximumCount?: number;
   maximumMinutes?: number;
+  year?: "current" | "previous";
 }) {
+  const fill = year === "previous" ? PREVIOUS_YEAR_COLOR : CURRENT_YEAR_COLOR;
+  const stroke = year === "previous" ? PREVIOUS_YEAR_LINE : CURRENT_YEAR_COLOR;
   if (!stats.count)
     return (
       <p className="p-4 text-muted-foreground">
@@ -49,7 +57,9 @@ export function DurationCharts({
         ].map((item) => (
           <div key={item.label} className="border-stone-200 border-b py-3">
             <p className="text-[11px] text-stone-500">{item.label}</p>
-            <p className="mt-1 font-bold text-lg text-stone-900 tabular-nums">
+            <p
+              className={`mt-1 font-extrabold text-lg tabular-nums ${year === "previous" ? "text-green-950" : "text-blue-950"}`}
+            >
               {item.value}
             </p>
           </div>
@@ -105,21 +115,10 @@ export function DurationCharts({
                 <Bar
                   dataKey="count"
                   name="お渡しした杯数"
-                  fill="#0d9488"
+                  fill={fill}
                   isAnimationActive={false}
                   radius={[5, 5, 0, 0]}
-                >
-                  {stats.histogram.map((bin, index) => (
-                    <Cell
-                      key={bin.label}
-                      fill={
-                        ["#0d9488", "#38bdf8", "#fbbf24", "#f97316", "#e11d48"][
-                          Math.min(index, 4)
-                        ]
-                      }
-                    />
-                  ))}
-                </Bar>
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -175,7 +174,8 @@ export function DurationCharts({
                   type="stepAfter"
                   dataKey="percent"
                   name="この時間までに渡せた割合（%）"
-                  stroke="#0d9488"
+                  stroke={stroke}
+                  strokeWidth={2}
                   dot={false}
                   isAnimationActive={false}
                 />
@@ -218,8 +218,11 @@ export function DurationCharts({
               }}
             />
             <div
-              className="absolute top-1 h-7 border border-emerald-700 bg-emerald-100"
+              className="absolute top-1 h-7 border"
               style={{
+                borderColor: stroke,
+                backgroundColor:
+                  year === "previous" ? PREVIOUS_YEAR_COLOR : "#dbeafe",
                 left: pct(stats.q1),
                 width: pct((stats.q3 ?? 0) - (stats.q1 ?? 0)),
               }}

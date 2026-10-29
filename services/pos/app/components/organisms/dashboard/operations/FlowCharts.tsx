@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import type { BucketMinutes, FlowBucket } from "~/lib/analytics/operations";
 import { ChartValues } from "./ChartValues";
+import { CURRENT_YEAR_COLOR, PREVIOUS_YEAR_LINE } from "./YearChartStyle";
 
 /** 未完了の時間枠は流量には表示し、加速度の比較からは除外する。 */
 export function FlowCharts({
@@ -21,13 +22,21 @@ export function FlowCharts({
   intervalMinutes = 15,
   flowStyle = "bar",
   maximumCups,
+  year,
 }: {
   buckets: FlowBucket[];
   chart?: "flow" | "acceleration" | "all";
   intervalMinutes?: BucketMinutes;
   flowStyle?: "bar" | "line";
   maximumCups?: number;
+  year?: "current" | "previous";
 }) {
+  const yearColor =
+    year === "previous"
+      ? PREVIOUS_YEAR_LINE
+      : year === "current"
+        ? CURRENT_YEAR_COLOR
+        : null;
   // 深夜の空の枠は省略するが、営業中のゼロの枠は残す。
   const first = buckets.findIndex((b) => b.received || b.served || b.backlog);
   const data = (
@@ -43,13 +52,24 @@ export function FlowCharts({
       {chart !== "acceleration" && (
         <>
           <p className="mt-3 flex flex-wrap gap-4 text-xs">
-            <span className="font-bold text-sky-700">
+            <span
+              className="font-bold text-sky-700"
+              style={yearColor ? { color: yearColor } : undefined}
+            >
               {flowStyle === "line" ? "─" : "■"} 注文
             </span>
-            <span className="font-bold text-emerald-700">
-              {flowStyle === "line" ? "─" : "■"} お渡し
+            <span
+              className="font-bold text-emerald-700"
+              style={yearColor ? { color: yearColor } : undefined}
+            >
+              {yearColor ? "┄" : flowStyle === "line" ? "─" : "■"} お渡し
             </span>
-            <span className="font-bold text-amber-700">─ お渡し待ち</span>
+            <span
+              className="font-bold text-amber-700"
+              style={yearColor ? { color: yearColor } : undefined}
+            >
+              {yearColor ? "···" : "─"} お渡し待ち
+            </span>
           </p>
           <div
             className="h-64 w-full"
@@ -91,7 +111,7 @@ export function FlowCharts({
                       type="linear"
                       dataKey="received"
                       name="注文（杯）"
-                      stroke="#0284c7"
+                      stroke={yearColor ?? "#0284c7"}
                       strokeWidth={2}
                       dot={{ r: 3 }}
                       isAnimationActive={false}
@@ -100,7 +120,8 @@ export function FlowCharts({
                       type="linear"
                       dataKey="served"
                       name="お渡し（杯）"
-                      stroke="#0d9488"
+                      stroke={yearColor ?? "#0d9488"}
+                      strokeDasharray={yearColor ? "6 3" : undefined}
                       strokeWidth={2}
                       dot={{ r: 3 }}
                       isAnimationActive={false}
@@ -111,13 +132,13 @@ export function FlowCharts({
                     <Bar
                       dataKey="received"
                       name="注文（杯）"
-                      fill="#38bdf8"
+                      fill={yearColor ?? "#38bdf8"}
                       isAnimationActive={false}
                     />
                     <Bar
                       dataKey="served"
                       name="お渡し（杯）"
-                      fill="#0d9488"
+                      fill={yearColor ?? "#0d9488"}
                       isAnimationActive={false}
                     />
                   </>
@@ -126,7 +147,8 @@ export function FlowCharts({
                   type="linear"
                   dataKey="backlog"
                   name={`${intervalMinutes}分の終わりのお渡し待ち（杯）`}
-                  stroke="#f59e0b"
+                  stroke={yearColor ?? "#f59e0b"}
+                  strokeDasharray={yearColor ? "2 3" : undefined}
                   strokeWidth={2}
                   dot={flowStyle === "line" ? { r: 3 } : false}
                   isAnimationActive={false}
@@ -198,7 +220,7 @@ export function FlowCharts({
                     <Line
                       dataKey="net"
                       name={`待ちの増減（杯/${intervalMinutes}分）`}
-                      stroke="#64748b"
+                      stroke={CURRENT_YEAR_COLOR}
                       dot={false}
                       isAnimationActive={false}
                     />

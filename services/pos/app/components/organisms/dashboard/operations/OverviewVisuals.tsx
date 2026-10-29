@@ -1,9 +1,11 @@
 import { ArrowDownRight, ArrowUpRight, Coffee, Timer } from "lucide-react";
+import { useId } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Legend,
   Pie,
   PieChart,
@@ -13,8 +15,17 @@ import {
   YAxis,
 } from "recharts";
 import type { operationsReport } from "~/lib/analytics/operations";
+import type { ProductComparisonChartRow } from "~/lib/analytics/yearComparison";
 import { ChartValues } from "./ChartValues";
 import { ProductBrewTimeCharts } from "./ProductBrewTimeCharts";
+import {
+  CURRENT_YEAR_COLOR,
+  CurrentYearBar,
+  PREVIOUS_YEAR_COLOR,
+  PREVIOUS_YEAR_LINE,
+  YearChartLegend,
+  YearChartTooltip,
+} from "./YearChartStyle";
 
 type Report = ReturnType<typeof operationsReport>;
 const WAIT_BANDS = [
@@ -223,7 +234,7 @@ export function OverviewVisuals({
                   />
                   <Bar
                     dataKey="cups"
-                    fill="#0284c7"
+                    fill={CURRENT_YEAR_COLOR}
                     radius={[0, 6, 6, 0]}
                     maxBarSize={24}
                     isAnimationActive={false}
@@ -345,7 +356,7 @@ export function ProductTimeChart({
             <Bar
               dataKey="total"
               name="注文→お渡し"
-              fill="#0d9488"
+              fill={CURRENT_YEAR_COLOR}
               radius={[0, 4, 4, 0]}
               isAnimationActive={false}
             />
@@ -378,19 +389,47 @@ export function ProductTimeChart({
 
 export function ProductCupChart({
   products,
-}: { products: Report["products"] }) {
-  const data = [...products].sort((a, b) => b.received - a.received);
+  comparisonRows,
+}: {
+  products: Report["products"];
+  comparisonRows?: ProductComparisonChartRow[];
+}) {
+  const gradientId = `product-excess-${useId().replace(/:/g, "")}`;
+  const data =
+    comparisonRows ??
+    [...products]
+      .sort((a, b) => b.received - a.received)
+      .map((p) => ({
+        key: p.name,
+        name: p.name,
+        current: p.received,
+        previous: null,
+        members: [p.name],
+      }));
+  const hasComparison = data.some((row) => row.previous !== null);
   if (!data.length)
     return <p className="py-6 text-sm">この期間の注文はありません。</p>;
   return (
     <div>
-      <div style={{ height: Math.max(240, data.length * 40 + 60) }}>
+      <YearChartLegend comparison={hasComparison} />
+      {comparisonRows && (
+        <p className="mt-1 text-stone-500 text-xs">
+          対応済みの商品は比較グループごとに合算。未対応は商品ごとに表示します。
+        </p>
+      )}
+      <div
+        aria-label="今年の注文杯数と対応付けた前年の杯数"
+        style={{
+          height: Math.max(240, data.length * (hasComparison ? 56 : 40) + 60),
+        }}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={data}
             layout="vertical"
             accessibilityLayer
-            margin={{ top: 12, right: 20, bottom: 28, left: 20 }}
+            margin={{ top: 12, right: 52, bottom: 28, left: 20 }}
+            barGap={5}
           >
             <CartesianGrid horizontal={false} strokeDasharray="3 3" />
             <XAxis
@@ -401,30 +440,81 @@ export function ProductCupChart({
             />
             <YAxis
               type="category"
-              dataKey="name"
-              width={100}
+              dataKey="key"
+              tickFormatter={(key) =>
+                data.find((row) => row.key === key)?.name ?? key
+              }
+              width={130}
               tick={{ fontSize: 11 }}
               label={{
-                value: "商品",
+                value: comparisonRows ? "商品・比較グループ" : "商品",
                 angle: -90,
                 position: "insideLeft",
                 offset: -16,
               }}
             />
-            <Tooltip formatter={(v) => [`${v}杯`, "注文"]} />
-            <Bar
-              dataKey="received"
-              name="注文杯数"
-              fill="#0284c7"
-              isAnimationActive={false}
-              maxBarSize={26}
+            <Tooltip
+              content={({ active, payload }) => (
+                <YearChartTooltip
+                  active={active}
+                  row={payload?.[0]?.payload}
+                  unit="杯"
+                />
+              )}
             />
+            <Bar
+              dataKey="current"
+              name="今年の注文杯数"
+              fill={CURRENT_YEAR_COLOR}
+              shape={<CurrentYearBar gradientId={gradientId} />}
+              isAnimationActive={false}
+              barSize={18}
+            >
+              <LabelList
+                dataKey="current"
+                position="right"
+                fill="#172554"
+                fontWeight={800}
+                fontSize={12}
+              />
+            </Bar>
+            {hasComparison && (
+              <Bar
+                dataKey="previous"
+                name="前年・同時刻までの注文杯数"
+                fill={PREVIOUS_YEAR_COLOR}
+                stroke={PREVIOUS_YEAR_LINE}
+                strokeWidth={1}
+                barSize={3}
+                isAnimationActive={false}
+              >
+                <LabelList
+                  dataKey="previous"
+                  position="right"
+                  fill="#14532d"
+                  fontWeight={700}
+                  fontSize={11}
+                />
+              </Bar>
+            )}
           </BarChart>
         </ResponsiveContainer>
       </div>
       <ChartValues
-        columns={["商品", "注文杯数（杯）"]}
-        rows={data.map((p) => [p.name, p.received])}
+        columns={
+          hasComparison
+            ? [
+                "商品・比較グループ",
+                "今年の注文杯数（杯）",
+                "前年の注文杯数（杯）",
+              ]
+            : ["商品", "注文杯数（杯）"]
+        }
+        rows={data.map((p) =>
+          hasComparison
+            ? [p.name, p.current, p.previous ?? "未対応"]
+            : [p.name, p.current],
+        )}
       />
     </div>
   );
