@@ -1,4 +1,9 @@
-import { type CaosCard, type ShiftFeed, cupNeedsBrew } from "@cafeore/common";
+import {
+  type CaosCard,
+  type ShiftFeed,
+  type ShiftFeedMember,
+  cupNeedsBrew,
+} from "@cafeore/common";
 const normalize = (name: string) => name.normalize("NFKC").trim();
 
 /** 未登録と対応なしを分ける。名前の推測や学年からの能力推定はしない。 */
@@ -46,7 +51,7 @@ export const unsupportedDrip = (
 /** 学年の候補は名簿全体。配信が古い場合は予定の名前を学年未登録として残す。 */
 export const gradeMembers = (feed: ShiftFeed | null, current: string) => {
   if (!feed) return [];
-  const names = new Map<string, { name: string; grade: string }>();
+  const names = new Map<string, ShiftFeedMember>();
   for (const name of [
     ...Object.values(feed.drippers).flat(),
     ...feed.drills.flatMap((drill) => Object.values(drill.drippers).flat()),

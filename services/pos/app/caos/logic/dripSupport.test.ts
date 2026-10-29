@@ -95,3 +95,19 @@ describe("drip support", () => {
     expect(gradeMembers(null, "")).toEqual([]);
   });
 });
+
+test("検索用の別名と表示名を保持し、現在の担当者だけを除く", () => {
+  const f = feed();
+  f.members = [
+    {
+      name: "佐藤 花子",
+      grade: "B2",
+      display: "はなちゃん",
+      aliases: ["さとう", "はなこ"],
+    },
+  ];
+  expect(gradeMembers(f, "")).toContainEqual(f.members[0]);
+  expect(
+    gradeMembers(f, "佐藤 花子").some((member) => member.name === "佐藤 花子"),
+  ).toBe(false);
+});

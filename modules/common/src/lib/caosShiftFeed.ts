@@ -39,13 +39,22 @@ export interface ShiftDrill {
   drippers: Record<string, string[]>;
 }
 
+export interface ShiftFeedMember {
+  /** 交代・上級生・対応ドリップの照合に使う登録元の氏名 */
+  name: string;
+  grade: string;
+  display?: string;
+  /** 読み仮名・ローマ字・呼び名など。古い配信には無い */
+  aliases?: string[];
+}
+
 export interface ShiftFeed {
   /** 本番の枠の開始（日本時間 "YYYY-MM-DD HH:MM"）→ 1st〜6th の氏名 */
   drippers: Record<string, string[]>;
   drills: ShiftDrill[];
   seniors: string[];
   /** 配信名簿。学年は配信元の表記（B1〜D3など）。古い配信には無い */
-  members?: { name: string; grade: string }[];
+  members?: ShiftFeedMember[];
   /** 氏名→対応できるドリップ。欠落は未登録、空配列は対応なし */
   drips?: Record<string, string[]>;
   /** ドキュメントを最後に書いた時刻（Firestore の updateTime）。分からなければ null */
@@ -146,7 +155,31 @@ export const parseShiftFeed = (doc: unknown): ShiftFeed => {
           members: fields.members.flatMap((value) => {
             const member = asRecord(value);
             const name = asString(member.name).trim();
-            return name ? [{ name, grade: asString(member.grade).trim() }] : [];
+            return name
+              ? [
+                  {
+                    name,
+                    grade: asString(member.grade).trim(),
+                    ...(asString(member.display).trim()
+                      ? { display: asString(member.display).trim() }
+                      : {}),
+                    ...(Array.isArray(member.aliases)
+                      ? {
+                          aliases: [
+                            ...new Set(
+                              member.aliases
+                                .filter(
+                                  (a): a is string => typeof a === "string",
+                                )
+                                .map((a) => a.trim())
+                                .filter(Boolean),
+                            ),
+                          ],
+                        }
+                      : {}),
+                  },
+                ]
+              : [];
           }),
         }
       : {}),
@@ -408,4 +441,32 @@ export const upcomingLaneCandidate = (
     senior: isSeniorName(feed, name),
     reasons: [`次のシフト ${clockOf(period.startMs)}開始`],
   };
+};
+
+/** 全角・半角、かな、英字の大文字小文字、空白の違いをそろえる。 */
+export const normalizeShiftMemberSearch = (text: string): string =>
+  text
+    .normalize("NFKC")
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+/** 空白区切りの語はすべて一致させる。氏名の登録キーは変更しない。 */
+export const matchesShiftMember = (
+  member: Pick<ShiftFeedMember, "name" | "display" | "aliases">,
+  query: string,
+): boolean => {
+  const aliases = [
+    member.name,
+    member.display || "",
+    ...(member.aliases || []),
+  ].map(normalizeShiftMemberSearch);
+  return query
+    .normalize("NFKC")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) =>
+      aliases.some((alias) => alias.includes(normalizeShiftMemberSearch(word))),
+    );
 };
