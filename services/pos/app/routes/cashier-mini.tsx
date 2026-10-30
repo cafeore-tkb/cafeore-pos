@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
 import logoSVG from "~/assets/cafeore.svg";
 import logoMotion from "~/assets/cafeore_logo_motion.webm";
+import { useAutoFullscreen } from "~/components/functional/useAutoFullscreen";
 import { useOrderStat } from "~/components/functional/useOrderStat";
 import { cn } from "~/lib/utils";
 import { useOrdersWSContext } from "./context/OrdersWSContext";
@@ -11,6 +12,7 @@ export const meta: MetaFunction = () => {
 };
 
 export default function CasherMini() {
+  useAutoFullscreen();
   const [logoShown, setLogoShown] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   // レジの編集中注文と確定済み注文は API の WebSocket から受け取る

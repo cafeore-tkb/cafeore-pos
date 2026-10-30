@@ -8,6 +8,7 @@ import { useCallback, useMemo, useRef } from "react";
 import type { MetaFunction } from "react-router";
 import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
+import { useAutoFullscreen } from "~/components/functional/useAutoFullscreen";
 import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
 import { useCmPlaylist } from "~/lib/callscreen-cm";
 import { useCallScreenSound } from "~/lib/callscreen-sound";
@@ -64,6 +65,7 @@ const CALLING_FONT_CAP = 340;
 const DRIP_FONT_CAP = 220;
 
 export default function FieldsOfCallScreen() {
+  useAutoFullscreen();
   const { orders, isOrdersLoaded } = useOrdersWSContext();
 
   const soundRef = useRef<HTMLAudioElement>(null);
