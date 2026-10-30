@@ -62,15 +62,15 @@ const brewColumnAppearance = (status: QueueLaneStatus) => {
       : 0;
   const [filled, remaining] =
     status.phase === "soon"
-      ? ["rgb(253 230 138 / 0.95)", "rgb(255 251 235 / 0.95)"]
-      : ["rgb(167 243 208 / 0.9)", "rgb(236 253 245 / 0.95)"];
+      ? ["rgb(251 191 36 / 0.98)", "rgb(254 243 199 / 0.98)"]
+      : ["rgb(52 211 153 / 0.98)", "rgb(209 250 229 / 0.98)"];
   return {
     phase,
     progress,
     className:
       status.phase === "soon"
-        ? "border-amber-500 bg-amber-50"
-        : "border-emerald-400 bg-emerald-50",
+        ? "border-amber-600 bg-amber-100"
+        : "border-emerald-600 bg-emerald-100",
     style: {
       backgroundImage: `linear-gradient(to right, ${filled} 0%, ${filled} ${progress}%, ${remaining} ${progress}%, ${remaining} 100%)`,
     },
