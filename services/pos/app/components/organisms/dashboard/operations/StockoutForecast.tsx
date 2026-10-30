@@ -31,6 +31,8 @@ import {
 
 // 開店・閉店予定は日付ごとにこの端末へ保存する（T-93 判断 6）
 const HOURS_KEY = "dashboard:stockout-hours:v1";
+// 保存が無い日の初期値（祭の営業時間）。欄を空にすれば、開店は初回注文になる
+const DEFAULT_HOURS = { open: "10:00", close: "17:00" };
 const hoursSchema = z.record(z.object({ open: z.string(), close: z.string() }));
 type SavedHours = z.infer<typeof hoursSchema>;
 const readHours = (): SavedHours => {
@@ -74,7 +76,7 @@ export function StockoutForecast({
   const fieldId = useId();
   const [saved, setSaved] = useState<SavedHours>({});
   useEffect(() => setSaved(readHours()), []);
-  const entry = saved[date] ?? { open: "", close: "" };
+  const entry = saved[date] ?? DEFAULT_HOURS;
   const update = (field: "open" | "close", value: string) => {
     const next = { ...saved, [date]: { ...entry, [field]: value } };
     setSaved(next);
