@@ -34,7 +34,17 @@ export function DownloadOperationalBackup() {
       </p>
     );
   }
-  if (access !== "allow") {
+  if (access === "error" || access === "expired") {
+    return (
+      <p className="text-muted-foreground text-sm">
+        {access === "error"
+          ? "権限を確認できませんでした。"
+          : "ログインが切れています。"}
+        ページを読み込み直してください
+      </p>
+    );
+  }
+  if (access === "deny") {
     return (
       <p className="text-muted-foreground text-sm">管理者だけが書き出せます</p>
     );
