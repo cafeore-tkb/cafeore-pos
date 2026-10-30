@@ -1,0 +1,127 @@
+{
+  "source": "https://github.com/cafeore-tkb/sohosai-analysis/blob/main/2025/nisui/cafeore_analysis/python/export/stockout_params_2026.json",
+  "commit": "301b32c11f5fb1cfc34f44e2bba7a000fc7a888e",
+  "sha256": "5ae266ec0548f6abaa98e31f3e4bb7dc925130f3193cb0bb1579271139ced36a",
+  "schema_version": 1,
+  "ticket": "T-93",
+  "model": "T-88 case A (R_t ~ NB2(mu, alpha); mu = n_t / E_t * E_rem, or r_bar * E_rem while n_t = 0)",
+  "generated_at": "2026-10-31T02:31:43+09:00",
+  "source_commit": "f63cf8f6f003f3e70d29fdac8c6e7d210cf55a6e",
+  "poisson_alpha": 1e-8,
+  "fit_times": { "from_open_min": 30.0, "until_before_close_min": 10.0 },
+  "quantiles": [0.5, 0.8, 0.9, 0.95],
+  "units": [
+    {
+      "key": "signature_blend",
+      "train_unit": "signature_blend",
+      "stock": "item",
+      "items": ["余音ブレンド"],
+      "item_types": [],
+      "r_bar": 0.3444763378232346,
+      "alpha": 0.06980731224247597,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "house_blend",
+      "train_unit": "house_blend",
+      "stock": "item",
+      "items": ["珈琲・俺ブレンド"],
+      "item_types": [],
+      "r_bar": 0.2800159452664916,
+      "alpha": 0.24287522238493722,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "ice",
+      "train_unit": "ice_coffee",
+      "stock": "item",
+      "items": ["アイスコーヒー"],
+      "item_types": [],
+      "r_bar": 0.11860712230440712,
+      "alpha": 0.6896667977471942,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "iceOre",
+      "train_unit": "ice_ore",
+      "stock": "item",
+      "items": ["アイスオレ"],
+      "item_types": [],
+      "r_bar": 0.24443380857516947,
+      "alpha": 0.28523634194382996,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "milk",
+      "train_unit": "ice_milk",
+      "stock": "item",
+      "items": ["アイスミルク"],
+      "item_types": [],
+      "r_bar": 0.03919191867449975,
+      "alpha": 0.14713625256495072,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "HOT",
+      "train_unit": "hot",
+      "stock": "cup",
+      "items": [],
+      "item_types": ["blend", "gourmet", "limited"],
+      "r_bar": 0.9648431557893293,
+      "alpha": 0.05342958738493466,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "ICE",
+      "train_unit": "ice",
+      "stock": "cup",
+      "items": [],
+      "item_types": ["ice", "iceOre", "milk"],
+      "r_bar": 0.40223284955407634,
+      "alpha": 0.24509990138198318,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    },
+    {
+      "key": "total",
+      "train_unit": "all",
+      "stock": "none",
+      "items": [],
+      "item_types": [],
+      "r_bar": 1.3670760053434057,
+      "alpha": 0.06088130327215303,
+      "train_days": ["2024-11-03", "2024-11-04", "2025-11-02", "2025-11-03"],
+      "n_times": 180
+    }
+  ],
+  "hidden_units": ["gourmet", "limited"],
+  "item_roles": [
+    { "item_name": "余音ブレンド", "role": "signature_blend" },
+    { "item_name": "珈琲・俺ブレンド", "role": "house_blend" },
+    { "item_name": "ケニア", "role": "single_origin" },
+    { "item_name": "キリマン", "role": "single_origin" },
+    { "item_name": "ブラジル", "role": "single_origin" },
+    { "item_name": "アロマナティーボ", "role": "premium" },
+    { "item_name": "チロソ", "role": "premium" },
+    { "item_name": "アイスコーヒー", "role": "ice_coffee" },
+    { "item_name": "アイスオレ", "role": "ice_ore" },
+    { "item_name": "アイスミルク", "role": "ice_milk" },
+    { "item_name": "コースター", "role": "goods" },
+    { "item_name": "缶バッジ", "role": "goods" }
+  ],
+  "role_units": {
+    "signature_blend": "signature_blend",
+    "house_blend": "house_blend",
+    "single_origin": "gourmet",
+    "premium": "limited",
+    "ice_coffee": "ice",
+    "ice_ore": "iceOre",
+    "ice_milk": "milk"
+  }
+}
