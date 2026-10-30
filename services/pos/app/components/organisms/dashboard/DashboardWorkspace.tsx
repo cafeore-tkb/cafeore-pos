@@ -76,6 +76,7 @@ import {
   ProductTimeChart,
 } from "./operations/OverviewVisuals";
 import { SnapshotComparison } from "./operations/SnapshotComparison";
+import { StockoutForecast } from "./operations/StockoutForecast";
 import {
   CURRENT_YEAR_COLOR,
   CurrentYearBar,
@@ -141,7 +142,12 @@ export function DashboardWorkspace() {
   const [intervalMinutes, setIntervalMinutes] = useState<BucketMinutes>(15);
   const [referenceOrders, setReferenceOrders] = useState<AnalysisOrder[]>([]);
   const comparisonSettings = useYearComparisonSettings();
-  const { items, error: itemsError, isLoading: itemsLoading } = useItemMaster();
+  const {
+    items,
+    itemTypes,
+    error: itemsError,
+    isLoading: itemsLoading,
+  } = useItemMaster();
   const [referenceInfo, setReferenceInfo] = useState("");
   const [referenceLoading, setReferenceLoading] = useState(true);
   const [referenceFailure, setReferenceFailure] = useState("");
@@ -522,10 +528,18 @@ export function DashboardWorkspace() {
                   開始・終了時刻を確認してください。終了は開始より後、開始は現在より前に設定してください。
                 </p>
               ) : section === "inventory" ? (
-                <AvailabilityReview
-                  buckets={report.buckets}
-                  intervalMinutes={intervalMinutes}
-                />
+                <div className="space-y-5">
+                  <StockoutForecast
+                    orders={sourceOrders}
+                    now={now}
+                    date={selectedDate}
+                    itemTypes={itemTypes}
+                  />
+                  <AvailabilityReview
+                    buckets={report.buckets}
+                    intervalMinutes={intervalMinutes}
+                  />
+                </div>
               ) : !isOrdersLoaded ? (
                 <LoadingState />
               ) : section === "records" ? (
