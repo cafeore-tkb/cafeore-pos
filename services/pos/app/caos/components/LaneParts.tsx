@@ -104,16 +104,26 @@ const CHANGE_TONE =
 export const LaneChangeButton: React.FC<{
   dripper: number;
   className?: string;
-}> = ({ dripper, className = "" }) => {
+  /** C画面の担当枠で、行の高さまでボタンを広げる */
+  fillHeight?: boolean;
+}> = ({ dripper, className = "", fillHeight = false }) => {
   const { editable, lanes, upcomingOf, changeToNext, openChange } =
     useCaosLanes();
   const lane = lanes.find((item) => item.dripper === dripper);
   if (!editable)
-    return <LaneName dripper={dripper} wrap className={className} />;
+    return (
+      <LaneName
+        dripper={dripper}
+        wrap
+        className={`${fillHeight ? "h-full self-stretch" : ""} ${className}`}
+      />
+    );
   const upcoming = upcomingOf(dripper);
   const label = lane?.name || "担当者なし";
   return (
-    <div className="inline-flex min-w-0 max-w-full flex-col items-start gap-1">
+    <div
+      className={`inline-flex min-w-0 max-w-full flex-col items-start gap-1 ${fillHeight ? "min-h-0 flex-1 self-stretch" : ""}`}
+    >
       <LaneButton
         dripper={dripper}
         title={
@@ -130,7 +140,7 @@ export const LaneChangeButton: React.FC<{
           if (upcoming) changeToNext(dripper, upcoming);
           else openChange(dripper);
         }}
-        className={`flex min-h-11 flex-col items-start justify-center px-1 py-1 text-[16px] ${CHANGE_TONE} ${className}`}
+        className={`flex min-h-11 flex-col items-start justify-center px-1 py-1 text-[16px] ${fillHeight ? "flex-1" : ""} ${CHANGE_TONE} ${className}`}
       >
         <span className="flex min-w-0 max-w-full flex-wrap items-center gap-1 leading-tight">
           <span className={nameClass(label, true)}>{label}</span>

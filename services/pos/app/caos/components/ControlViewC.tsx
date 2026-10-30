@@ -19,6 +19,64 @@ import { OrderQueuePanel } from "./UnassignedOrdersPanel";
 
 const COLUMNS = ["ドリップ中", "待ち1", "待ち2", "待ち3"];
 
+type QueueLaneStatus = ReturnType<typeof laneStatus>;
+
+/** C画面の「ドリップ中」枠。通常は経過割合を左から塗り、まもなく・超過を色で分ける。 */
+const brewColumnAppearance = (status: QueueLaneStatus) => {
+  const phase = status.forgotten ? "forgotten" : status.phase;
+  if (status.forgotten)
+    return {
+      phase,
+      progress: 100,
+      className:
+        "border-(color:--caos-overtime-text) bg-red-200 ring-1 ring-(color:--caos-overtime-line)",
+      style: undefined,
+    };
+  if (status.phase === "overtime")
+    return {
+      phase,
+      progress: 100,
+      className:
+        "border-(color:--caos-overtime-line) bg-(color:--caos-overtime)",
+      style: undefined,
+    };
+  if (status.phase === "waiting")
+    return {
+      phase,
+      progress: 0,
+      className: "border-sky-400 bg-sky-100",
+      style: undefined,
+    };
+  if (status.phase === "empty")
+    return {
+      phase,
+      progress: 0,
+      className: "border-emerald-300 bg-emerald-50",
+      style: undefined,
+    };
+
+  const totalMs = status.elapsedMs + status.remainingMs;
+  const progress =
+    totalMs > 0
+      ? Math.max(0, Math.min(100, (status.elapsedMs / totalMs) * 100))
+      : 0;
+  const [filled, remaining] =
+    status.phase === "soon"
+      ? ["rgb(251 191 36 / 0.98)", "rgb(254 243 199 / 0.98)"]
+      : ["rgb(52 211 153 / 0.98)", "rgb(209 250 229 / 0.98)"];
+  return {
+    phase,
+    progress,
+    className:
+      status.phase === "soon"
+        ? "border-amber-600 bg-amber-100"
+        : "border-emerald-600 bg-emerald-100",
+    style: {
+      backgroundImage: `linear-gradient(to right, ${filled} 0%, ${filled} ${progress}%, ${remaining} ${progress}%, ${remaining} 100%)`,
+    },
+  };
+};
+
 // 管制盤 C：左にドリッパーの行、右に注文の列（未割当のカードを注文番号の順に）。
 // 各行は「ドリップ中」「待ち1」「待ち2」「待ち3」の固定4列。待ち4以降は待ち3の列内で縦にスクロールする。
 // ドリッパーの列のカードは注文番号を大きく出す（OrderCard の lane）。
@@ -72,14 +130,14 @@ const ControlViewCBoard: React.FC<
   flashKeys,
 }) => (
   <section
-    className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_560px] gap-2"
+    className="grid h-full min-h-0 grid-cols-[minmax(0,744px)_minmax(560px,1fr)] gap-2"
     aria-label="Cコントロール画面"
   >
     <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[720px] flex-col">
+        <div className="flex h-full min-w-[744px] flex-col">
           <header className="flex h-11 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-100 px-2">
-            <h2 className="w-[46px] shrink-0 text-center font-black text-[11px] text-slate-700">
+            <h2 className="w-[164px] shrink-0 text-center font-black text-[14px] text-slate-700">
               担当
             </h2>
             <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5">
@@ -96,6 +154,7 @@ const ControlViewCBoard: React.FC<
           <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
             {lanes.map((bay) => {
               const lane = laneStatus(bay, nowMs);
+              const brewColumn = brewColumnAppearance(lane);
               const { current } = lane;
               const isLinked = laneActive(bay).some((card) =>
                 sharesOrder(card, selectedOrderId),
@@ -106,85 +165,95 @@ const ControlViewCBoard: React.FC<
                   data-bay-target={bay.id}
                   className={`relative isolate flex min-h-0 items-stretch gap-2 px-2 py-1 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
                 >
-                  <DripperIndicator
-                    bayId={bay.id}
-                    status={lane}
-                    nominatedCups={pendingNominatedCups(
-                      unassignedOrders,
-                      bay.id,
-                    )}
-                    onOpenLane={readOnly ? undefined : onOpenLane}
-                    className="w-[46px]"
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex w-[164px] shrink-0 items-stretch gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                    <DripperIndicator
+                      bayId={bay.id}
+                      status={lane}
+                      nominatedCups={pendingNominatedCups(
+                        unassignedOrders,
+                        bay.id,
+                      )}
+                      onOpenLane={readOnly ? undefined : onOpenLane}
+                      className="w-10"
+                    />
+                    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
                       <LaneChangeButton
                         dripper={bay.id}
-                        className="font-black text-[20px] text-slate-950"
+                        fillHeight
+                        className="w-full min-w-0 font-black text-[18px] text-slate-950"
                       />
                       <LaneAbility dripper={bay.id} />
                     </div>
-                    <div className="grid min-h-0 flex-1 grid-cols-4 gap-1.5">
-                      {COLUMNS.map((label, index) => {
-                        const cards =
-                          index === 0
-                            ? current
-                              ? [current]
-                              : []
-                            : index === 3
-                              ? lane.waiting.slice(2)
-                              : lane.waiting.slice(index - 1, index);
-                        return (
-                          <section
-                            key={label}
-                            aria-label={`${bay.id} ${label}`}
-                            className={`flex min-h-0 min-w-0 flex-col rounded-lg border ${index === 0 ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}
+                  </div>
+                  <div className="grid min-h-0 min-w-0 flex-1 grid-cols-4 gap-1.5">
+                    {COLUMNS.map((label, index) => {
+                      const cards =
+                        index === 0
+                          ? current
+                            ? [current]
+                            : []
+                          : index === 3
+                            ? lane.waiting.slice(2)
+                            : lane.waiting.slice(index - 1, index);
+                      return (
+                        <section
+                          key={label}
+                          aria-label={`${bay.id} ${label}`}
+                          data-brew-phase={
+                            index === 0 ? brewColumn.phase : undefined
+                          }
+                          data-brew-progress={
+                            index === 0
+                              ? Math.round(brewColumn.progress)
+                              : undefined
+                          }
+                          style={index === 0 ? brewColumn.style : undefined}
+                          className={`flex min-h-0 min-w-0 flex-col rounded-lg border transition-colors duration-500 ${index === 0 ? brewColumn.className : "border-slate-200 bg-slate-50"}`}
+                        >
+                          <div
+                            className={`flex min-h-0 flex-1 flex-col gap-2 p-0.5 ${index === 3 && cards.length > 1 ? "overflow-y-auto" : ""}`}
                           >
-                            <div
-                              className={`flex min-h-0 flex-1 flex-col gap-2 p-0.5 ${index === 3 && cards.length > 1 ? "overflow-y-auto" : ""}`}
-                            >
-                              {cards.map((ticket, position) => (
-                                <div
-                                  key={ticket.key}
-                                  className="flex min-h-[48px] shrink-0 flex-col"
-                                >
-                                  {position > 0 && (
-                                    <span className="text-center font-bold text-[11px] text-slate-600">
-                                      待ち{position + 3}
-                                    </span>
+                            {cards.map((ticket, position) => (
+                              <div
+                                key={ticket.key}
+                                className={`flex min-h-[48px] flex-col ${cards.length === 1 ? "flex-1" : "shrink-0"} ${index === 0 ? "my-1" : ""}`}
+                              >
+                                {position > 0 && (
+                                  <span className="text-center font-bold text-[11px] text-slate-600">
+                                    待ち{position + 3}
+                                  </span>
+                                )}
+                                <LaneCard
+                                  readOnly={readOnly}
+                                  flash={flashKeys?.has(ticket.key)}
+                                  card={ticket}
+                                  look={looks.get(ticket.key)}
+                                  selected={sharesOrder(
+                                    ticket,
+                                    selectedOrderId,
                                   )}
-                                  <LaneCard
-                                    readOnly={readOnly}
-                                    flash={flashKeys?.has(ticket.key)}
-                                    card={ticket}
-                                    look={looks.get(ticket.key)}
-                                    selected={sharesOrder(
-                                      ticket,
-                                      selectedOrderId,
-                                    )}
-                                    lane={bay}
-                                    nowMs={nowMs}
-                                    pick={pick}
-                                    hold={hold}
-                                    menu={cardMenu}
-                                    className={`min-h-[48px] flex-1 ${readOnly ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-400"}`}
-                                  />
-                                </div>
+                                  lane={bay}
+                                  nowMs={nowMs}
+                                  pick={pick}
+                                  hold={hold}
+                                  menu={cardMenu}
+                                  className={`min-h-[48px] flex-1 ${readOnly ? "" : "cursor-pointer hover:ring-2 hover:ring-blue-400"}`}
+                                />
+                              </div>
+                            ))}
+                            {cards.length === 0 &&
+                              (!readOnly && index > 0 ? (
+                                <EmptySlotButton
+                                  onClick={() => onOpenEmptySlot(bay.id)}
+                                  className="min-h-[48px] flex-1"
+                                />
+                              ) : (
+                                <span className="min-h-[48px] flex-1 rounded border border-slate-300 border-dashed" />
                               ))}
-                              {cards.length === 0 &&
-                                (!readOnly && index > 0 ? (
-                                  <EmptySlotButton
-                                    onClick={() => onOpenEmptySlot(bay.id)}
-                                    className="min-h-[48px] flex-1"
-                                  />
-                                ) : (
-                                  <span className="min-h-[48px] flex-1 rounded border border-slate-300 border-dashed" />
-                                ))}
-                            </div>
-                          </section>
-                        );
-                      })}
-                    </div>
+                          </div>
+                        </section>
+                      );
+                    })}
                   </div>
                 </article>
               );
@@ -274,6 +343,7 @@ const LaneCard: React.FC<{
           ? undefined
           : () => (mergeTap ? pick.tap(card) : menu?.toggle(card))
       }
+      style={{ justifyContent: "space-evenly" }}
       className={`${className} ${flash ? "caos-arrival" : ""}`}
     >
       <CardOverlay
