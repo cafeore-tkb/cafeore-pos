@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
 import { DownloadButton } from "~/components/organisms/DownloadData";
 import { DownloadMasterStates } from "~/components/organisms/DownloadMasterStates";
+import { DownloadOperationalBackup } from "~/components/organisms/DownloadOperationalBackup";
 import { MasterDataExport } from "~/components/organisms/products/MasterDataExport";
 import { DownloadCaosLogs } from "~/components/organisms/top/DownloadCaosLogs";
 
@@ -51,6 +52,15 @@ export default function ExportsPage() {
           人間の操作・システムの処理・両方を選んでJSONに保存します。
         </p>
         <DownloadCaosLogs />
+      </section>
+      <section className="space-y-3 rounded-lg border p-4">
+        <h2 className="font-bold text-xl">営業データの全部の表</h2>
+        <p className="text-muted-foreground text-sm">
+          注文・CaOS の記録（抽出の記録を含む）・Square
+          の決済・在庫の記録・担当の割り当てなど、営業中に溜まる表を全部 JSON
+          で保存します。データのリセットの前に取るバックアップと同じものです。メニューなどの設定は上の「商品マスタ」で書き出します。
+        </p>
+        <DownloadOperationalBackup />
       </section>
     </main>
   );

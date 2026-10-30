@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { saveBlob } from "~/lib/saveBlob";
 import { cn } from "~/lib/utils";
 
 export const meta: MetaFunction = () => {
@@ -73,19 +74,6 @@ const timeFormat = new Intl.DateTimeFormat("ja-JP", {
 type Backup = Pick<DataResetBackupFile, "sha256" | "fileName"> & {
   size: number;
   at: Date;
-};
-
-/** blob をファイルとして保存させる */
-const saveBlob = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  // ブラウザがダウンロードを開始してから解放する。
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 // 本番では管理者だけが開ける
