@@ -5,12 +5,22 @@ import {
   splitCallScreenOrders,
 } from "@cafeore/common";
 import { useCallback, useMemo, useRef } from "react";
-import type { MetaFunction } from "react-router";
+import { type MetaFunction, useSearchParams } from "react-router";
+import { toast } from "sonner";
 import logoSVG from "~/assets/cafeore.svg";
 import brightNotifications from "~/assets/callscreen/bright-notifications.mp3";
+import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
+import { CallScreenSettings } from "~/components/organisms/callscreen/CallScreenSettings";
 import { CmPlayer } from "~/components/organisms/callscreen/CmPlayer";
-import { useCmPlaylist } from "~/lib/callscreen-cm";
+import { DisplayPicker } from "~/components/organisms/callscreen/DisplayPicker";
+import { CM_IMAGE_SECONDS_DEFAULT, type CmPlaylist } from "~/lib/callscreen-cm";
 import { useCallScreenSound } from "~/lib/callscreen-sound";
+import {
+  type WindowBounds,
+  useCallScreenWindow,
+  useHostPlaylist,
+  useSoundReady,
+} from "~/lib/callscreen-window";
 import {
   BOARD_W,
   BrewingIndicator,
@@ -51,7 +61,7 @@ export const meta: MetaFunction = () => {
 };
 
 /**
- * 待機中に流す CM。マスタ設定の「呼び出し画面の CM」でこの端末のファイルを選んでいれば、それを順番に流す（lib/callscreen-cm）。
+ * 待機中に流す CM。設定の画面（/callscreen）でこの端末のファイルを選んでいれば、それを順番に流す（lib/callscreen-cm・lib/callscreen-window）。
  * 選んでいなければ services/pos/public/ にこの名前で置いた動画を流す（16:9。H.264 の mp4 ならどのブラウザでも流せる）。
  * どれも流せない間は、代わりに呼び出し画面と同じ地（ロゴ入り）を出す
  */
@@ -63,12 +73,18 @@ const RETURN_TO_CM_MS = 30_000;
 const CALLING_FONT_CAP = 340;
 const DRIP_FONT_CAP = 220;
 
-export default function FieldsOfCallScreen() {
+/** 設定の画面から CM の並びが届いていないとき */
+const NO_CM: CmPlaylist = { items: [], imageSeconds: CM_IMAGE_SECONDS_DEFAULT };
+
+/**
+ * 呼び出し画面そのもの（お客さんに見せる面）。設定の画面が開く呼び出し画面の窓（/callscreen?display）に描く。
+ * cm は設定の画面から届いた CM の並び
+ */
+function CallBoard({ cm }: { cm: CmPlaylist }) {
   const { orders, isOrdersLoaded } = useOrdersWSContext();
 
   const soundRef = useRef<HTMLAudioElement>(null);
   const voiceRef = useRef<HTMLAudioElement>(null);
-  const cm = useCmPlaylist();
   const sound = useCallScreenSound();
 
   // 提供済みは画面から外し、残りを お呼び出し中 / ドリップ中 / 準備中 に分ける。
@@ -354,5 +370,67 @@ export default function FieldsOfCallScreen() {
         <track kind="captions" />
       </audio>
     </div>
+  );
+}
+
+/**
+ * 呼び出し画面（/callscreen）。開くと設定の画面（出す先・CM・音）で、そこから呼び出し画面の窓（?display）を
+ * 選んだ外部ディスプレイいっぱいに開く（lib/callscreen-window）。設定の画面はこのタブに残る
+ */
+export default function CallScreenPage() {
+  const [searchParams] = useSearchParams();
+  return searchParams.has("display") ? (
+    <CallScreenDisplay />
+  ) : (
+    <CallScreenHost />
+  );
+}
+
+/** 呼び出し画面の窓。設定の画面から届いた CM の並びで描き、音を鳴らせるかを設定の画面に知らせる */
+function CallScreenDisplay() {
+  const soundReady = useSoundReady();
+  const cm = useHostPlaylist(soundReady);
+  return <CallBoard cm={cm ?? NO_CM} />;
+}
+
+/** 設定の画面。CM のファイルはこのタブで持ち、呼び出し画面の窓へ送る */
+function CallScreenHost() {
+  const display = useCallScreenWindow();
+
+  const show = (bounds: WindowBounds) => {
+    if (!display.show(bounds)) {
+      toast.error(
+        "呼び出し画面の窓を開けませんでした。アドレスバーに出るアイコンから、このサイトのポップアップを許可してください",
+      );
+    }
+  };
+
+  return (
+    <CallScreenSettings
+      header={
+        <AdminPageHeader
+          group="settings"
+          title="呼び出し画面"
+          description="受け取り口の外部ディスプレイに、呼び出しの番号と CM を出します。流す CM と鳴らす音も、ここで決めます。"
+        >
+          <p className="max-w-[760px] text-pretty text-muted-foreground text-sm">
+            選んだ CM のファイルはどこにも上げず、
+            <span className="font-semibold text-foreground">
+              このタブの中だけで覚えます
+            </span>
+            。読み込み直したりタブを閉じたりすると消えます（呼び出し画面の窓は、置いてある
+            CM に戻ります）。
+          </p>
+        </AdminPageHeader>
+      }
+      display={
+        <DisplayPicker
+          open={display.open}
+          soundReady={display.soundReady}
+          onShow={show}
+          onClose={display.close}
+        />
+      }
+    />
   );
 }

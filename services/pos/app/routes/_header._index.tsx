@@ -119,9 +119,9 @@ const sections: Section[] = [
         to: "/callscreen",
         title: "呼び出し画面",
         audience: "customer",
-        where: "受け取り口の大型ディスプレイ",
+        where: "受け取り口の大型ディスプレイ（PC につないだ外部ディスプレイ）",
         description:
-          "呼び出しが無い間は CM を流し、呼び出しが入るとお呼び出し中の番号を大きく表示。ドリップ中（ドリッパー付き）と準備中の番号も出し、呼び出しのたびに通知音のあと番号を読み上げ、ドリップを始めたら「〜番のお客様、1番ドリッパーにてドリップいたします」と案内します。提供画面の「呼び出し催促」で、その番号をもう一度呼んで目立たせます。",
+          "開くと CM・音・出す先の設定の画面。選んだ外部ディスプレイいっぱいに呼び出し画面の窓を開きます（設定の画面は手元に残ります）。呼び出しが無い間は CM を流し、呼び出しが入るとお呼び出し中の番号を大きく表示。ドリップ中（ドリッパー付き）と準備中の番号も出し、呼び出しのたびに通知音のあと番号を読み上げ、ドリップを始めたら「〜番のお客様、1番ドリッパーにてドリップいたします」と案内します。提供画面の「呼び出し催促」で、その番号をもう一度呼んで目立たせます。",
       },
     ],
   },
@@ -173,7 +173,7 @@ const sections: Section[] = [
 const settingLinks = [
   { to: "/square-devices", label: "Square 端末" },
   { to: "/printer-settings", label: "プリンター" },
-  { to: "/callscreen-cm", label: "呼び出し画面の CM" },
+  { to: "/callscreen", label: "呼び出し画面" },
   { to: "/data-reset", label: "データのリセット" },
 ];
 
@@ -210,9 +210,8 @@ export default function Index() {
         <div className="rounded-lg border p-4">
           <h2 className="font-bold">マスタ設定</h2>
           <p className="mt-1 text-muted-foreground text-sm">
-            Square 端末・プリンター・呼び出し画面の CM
-            を設定します。本番では、呼び出し画面の CM
-            のほかは管理者だけが開けます
+            Square 端末・プリンター・呼び出し画面（CM・音・出す先）
+            を設定します。本番では、呼び出し画面のほかは管理者だけが開けます
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             {settingLinks.map((link) => (
