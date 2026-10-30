@@ -1,5 +1,5 @@
+import { Pencil2Icon } from "@radix-ui/react-icons";
 import { useCallback, useState } from "react";
-import { cn } from "~/lib/utils";
 import { useFocusRef } from "../functional/useFocusRef";
 
 type Props = {
@@ -11,7 +11,7 @@ type Props = {
 
 /**
  * 注文番号の表示・編集UI
- * オフライン時や手動採番時はクリックで番号を編集できる
+ * 接続状態にかかわらず、番号の横の編集アイコンから手動採番できる
  */
 const OrderIdDisplay = ({
   orderId,
@@ -22,14 +22,11 @@ const OrderIdDisplay = ({
   const [isEditingOrderId, setIsEditingOrderId] = useState(false);
   const [orderIdInputValue, setOrderIdInputValue] = useState("");
   const orderIdInputRef = useFocusRef<HTMLInputElement>(isEditingOrderId);
-  const isEditable = isNeedManualOrderId || manualOrderId !== null;
 
   const handleOrderIdClick = useCallback(() => {
-    if (isEditable) {
-      setIsEditingOrderId(true);
-      setOrderIdInputValue(orderId.toString());
-    }
-  }, [isEditable, orderId]);
+    setIsEditingOrderId(true);
+    setOrderIdInputValue(orderId.toString());
+  }, [orderId]);
 
   const handleOrderIdChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,6 +72,7 @@ const OrderIdDisplay = ({
           <input
             ref={orderIdInputRef}
             type="number"
+            aria-label="注文番号"
             value={orderIdInputValue}
             onChange={handleOrderIdChange}
             onBlur={handleOrderIdBlur}
@@ -86,20 +84,12 @@ const OrderIdDisplay = ({
         <button
           type="button"
           onClick={handleOrderIdClick}
-          className={cn(
-            "font-extrabold text-[28px]",
-            isEditable &&
-              "cursor-pointer underline decoration-dotted hover:text-theme-primary",
-          )}
-          title={
-            isEditable
-              ? isNeedManualOrderId
-                ? "オフラインモード: クリックして番号を指定"
-                : "番号を手動指定中: クリックして変更"
-              : undefined
-          }
+          className="flex items-center gap-2 font-extrabold text-[28px] hover:text-theme-primary"
+          aria-label={`注文番号 No.${orderId} を編集`}
+          title="クリックして番号を手動指定"
         >
           No.{orderId}
+          <Pencil2Icon className="h-5 w-5" aria-hidden="true" />
         </button>
       )}
       {isNeedManualOrderId && (
