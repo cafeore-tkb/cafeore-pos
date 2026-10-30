@@ -3,6 +3,7 @@ import { Download, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
+import { saveBlob } from "~/lib/saveBlob";
 
 export function DownloadCaosLogs() {
   const [format, setFormat] = useState<"human" | "system" | "mixed">("human");
@@ -17,15 +18,10 @@ export function DownloadCaosLogs() {
       );
       if (!response.ok || !data)
         throw new Error(apiErrorReason(response, error));
-      const url = URL.createObjectURL(data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `caos-logs-${format}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      // ブラウザがダウンロードを開始してから解放する。
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      saveBlob(
+        data,
+        `caos-logs-${format}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`,
+      );
     } catch (error) {
       toast.error("ログを保存できませんでした", {
         description:

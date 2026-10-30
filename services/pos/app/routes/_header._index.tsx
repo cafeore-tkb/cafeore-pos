@@ -230,7 +230,7 @@ export default function Index() {
           <h2 className="font-bold">各種データ書き出し</h2>
           <p className="mt-1 mb-3 text-muted-foreground text-sm">
             注文・商品マスタ・オーダーストップ記録・CaOS
-            操作ログをダウンロードします
+            操作ログ・営業データの全部の表をダウンロードします
           </p>
           <Link
             to="/exports"
