@@ -364,7 +364,7 @@ export const OrderCard: React.FC<
         ref={headlineRef}
         data-number-size={numberPixels}
         data-cup-size={cupPixels}
-        className={`flex min-w-0 shrink-0 items-center ${size === "sm" || parallelOrderNumbers ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
+        className={`flex min-w-0 shrink-0 items-center ${parallelOrderNumbers ? "flex-wrap gap-x-0.5 gap-y-1" : "gap-1"} leading-none ${fade}`}
       >
         {headline}
         {/* コメントの印は番号のすぐ右。未割当は注文見出しに集約する */}
