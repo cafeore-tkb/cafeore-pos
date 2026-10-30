@@ -39,6 +39,7 @@ import {
   YAxis,
 } from "recharts";
 import { AdminPageHeader } from "~/components/molecules/AdminPageHeader";
+import { comparisonDefaults } from "~/lib/analytics/comparisonDefaults";
 import { dashboardFinance } from "~/lib/analytics/dashboardFinance";
 import { dashboardWindow } from "~/lib/analytics/dashboardWindow";
 import { load2025Baseline } from "~/lib/analytics/historical";
@@ -278,6 +279,39 @@ export function DashboardWorkspace() {
       ].sort((a, b) => a.localeCompare(b, "ja")),
     [referenceOrders],
   );
+  const {
+    initializeDefaults,
+    loaded: comparisonLoaded,
+    saveBlocked,
+  } = comparisonSettings;
+  useEffect(() => {
+    if (
+      !comparisonLoaded ||
+      saveBlocked ||
+      referenceLoading ||
+      referenceFailure ||
+      itemsLoading ||
+      itemsError
+    )
+      return;
+    const defaults = comparisonDefaults(
+      jstDate(now).slice(0, 4),
+      currentProducts,
+      historicalProducts,
+    );
+    if (defaults) initializeDefaults(defaults);
+  }, [
+    comparisonLoaded,
+    saveBlocked,
+    referenceLoading,
+    referenceFailure,
+    itemsLoading,
+    itemsError,
+    now,
+    currentProducts,
+    historicalProducts,
+    initializeDefaults,
+  ]);
   const productComparison = useMemo(
     () =>
       referenceWindow
