@@ -25,14 +25,26 @@ const types = ["ホット", "アイス", "ミルク"].map((name, i) => ({
   iced_brew: false,
   serve_with_snack: false,
 }));
-const names = [
-  "珈琲・俺ブレンド2026",
-  "余音ブレンド",
-  "シングルオリジン",
-  "アイスコーヒー",
-  "カフェオレ",
-  "ミルク",
-];
+const presetQA = process.env.COMPARISON_PRESET_QA === "1";
+const presetRows = JSON.parse(
+  await (await import("node:fs/promises")).readFile(
+    new URL(
+      "../../services/pos/app/lib/analytics/data/comparison-2026.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+const names = presetQA
+  ? presetRows.map((row) => row.current)
+  : [
+      "珈琲・俺ブレンド2026",
+      "余音ブレンド",
+      "シングルオリジン",
+      "アイスコーヒー",
+      "カフェオレ",
+      "ミルク",
+    ];
 const items = names.map((name, i) => ({
   id: uuid(i + 1),
   name,
@@ -43,7 +55,7 @@ const menus = items.map((item, i) => ({
   id: uuid(i + 20),
   name: item.name,
   abbr: item.abbr,
-  price: [400, 500, 600, 400, 500, 200][i],
+  price: [400, 500, 600, 400, 500, 200][i % 6],
   key: String(i + 1),
   priority: 0,
   items: [{ item, quantity: 1 }],
@@ -206,6 +218,63 @@ await page
   .getByRole("heading", { name: "ダッシュボード", exact: true })
   .waitFor();
 await page.getByText("リアルタイム更新中", { exact: true }).waitFor();
+const initialKey = "dashboard:2025-comparison:v1";
+await page.waitForFunction(
+  (key) => JSON.parse(localStorage.getItem(key) || "null")?.version === 2,
+  initialKey,
+);
+const initialSettings = await page.evaluate(
+  (key) => JSON.parse(localStorage.getItem(key)),
+  initialKey,
+);
+assert.equal(initialSettings.board.groups.length, presetQA ? 10 : 2);
+await page.reload();
+await page.getByText("リアルタイム更新中", { exact: true }).waitFor();
+assert.deepEqual(
+  await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)),
+    initialKey,
+  ),
+  initialSettings,
+);
+if (presetQA) {
+  await page.getByText("商品の対応付けを編集", { exact: true }).click();
+  assert.equal(await page.locator("[data-mapping-group]").count(), 10);
+  assert.deepEqual(
+    initialSettings.board.groups.map((g) => g.historical),
+    presetRows.map((row) => row.historical),
+  );
+  await page
+    .locator(".mapping-board")
+    .screenshot({ path: path.join(output, "2026-default-mapping.png") });
+  await writeFile(
+    path.join(output, "preset-validation.json"),
+    JSON.stringify(
+      { groups: 10, historicalCards: 11, reloadPreserved: true, errors },
+      null,
+      2,
+    ),
+  );
+  await browser.close();
+  process.exit(0);
+}
+// An explicitly saved empty mapping takes priority over the annual preset.
+await page.evaluate(
+  (key) =>
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        version: 1,
+        referenceDate: "",
+        current: {},
+        historical: {},
+      }),
+    ),
+  initialKey,
+);
+await page.reload();
+await page.getByText("リアルタイム更新中", { exact: true }).waitFor();
+
 await page
   .getByRole("combobox", { name: "前年の比較日", exact: true })
   .selectOption("2025-11-02");

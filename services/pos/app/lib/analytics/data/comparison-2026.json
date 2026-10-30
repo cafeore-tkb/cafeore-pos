@@ -1,0 +1,15 @@
+[
+  { "current": "アイスオレ", "historical": ["アイスオレ"] },
+  { "current": "アイスコーヒー", "historical": ["アイスコーヒー"] },
+  { "current": "アイスミルク", "historical": ["アイスミルク"] },
+  { "current": "珈琲・俺ブレンド", "historical": ["珈琲・俺ブレンド"] },
+  {
+    "current": "余音ブレンド",
+    "historical": ["縁ブレンド", "も花も香ブレンド"]
+  },
+  { "current": "キリマン", "historical": ["キリマンジャロ"] },
+  { "current": "ケニア", "historical": ["ピンクブルボン"] },
+  { "current": "チロン", "historical": ["ブルマン"] },
+  { "current": "アロマナティーボ", "historical": ["ライチ"] },
+  { "current": "ブラジル", "historical": ["トラジャ"] }
+]
