@@ -27,7 +27,7 @@ const types = ["ホット", "アイス", "ミルク"].map((name, i) => ({
 }));
 const names = [
   "珈琲・俺ブレンド2026",
-  "季節のブレンド",
+  "余音ブレンド",
   "シングルオリジン",
   "アイスコーヒー",
   "カフェオレ",
@@ -210,48 +210,165 @@ await page
   .getByRole("combobox", { name: "前年の比較日", exact: true })
   .selectOption("2025-11-02");
 await page.getByText("商品の対応付けを編集", { exact: true }).click();
-assert.equal(await page.getByPlaceholder("未対応").count(), 17);
+const storageKey = "dashboard:2025-comparison:v1";
+const cardButton = (side, name) =>
+  page.getByRole("button", {
+    name: `${side === "current" ? "今年" : "前年"}の${name}を選ぶ`,
+    exact: true,
+  });
+const rowFor = (side, key) =>
+  page.locator("[data-mapping-group]").filter({
+    has: page.locator(
+      `[data-mapping-side="${side}"][data-mapping-card=${JSON.stringify(key)}]`,
+    ),
+  });
+const dragCard = async (side, name, target, preview = false, touch = false) => {
+  const source = page.getByRole("button", {
+    name: `${side === "current" ? "今年" : "前年"}の${name}をドラッグ`,
+    exact: true,
+  });
+  const sb = await source.boundingBox();
+  const tb = await target.boundingBox();
+  const scrollTop = await page.evaluate(() => scrollY);
+  await page.evaluate(
+    (top) => scrollTo(0, top),
+    Math.max(0, Math.min(sb.y, tb.y) + scrollTop - 150),
+  );
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  let touchSession;
+  if (touch) {
+    touchSession = await context.newCDPSession(page);
+    await touchSession.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+    const end = { x: to.x + to.width / 2, y: to.y + to.height / 2 };
+    await touchSession.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ ...start, id: 1 }],
+    });
+    for (let step = 1; step <= 15; step++)
+      await touchSession.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: start.x + ((end.x - start.x) * step) / 15,
+            y: start.y + ((end.y - start.y) * step) / 15,
+            id: 1,
+          },
+        ],
+      });
+  } else {
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      from.x + from.width / 2 + 8,
+      from.y + from.height / 2,
+      { steps: 2 },
+    );
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, {
+      steps: 15,
+    });
+  }
+  if (preview) {
+    await page.locator("[data-add-preview]").first().waitFor();
+    await page.screenshot({
+      path: path.join(output, "11-mapping-add-preview.png"),
+    });
+  }
+  if (touchSession) {
+    await touchSession.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await touchSession.send("Emulation.setTouchEmulationEnabled", {
+      enabled: false,
+    });
+    await touchSession.detach();
+  } else await page.mouse.up();
+  await page.clock.runFor(400);
+};
+assert.equal(await page.locator("[data-mapping-group]").count(), 0);
+assert.equal(
+  await page.locator("[data-pending-side] [data-mapping-card]").count(),
+  17,
+);
+// Same-year cards can be reordered without creating a mapping.
+await dragCard("current", "ミルク", cardButton("current", "アイスコーヒー"));
+assert.equal(
+  await page.evaluate(
+    (key) => JSON.parse(localStorage.getItem(key)).board.pendingCurrent[0],
+    storageKey,
+  ),
+  items[5].id,
+);
+// User's example: 縁 + も花も香 -> 余音, with a visible + before dropping.
+await dragCard(
+  "historical",
+  "縁ブレンド",
+  cardButton("current", "余音ブレンド"),
+);
+await dragCard(
+  "historical",
+  "も花も香ブレンド",
+  cardButton("historical", "縁ブレンド"),
+  true,
+  true,
+);
+assert.equal(
+  await rowFor("current", items[1].id)
+    .locator('[data-mapping-side="historical"]')
+    .count(),
+  2,
+);
+const dimensions = await rowFor("current", items[1].id)
+  .locator(".mapping-cell")
+  .evaluateAll((cells) => cells.map((c) => c.getBoundingClientRect().height));
+assert.ok(Math.abs(dimensions[0] - dimensions[1]) < 1);
+await rowFor("current", items[1].id).screenshot({
+  path: path.join(output, "12-mapping-pair.png"),
+});
+// Click/keyboard alternative to dragging. A target in an existing row adds another card.
+const pair = async (currentName, historicalName) => {
+  await cardButton("current", currentName).click();
+  await cardButton("historical", historicalName).click();
+};
+await pair(names[0], "珈琲・俺ブレンド");
+await pair(names[2], "トラジャ");
+for (const old of ["ピンクブルボン", "ライチ", "ブルマン"]) {
+  await cardButton("historical", old).click();
+  await rowFor("current", items[2].id)
+    .getByRole("button", { name: /の行に追加$/ })
+    .click();
+}
+await pair(names[3], "アイスコーヒー");
+await pair(names[4], "アイスオレ");
+await pair(names[5], "アイスミルク");
+await page
+  .getByRole("button", {
+    name: "前年のキリマンジャロを対応から外す",
+    exact: true,
+  })
+  .click();
 assert.equal(
   await page
-    .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-    .inputValue(),
-  "",
+    .locator('[data-excluded-side="historical"] [data-mapping-card]')
+    .count(),
+  1,
 );
-const groups = [
-  "定番の珈琲",
-  "香りの珈琲",
-  "香りの珈琲",
-  "冷たい珈琲",
-  "カフェオレ",
-  "ミルク",
-];
-for (let i = 0; i < names.length; i++)
-  await page
-    .getByLabel(`今年の${names[i]}の比較グループ`, { exact: true })
-    .fill(groups[i]);
-const historicalGroups = {
-  珈琲・俺ブレンド: "定番の珈琲",
-  も花も香ブレンド: "香りの珈琲",
-  縁ブレンド: "香りの珈琲",
-  トラジャ: "香りの珈琲",
-  ピンクブルボン: "香りの珈琲",
-  ライチ: "香りの珈琲",
-  ブルマン: "香りの珈琲",
-  キリマンジャロ: "香りの珈琲",
-  アイスコーヒー: "冷たい珈琲",
-  アイスオレ: "カフェオレ",
-  アイスミルク: "ミルク",
-};
-for (const [name, group] of Object.entries(historicalGroups))
-  await page
-    .getByLabel(`前年の${name}の比較グループ`, { exact: true })
-    .fill(group);
-const storageKey = "dashboard:2025-comparison:v1";
+await page
+  .locator('section[aria-label="比較しないカード"]')
+  .screenshot({ path: path.join(output, "13-mapping-excluded.png") });
 const saved = await page.evaluate(
   (key) => JSON.parse(localStorage.getItem(key)),
   storageKey,
 );
-assert.equal(saved.current[items[0].id], "定番の珈琲");
+assert.equal(saved.version, 2);
+assert.equal(saved.current[items[1].id], "余音ブレンド");
+assert.equal(saved.historical.縁ブレンド, "余音ブレンド");
+assert.equal(saved.historical.も花も香ブレンド, "余音ブレンド");
 await page
   .getByRole("combobox", { name: "前年の比較日", exact: true })
   .selectOption("2025-11-03");
@@ -262,34 +379,37 @@ await page.waitForFunction(
     "2025-11-03",
 );
 await page.getByText("リアルタイム更新中", { exact: true }).waitFor();
-await page
-  .getByRole("combobox", { name: "前年の比較日", exact: true })
-  .waitFor();
-assert.equal(
-  await page
-    .getByRole("combobox", { name: "前年の比較日", exact: true })
-    .inputValue(),
-  "2025-11-03",
-);
 await page.getByText("商品の対応付けを編集", { exact: true }).click();
 assert.equal(
-  await page
-    .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-    .inputValue(),
-  "定番の珈琲",
+  await rowFor("current", items[1].id)
+    .locator('[data-mapping-side="historical"]')
+    .count(),
+  2,
 );
+assert.equal(
+  await page
+    .locator('[data-excluded-side="historical"] [data-mapping-card]')
+    .count(),
+  1,
+);
+await page
+  .getByRole("button", { name: "前年のキリマンジャロを戻す", exact: true })
+  .click();
+assert.equal(
+  await page
+    .locator('[data-pending-side="historical"] [data-mapping-card]')
+    .count(),
+  1,
+);
+await page
+  .getByRole("button", {
+    name: "前年のキリマンジャロを対応から外す",
+    exact: true,
+  })
+  .click();
 await page
   .getByRole("combobox", { name: "前年の比較日", exact: true })
   .selectOption("2025-11-02");
-await page
-  .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-  .fill("定番を変更");
-assert.ok(
-  await page.getByRole("row").filter({ hasText: "定番を変更" }).count(),
-);
-await page
-  .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-  .fill("定番の珈琲");
 // A new order created after the last 10-second tick must be included immediately on receipt.
 const salesCard = page
   .locator("article")
@@ -315,8 +435,8 @@ assert.notEqual(await salesCard.innerText(), before);
 const productChart = page.locator(
   '[aria-label="今年の注文杯数と対応付けた前年の杯数"]',
 );
-// Six current products become five comparison groups. Last year's totals are not repeated per product.
-assert.equal(await productChart.locator('g[data-year="current"]').count(), 5);
+// Six current products become six comparison groups. Last year's totals are not repeated per product.
+assert.equal(await productChart.locator('g[data-year="current"]').count(), 6);
 assert.ok((await productChart.locator('[fill="#c8e3cf"]').count()) >= 5);
 const milkRow = page.getByRole("row").filter({
   has: page.getByRole("rowheader", { name: "ミルク", exact: true }),
@@ -476,6 +596,96 @@ await page
   .screenshot({ path: path.join(output, "10-color-scale.png") });
 await page.locator("#qa-color-scale").evaluate((element) => element.remove());
 await page.setViewportSize({ width: 390, height: 844 });
+// Missing or failed historical catalogs must never erase saved mapping rows.
+const beforeCatalogFailure = await page.evaluate(
+  (key) => localStorage.getItem(key),
+  storageKey,
+);
+const referenceChunk = "**/assets/baseline-2025-*.js";
+let releaseReference;
+const heldReference = new Promise((resolve) => {
+  releaseReference = resolve;
+});
+await page.route(
+  referenceChunk,
+  async (route) => {
+    await heldReference;
+    await route.continue();
+  },
+  { times: 1 },
+);
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.getByText("前年データを読み込み中…", { exact: true }).waitFor();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+assert.equal(await cardButton("current", names[0]).isDisabled(), true);
+assert.equal(
+  await page
+    .getByRole("combobox", { name: "前年の比較日", exact: true })
+    .isDisabled(),
+  true,
+);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+releaseReference();
+await rowFor("current", items[0].id).waitFor();
+await page.waitForFunction(() => {
+  const card = document.querySelector(
+    'button[aria-label="今年の珈琲・俺ブレンド2026を選ぶ"]',
+  );
+  return card && !card.matches(":disabled");
+});
+assert.equal(await cardButton("current", names[0]).isDisabled(), false);
+await page.route(referenceChunk, (route) => route.abort());
+await page.reload();
+await page
+  .getByRole("alert")
+  .filter({ hasText: "2025年度の記録を読み込めませんでした" })
+  .waitFor();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+const catalogBlockedCard = cardButton("current", names[0]);
+assert.equal(await catalogBlockedCard.isDisabled(), true);
+assert.equal(
+  await page
+    .getByRole("combobox", { name: "前年の比較日", exact: true })
+    .isDisabled(),
+  true,
+);
+// Even DOM overrides cannot invoke a destructive move while the catalog is unavailable.
+for (const name of [names[0], names[1]]) {
+  await cardButton("current", name).evaluate((element) => {
+    element.disabled = false;
+    element.closest("fieldset").disabled = false;
+  });
+  await cardButton("current", name).click();
+}
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+assert.equal(
+  JSON.parse(
+    await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  ).board.groups.length,
+  6,
+);
+await page.unroute(referenceChunk);
+await page.reload();
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
+await rowFor("current", items[0].id).waitFor();
+await page.waitForFunction(() => {
+  const card = document.querySelector(
+    'button[aria-label="今年の珈琲・俺ブレンド2026を選ぶ"]',
+  );
+  return card && !card.matches(":disabled");
+});
+assert.equal(await cardButton("current", names[0]).isDisabled(), false);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  beforeCatalogFailure,
+);
+await page.getByText("商品の対応付けを編集", { exact: true }).click();
 // Invalid saved data must survive both initial loading and cross-tab reloads verbatim.
 const validSettingsText = await page.evaluate(
   (key) => localStorage.getItem(key),
@@ -489,10 +699,7 @@ const invalidSettingsTexts = [
 const readFailure = page
   .getByRole("alert")
   .filter({ hasText: "比較設定の編集・自動保存を停止" });
-const currentGroupInput = page.getByLabel(
-  "今年の珈琲・俺ブレンド2026の比較グループ",
-  { exact: true },
-);
+const currentGroupInput = cardButton("current", names[0]);
 for (const invalid of invalidSettingsTexts) {
   await page.evaluate(({ key, value }) => localStorage.setItem(key, value), {
     key: storageKey,
@@ -502,7 +709,7 @@ for (const invalid of invalidSettingsTexts) {
   await readFailure.waitFor();
   await page.getByText("商品の対応付けを編集", { exact: true }).click();
   assert.equal(await currentGroupInput.isDisabled(), true);
-  assert.equal(await currentGroupInput.inputValue(), "");
+  assert.equal(await page.locator("[data-mapping-group]").count(), 0);
   await page.clock.runFor(10000);
   assert.equal(
     await page.evaluate((key) => localStorage.getItem(key), storageKey),
@@ -520,12 +727,7 @@ const writeFromPeer = (value) =>
     { key: storageKey, value },
   );
 await writeFromPeer(validSettingsText);
-await page.waitForFunction(
-  () =>
-    document.querySelector(
-      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
-    )?.value === "定番の珈琲",
-);
+await rowFor("current", items[0].id).waitFor();
 assert.equal(await currentGroupInput.isDisabled(), false);
 // A later failure must clear the previously loaded mapping and synchronously block writes.
 const corruptFromPeer = JSON.stringify({
@@ -534,7 +736,7 @@ const corruptFromPeer = JSON.stringify({
 });
 await writeFromPeer(corruptFromPeer);
 await readFailure.waitFor();
-assert.equal(await currentGroupInput.inputValue(), "");
+assert.equal(await page.locator("[data-mapping-group]").count(), 0);
 assert.equal(await currentGroupInput.isDisabled(), true);
 assert.equal(
   await page
@@ -547,25 +749,22 @@ await currentGroupInput.evaluate((element) => {
   element.disabled = false;
   element.closest("fieldset").disabled = false;
 });
-await currentGroupInput.fill("上書きさせない");
+await currentGroupInput.click();
+await cardButton("historical", "縁ブレンド").evaluate((element) => {
+  element.disabled = false;
+  element.closest("fieldset").disabled = false;
+});
+await cardButton("historical", "縁ブレンド").click();
 assert.equal(
   await page.evaluate((key) => localStorage.getItem(key), storageKey),
   corruptFromPeer,
 );
 await writeFromPeer(validSettingsText);
-await page.waitForFunction(
-  () =>
-    document.querySelector(
-      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
-    )?.value === "定番の珈琲",
-);
+await rowFor("current", items[0].id).waitFor();
 assert.equal(await currentGroupInput.isDisabled(), false);
 await writeFromPeer(null);
 await page.waitForFunction(
-  () =>
-    document.querySelector(
-      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
-    )?.value === "",
+  () => document.querySelectorAll("[data-mapping-group]").length === 0,
 );
 assert.equal(await currentGroupInput.isDisabled(), false);
 assert.equal(
@@ -573,12 +772,7 @@ assert.equal(
   null,
 );
 await writeFromPeer(validSettingsText);
-await page.waitForFunction(
-  () =>
-    document.querySelector(
-      'input[aria-label="今年の珈琲・俺ブレンド2026の比較グループ"]',
-    )?.value === "定番の珈琲",
-);
+await rowFor("current", items[0].id).waitFor();
 await peer.close();
 await page.getByText("商品の対応付けを編集", { exact: true }).click();
 // Storage quota/private-mode failure keeps the edit in memory and reports that it was not saved.
@@ -588,18 +782,23 @@ await page.evaluate(() => {
     throw new Error("QA quota failure");
   };
 });
-await page
-  .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-  .fill("保存失敗テスト");
+await cardButton("current", names[0]).click();
+await rowFor("current", items[1].id)
+  .getByRole("button", { name: /の行に追加$/ })
+  .click();
 await page
   .getByRole("alert")
   .filter({ hasText: "ブラウザに保存できませんでした" })
   .waitFor();
 assert.equal(
-  await page
-    .getByLabel("今年の珈琲・俺ブレンド2026の比較グループ", { exact: true })
-    .inputValue(),
-  "保存失敗テスト",
+  await rowFor("current", items[1].id)
+    .locator('[data-mapping-side="current"]')
+    .count(),
+  2,
+);
+assert.equal(
+  await page.evaluate((key) => localStorage.getItem(key), storageKey),
+  validSettingsText,
 );
 assert.deepEqual(errors, []);
 assert.deepEqual(unexpectedRequests, []);
@@ -613,7 +812,8 @@ await writeFile(
       historical: "Bundled 2025/data/day12.json (real data)",
       checks: [
         "no implicit product mapping",
-        "UI mapping edits update counts",
+        "dragged cards align in one row and show plus before adding a second historical card",
+        "touch dragging and click alternative create mappings; reorder, exclusions and restore survive reload",
         "mapping and comparison date survive reload",
         "WebSocket order immediately changes sales",
         "product graph groups many-to-many mappings without duplicating previous counts",
@@ -623,6 +823,7 @@ await writeFile(
         "iPad and mobile have no horizontal page overflow",
         "storage write failure shown and edit retained",
         "invalid JSON, version and empty saved values remain byte-for-byte unchanged",
+        "pending and failed historical catalog requests disable editing and preserve all saved mapping rows",
         "cross-tab read failure clears stale settings and blocks writes even if disabled is bypassed",
         "valid cross-tab replacement or removal recovers editing",
         "no runtime errors or backend mutations",
@@ -635,4 +836,4 @@ await writeFile(
   ),
 );
 await browser.close();
-console.log(JSON.stringify({ output, screenshots: 10, result: "passed" }));
+console.log(JSON.stringify({ output, screenshots: 13, result: "passed" }));

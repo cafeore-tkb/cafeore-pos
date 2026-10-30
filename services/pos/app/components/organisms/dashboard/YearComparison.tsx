@@ -1,9 +1,9 @@
-import { useId } from "react";
 import {
   type ComparisonSettings,
   type compareProductCups,
   comparisonChange,
 } from "~/lib/analytics/yearComparison";
+import { ComparisonCardBoard } from "./ComparisonCardBoard";
 
 export function YearComparisonSettings({
   settings,
@@ -28,17 +28,9 @@ export function YearComparisonSettings({
   storageMessage: string;
   disabled: boolean;
 }) {
-  const listId = useId();
-  const groups = [
-    ...new Set(
-      [
-        ...Object.values(settings.current),
-        ...Object.values(settings.historical),
-      ]
-        .map((v) => v.trim())
-        .filter(Boolean),
-    ),
-  ].sort();
+  const referenceUnavailable =
+    loading || !!failure || !referenceDays.length || !historicalProducts.length;
+  const editingDisabled = disabled || referenceUnavailable;
   return (
     <div className="space-y-2 text-stone-600 text-xs">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -47,7 +39,7 @@ export function YearComparisonSettings({
           <select
             aria-label="前年の比較日"
             value={referenceDate}
-            disabled={disabled || loading || !referenceDays.length}
+            disabled={editingDisabled}
             onChange={(e) =>
               onChange({ ...settings, referenceDate: e.target.value })
             }
@@ -68,61 +60,18 @@ export function YearComparisonSettings({
         <summary className="min-h-9 cursor-pointer py-2 font-medium">
           商品の対応付けを編集
         </summary>
-        <p className="mb-3 leading-relaxed">
-          比較したい商品に同じグループ名を入力してください。複数商品をまとめられます。空欄は未対応として残します。商品名や区分からの自動判定はしません。
-        </p>
-        <datalist id={listId}>
-          {groups.map((group) => (
-            <option key={group} value={group} />
-          ))}
-        </datalist>
-        <div className="grid gap-5 md:grid-cols-2">
-          {(["current", "historical"] as const).map((side) => (
-            <fieldset key={side} disabled={disabled} className="min-w-0">
-              <legend className="mb-2 font-bold text-stone-800">
-                {side === "current" ? "今年の商品" : "前年の商品"} →
-                比較グループ
-              </legend>
-              <div className="space-y-2">
-                {(side === "current"
-                  ? currentProducts
-                  : historicalProducts.map((name) => ({ key: name, name }))
-                ).map((product) => (
-                  <label
-                    key={product.key}
-                    className="grid grid-cols-2 items-center gap-2"
-                  >
-                    <span className="break-words">{product.name}</span>
-                    <input
-                      aria-label={`${side === "current" ? "今年" : "前年"}の${product.name}の比較グループ`}
-                      list={listId}
-                      value={settings[side][product.key] ?? ""}
-                      maxLength={80}
-                      placeholder="未対応"
-                      autoComplete="off"
-                      onChange={(e) =>
-                        onChange({
-                          ...settings,
-                          [side]: {
-                            ...settings[side],
-                            [product.key]: e.target.value,
-                          },
-                        })
-                      }
-                      className="min-h-10 min-w-0 rounded border border-stone-200 bg-white px-2 text-sm text-stone-800"
-                    />
-                  </label>
-                ))}
-              </div>
-              {side === "current" && currentProducts.length === 0 && (
-                <p>今年の商品が読み込まれると表示します。</p>
-              )}
-            </fieldset>
-          ))}
-        </div>
+        <ComparisonCardBoard
+          settings={settings}
+          onChange={onChange}
+          currentProducts={currentProducts}
+          historicalProducts={historicalProducts}
+          disabled={editingDisabled}
+        />
         <output className="mt-4 block">
           {storageMessage ||
-            "変更はこのブラウザに自動保存します。次回も同じ設定を使います。"}
+            (referenceUnavailable
+              ? "前年データを読み込めるまで、比較設定の編集・自動保存を停止しています。保存済みの対応付けは変更しません。"
+              : "変更はこのブラウザに自動保存します。次回も同じ設定を使います。")}
         </output>
         <p className="mt-1">
           商品別はドリンクの杯数を比較します。前年の請求額は注文単位のため、商品別の売上には割り振りません。
