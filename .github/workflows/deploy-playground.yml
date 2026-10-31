@@ -1,0 +1,49 @@
+name: deploy / playground
+
+# playground（https://playground.pos.cafeore.cafe。infra の README「playground（IAP なし）」）に API と画面を出す。
+# **手動実行だけ。** Actions の「deploy / playground」の Run workflow で、出すブランチを選んで流す。中身は deploy-environment.yml。
+#
+# sandbox（deploy-sandbox.yml）と同じ形で、違いは IAP が無いことだけ。**出したものはインターネットの誰でもログインなしで使える**
+# （画面も /api/* も。api の AUTH_MODE は off）。どのブランチでも出せるが、公開してよいものだけを出す。
+# 1 つしか無いので、最後に流したものが残る（前に出したものは上書きされる）。
+#
+# DB（Cloud SQL の cafeore-pos-playground）は作り直さない。モデルに列やテーブルを足したブランチを出すと、それは DB に残る
+# （AutoMigrate は消さない。README の「DB のスキーマ」）。そのあと足していないブランチ（main など）を出すと、
+# /status の schema_drift に出て、最後の確かめが落ちる（デプロイ自体は済んでいる）。
+# **playground はバックアップを取らない**（infra の playground_cloud_sql_backup_enabled）。
+#
+# workflow_dispatch だけの workflow は、main に入ってからでないと Actions の画面から流せない。
+
+run-name: deploy / playground (${{ github.ref_name }})
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同時に 2 つ出さない。取り消さないので走っている方は最後まで出し、待っている方は後から流したものに置き換わる。
+concurrency:
+  group: deploy-playground
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: playground
+    # fork では変数が無く、GCP にも入れない
+    if: ${{ !github.event.repository.fork }}
+    uses: ./.github/workflows/deploy-environment.yml
+    # 呼ぶ job に書かないと、呼ばれた側は既定の権限になる。WIF の OIDC トークン発行に id-token: write が要る
+    permissions:
+      contents: read
+      id-token: write
+    # 既定値は infra の playground_* の既定値から決まる名前（output environments.playground）。変えたら Variables で上書きする
+    with:
+      environment: playground
+      short_name: playground
+      api_service: ${{ vars.PLAYGROUND_API_CLOUD_RUN_SERVICE || 'cafeore-pos-playground' }}
+      api_lb_url: ${{ vars.PLAYGROUND_API_LB_URL || 'https://pos-be-lb-playground.cafeore.cafe' }}
+      web_service: ${{ vars.PLAYGROUND_POS_WEB_CLOUD_RUN_SERVICE || 'cafeore-pos-playground-web' }}
+      web_url: ${{ vars.PLAYGROUND_POS_WEB_URL || 'https://playground.pos.cafeore.cafe' }}
+    # secrets は渡さない（Slack の webhook_url も）。画面に焼き込んだ値はブラウザから読め、playground の画面は
+    # ログインなしで誰でも取れるので、Webhook の URL を入れると誰でもそのチャンネルに送れるようになる

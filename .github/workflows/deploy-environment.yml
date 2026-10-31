@@ -1,8 +1,9 @@
 name: deploy / environment
 
-# staging と sandbox（infra の gcp/environments.tf。本番と同じ構成を mice の同じプロジェクトに並べたもの）に、
-# API と画面を出す reusable workflow。deploy-staging.yml（main への push）と deploy-sandbox.yml（手動実行だけ）が
-# 呼び、これだけでは走らない。環境ごとの値（サービスの名前・URL）は呼ぶ側が inputs で渡す。
+# staging・sandbox・playground（infra の gcp/environments.tf。本番と同じ構成を mice の同じプロジェクトに並べたもの。
+# playground は IAP が無い）に、API と画面を出す reusable workflow。deploy-staging.yml（main への push）と
+# deploy-sandbox.yml・deploy-playground.yml（手動実行だけ）が呼び、これだけでは走らない。環境ごとの値（サービスの名前・URL）は
+# 呼ぶ側が inputs で渡す。
 #
 # 中身は本番の api-build.yml（main のとき）と pos-deploy-cloudrun.yml と同じで、違うのは出し先と画面に焼き込む値だけ。
 #
@@ -16,7 +17,7 @@ name: deploy / environment
 # ## イメージのタグ
 #
 # 本番と同じ Artifact Registry のリポジトリ（cafeore-pos）の api・pos-web に、<短い名前>-<コミットの SHA> と
-# <短い名前>-latest（stg-… / sandbox-…）を付けて置く。本番の <SHA>・latest と同じタグにしないのは、同じコミットでも
+# <短い名前>-latest（stg-… / sandbox-… / playground-…）を付けて置く。本番の <SHA>・latest と同じタグにしないのは、同じコミットでも
 # 本番とは別のイメージ（画面は焼き込んだ値が違う）なので、本番のタグを付け替えてしまうから。外れた本番のイメージは
 # タグ無しになり、7 日でクリーンアップに消される（infra の artifact_registry.tf）。
 # pr- で始めないので、PR のタグの掃除（delete-stale-pr-tags）にも当たらない。
@@ -27,17 +28,17 @@ name: deploy / environment
 # 読むだけで書かない。同じ Dockerfile なので依存の層は当たるうえ、書くと本番のキャッシュを上書きしてしまう。
 #
 # 認証は本番と同じ Workload Identity Federation と CI の SA。infra の gcp/github_actions.tf で、CI の SA は
-# staging と sandbox の 4 つのサービスにも roles/run.developer と、ランタイム SA の actAs を持つ。
+# staging・sandbox・playground の 6 つのサービスにも roles/run.developer と、ランタイム SA の actAs を持つ。
 
 on:
   workflow_call:
     inputs:
       environment:
-        description: 環境の名前（infra の local.environments のキー。staging・sandbox）。画面の VITE_DEPLOY_ENV にも焼き込む
+        description: 環境の名前（infra の local.environments のキー。staging・sandbox・playground）。画面の VITE_DEPLOY_ENV にも焼き込む
         type: string
         required: true
       short_name:
-        description: 環境の短い名前（stg・sandbox）。イメージのタグの頭に付ける
+        description: 環境の短い名前（stg・sandbox・playground）。イメージのタグの頭に付ける
         type: string
         required: true
       api_service:
@@ -170,11 +171,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # api-build.yml の同じ名前のステップと同じ。run.app は入口が LB だけなので（infra の staging_api_lb_only・
-      # sandbox_api_lb_only。既定で true）、LB を通して見る。/status は Cloud Armor がトークンなしで通す。
+      # sandbox_api_lb_only・playground_api_lb_only。既定で true）、LB を通して見る。/status は Cloud Armor がトークンなしで通す。
       # 空でなければ落とす。デプロイ自体は済んでいる。
       #
-      # sandbox の DB は作り直さない。モデルに列を足したブランチを出したあとに足していないブランチを出すと、
-      # その列が DB に残ってここで落ちる（deploy-sandbox.yml の冒頭）。
+      # sandbox と playground の DB は作り直さない。モデルに列を足したブランチを出したあとに足していないブランチを出すと、
+      # その列が DB に残ってここで落ちる（deploy-sandbox.yml・deploy-playground.yml の冒頭）。
       - name: DB のスキーマがモデルとずれていないか確かめる
         run: |
           set -uo pipefail
@@ -264,7 +265,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # pos-deploy-cloudrun.yml と同じものを、この環境の値で焼き込む。VITE_DEPLOY_ENV は staging・sandbox で、
+          # pos-deploy-cloudrun.yml と同じものを、この環境の値で焼き込む。VITE_DEPLOY_ENV は staging・sandbox・playground で、
           # 本番と同じくレジの「常に返金」を出さず、トップページにログイン中のアカウントを出す（preview ではないため）
           build-args: |
             VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
