@@ -95,7 +95,7 @@ describe("[unit] keyCapture", () => {
   });
 
   test("全部離してから押したら押し直し", () => {
-    let capture = down(emptyKeyCapture(), "KeyC", "c", { altKey: true });
+    let capture = down(emptyKeyCapture(), "KeyC", "c", { ctrlKey: true });
     capture = up(capture, "KeyC");
     expect(capture.error).not.toBeNull();
     capture = down(capture, "KeyB", "b");
@@ -104,9 +104,8 @@ describe("[unit] keyCapture", () => {
     expect(capture.error).toBeNull();
   });
 
-  test("Alt・Ctrl・⌘ と一緒に押したキーと日本語入力中のキーは、レジで使えないので理由を出す", () => {
+  test("Ctrl・⌘ と一緒に押したキーと日本語入力中のキーは、レジで使えないので理由を出す", () => {
     for (const options of [
-      { altKey: true },
       { ctrlKey: true },
       { metaKey: true },
       { isComposing: true },
@@ -119,11 +118,12 @@ describe("[unit] keyCapture", () => {
     expect(ime.error).not.toBeNull();
   });
 
-  test("同時押しの途中で Alt と押したキーがあれば、組ごと使えない", () => {
+  test("Alt と押したキーも同時押しに使える", () => {
     let capture = down(emptyKeyCapture(), "KeyA", "a");
     capture = down(capture, "KeyS", "s", { altKey: true });
     capture = up(up(capture, "KeyA"), "KeyS");
-    expect(capture.error).not.toBeNull();
+    expect(capturedKey(capture)).toBe("a+s");
+    expect(capture.error).toBeNull();
   });
 
   test("⌘ を離したら全部離したことにする（macOS は ⌘ を押している間 keyup が来ない）", () => {
