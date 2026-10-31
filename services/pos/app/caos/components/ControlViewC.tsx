@@ -130,12 +130,12 @@ const ControlViewCBoard: React.FC<
   flashKeys,
 }) => (
   <section
-    className="grid h-full min-h-0 grid-cols-[minmax(0,744px)_minmax(560px,1fr)] gap-2"
+    className="caos-queue-board grid h-full min-h-0 grid-cols-[minmax(0,744px)_minmax(560px,1fr)] gap-2"
     aria-label="Cコントロール画面"
   >
     <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[744px] flex-col">
+        <div className="caos-queue-lanes flex h-full min-w-[744px] flex-col">
           <header className="flex h-11 shrink-0 items-center gap-2 border-slate-200 border-b bg-slate-100 px-2">
             <h2 className="w-[164px] shrink-0 text-center font-black text-[14px] text-slate-700">
               担当
@@ -151,7 +151,7 @@ const ControlViewCBoard: React.FC<
               ))}
             </div>
           </header>
-          <div className="grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
+          <div className="caos-queue-rows grid min-h-0 flex-1 grid-rows-6 divide-y divide-slate-200">
             {lanes.map((bay) => {
               const lane = laneStatus(bay, nowMs);
               const brewColumn = brewColumnAppearance(lane);
@@ -163,7 +163,7 @@ const ControlViewCBoard: React.FC<
                 <article
                   key={bay.id}
                   data-bay-target={bay.id}
-                  className={`relative isolate flex min-h-0 items-stretch gap-2 px-2 py-1 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
+                  className={`caos-queue-lane relative isolate flex min-h-0 items-stretch gap-2 px-2 py-1 ${isLinked ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : "bg-white"}`}
                 >
                   <div className="flex w-[164px] shrink-0 items-stretch gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <DripperIndicator
@@ -199,6 +199,7 @@ const ControlViewCBoard: React.FC<
                         <section
                           key={label}
                           aria-label={`${bay.id} ${label}`}
+                          data-mobile-label={label}
                           data-brew-phase={
                             index === 0 ? brewColumn.phase : undefined
                           }

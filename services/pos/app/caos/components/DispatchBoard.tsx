@@ -1,7 +1,7 @@
 import { type CaosCard, caosDripperAllowed } from "@cafeore/common";
 import { RotateCcw } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type DropTarget,
   dropSideOn,
@@ -113,6 +113,16 @@ export const DispatchBoard: React.FC<
   onFollowNowChange,
   fill = false,
 }) => {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setCompact(readOnly && media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [readOnly]);
+  const stickyLeftWidth = compact ? 112 : STICKY_LEFT_WIDTH;
+  const nowViewportOffset = compact ? 72 : NOW_VIEWPORT_OFFSET;
   const highlight = useOrderHighlights();
   // 位置監視の更新で再描画されても配列参照を保ち、監視の再登録ループを防ぐ。
   const highlightCards = useMemo(() => lanes.flatMap(laneCards), [lanes]);
@@ -124,17 +134,17 @@ export const DispatchBoard: React.FC<
   const nowX = toX(nowMs);
   const scroll = useTimelineScroll({
     nowX,
-    followLeftPx: Math.max(0, nowX - NOW_VIEWPORT_OFFSET),
+    followLeftPx: Math.max(0, nowX - nowViewportOffset),
     originPx: (range.startMs / 1000) * PIXELS_PER_SEC,
     // 探したカードは、左端の列のすぐ右に（右のパネルを開いていても隠れない）
-    cardInsetPx: STICKY_LEFT_WIDTH + 24,
+    cardInsetPx: stickyLeftWidth + 24,
     command: timelineCommand,
     onFollowingChange: onFollowNowChange,
   });
   const outsideHighlights = useTimelineHighlightVisibility({
     containerRef: scroll.containerRef,
     cards: highlightCards,
-    stickyWidth: STICKY_LEFT_WIDTH,
+    stickyWidth: stickyLeftWidth,
   });
   const markers = timeMarkers(range.startMs, range.endMs);
   const height = HEIGHTS[fill ? "fill" : "fixed"];
@@ -168,7 +178,7 @@ export const DispatchBoard: React.FC<
     >
       {scroll.isPastView && (
         <div
-          style={{ left: STICKY_LEFT_WIDTH }}
+          style={{ left: stickyLeftWidth }}
           className="absolute top-0 z-[65] flex h-[30px] items-center gap-1 rounded-br-lg border-amber-200 border-r border-b bg-amber-50 px-3 font-bold text-[11px] text-amber-900"
         >
           <RotateCcw className="h-3 w-3" />
@@ -178,7 +188,7 @@ export const DispatchBoard: React.FC<
 
       <ScrollArea
         axis="x"
-        trackInset={{ start: STICKY_LEFT_WIDTH, end: 0 }}
+        trackInset={{ start: stickyLeftWidth, end: 0 }}
         scrollRef={scroll.containerRef}
         onScroll={scroll.onScroll}
         className={height.scroll}
@@ -188,7 +198,7 @@ export const DispatchBoard: React.FC<
           {/* 時刻の目盛り */}
           <div className="relative flex h-[30px] items-center border-slate-200 border-b bg-slate-50 font-medium font-mono text-[11px] text-slate-500">
             <div
-              style={{ width: STICKY_LEFT_WIDTH }}
+              style={{ width: stickyLeftWidth }}
               className="sticky left-0 isolate z-[60] flex h-full shrink-0 touch-none items-center border-slate-300 border-r bg-slate-50 px-3 font-bold font-sans text-[11px] text-slate-500 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
             >
               {highlight?.orders.length ? (
@@ -256,7 +266,7 @@ export const DispatchBoard: React.FC<
                 >
                   {/* ドリッパーの番号（列の状態）と担当者・交代 */}
                   <div
-                    style={{ width: STICKY_LEFT_WIDTH }}
+                    style={{ width: stickyLeftWidth }}
                     className="sticky left-0 isolate z-[51] flex shrink-0 touch-none items-center gap-2 self-stretch border-slate-300 border-r bg-white px-2 shadow-[4px_0_10px_rgba(15,23,42,0.08)]"
                   >
                     <DripperIndicator
@@ -392,14 +402,14 @@ export const DispatchBoard: React.FC<
               <div
                 key={`hour-line-${marker.ms}`}
                 className="pointer-events-none absolute top-[30px] bottom-0 z-20 w-[2px] bg-slate-500/70"
-                style={{ left: `${STICKY_LEFT_WIDTH + toX(marker.ms)}px` }}
+                style={{ left: `${stickyLeftWidth + toX(marker.ms)}px` }}
                 aria-hidden="true"
               />
             ))}
           {/* Drawn on the track so it marks the real time even while browsing away from NOW. */}
           <div
             className="pointer-events-none absolute top-0 bottom-0 z-40 w-[2px] bg-red-500"
-            style={{ left: `${STICKY_LEFT_WIDTH + nowX}px` }}
+            style={{ left: `${stickyLeftWidth + nowX}px` }}
             aria-hidden="true"
           >
             <div className="-translate-x-1/2 absolute top-1 rounded-md bg-red-500 px-2 py-0.5 font-black text-[10px] text-white shadow-sm">

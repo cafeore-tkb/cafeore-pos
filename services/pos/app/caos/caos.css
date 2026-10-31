@@ -267,3 +267,139 @@ html:has(.caos-root) body {
   mask: linear-gradient(white 0 0) padding-box, linear-gradient(white 0 0);
   mask-composite: exclude;
 }
+
+/* 閲覧画面は小さい端末ではページを縦に読み進める。操作盤の固定レイアウトには適用しない。 */
+@media (max-width: 767px) {
+  html:has(.caos-view-root),
+  html:has(.caos-view-root) body {
+    height: auto;
+    overflow: auto;
+    overscroll-behavior: auto;
+    touch-action: auto;
+  }
+
+  .caos-view-root .caos-view-board {
+    width: 100%;
+    height: auto;
+    min-height: calc(100dvh - var(--pos-status-height, 0px));
+    overflow: visible;
+  }
+
+  .caos-view-board > header {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .caos-view-board > header > nav:first-of-type {
+    order: 1;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .caos-view-board > header > nav:nth-of-type(2) {
+    order: 2;
+  }
+
+  .caos-view-board > header > span:last-of-type {
+    order: 3;
+  }
+
+  .caos-view-board > header > button {
+    margin-left: auto;
+  }
+
+  .caos-view-board > header button,
+  .caos-view-board > header a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .caos-view-workspace,
+  .caos-view-root .caos-timeline-board {
+    flex: none;
+    height: auto;
+  }
+
+  .caos-view-root .caos-timeline-board > :first-child {
+    flex: none;
+    height: 532px;
+  }
+
+  .caos-view-root .caos-timeline-board > :last-child {
+    flex: none;
+    height: auto;
+  }
+
+  .caos-view-root .caos-timeline-board > :last-child > div {
+    height: auto;
+  }
+
+  .caos-view-root .caos-queue-board {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .caos-view-root .caos-queue-lanes {
+    min-width: 0;
+    height: auto;
+  }
+
+  .caos-view-root .caos-queue-lanes > header {
+    display: none;
+  }
+
+  .caos-view-root .caos-queue-rows {
+    grid-template-rows: none;
+  }
+
+  .caos-view-root .caos-queue-lane {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .caos-view-root .caos-queue-lane > :first-child {
+    width: 100%;
+    min-height: 60px;
+  }
+
+  .caos-view-root .caos-queue-lane > :last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .caos-view-root .caos-queue-lane section::before {
+    content: attr(data-mobile-label);
+    padding: 4px 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+  }
+
+  .caos-view-root .caos-queue-lane section > div {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .caos-view-root .caos-queue-board > aside {
+    height: 360px;
+  }
+}
+
+/* タブレットではキューと未割当を上下に分け、固定幅の2列による見切れを防ぐ。 */
+@media (min-width: 768px) and (max-width: 1279px) {
+  .caos-view-root .caos-queue-board {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 220px;
+  }
+
+  .caos-view-root .caos-queue-lanes {
+    min-height: 524px;
+  }
+
+  .caos-view-root .caos-queue-board > section > div {
+    overflow-y: auto;
+  }
+}

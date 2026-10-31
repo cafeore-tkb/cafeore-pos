@@ -58,7 +58,7 @@ export default function ReadOnlyBoard() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
+    <div className="caos-view-board flex h-[calc(100dvh-var(--pos-status-height,0px))] w-screen select-none flex-col gap-2 overflow-hidden bg-[#f0f4fa] p-2 font-sans text-[#0f172a]">
       <ViewHeader nowMs={nowMs} sound={sound}>
         <nav aria-label="閲覧する管制盤の表示切替" className={SEGMENTS}>
           {CONTROL_VIEW_BUTTONS.map(({ mode: key, label }) => (
@@ -81,7 +81,7 @@ export default function ReadOnlyBoard() {
         </span>
       </ViewHeader>
       <ReadOnlyTabNotice />
-      <div className="min-h-0 flex-1">
+      <div className="caos-view-workspace min-h-0 flex-1">
         <ControlWorkspace
           mode={mode}
           lanes={lanes}

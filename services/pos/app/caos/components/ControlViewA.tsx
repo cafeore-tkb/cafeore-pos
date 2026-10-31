@@ -11,7 +11,7 @@ export const ControlViewA: React.FC<ControlViewProps> = (props) => {
   const pick = useControlPick(props);
   const folded = props.unassignedFold?.folded ?? false;
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <div className="caos-timeline-board flex h-full min-h-0 flex-col gap-2">
       <DispatchBoard {...props} pick={pick} fill={folded} />
       <div className={`relative z-[70] ${folded ? "" : "min-h-0 flex-1"}`}>
         <UnassignedStrip
