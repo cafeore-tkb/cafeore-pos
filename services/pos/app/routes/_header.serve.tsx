@@ -5,7 +5,7 @@ import {
   orderRepository,
 } from "@cafeore/common";
 import dayjs from "dayjs";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { MetaFunction } from "react-router";
 import { toast } from "sonner";
 import { ReadyBell } from "~/components/atoms/ReadyBell";
@@ -23,6 +23,8 @@ export const meta: MetaFunction = () => {
 
 export default function Serve() {
   const { orders } = useOrdersWSContext();
+  // 操作不良による誤提供を防ぐため、別注文や呼び出しも含め画面全体で待機する。
+  const nextClickAt = useRef(0);
 
   const unserved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
@@ -32,7 +34,29 @@ export default function Serve() {
   }, 0);
 
   return (
-    <div className="p-4 font-sans">
+    <div
+      className="p-4 font-sans"
+      onPointerDownCapture={(event) => {
+        const now = performance.now();
+        if (now < nextClickAt.current) {
+          nextClickAt.current = now + 300;
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onClickCapture={(event) => {
+        // 連打中は待機を延長し、最後の操作から300ms空くまで受け付けない。
+        const now = performance.now();
+        // pointerdown 後に click が来なくても状態が残らないよう、時刻だけで判定する。
+        const blocked = now < nextClickAt.current;
+        nextClickAt.current = now + 300;
+        if (blocked) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }}
+    >
       <div className="flex justify-between pb-4">
         <h1 className="text-3xl">提供</h1>
         <p>提供待ちオーダー数：{unserved}</p>
