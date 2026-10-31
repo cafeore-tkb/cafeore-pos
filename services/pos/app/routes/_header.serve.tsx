@@ -23,8 +23,8 @@ export const meta: MetaFunction = () => {
 
 export default function Serve() {
   const { orders } = useOrdersWSContext();
+  // 操作不良による誤提供を防ぐため、別注文や呼び出しも含め画面全体で待機する。
   const nextClickAt = useRef(0);
-  const blockedPointer = useRef(false);
 
   const unserved = orders?.reduce((acc, cur) => {
     if (cur.servedAt == null) {
@@ -38,8 +38,7 @@ export default function Serve() {
       className="p-4 font-sans"
       onPointerDownCapture={(event) => {
         const now = performance.now();
-        blockedPointer.current = now < nextClickAt.current;
-        if (blockedPointer.current) {
+        if (now < nextClickAt.current) {
           nextClickAt.current = now + 300;
           event.preventDefault();
           event.stopPropagation();
@@ -48,8 +47,8 @@ export default function Serve() {
       onClickCapture={(event) => {
         // 連打中は待機を延長し、最後の操作から300ms空くまで受け付けない。
         const now = performance.now();
-        const blocked = blockedPointer.current || now < nextClickAt.current;
-        blockedPointer.current = false;
+        // pointerdown 後に click が来なくても状態が残らないよう、時刻だけで判定する。
+        const blocked = now < nextClickAt.current;
         nextClickAt.current = now + 300;
         if (blocked) {
           event.preventDefault();
