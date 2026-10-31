@@ -74,7 +74,7 @@ export function MenuKeyCapture({
     >
       <p className="text-muted-foreground text-xs">
         レジで使うキーボード（キーパッド）のキーを押して離します。同時押しは、押したまま次のキーを押してから全部離します。Shift
-        と一緒に押すと記号（* など）や大文字になります。Alt・Ctrl・⌘
+        と一緒に押すと記号（* など）や大文字になります。Ctrl・⌘
         と一緒に押したキーは使えません
       </p>
       <div className="flex min-h-12 items-center">

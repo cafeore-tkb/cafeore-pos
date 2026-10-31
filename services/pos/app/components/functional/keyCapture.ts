@@ -40,9 +40,6 @@ const keyDownError = (event: CaptureKeyEvent): string | null => {
   if (event.ctrlKey || event.metaKey) {
     return "Ctrl・⌘ と一緒に押したキーはレジで使えません";
   }
-  if (event.altKey) {
-    return "Alt と一緒に押すキーは決済手段（Alt+C など）に使うので登録できません";
-  }
   return null;
 };
 

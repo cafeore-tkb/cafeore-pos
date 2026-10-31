@@ -1099,8 +1099,17 @@ const CashierV2 = ({
       if (isOutsideRegister(event.target)) {
         return;
       }
-      // Alt と一緒に押したキー（決済手段のキー）は、同時押しの商品には数えない
-      if (!event.altKey && !isModifierKey(event.key)) {
+      const paymentIntent = event.altKey
+        ? cashierPaymentKeyIntent(viewDraft, event.code, {
+            payments,
+            repeat: event.repeat,
+          })
+        : null;
+      // 決済手段のキー以外は、Alt と一緒に押しても商品キーとして扱う
+      if (
+        (!paymentIntent || paymentIntent.type === "ignore") &&
+        !isModifierKey(event.key)
+      ) {
         heldKeysRef.current = pressKey(
           heldKeysRef.current,
           event.code || event.key,
@@ -1108,20 +1117,18 @@ const CashierV2 = ({
         );
       }
       const held = heldKeysRef.current;
-      const intent = event.altKey
-        ? cashierPaymentKeyIntent(viewDraft, event.code, {
-            payments,
-            repeat: event.repeat,
-          })
-        : cashierKeyIntent(viewDraft, event.key, {
-            menus: items ?? [],
-            payments,
-            held: heldKeyValues(held),
-            heldLineKeys: heldLineKeys(held),
-            repeat: event.repeat,
-            checkCoupon,
-            couponDigits,
-          });
+      const intent =
+        paymentIntent && paymentIntent.type !== "ignore"
+          ? paymentIntent
+          : cashierKeyIntent(viewDraft, event.key, {
+              menus: items ?? [],
+              payments,
+              held: heldKeyValues(held),
+              heldLineKeys: heldLineKeys(held),
+              repeat: event.repeat,
+              checkCoupon,
+              couponDigits,
+            });
       if (intent.type === "ignore") {
         return;
       }
