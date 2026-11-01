@@ -37,11 +37,12 @@ func TestBuildPrinterSettingNormalizesAddresses(t *testing.T) {
 		LabelPrinterMarginMm:       1.5,
 		LabelPrinterRotate180:      boolPtr(false),
 		LabelPrinterTrailingFeed:   ptr(models.LabelPrinterTrailingFeedPeeling),
+		LabelPrinterReceiptCut:     ptr(models.LabelPrinterReceiptCutFull),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 || setting.Rotate180() || setting.LabelPrinterTrailingFeed != "peeling" {
+	if setting.ID != models.PrinterSettingID || setting.LabelPrinterIP != "192.168.77.2" || setting.ReceiptPrinterIP != "10.0.0.13" || setting.ReceiptPrinterModel != "tm_m30" || setting.LabelPrinterPaperWidth != "58mm" || setting.ReceiptPrinterPaperWidth != "80mm" || setting.LabelPrinterPaperType != "receipt" || setting.ReceiptPrinterPaperType != "die_cut_label" || setting.LabelPrinterLabelLengthMm != 30.5 || setting.LabelPrinterPrintWidthDots != 384 || setting.LabelPrinterMarginMm != 1.5 || setting.Rotate180() || setting.LabelPrinterTrailingFeed != "peeling" || setting.LabelPrinterReceiptCut != "full" {
 		t.Fatalf("incorrect setting: %+v", setting)
 	}
 }
@@ -52,8 +53,20 @@ func TestBuildPrinterSettingDefaultsRotationAndTrailingFeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !setting.Rotate180() || setting.LabelPrinterTrailingFeed != "blank_label" {
+	if !setting.Rotate180() || setting.LabelPrinterTrailingFeed != "blank_label" || setting.LabelPrinterReceiptCut != "partial" {
 		t.Fatalf("defaults: %+v", setting)
+	}
+}
+
+func TestBuildPrinterSettingRejectsUnknownReceiptCuts(t *testing.T) {
+	for _, cut := range []models.LabelPrinterReceiptCut{"", "tear", "FULL"} {
+		t.Run(string(cut), func(t *testing.T) {
+			request := validPrinterSettingsRequest()
+			request.LabelPrinterReceiptCut = &cut
+			if _, err := buildPrinterSetting(request); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
 	}
 }
 
@@ -219,6 +232,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterMarginMm:       0,
 		LabelPrinterRotate180:      true,
 		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedBlankLabel,
+		LabelPrinterReceiptCut:     models.LabelPrinterReceiptCutPartial,
 	}) {
 		t.Fatalf("defaults: %+v", got)
 	}
@@ -237,6 +251,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterMarginMm:       1.5,
 		LabelPrinterRotate180:      boolPtr(false),
 		LabelPrinterTrailingFeed:   ptr(models.LabelPrinterTrailingFeedPeeling),
+		LabelPrinterReceiptCut:     ptr(models.LabelPrinterReceiptCutFull),
 	}).expect(http.StatusOK).decode(&saved)
 	if saved != (models.PrinterSettingsResponse{
 		LabelPrinterIp:             "192.168.77.12",
@@ -251,6 +266,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterMarginMm:       1.5,
 		LabelPrinterRotate180:      false,
 		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedPeeling,
+		LabelPrinterReceiptCut:     models.LabelPrinterReceiptCutFull,
 	}) {
 		t.Fatalf("saved: %+v", saved)
 	}
@@ -281,6 +297,7 @@ func TestPrinterSettings(t *testing.T) {
 		LabelPrinterMarginMm:       2,
 		LabelPrinterRotate180:      false,
 		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeedPeeling,
+		LabelPrinterReceiptCut:     models.LabelPrinterReceiptCutFull,
 	}
 	api.do(http.MethodPut, "/api/printer-settings", replacement).expect(http.StatusOK).decode(&saved)
 	if saved != want {

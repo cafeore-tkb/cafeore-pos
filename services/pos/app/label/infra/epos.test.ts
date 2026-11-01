@@ -42,6 +42,7 @@ const recordingBuilder = (
     ALIGN_LEFT: "left",
     ALIGN_CENTER: "center",
     CUT_FEED: "cut_feed",
+    FULL_CUT_FEED: "full_cut_feed",
     DIRECTION_RIGHT_TO_LEFT: "right_to_left",
     COLOR_1: "color_1",
     MODE_MONO: "mono",
@@ -529,11 +530,16 @@ describe("[unit] createEposPrinter", () => {
     expect(builder.timeout).toBe(RECEIPT_EPOS_PRINTER_CONFIG.printTimeoutMs);
   });
 
-  test("labelPrinterAt はラベル用の設定で、アドレスと最後の送り方だけ変える", async () => {
+  test("labelPrinterAt はダイカットラベル用の設定で、アドレスと最後の送り方を変える", async () => {
     const { builder, calls } = recordingBuilder();
     const { connect } = stubEpson(builder);
 
-    const printer = labelPrinterAt("10.0.0.2", "peeling")(() => {});
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "die_cut_label",
+      "peeling",
+      "partial",
+    )(() => {});
     printer.connect();
     await printer.print({ labels: [{ type: "flow", lines: [] }] });
 
@@ -544,6 +550,61 @@ describe("[unit] createEposPrinter", () => {
     );
     expect(calls.slice(-2)).toEqual([["addFeedPosition", "peeling"], ["send"]]);
     expect(builder.timeout).toBe(DEFAULT_EPOS_PRINTER_CONFIG.printTimeoutMs);
+  });
+
+  test("labelPrinterAt はレシート紙なら位置合わせせず、最後に送ってカットする", async () => {
+    const { builder, calls } = recordingBuilder();
+    stubEpson(builder);
+
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "receipt",
+      "blank_label",
+      "partial",
+    )(() => {});
+    printer.connect();
+    await printer.print({ labels: [job.labels[0]] });
+
+    expect(calls).not.toContainEqual(["addFeedPosition", "current_tof"]);
+    expect(calls.slice(-3)).toEqual([
+      ["addFeedLine", 1],
+      ["addCut", "cut_feed"],
+      ["send"],
+    ]);
+    expect(builder.timeout).toBe(RECEIPT_EPOS_PRINTER_CONFIG.printTimeoutMs);
+  });
+
+  test("labelPrinterAt はレシート紙のフルカットを選べる", async () => {
+    const { builder, calls } = recordingBuilder();
+    stubEpson(builder);
+
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "receipt",
+      "blank_label",
+      "full",
+    )(() => {});
+    printer.connect();
+    await printer.print({ labels: [{ type: "flow", lines: [] }] });
+
+    expect(calls.slice(-2)).toEqual([["addCut", "full_cut_feed"], ["send"]]);
+  });
+
+  test("labelPrinterAt はレシート紙を送ってカットしない設定を選べる", async () => {
+    const { builder, calls } = recordingBuilder();
+    stubEpson(builder);
+
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "receipt",
+      "blank_label",
+      "none",
+    )(() => {});
+    printer.connect();
+    await printer.print({ labels: [{ type: "flow", lines: [] }] });
+
+    expect(calls.slice(-2)).toEqual([["addFeedLine", 1], ["send"]]);
+    expect(calls.some(([name]) => name === "addCut")).toBe(false);
   });
 
   const connectedPorts = (connect: ReturnType<typeof stubEpson>["connect"]) =>

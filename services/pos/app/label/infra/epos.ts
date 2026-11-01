@@ -1,4 +1,8 @@
-import type { LabelPrinterTrailingFeed } from "@cafeore/common";
+import type {
+  LabelPrinterReceiptCut,
+  LabelPrinterTrailingFeed,
+  PrinterPaperType,
+} from "@cafeore/common";
 import {
   type Label,
   type PrintJob,
@@ -24,6 +28,7 @@ export type EposBuilder = {
   ALIGN_LEFT: string;
   ALIGN_CENTER: string;
   CUT_FEED: string;
+  FULL_CUT_FEED: string;
   /** ページモードの向き：180° 回し、範囲の右下から置く */
   DIRECTION_RIGHT_TO_LEFT: string;
   COLOR_1: string;
@@ -104,6 +109,10 @@ export type EposPrinterConfig = {
   trailingFeed: number | LabelPrinterTrailingFeed;
   /** 送った後に紙を切るか（レシート用のプリンター） */
   cut: boolean;
+  /** cut が true のときの切り方 */
+  cutMode: LabelPrinterReceiptCut;
+  /** ダイカットラベルの先頭へ位置合わせするか。レシート紙では行わない */
+  topOfForm: boolean;
   /**
    * プリンターが刷り終えるのを待つ長さ（ミリ秒。ePOS の timeout）。過ぎるとプリンターは刷れなかったと返す。
    * ピーラーは、剥離位置で止めたシールを取るまで次を刷らないので、ラベル用は長くする
@@ -162,6 +171,8 @@ export const DEFAULT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   logoKey: [32, 32],
   trailingFeed: "blank_label",
   cut: false,
+  cutMode: "partial",
+  topOfForm: true,
   printTimeoutMs: 40_000,
   responseTimeoutMs: 50_000,
 };
@@ -172,6 +183,8 @@ export const RECEIPT_EPOS_PRINTER_CONFIG: EposPrinterConfig = {
   address: "192.168.77.3",
   trailingFeed: 1,
   cut: true,
+  cutMode: "partial",
+  topOfForm: false,
   printTimeoutMs: 10_000,
   responseTimeoutMs: 30_000,
 };
@@ -213,7 +226,7 @@ const writeImage = (builder: EposBuilder, image: RasterImage) => {
 const writeLabel = (
   builder: EposBuilder,
   label: Label,
-  config: Pick<EposPrinterConfig, "logoKey">,
+  config: Pick<EposPrinterConfig, "logoKey"> & { topOfForm?: boolean },
 ) => {
   if (label.type === "image") {
     builder.addTextAlign(builder.ALIGN_CENTER);
@@ -224,7 +237,8 @@ const writeLabel = (
 
   // シール 1 枚分の画像：シールの先頭へ送り、左端から刷る（シールの大きさは描くときに合わせてある）
   if (label.type === "sticker") {
-    builder.addFeedPosition(builder.FEED_CURRENT_TOF);
+    if (config.topOfForm !== false)
+      builder.addFeedPosition(builder.FEED_CURRENT_TOF);
     builder.addTextAlign(builder.ALIGN_LEFT);
     writeImage(builder, unpackImage(label.image));
     return;
@@ -241,7 +255,8 @@ const writeLabel = (
   }
 
   // ページモード: 範囲の中に座標で置く
-  builder.addFeedPosition(builder.FEED_CURRENT_TOF);
+  if (config.topOfForm !== false)
+    builder.addFeedPosition(builder.FEED_CURRENT_TOF);
   builder.addPageBegin();
   const { x, y, width, height } = label.area;
   builder.addPageArea(x, y, width, height);
@@ -262,7 +277,10 @@ const writeLabel = (
 export const writeEposJob = (
   builder: EposBuilder,
   job: PrintJob,
-  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeed" | "cut">,
+  config: Pick<EposPrinterConfig, "logoKey" | "trailingFeed" | "cut"> & {
+    topOfForm?: boolean;
+    cutMode?: LabelPrinterReceiptCut;
+  },
 ) => {
   builder.addTextLang("ja");
   builder.addTextSize(2, 2);
@@ -279,7 +297,10 @@ export const writeEposJob = (
   } else {
     builder.addFeedLine(config.trailingFeed);
   }
-  if (config.cut) builder.addCut(builder.CUT_FEED);
+  if (config.cut)
+    builder.addCut(
+      config.cutMode === "full" ? builder.FULL_CUT_FEED : builder.CUT_FEED,
+    );
 };
 
 /**
@@ -425,12 +446,29 @@ export const createEposPrinter = (
   return { connect, disconnect, print };
 };
 
-/** ラベル用のプリンターを、address と一連の印刷の最後の送り方（プリンター設定の label_printer_trailing_feed）で作る */
+/**
+ * ラベル用のプリンターを作る。
+ * ダイカットラベルはシールの先頭へ位置合わせし、設定された方法で送る。
+ * レシート紙は位置合わせをせず、印刷後に 1 行送ってカットする。
+ */
 export const labelPrinterAt = (
   address: string,
+  paperType: PrinterPaperType,
   trailingFeed: LabelPrinterTrailingFeed,
-): CreateLabelPrinter =>
-  eposPrinterAt(address, { ...DEFAULT_EPOS_PRINTER_CONFIG, trailingFeed });
+  receiptCut: LabelPrinterReceiptCut,
+): CreateLabelPrinter => {
+  const receiptPaper = paperType === "receipt";
+  return eposPrinterAt(address, {
+    ...DEFAULT_EPOS_PRINTER_CONFIG,
+    trailingFeed: receiptPaper ? 1 : trailingFeed,
+    cut: receiptPaper && receiptCut !== "none",
+    cutMode: receiptCut,
+    topOfForm: !receiptPaper,
+    ...(receiptPaper
+      ? { printTimeoutMs: 10_000, responseTimeoutMs: 30_000 }
+      : {}),
+  });
+};
 
 /** address のプリンターを作る（ほかは base の設定のまま） */
 export const eposPrinterAt =

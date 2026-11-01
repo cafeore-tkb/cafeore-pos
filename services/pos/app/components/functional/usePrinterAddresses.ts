@@ -39,6 +39,7 @@ export const parseStoredPrinterSettings = (
         label_printer_margin_mm,
         label_printer_rotate_180,
         label_printer_trailing_feed,
+        label_printer_receipt_cut,
       }: Record<string, unknown> = parsed;
       return withPrinterSettingDefaults({
         label_printer_ip: parsed.label_printer_ip,
@@ -53,6 +54,7 @@ export const parseStoredPrinterSettings = (
         label_printer_margin_mm,
         label_printer_rotate_180,
         label_printer_trailing_feed,
+        label_printer_receipt_cut,
       });
     }
     return null;

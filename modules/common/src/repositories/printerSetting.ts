@@ -21,6 +21,9 @@ export type PrinterPaperType = components["schemas"]["PrinterPaperType"];
 export type LabelPrinterTrailingFeed =
   components["schemas"]["LabelPrinterTrailingFeed"];
 
+export type LabelPrinterReceiptCut =
+  components["schemas"]["LabelPrinterReceiptCut"];
+
 /** 一度も保存していないときのレシート用のプリンターの機種。サーバーの既定値（models.DefaultReceiptPrinterModel）とそろえる */
 export const DEFAULT_RECEIPT_PRINTER_MODEL: ReceiptPrinterModel = "tm_l90";
 
@@ -48,6 +51,8 @@ export const DEFAULT_LABEL_PRINTER_ROTATE_180 = true;
 /** 一度も保存していないときの、ラベル用のプリンターの一連の印刷の最後の送り方。サーバーの既定値（models.DefaultLabelPrinterTrailingFeed）とそろえる */
 export const DEFAULT_LABEL_PRINTER_TRAILING_FEED: LabelPrinterTrailingFeed =
   "blank_label";
+export const DEFAULT_LABEL_PRINTER_RECEIPT_CUT: LabelPrinterReceiptCut =
+  "partial";
 
 /** ラベル用のシールの大きさの範囲。サーバー（handlers/printer_setting.go）・openapi.yaml とそろえる */
 export const LABEL_SIZE_LIMITS = {
@@ -93,6 +98,9 @@ const printerPaperTypeLabels = openapiEnumLabels("PrinterPaperType");
 const labelPrinterTrailingFeedLabels = openapiEnumLabels(
   "LabelPrinterTrailingFeed",
 );
+const labelPrinterReceiptCutLabels = openapiEnumLabels(
+  "LabelPrinterReceiptCut",
+);
 
 /** 知っているレシート用のプリンターの機種か */
 export const isReceiptPrinterModel = (
@@ -117,6 +125,12 @@ export const isLabelPrinterTrailingFeed = (
   typeof value === "string" &&
   Object.hasOwn(labelPrinterTrailingFeedLabels, value);
 
+export const isLabelPrinterReceiptCut = (
+  value: unknown,
+): value is LabelPrinterReceiptCut =>
+  typeof value === "string" &&
+  Object.hasOwn(labelPrinterReceiptCutLabels, value);
+
 /** IP アドレスのほかは、無い・知らない値かもしれない設定（前の API・端末に覚えた設定） */
 type LoosePrinterSettings = Pick<
   PrinterSettings,
@@ -132,6 +146,7 @@ type LoosePrinterSettings = Pick<
   label_printer_margin_mm?: unknown;
   label_printer_rotate_180?: unknown;
   label_printer_trailing_feed?: unknown;
+  label_printer_receipt_cut?: unknown;
 };
 
 /** シールの大きさ。無い・知らない値なら既定にする。3 つそろって余白が収まらなければ、3 つとも既定にする */
@@ -208,6 +223,11 @@ export const withPrinterSettingDefaults = (
   )
     ? settings.label_printer_trailing_feed
     : DEFAULT_LABEL_PRINTER_TRAILING_FEED,
+  label_printer_receipt_cut: isLabelPrinterReceiptCut(
+    settings.label_printer_receipt_cut,
+  )
+    ? settings.label_printer_receipt_cut
+    : DEFAULT_LABEL_PRINTER_RECEIPT_CUT,
 });
 
 const errorMessage = (error: unknown, fallback: string): string => {

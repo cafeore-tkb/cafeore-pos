@@ -937,6 +937,17 @@
     ],
     "x-enum-descriptions": ["空のシールを 1 枚送る", "剥離位置まで送る"]
   },
+  "LabelPrinterReceiptCut": {
+    "type": "string",
+    "description": "ラベル用プリンターにレシート紙を入れたときのカット方法",
+    "enum": ["none", "partial", "full"],
+    "x-enum-varnames": [
+      "LabelPrinterReceiptCutNone",
+      "LabelPrinterReceiptCutPartial",
+      "LabelPrinterReceiptCutFull"
+    ],
+    "x-enum-descriptions": ["カットしない", "パーシャルカット", "フルカット"]
+  },
   "PrinterSettingsResponse": {
     "type": "object",
     "required": [
@@ -951,7 +962,8 @@
       "label_printer_print_width_dots",
       "label_printer_margin_mm",
       "label_printer_rotate_180",
-      "label_printer_trailing_feed"
+      "label_printer_trailing_feed",
+      "label_printer_receipt_cut"
     ],
     "properties": {
       "label_printer_ip": {
@@ -976,7 +988,7 @@
       },
       "label_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType",
-        "description": "使わない（label_printer_paper_width と同じく残している）"
+        "description": "ダイカットラベルではシールの先頭へ位置合わせし、レシート紙では位置合わせせず最後にカットする"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"
@@ -1012,6 +1024,9 @@
       },
       "label_printer_trailing_feed": {
         "$ref": "#/components/schemas/LabelPrinterTrailingFeed"
+      },
+      "label_printer_receipt_cut": {
+        "$ref": "#/components/schemas/LabelPrinterReceiptCut"
       }
     }
   },
@@ -1052,7 +1067,7 @@
       },
       "label_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType",
-        "description": "使わない（label_printer_paper_width と同じく残している）"
+        "description": "ダイカットラベルではシールの先頭へ位置合わせし、レシート紙では位置合わせせず最後にカットする"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"
@@ -1088,6 +1103,10 @@
       },
       "label_printer_trailing_feed": {
         "$ref": "#/components/schemas/LabelPrinterTrailingFeed",
+        "description": "省略したら今の値のまま（設定できるようにする前のレジのため）"
+      },
+      "label_printer_receipt_cut": {
+        "$ref": "#/components/schemas/LabelPrinterReceiptCut",
         "description": "省略したら今の値のまま（設定できるようにする前のレジのため）"
       }
     }

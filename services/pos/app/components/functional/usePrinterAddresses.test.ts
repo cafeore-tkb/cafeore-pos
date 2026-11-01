@@ -16,6 +16,7 @@ describe("[unit] parseStoredPrinterSettings", () => {
       label_printer_margin_mm: 1.5,
       label_printer_rotate_180: false,
       label_printer_trailing_feed: "peeling",
+      label_printer_receipt_cut: "full",
     };
     expect(parseStoredPrinterSettings(JSON.stringify(stored))).toEqual(stored);
   });
@@ -32,6 +33,7 @@ describe("[unit] parseStoredPrinterSettings", () => {
     label_printer_margin_mm: 0,
     label_printer_rotate_180: true,
     label_printer_trailing_feed: "blank_label",
+    label_printer_receipt_cut: "partial",
   };
 
   test("用紙の種類を選べるようにする前に覚えた設定は、機種・用紙の幅はそのまま、種類（ラベル用はダイカットラベル・レシート用はレシート紙）とシールの大きさを既定にする", () => {
@@ -64,6 +66,7 @@ describe("[unit] parseStoredPrinterSettings", () => {
         label_printer_margin_mm: null,
         label_printer_rotate_180: 0,
         label_printer_trailing_feed: "toString",
+        label_printer_receipt_cut: "tear",
       },
       {
         ...ips,
