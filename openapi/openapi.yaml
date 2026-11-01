@@ -3332,12 +3332,15 @@ components:
       type: string
       description: ラベル用プリンターにレシート紙を入れたときのカット方法
       enum:
+        - none
         - partial
         - full
       x-enum-varnames:
+        - LabelPrinterReceiptCutNone
         - LabelPrinterReceiptCutPartial
         - LabelPrinterReceiptCutFull
       x-enum-descriptions:
+        - カットしない
         - パーシャルカット
         - フルカット
     PrinterSettingsResponse:

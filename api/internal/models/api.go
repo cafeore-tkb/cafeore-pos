@@ -63,6 +63,7 @@ const (
 
 // Defines values for LabelPrinterReceiptCut.
 const (
+	LabelPrinterReceiptCutNone    LabelPrinterReceiptCut = "none"
 	LabelPrinterReceiptCutPartial LabelPrinterReceiptCut = "partial"
 	LabelPrinterReceiptCutFull    LabelPrinterReceiptCut = "full"
 )

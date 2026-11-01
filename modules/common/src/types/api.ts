@@ -1063,7 +1063,7 @@ export interface components {
      * @description ラベル用プリンターにレシート紙を入れたときのカット方法
      * @enum {string}
      */
-    LabelPrinterReceiptCut: "partial" | "full";
+    LabelPrinterReceiptCut: "none" | "partial" | "full";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス

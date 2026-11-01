@@ -590,6 +590,23 @@ describe("[unit] createEposPrinter", () => {
     expect(calls.slice(-2)).toEqual([["addCut", "full_cut_feed"], ["send"]]);
   });
 
+  test("labelPrinterAt はレシート紙を送ってカットしない設定を選べる", async () => {
+    const { builder, calls } = recordingBuilder();
+    stubEpson(builder);
+
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "receipt",
+      "blank_label",
+      "none",
+    )(() => {});
+    printer.connect();
+    await printer.print({ labels: [{ type: "flow", lines: [] }] });
+
+    expect(calls.slice(-2)).toEqual([["addFeedLine", 1], ["send"]]);
+    expect(calls.some(([name]) => name === "addCut")).toBe(false);
+  });
+
   const connectedPorts = (connect: ReturnType<typeof stubEpson>["connect"]) =>
     connect.mock.calls.map(([, port]) => port);
 

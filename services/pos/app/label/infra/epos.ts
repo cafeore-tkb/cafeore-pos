@@ -461,7 +461,7 @@ export const labelPrinterAt = (
   return eposPrinterAt(address, {
     ...DEFAULT_EPOS_PRINTER_CONFIG,
     trailingFeed: receiptPaper ? 1 : trailingFeed,
-    cut: receiptPaper,
+    cut: receiptPaper && receiptCut !== "none",
     cutMode: receiptCut,
     topOfForm: !receiptPaper,
     ...(receiptPaper

@@ -493,7 +493,7 @@ function PrinterSettingsForm({
             <ChoiceField
               id="label_printer_receipt_cut"
               label="カット方法"
-              description="1回の印刷の最後に紙を切る方法。パーシャルカットは一部をつないで残し、フルカットは完全に切り離します"
+              description="1回の印刷の最後に紙を切る方法。カットしない場合も最後に1行送ります。パーシャルカットは一部をつないで残し、フルカットは完全に切り離します"
               choices={receiptCuts}
               labels={receiptCutLabels}
               value={values.label_printer_receipt_cut}

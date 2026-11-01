@@ -151,9 +151,9 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 		receiptCut = *request.LabelPrinterReceiptCut
 	}
 	switch receiptCut {
-	case models.LabelPrinterReceiptCutPartial, models.LabelPrinterReceiptCutFull:
+	case models.LabelPrinterReceiptCutNone, models.LabelPrinterReceiptCutPartial, models.LabelPrinterReceiptCutFull:
 	default:
-		return models.PrinterSetting{}, errors.New("label_printer_receipt_cut must be partial or full")
+		return models.PrinterSetting{}, errors.New("label_printer_receipt_cut must be none, partial, or full")
 	}
 	return models.PrinterSetting{
 		ID:                         models.PrinterSettingID,
