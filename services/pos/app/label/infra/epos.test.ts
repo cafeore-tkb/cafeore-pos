@@ -212,6 +212,7 @@ describe("[unit] writeEposJob", () => {
       logoKey: [32, 32],
       trailingFeed: 1,
       cut: true,
+      cutEachLabel: false,
     });
 
     expect(calls).toEqual([
@@ -238,7 +239,7 @@ describe("[unit] writeEposJob", () => {
     writeEposJob(
       builder,
       { labels: [{ type: "image", image }] },
-      { logoKey: [32, 32], trailingFeed: 1, cut: true },
+      { logoKey: [32, 32], trailingFeed: 1, cut: true, cutEachLabel: false },
     );
 
     expect(calls).toEqual([
@@ -275,6 +276,67 @@ describe("[unit] writeEposJob", () => {
       ...printed,
       ...printed,
       ["addFeedPosition", "peeling"],
+    ]);
+  });
+});
+
+describe("[unit] writeEposJob（ラベル用にレシート紙を入れたとき）", () => {
+  /** レシート紙で 1 枚ごとに切る設定（最後の送り方は剥離位置にしてあるが、使わない） */
+  const CUT_EACH_CONFIG = { ...PEELING_CONFIG, cutEachLabel: true } as const;
+
+  test("ラベル用の既定は、1 枚ごとには切らない（ダイカットラベル）", () => {
+    expect(DEFAULT_EPOS_PRINTER_CONFIG.cutEachLabel).toBe(false);
+  });
+
+  test("シールの先頭へは送らずに 1 枚ずつ刷り、刷るたびにカット位置まで送って切る。最後の送り方では送らない", () => {
+    const { builder, calls } = recordingBuilder();
+    // 黒・白の 2 ドット
+    const image = {
+      width: 2,
+      height: 1,
+      data: new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]),
+    };
+    const sticker = { type: "sticker", image: packImage(image) } as const;
+    const cup = {
+      type: "fixed",
+      area: { x: 0, y: 0, width: 360, height: 208 },
+      elements: [{ type: "logo", x: 230, y: 204 }],
+      rotate180: true,
+    } as const;
+
+    // 緊急のシールで挟んだカップのシールと同じ並び
+    writeEposJob(builder, { labels: [sticker, cup, sticker] }, CUT_EACH_CONFIG);
+
+    const printedSticker = [
+      ["addTextAlign", "left"],
+      ["addImage", image, 0, 0, 2, 1, "color_1", "mono"],
+      ["addCut", "cut_feed"],
+    ];
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
+      ...printedSticker,
+      ["addPageBegin"],
+      ["addPageArea", 0, 0, 360, 208],
+      ["addPageDirection", "right_to_left"],
+      ["addPagePosition", 230, 204],
+      ["addLogo", 32, 32],
+      ["addPageEnd"],
+      ["addCut", "cut_feed"],
+      ...printedSticker,
+    ]);
+    // ダイカットラベルの送り（先頭・次の先頭・剥離位置）は 1 つも積まない
+    expect(calls.filter(([name]) => name === "addFeedPosition")).toEqual([]);
+  });
+
+  test("シールが無ければ切らない", () => {
+    const { builder, calls } = recordingBuilder();
+
+    writeEposJob(builder, { labels: [] }, CUT_EACH_CONFIG);
+
+    expect(calls).toEqual([
+      ["addTextLang", "ja"],
+      ["addTextSize", 2, 2],
     ]);
   });
 });
@@ -533,7 +595,11 @@ describe("[unit] createEposPrinter", () => {
     const { builder, calls } = recordingBuilder();
     const { connect } = stubEpson(builder);
 
-    const printer = labelPrinterAt("10.0.0.2", "peeling")(() => {});
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "die_cut_label",
+      "peeling",
+    )(() => {});
     printer.connect();
     await printer.print({ labels: [{ type: "flow", lines: [] }] });
 
@@ -544,6 +610,30 @@ describe("[unit] createEposPrinter", () => {
     );
     expect(calls.slice(-2)).toEqual([["addFeedPosition", "peeling"], ["send"]]);
     expect(builder.timeout).toBe(DEFAULT_EPOS_PRINTER_CONFIG.printTimeoutMs);
+  });
+
+  test("labelPrinterAt は用紙がレシート紙なら、シールを 1 枚刷るたびに切る（最後の送り方では送らない）", async () => {
+    const { builder, calls } = recordingBuilder();
+    stubEpson(builder);
+
+    const printer = labelPrinterAt(
+      "10.0.0.2",
+      "receipt",
+      "blank_label",
+    )(() => {});
+    printer.connect();
+    await printer.print({
+      labels: [
+        { type: "flow", lines: [] },
+        { type: "flow", lines: [] },
+      ],
+    });
+
+    expect(calls.slice(2)).toEqual([
+      ["addCut", "cut_feed"],
+      ["addCut", "cut_feed"],
+      ["send"],
+    ]);
   });
 
   const connectedPorts = (connect: ReturnType<typeof stubEpson>["connect"]) =>

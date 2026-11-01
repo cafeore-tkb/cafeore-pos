@@ -3,8 +3,9 @@ import { openapiEnumLabels } from "../lib/openapi-enum";
 import type { components } from "../types/api";
 
 /**
- * ラベル用とレシート用のプリンターの IP アドレス、ラベル用のシールの大きさ（長さ・印字幅・余白）と向き（180° 回すか）と
- * 一連の印刷の最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種。全レジで共通
+ * ラベル用とレシート用のプリンターの IP アドレス、ラベル用の用紙の種類（ダイカットラベルか、1 枚ごとに切るレシート紙か）と
+ * シールの大きさ（長さ・印字幅・余白）と向き（180° 回すか）と一連の印刷の最後の送り方、
+ * レシート用のプリンターの用紙（幅と種類）と機種。全レジで共通
  */
 export type PrinterSettings = components["schemas"]["PrinterSettingsResponse"];
 
@@ -14,7 +15,10 @@ export type ReceiptPrinterModel = components["schemas"]["ReceiptPrinterModel"];
 /** プリンターに入れる紙の幅。刷るものの幅が変わる */
 export type PrinterPaperWidth = components["schemas"]["PrinterPaperWidth"];
 
-/** プリンターに入れる紙の種類（レシート紙・ダイカットラベル）。刷るものの幅が変わる */
+/**
+ * プリンターに入れる紙の種類（レシート紙・ダイカットラベル）。レシート用は刷るものの幅が変わる。
+ * ラベル用は、レシート紙ならシールを 1 枚刷るたびに切る（label/infra/epos.ts の labelPrinterAt）
+ */
 export type PrinterPaperType = components["schemas"]["PrinterPaperType"];
 
 /** ラベル用のプリンターで、一連の印刷の最後にどう送るか（空のシールを 1 枚送る・剥離位置まで送る） */

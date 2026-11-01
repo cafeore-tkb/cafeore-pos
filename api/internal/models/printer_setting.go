@@ -21,7 +21,8 @@ const DefaultReceiptPrinterModel = ReceiptPrinterModelTmL90
 
 // 一度も保存していないときのプリンターの用紙（幅と種類）。用紙を選べるようにする前に保存した行も、これになる（列の既定値）。
 // どちらも、選べるようにする前にレジが決め打ちしていた用紙（ラベル用は 80mm のダイカットラベル、レシート用は 58mm のレシート紙）。
-// ラベル用の用紙はもう使わない（シールの大きさは下の長さ・印字幅・余白で決める）が、別々に出すレジと API のために列を残す。
+// ラベル用の用紙の幅はもう使わない（シールの大きさは下の長さ・印字幅・余白で決める）が、別々に出すレジと API のために列を残す。
+// ラベル用の用紙の種類は、ダイカットラベルか、シールを 1 枚刷るたびに切るレシート紙かを決める（レジが使う）。
 const (
 	DefaultLabelPrinterPaperWidth   = PrinterPaperWidth80mm
 	DefaultReceiptPrinterPaperWidth = PrinterPaperWidth58mm
@@ -57,7 +58,7 @@ type PrinterSetting struct {
 	ReceiptPrinterModel        string    `gorm:"not null;default:'tm_l90'"`                 // ReceiptPrinterModel（openapi.yaml）のいずれか
 	LabelPrinterPaperWidth     string    `gorm:"not null;default:'80mm'"`                   // PrinterPaperWidth（openapi.yaml）のいずれか。使わない（列だけ残す）
 	ReceiptPrinterPaperWidth   string    `gorm:"not null;default:'58mm'"`                   // PrinterPaperWidth（openapi.yaml）のいずれか
-	LabelPrinterPaperType      string    `gorm:"not null;default:'die_cut_label'"`          // PrinterPaperType（openapi.yaml）のいずれか。使わない（列だけ残す）
+	LabelPrinterPaperType      string    `gorm:"not null;default:'die_cut_label'"`          // PrinterPaperType（openapi.yaml）のいずれか。receipt ならシールを 1 枚ごとに切る
 	ReceiptPrinterPaperType    string    `gorm:"not null;default:'receipt'"`                // PrinterPaperType（openapi.yaml）のいずれか
 	LabelPrinterLabelLengthMm  float64   `gorm:"type:double precision;not null;default:29"` // シール 1 枚の長さ（mm。DefaultLabelPrinterLabelLengthMm と同じ）
 	LabelPrinterPrintWidthDots int       `gorm:"not null;default:360"`                      // 印字幅（ドット。DefaultLabelPrinterPrintWidthDots と同じ）

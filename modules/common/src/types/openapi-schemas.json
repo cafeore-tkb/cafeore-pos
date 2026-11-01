@@ -976,7 +976,7 @@
       },
       "label_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType",
-        "description": "使わない（label_printer_paper_width と同じく残している）"
+        "description": "ラベル用のプリンターに入れる紙。die_cut_label はシールの先頭へ送ってから刷り、一連の印刷の最後に label_printer_trailing_feed で送る。receipt はシールを 1 枚刷るたびにカット位置まで送って切る（オートカッターが要る。label_printer_trailing_feed は使わない）"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"
@@ -1052,7 +1052,7 @@
       },
       "label_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType",
-        "description": "使わない（label_printer_paper_width と同じく残している）"
+        "description": "ラベル用のプリンターに入れる紙。die_cut_label はシールの先頭へ送ってから刷り、一連の印刷の最後に label_printer_trailing_feed で送る。receipt はシールを 1 枚刷るたびにカット位置まで送って切る（オートカッターが要る。label_printer_trailing_feed は使わない）"
       },
       "receipt_printer_paper_type": {
         "$ref": "#/components/schemas/PrinterPaperType"

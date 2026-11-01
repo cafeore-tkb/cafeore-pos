@@ -1074,7 +1074,7 @@ export interface components {
       /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
-      /** @description 使わない（label_printer_paper_width と同じく残している） */
+      /** @description ラベル用のプリンターに入れる紙。die_cut_label はシールの先頭へ送ってから刷り、一連の印刷の最後に label_printer_trailing_feed で送る。receipt はシールを 1 枚刷るたびにカット位置まで送って切る（オートカッターが要る。label_printer_trailing_feed は使わない） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
       /**
@@ -1116,7 +1116,7 @@ export interface components {
       /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
-      /** @description 使わない（label_printer_paper_width と同じく残している） */
+      /** @description ラベル用のプリンターに入れる紙。die_cut_label はシールの先頭へ送ってから刷り、一連の印刷の最後に label_printer_trailing_feed で送る。receipt はシールを 1 枚刷るたびにカット位置まで送って切る（オートカッターが要る。label_printer_trailing_feed は使わない） */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
       /**

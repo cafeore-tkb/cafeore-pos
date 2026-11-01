@@ -346,13 +346,14 @@ const CashierV2 = ({
   }, []);
   useEffect(() => () => clearTimeout(noticeTimerRef.current), []);
 
-  // プリンターの IP アドレス・最後の送り方が変わったら、つなぎ直す。シールの大きさ・向きが変わっても、つなぎ直さずに刷るものの大きさ・向きだけ変える
+  // プリンターの IP アドレス・用紙の種類・最後の送り方が変わったら、つなぎ直す。シールの大きさ・向きが変わっても、つなぎ直さずに刷るものの大きさ・向きだけ変える
   const labelPrinterIp = printerAddresses.label_printer_ip;
+  const labelPaperType = printerAddresses.label_printer_paper_type;
   const labelTrailingFeed = printerAddresses.label_printer_trailing_feed;
   const printer = usePrinter(
     useMemo(
-      () => labelPrinterAt(labelPrinterIp, labelTrailingFeed),
-      [labelPrinterIp, labelTrailingFeed],
+      () => labelPrinterAt(labelPrinterIp, labelPaperType, labelTrailingFeed),
+      [labelPrinterIp, labelPaperType, labelTrailingFeed],
     ),
     labelGeometry(printerAddresses),
   );
