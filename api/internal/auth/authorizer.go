@@ -26,7 +26,7 @@ const (
 	// 営業で使うことは何でもできる。レジ・マスター・提供など、スタッフが操作する端末
 	RoleStaff
 	// スタッフにできることに加えて、営業データのリセットと、「運営・管理」「マスタ設定」の画面だけが使う
-	// 設定の書き込み（商品管理・プリンター・Square 端末など。handlers/routes.go の adminOnly）ができる。
+	// 設定の書き込み（商品管理・Square 端末など。handlers/routes.go の adminOnly）ができる。
 	// 運営の数人だけ。ドメインごとには書けない（validateAdminList）
 	RoleAdmin
 )
@@ -158,7 +158,7 @@ func normalizeName(name string) string {
 //	AUTH_STAFF_EMAILS     … 何でもできる相手。カンマ区切り。@example.com でドメインごと
 //	AUTH_VIEWER_EMAILS    … 読むだけの相手。カンマ区切り。@example.com でドメインごと
 //	AUTH_ADMIN_EMAILS     … スタッフにできることに加えて、営業データのリセットと設定の書き込み
-//	                        （商品管理・プリンター・Square 端末など）ができる相手。カンマ区切り。
+//	                        （商品管理・Square 端末など）ができる相手。カンマ区切り。
 //	                        ドメインごとには書けない。空なら誰もそれらをできない
 //	AUTH_PREVIEW_ADMIN    … true なら、全部のリクエストを管理者 PreviewAdminName がログインしてきたものとして
 //	                        扱う（PR のプレビュー用。CI が渡す）。AUTH_MODE が off（か空）のときだけ使え、

@@ -47,10 +47,11 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 	// GET は表示用の端末（呼び出し画面など）も、それ以外はスタッフの端末だけ。
 	// 新しいルートもここに足せば、何もしなくてもこの決まりで守られる。
 	api := r.Group("/api", authz.RequireByMethod())
-	// 「運営・管理」と「マスタ設定」の画面（商品管理・プリンター・Square 端末など）だけが使う書き込みは、管理者だけ。
+	// 「運営・管理」と「マスタ設定」の画面（商品管理・Square 端末など）だけが使う書き込みは、管理者だけ。
 	// 読み取り（GET）と棚卸し・入荷の記録は、レジ・マスター・CaOS も使うのでスタッフのまま。
 	// Require なので、認証を掛けていない設定（off・report-only。プレビューや手元）では今までどおり通る
 	adminOnly := authz.Require(auth.RoleAdmin)
+	staffOnly := authz.Require(auth.RoleStaff)
 	{
 		// 呼んだ相手と権限（トップページに出す）。authz が nil でも登録する
 		api.GET("/me", authz.Me)
@@ -139,7 +140,8 @@ func RegisterRoutes(r gin.IRouter, authz *auth.Authorizer, db *gorm.DB, hub *Hub
 		admin.POST("/data-reset", dataReset.ResetData)
 	}
 	api.GET("/printer-settings", printerSetting.GetPrinterSettings)
-	api.PUT("/printer-settings", adminOnly, printerSetting.UpdatePrinterSettings)
+	// プリンター設定は現場の編集者も調整するのでスタッフ以上。
+	api.PUT("/printer-settings", staffOnly, printerSetting.UpdatePrinterSettings)
 	api.POST("/label-print-requests", labelPrint.CreateLabelPrintRequest)
 	api.GET("/label-print-requests", labelPrint.GetLabelPrintRequests)
 	api.POST("/label-print-requests/:id/claim", labelPrint.ClaimLabelPrintRequest)

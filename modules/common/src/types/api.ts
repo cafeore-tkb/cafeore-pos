@@ -1464,7 +1464,7 @@ export interface components {
        */
       email: string | null;
       /**
-       * @description admin はスタッフにできることに加えて、営業データのリセットと商品管理・プリンター・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
+       * @description admin はスタッフにできることに加えて、営業データのリセットと商品管理・Square 端末などの設定の書き込みができる（AUTH_ADMIN_EMAILS）、
        * staff は何でもできる、viewer は読むだけ、none は許可リストに無い（report-only のときだけ返る。
        * enforce なら 403 になる）。off のときは null
        *

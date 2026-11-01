@@ -9,12 +9,18 @@ import { SHOULD_FETCH_PERMISSION, usePermission } from "./usePermission";
 const reload = () => window.location.reload();
 
 /**
- * 本番（API が弾く設定）では、管理者にだけ children を出す。ほかの人には children を
+ * 本番（API が弾く設定）では、指定した最低権限以上にだけ children を出す。ほかの人には children を
  * マウントしない（ページのデータも読まない）。ローカルではそのまま出す。プレビューは API が管理者として扱うので出す
  *
- * 画面で弾くのは開かせないためだけで、管理者だけの操作は API も弾く
+ * 画面で弾くのは開かせないためだけで、権限が必要な操作は API も弾く
  */
-export function AdminOnly({ children }: { children: ReactNode }) {
+export function AdminOnly({
+  children,
+  minimumRole = "admin",
+}: {
+  children: ReactNode;
+  minimumRole?: "admin" | "staff";
+}) {
   // 開いている間に聞き直して、ログイン切れなどでページを消すと入力途中のものも消えるので、
   // 開いたときにだけ聞く
   const permission = usePermission({
@@ -25,6 +31,7 @@ export function AdminOnly({ children }: { children: ReactNode }) {
     shouldFetch: SHOULD_FETCH_PERMISSION,
     permission: permission.data,
     error: permission.error,
+    minimumRole,
   });
 
   if (access === "allow") {
@@ -63,7 +70,11 @@ export function AdminOnly({ children }: { children: ReactNode }) {
 
   return (
     <Centered>
-      <p className="font-bold">このページは管理者だけが開けます</p>
+      <p className="font-bold">
+        このページは
+        {minimumRole === "staff" ? "スタッフ以上" : "管理者だけ"}
+        が開けます
+      </p>
       {email && (
         <p className="break-all text-muted-foreground text-sm">
           ログイン中: {email}

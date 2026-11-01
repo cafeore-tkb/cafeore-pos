@@ -19,7 +19,8 @@ const access = (
   permission: Permission | undefined,
   error: unknown = undefined,
   shouldFetch = true,
-) => adminPageAccess({ shouldFetch, permission, error });
+  minimumRole: "admin" | "staff" = "admin",
+) => adminPageAccess({ shouldFetch, permission, error, minimumRole });
 
 describe("[unit] adminPageAccess", () => {
   test("ローカルでは聞かずに開ける", () => {
@@ -60,6 +61,16 @@ describe("[unit] adminPageAccess", () => {
     expect(access(ok())).toBe("allow");
     for (const role of ["staff", "viewer", "none", null] as const) {
       expect(access(ok({ role }))).toBe("deny");
+    }
+  });
+
+  test("スタッフ以上を許可するページではスタッフも開ける", () => {
+    expect(access(ok(), undefined, true, "staff")).toBe("allow");
+    expect(access(ok({ role: "staff" }), undefined, true, "staff")).toBe(
+      "allow",
+    );
+    for (const role of ["viewer", "none", null] as const) {
+      expect(access(ok({ role }), undefined, true, "staff")).toBe("deny");
     }
   });
 });

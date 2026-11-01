@@ -195,10 +195,10 @@ const notifyTestPrint = (
   }
 };
 
-// 本番では管理者だけが開ける
+// 本番ではスタッフ（編集者）以上が開ける
 export default function PrinterSettingsRoute() {
   return (
-    <AdminOnly>
+    <AdminOnly minimumRole="staff">
       <PrinterSettingsPage />
     </AdminOnly>
   );

@@ -43,14 +43,13 @@ func TestRegisterRoutesAdminOnly(t *testing.T) {
 		"POST /api/item-types", "PUT /api/item-types/" + id, "DELETE /api/item-types/" + id,
 		"PUT /api/color-settings", "DELETE /api/color-settings/" + id,
 		"POST /api/inventory/resources", "PUT /api/inventory/resources/" + id, "DELETE /api/inventory/resources/" + id,
-		"PUT /api/printer-settings",
 		"POST /api/square/devices", "POST /api/square/devices/pair", "POST /api/square/devices/import",
 		"POST /api/square/devices/" + id + "/code", "DELETE /api/square/devices/" + id,
 	}
 	// 営業中の画面も使うので、スタッフが使えるままのもの
 	staff := []string{
 		"GET /api/menus", "GET /api/items", "GET /api/item-types", "GET /api/color-settings",
-		"GET /api/inventory", "GET /api/printer-settings", "GET /api/master-status",
+		"GET /api/inventory", "GET /api/printer-settings", "PUT /api/printer-settings", "GET /api/master-status",
 		"GET /api/square/status", "GET /api/square/devices",
 		// 棚卸し・入荷の記録は CaOS の「豆残量確認」からもする
 		"POST /api/inventory/resources/" + id + "/events",
