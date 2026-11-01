@@ -20,6 +20,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
       label_printer_margin_mm: 1.5,
       label_printer_rotate_180: false,
       label_printer_trailing_feed: "peeling",
+      label_printer_receipt_cut: "full",
     } as const;
     expect(withPrinterSettingDefaults(settings)).toEqual(settings);
   });
@@ -39,6 +40,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
         label_printer_margin_mm: -1,
         label_printer_rotate_180: "false",
         label_printer_trailing_feed: "next_tof",
+        label_printer_receipt_cut: "tear",
       },
     ]) {
       expect(withPrinterSettingDefaults(settings)).toEqual({
@@ -53,6 +55,7 @@ describe("[unit] withPrinterSettingDefaults", () => {
         label_printer_margin_mm: 0,
         label_printer_rotate_180: true,
         label_printer_trailing_feed: "blank_label",
+        label_printer_receipt_cut: "partial",
       });
     }
   });

@@ -21,7 +21,8 @@ const DefaultReceiptPrinterModel = ReceiptPrinterModelTmL90
 
 // 一度も保存していないときのプリンターの用紙（幅と種類）。用紙を選べるようにする前に保存した行も、これになる（列の既定値）。
 // どちらも、選べるようにする前にレジが決め打ちしていた用紙（ラベル用は 80mm のダイカットラベル、レシート用は 58mm のレシート紙）。
-// ラベル用の用紙はもう使わない（シールの大きさは下の長さ・印字幅・余白で決める）が、別々に出すレジと API のために列を残す。
+// ラベル用の用紙の種類は、ダイカットラベルの位置合わせか、レシート紙の送り・カットかを決める。
+// ラベル用の用紙幅は使わず、シールの大きさは下の長さ・印字幅・余白で決める。
 const (
 	DefaultLabelPrinterPaperWidth   = PrinterPaperWidth80mm
 	DefaultReceiptPrinterPaperWidth = PrinterPaperWidth58mm
@@ -45,6 +46,10 @@ const DefaultLabelPrinterRotate180 = true
 // 選べるようにする前に保存した行も、これになる（列の既定値）。
 const DefaultLabelPrinterTrailingFeed = LabelPrinterTrailingFeedBlankLabel
 
+// DefaultLabelPrinterReceiptCut はレシート紙を使うときの既定の切り方。
+// 従来の CUT_FEED と同じパーシャルカットにする。
+const DefaultLabelPrinterReceiptCut = LabelPrinterReceiptCutPartial
+
 // PrinterSetting はレジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレス、ラベル用のシールの大きさ
 // （長さ・印字幅・余白）と向き（180° 回すか）と一連の印刷の最後の送り方、レシート用のプリンターの用紙（幅と種類）と機種。
 //
@@ -57,13 +62,14 @@ type PrinterSetting struct {
 	ReceiptPrinterModel        string    `gorm:"not null;default:'tm_l90'"`                 // ReceiptPrinterModel（openapi.yaml）のいずれか
 	LabelPrinterPaperWidth     string    `gorm:"not null;default:'80mm'"`                   // PrinterPaperWidth（openapi.yaml）のいずれか。使わない（列だけ残す）
 	ReceiptPrinterPaperWidth   string    `gorm:"not null;default:'58mm'"`                   // PrinterPaperWidth（openapi.yaml）のいずれか
-	LabelPrinterPaperType      string    `gorm:"not null;default:'die_cut_label'"`          // PrinterPaperType（openapi.yaml）のいずれか。使わない（列だけ残す）
+	LabelPrinterPaperType      string    `gorm:"not null;default:'die_cut_label'"`          // PrinterPaperType（openapi.yaml）のいずれか。位置合わせ・カット方法を決める
 	ReceiptPrinterPaperType    string    `gorm:"not null;default:'receipt'"`                // PrinterPaperType（openapi.yaml）のいずれか
 	LabelPrinterLabelLengthMm  float64   `gorm:"type:double precision;not null;default:29"` // シール 1 枚の長さ（mm。DefaultLabelPrinterLabelLengthMm と同じ）
 	LabelPrinterPrintWidthDots int       `gorm:"not null;default:360"`                      // 印字幅（ドット。DefaultLabelPrinterPrintWidthDots と同じ）
 	LabelPrinterMarginMm       float64   `gorm:"type:double precision;not null;default:0"`  // 四辺の余白（mm。DefaultLabelPrinterMarginMm と同じ）
 	LabelPrinterRotate180      *bool     `gorm:"not null;default:true"`                     // カップ・緊急・キャンセルのシールを 180° 回して刷るか（DefaultLabelPrinterRotate180 と同じ。Rotate180 で読む）
 	LabelPrinterTrailingFeed   string    `gorm:"not null;default:'blank_label'"`            // LabelPrinterTrailingFeed（openapi.yaml）のいずれか（DefaultLabelPrinterTrailingFeed と同じ）
+	LabelPrinterReceiptCut     string    `gorm:"not null;default:'partial'"`                // LabelPrinterReceiptCut（openapi.yaml）のいずれか
 	UpdatedAt                  time.Time `gorm:"not null"`
 }
 
@@ -95,5 +101,6 @@ func DefaultPrinterSetting() PrinterSetting {
 		LabelPrinterMarginMm:       DefaultLabelPrinterMarginMm,
 		LabelPrinterRotate180:      &rotate180,
 		LabelPrinterTrailingFeed:   string(DefaultLabelPrinterTrailingFeed),
+		LabelPrinterReceiptCut:     string(DefaultLabelPrinterReceiptCut),
 	}
 }

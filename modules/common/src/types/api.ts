@@ -1059,6 +1059,11 @@ export interface components {
      * @enum {string}
      */
     LabelPrinterTrailingFeed: "blank_label" | "peeling";
+    /**
+     * @description ラベル用プリンターにレシート紙を入れたときのカット方法
+     * @enum {string}
+     */
+    LabelPrinterReceiptCut: "partial" | "full";
     PrinterSettingsResponse: {
       /**
        * @description ラベル（カップに貼るシール）用のプリンターの IPv4 アドレス
@@ -1074,7 +1079,7 @@ export interface components {
       /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
-      /** @description 使わない（label_printer_paper_width と同じく残している） */
+      /** @description ダイカットラベルではシールの先頭へ位置合わせし、レシート紙では位置合わせせず最後にカットする */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
       /**
@@ -1100,6 +1105,7 @@ export interface components {
        */
       label_printer_rotate_180: boolean;
       label_printer_trailing_feed: components["schemas"]["LabelPrinterTrailingFeed"];
+      label_printer_receipt_cut: components["schemas"]["LabelPrinterReceiptCut"];
     };
     PrinterSettingsUpdateRequest: {
       /**
@@ -1116,7 +1122,7 @@ export interface components {
       /** @description 使わない（ラベル用の印字幅は label_printer_print_width_dots）。別々に出すレジと API の食い違いに備えて残している。レジは読んだ値をそのまま送り返す */
       label_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
       receipt_printer_paper_width: components["schemas"]["PrinterPaperWidth"];
-      /** @description 使わない（label_printer_paper_width と同じく残している） */
+      /** @description ダイカットラベルではシールの先頭へ位置合わせし、レシート紙では位置合わせせず最後にカットする */
       label_printer_paper_type: components["schemas"]["PrinterPaperType"];
       receipt_printer_paper_type: components["schemas"]["PrinterPaperType"];
       /**
@@ -1143,6 +1149,8 @@ export interface components {
       label_printer_rotate_180?: boolean;
       /** @description 省略したら今の値のまま（設定できるようにする前のレジのため） */
       label_printer_trailing_feed?: components["schemas"]["LabelPrinterTrailingFeed"];
+      /** @description 省略したら今の値のまま（設定できるようにする前のレジのため） */
+      label_printer_receipt_cut?: components["schemas"]["LabelPrinterReceiptCut"];
     };
     CashierStateResponse: {
       /** @description レジで編集中の注文。フロントの orderSchema の JSON をそのまま保持し、サーバーは上の階層のキーと型を確かめる以外は中身を解釈しない */

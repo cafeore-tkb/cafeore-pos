@@ -40,11 +40,27 @@ export const useCupEmergency = (
   onActivity?: (event: string, details: Record<string, unknown>) => void,
 ) => {
   const printerSettings = usePrinterAddresses();
-  const { label_printer_ip, label_printer_trailing_feed } = printerSettings;
+  const {
+    label_printer_ip,
+    label_printer_paper_type,
+    label_printer_trailing_feed,
+    label_printer_receipt_cut,
+  } = printerSettings;
   const printer = usePrinter(
     useMemo(
-      () => labelPrinterAt(label_printer_ip, label_printer_trailing_feed),
-      [label_printer_ip, label_printer_trailing_feed],
+      () =>
+        labelPrinterAt(
+          label_printer_ip,
+          label_printer_paper_type,
+          label_printer_trailing_feed,
+          label_printer_receipt_cut,
+        ),
+      [
+        label_printer_ip,
+        label_printer_paper_type,
+        label_printer_trailing_feed,
+        label_printer_receipt_cut,
+      ],
     ),
     labelGeometry(printerSettings),
     onActivity,

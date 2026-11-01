@@ -1,6 +1,7 @@
 import {
   DEFAULT_PRINTER_SETTINGS,
   LABEL_SIZE_LIMITS,
+  type LabelPrinterReceiptCut,
   type LabelPrinterTrailingFeed,
   PRINTER_DOTS_PER_MM,
   type PrinterPaperType,
@@ -80,6 +81,7 @@ const receiptPrinterModelLabels = openapiEnumLabels("ReceiptPrinterModel");
 const paperTypeLabels = openapiEnumLabels("PrinterPaperType");
 const paperWidthLabels = openapiEnumLabels("PrinterPaperWidth");
 const trailingFeedLabels = openapiEnumLabels("LabelPrinterTrailingFeed");
+const receiptCutLabels = openapiEnumLabels("LabelPrinterReceiptCut");
 
 /** 選べるレシート用のプリンターの機種（openapi.yaml の並び） */
 const receiptPrinterModels = Object.keys(
@@ -94,6 +96,7 @@ const paperWidths = Object.keys(paperWidthLabels) as PrinterPaperWidth[];
 const trailingFeeds = Object.keys(
   trailingFeedLabels,
 ) as LabelPrinterTrailingFeed[];
+const receiptCuts = Object.keys(receiptCutLabels) as LabelPrinterReceiptCut[];
 
 /** 用紙の幅ごとのレシート用の印字幅（ドット）。用紙の種類と機種で変わる */
 const receiptPrintableWidths = (values: PrinterSettings) =>
@@ -210,7 +213,7 @@ function PrinterSettingsPage() {
       <AdminPageHeader
         group="settings"
         title="プリンター"
-        description="レジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレスと、ラベル用のシールの大きさと向き、レシート用の用紙（種類と幅）と機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。"
+        description="レジがつなぐ Epson のプリンター（ePOS-Print）の IP アドレスと、ラベル用の用紙・印刷サイズ・向き、レシート用の用紙（種類と幅）と機種を設定します。全レジで共通です。開いているレジは、再読み込みすると新しい設定でつなぎ直します。"
       />
 
       {error ? (
@@ -236,7 +239,7 @@ function PrinterSettingsForm({
   initial: PrinterSettings;
   onSaved: (saved: PrinterSettings) => void;
 }) {
-  // ラベル用の用紙の種類・幅はもう使わないが、API が受け取るので読んだ値のまま送り返す
+  // ラベル用の幅は API との互換性のため読んだ値のまま送り返す。種類は印刷方法の切り替えに使う。
   const [values, setValues] = useState(initial);
   const [sizeText, setSizeText] = useState(() => labelSizeText(initial));
   const [busy, setBusy] = useState(false);
@@ -289,7 +292,12 @@ function PrinterSettingsForm({
         return;
       }
       const result = await printOnce(
-        labelPrinterAt(address, values.label_printer_trailing_feed),
+        labelPrinterAt(
+          address,
+          values.label_printer_paper_type,
+          values.label_printer_trailing_feed,
+          values.label_printer_receipt_cut,
+        ),
         labelTestPrintJob({
           address,
           geometry: labelGeometry({
@@ -380,6 +388,18 @@ function PrinterSettingsForm({
       {section(
         "label",
         <>
+          <ChoiceField
+            id="label_printer_paper_type"
+            label="用紙の種類"
+            description="ダイカットラベル（台紙にシールが並んだ紙）ではシールの先頭に合わせて送ります。レシート紙では続けて印刷し、1回の印刷の最後に紙をカットします"
+            choices={paperTypes}
+            labels={paperTypeLabels}
+            value={values.label_printer_paper_type}
+            defaultValue={DEFAULT_PRINTER_SETTINGS.label_printer_paper_type}
+            onChange={(value) =>
+              choose("label_printer_paper_type", paperTypes, value)
+            }
+          />
           <NumberField
             id="label_printer_label_length_mm"
             label="ラベルの長さ"
@@ -454,18 +474,35 @@ function PrinterSettingsForm({
               </p>
             </div>
           </div>
-          <ChoiceField
-            id="label_printer_trailing_feed"
-            label="印刷の最後の送り方"
-            description="1 回に刷るシールの最後に、どう送るか。空のシールを 1 枚送ると、刷ったシールの後ろに空のシールを 1 枚送ります（少しの高さの白を刷って、次のシールの先頭まで送ります）。剥離位置まで送ると、ピーラーで剥がす所で止め、そのシールを取るまで次を刷りません"
-            choices={trailingFeeds}
-            labels={trailingFeedLabels}
-            value={values.label_printer_trailing_feed}
-            defaultValue={DEFAULT_PRINTER_SETTINGS.label_printer_trailing_feed}
-            onChange={(value) =>
-              choose("label_printer_trailing_feed", trailingFeeds, value)
-            }
-          />
+          {values.label_printer_paper_type === "die_cut_label" ? (
+            <ChoiceField
+              id="label_printer_trailing_feed"
+              label="印刷の最後の送り方"
+              description="1 回に刷るシールの最後に、どう送るか。空のシールを 1 枚送ると、刷ったシールの後ろに空のシールを 1 枚送ります（少しの高さの白を刷って、次のシールの先頭まで送ります）。剥離位置まで送ると、ピーラーで剥がす所で止め、そのシールを取るまで次を刷りません"
+              choices={trailingFeeds}
+              labels={trailingFeedLabels}
+              value={values.label_printer_trailing_feed}
+              defaultValue={
+                DEFAULT_PRINTER_SETTINGS.label_printer_trailing_feed
+              }
+              onChange={(value) =>
+                choose("label_printer_trailing_feed", trailingFeeds, value)
+              }
+            />
+          ) : (
+            <ChoiceField
+              id="label_printer_receipt_cut"
+              label="カット方法"
+              description="1回の印刷の最後に紙を切る方法。パーシャルカットは一部をつないで残し、フルカットは完全に切り離します"
+              choices={receiptCuts}
+              labels={receiptCutLabels}
+              value={values.label_printer_receipt_cut}
+              defaultValue={DEFAULT_PRINTER_SETTINGS.label_printer_receipt_cut}
+              onChange={(value) =>
+                choose("label_printer_receipt_cut", receiptCuts, value)
+              }
+            />
+          )}
         </>,
       )}
       {section(
@@ -521,7 +558,7 @@ function PrinterSettingsForm({
           ごとの数字）を入れます。シールの右端・下端がどの数字の所にあるかを読み、印字幅（mm
           × 8
           ドット）とラベルの長さを合わせます。右と下の辺の三角は、刷る範囲の真ん中です。確認用のページは、180°
-          回す設定でも回しません。見本は設定の向きで刷ります。ラベル用は、最後に設定の送り方で送ります。
+          回す設定でも回しません。見本は設定の向きで刷ります。ラベル用は、ダイカットラベルなら設定した方法で送り、レシート紙なら最後に紙をカットします。
         </p>
         <p>
           レシート用の確認用のページは、印字幅いっぱいを枠で囲みます。枠の左右が欠けていれば、紙より広い幅を選んでいます。枠の外に広い余白があれば、紙より狭い幅を選んでいます。

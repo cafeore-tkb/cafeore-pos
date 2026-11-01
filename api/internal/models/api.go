@@ -61,6 +61,12 @@ const (
 	LabelPrinterTrailingFeedPeeling    LabelPrinterTrailingFeed = "peeling"
 )
 
+// Defines values for LabelPrinterReceiptCut.
+const (
+	LabelPrinterReceiptCutPartial LabelPrinterReceiptCut = "partial"
+	LabelPrinterReceiptCutFull    LabelPrinterReceiptCut = "full"
+)
+
 // Defines values for MasterStateExpectedType.
 const (
 	ExpectedOperational MasterStateExpectedType = "operational"
@@ -785,6 +791,9 @@ type LabelPrintRequestResponse struct {
 // peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
 type LabelPrinterTrailingFeed string
 
+// LabelPrinterReceiptCut ラベル用プリンターにレシート紙を入れたときのカット方法
+type LabelPrinterReceiptCut string
+
 // MasterStateExpected 確認した受付状態。履歴なしは type=operational、created_at=null。
 type MasterStateExpected struct {
 	CreatedAt *time.Time              `json:"created_at"`
@@ -1127,6 +1136,9 @@ type PrinterSettingsResponse struct {
 	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
 	LabelPrinterTrailingFeed LabelPrinterTrailingFeed `json:"label_printer_trailing_feed"`
 
+	// LabelPrinterReceiptCut ラベル用プリンターにレシート紙を入れたときのカット方法
+	LabelPrinterReceiptCut LabelPrinterReceiptCut `json:"label_printer_receipt_cut"`
+
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`
 
@@ -1170,6 +1182,9 @@ type PrinterSettingsUpdateRequest struct {
 	// blank_label は空のシールを 1 枚送る（シールの先頭に少しの高さの白を刷ってから、次のシールの先頭まで送る）。
 	// peeling は剥離位置（ピーラーでシールを台紙から剥がす所）まで送る（ピーラーは、そのシールを取るまで次を刷らない）
 	LabelPrinterTrailingFeed *LabelPrinterTrailingFeed `json:"label_printer_trailing_feed,omitempty"`
+
+	// LabelPrinterReceiptCut ラベル用プリンターにレシート紙を入れたときのカット方法。省略したら今の値のまま
+	LabelPrinterReceiptCut *LabelPrinterReceiptCut `json:"label_printer_receipt_cut,omitempty"`
 
 	// ReceiptPrinterIp レシート・領収書用のプリンターの IPv4 アドレス
 	ReceiptPrinterIp string `json:"receipt_printer_ip"`

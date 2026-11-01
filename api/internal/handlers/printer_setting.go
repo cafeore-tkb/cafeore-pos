@@ -39,6 +39,7 @@ func toPrinterSettingsResponse(setting *models.PrinterSetting) models.PrinterSet
 		LabelPrinterMarginMm:       setting.LabelPrinterMarginMm,
 		LabelPrinterRotate180:      setting.Rotate180(),
 		LabelPrinterTrailingFeed:   models.LabelPrinterTrailingFeed(setting.LabelPrinterTrailingFeed),
+		LabelPrinterReceiptCut:     models.LabelPrinterReceiptCut(setting.LabelPrinterReceiptCut),
 	}
 }
 
@@ -145,6 +146,15 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 	default:
 		return models.PrinterSetting{}, errors.New("label_printer_trailing_feed must be blank_label or peeling")
 	}
+	receiptCut := models.DefaultLabelPrinterReceiptCut
+	if request.LabelPrinterReceiptCut != nil {
+		receiptCut = *request.LabelPrinterReceiptCut
+	}
+	switch receiptCut {
+	case models.LabelPrinterReceiptCutPartial, models.LabelPrinterReceiptCutFull:
+	default:
+		return models.PrinterSetting{}, errors.New("label_printer_receipt_cut must be partial or full")
+	}
 	return models.PrinterSetting{
 		ID:                         models.PrinterSettingID,
 		LabelPrinterIP:             label,
@@ -159,6 +169,7 @@ func buildPrinterSetting(request models.PrinterSettingsUpdateRequest) (models.Pr
 		LabelPrinterMarginMm:       request.LabelPrinterMarginMm,
 		LabelPrinterRotate180:      &rotate180,
 		LabelPrinterTrailingFeed:   string(trailingFeed),
+		LabelPrinterReceiptCut:     string(receiptCut),
 		UpdatedAt:                  time.Now(),
 	}, nil
 }
@@ -200,7 +211,7 @@ func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 	}
 
 	err = h.db.Transaction(func(tx *gorm.DB) error {
-		if request.LabelPrinterRotate180 == nil || request.LabelPrinterTrailingFeed == nil {
+		if request.LabelPrinterRotate180 == nil || request.LabelPrinterTrailingFeed == nil || request.LabelPrinterReceiptCut == nil {
 			// 読んでから書くまでに、ほかの保存で変わらないよう行を押さえる（まだ行が無ければ既定のまま）
 			var saved models.PrinterSetting
 			result := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Limit(1).Find(&saved, "id = ?", models.PrinterSettingID)
@@ -213,6 +224,9 @@ func (h *PrinterSettingHandler) UpdatePrinterSettings(c *gin.Context) {
 				}
 				if request.LabelPrinterTrailingFeed == nil {
 					setting.LabelPrinterTrailingFeed = saved.LabelPrinterTrailingFeed
+				}
+				if request.LabelPrinterReceiptCut == nil {
+					setting.LabelPrinterReceiptCut = saved.LabelPrinterReceiptCut
 				}
 			}
 		}
