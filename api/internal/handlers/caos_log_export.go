@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -75,7 +76,20 @@ func (h *CaosHandler) ExportCaosLogs(c *gin.Context) {
 	name := "caos-logs-" + format + "-" + now.Format("20060102-150405") + ".json"
 	c.Header("Content-Type", "application/json; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
-	http.ServeContent(c.Writer, c.Request, name, now, file)
+	if err := streamCaosExport(c, file); err != nil {
+		// 送信開始後なのでステータスは変更せず、切断などをログに残す。
+		log.Printf("failed to send CaOS log export: %v", err)
+	}
+}
+
+// Content-Length を付けず、明示的に送信を開始する。
+// Cloud Run の非ストリーミング HTTP/1 応答の 32 MiB 制限を避ける。
+// DB の読み出しは送信前に完了させ、生成失敗時は通常のエラーを返す。
+func streamCaosExport(c *gin.Context, file io.Reader) error {
+	c.Status(http.StatusOK)
+	c.Writer.Flush()
+	_, err := io.Copy(c.Writer, file)
+	return err
 }
 
 func writeCaosExportRows[T any](tx *gorm.DB, writer io.Writer, order string) error {
